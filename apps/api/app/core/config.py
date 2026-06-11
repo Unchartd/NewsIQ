@@ -1,0 +1,63 @@
+"""Application configuration loaded from environment variables."""
+
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+
+class Settings(BaseSettings):
+    """Global application settings."""
+
+    # App
+    APP_NAME: str = "NewsIQ"
+    APP_VERSION: str = "0.1.0"
+    DEBUG: bool = False
+    API_V1_PREFIX: str = "/api/v1"
+
+    # Database
+    DATABASE_URL: str = Field(
+        default="postgresql+asyncpg://newsiq:newsiq@localhost:5432/newsiq"
+    )
+
+    # Redis
+    REDIS_URL: str = Field(default="redis://localhost:6379/0")
+
+    # Qdrant
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333
+
+    # Meilisearch
+    MEILISEARCH_URL: str = "http://localhost:7700"
+    MEILISEARCH_API_KEY: str = ""
+
+    # Auth
+    SECRET_KEY: str = Field(default="change-me-in-production-use-openssl-rand-hex-32")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    ALGORITHM: str = "HS256"
+
+    # OAuth - Google
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:3000/api/auth/callback/google"
+
+    # AI Models
+    OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    SUMMARIZATION_MODEL: str = "gemini-2.5-flash"
+
+    # News APIs
+    NEWSAPI_KEY: str = ""
+    GNEWS_API_KEY: str = ""
+
+    # CORS
+    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+
+    # Celery
+    CELERY_BROKER_URL: str = "redis://localhost:6379/1"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "case_sensitive": True}
+
+
+settings = Settings()

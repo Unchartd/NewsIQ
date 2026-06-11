@@ -1,0 +1,227 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Sidebar tokens */
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+
+  /* Chart tokens */
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+
+  /* Core tokens */
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* NewsIQ custom tokens */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-trending: var(--trending);
+
+  /* Radii — from UX Design Brief */
+  --radius-sm: 0.5rem;      /* 8px — small elements */
+  --radius-md: 0.75rem;     /* 12px — inputs */
+  --radius-lg: 0.875rem;    /* 14px — buttons */
+  --radius-xl: 1.25rem;     /* 20px — cards */
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+  --radius-4xl: 62.5rem;    /* 999px — tags/pills */
+}
+
+/*
+ * ───────────────────────────────────────────
+ * LIGHT THEME — per UX Design Brief §4
+ * ───────────────────────────────────────────
+ */
+:root {
+  /* Backgrounds */
+  --background: #FFFFFF;
+  --foreground: #0F172A;
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
+
+  /* Primary — Blue accent #2563EB */
+  --primary: #2563EB;
+  --primary-foreground: #FFFFFF;
+
+  /* Secondary */
+  --secondary: #F8FAFC;
+  --secondary-foreground: #0F172A;
+
+  /* Muted */
+  --muted: #F8FAFC;
+  --muted-foreground: #64748B;
+
+  /* Accent */
+  --accent: #F1F5F9;
+  --accent-foreground: #0F172A;
+
+  /* Destructive — Red #EF4444 */
+  --destructive: #EF4444;
+
+  /* Border & Input */
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #2563EB;
+
+  /* NewsIQ specific */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --trending: #9333EA;
+
+  /* Charts — vibrant palette */
+  --chart-1: #2563EB;
+  --chart-2: #10B981;
+  --chart-3: #F59E0B;
+  --chart-4: #EF4444;
+  --chart-5: #9333EA;
+
+  --radius: 0.75rem;
+
+  /* Sidebar */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #2563EB;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F1F5F9;
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #2563EB;
+}
+
+/*
+ * ───────────────────────────────────────────
+ * DARK THEME — per UX Design Brief §4
+ * ───────────────────────────────────────────
+ */
+.dark {
+  /* Backgrounds */
+  --background: #020617;
+  --foreground: #F8FAFC;
+  --card: #0F172A;
+  --card-foreground: #F8FAFC;
+  --popover: #0F172A;
+  --popover-foreground: #F8FAFC;
+
+  /* Primary — Blue accent #3B82F6 (slightly lighter for dark) */
+  --primary: #3B82F6;
+  --primary-foreground: #FFFFFF;
+
+  /* Secondary */
+  --secondary: #1E293B;
+  --secondary-foreground: #F8FAFC;
+
+  /* Muted */
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+
+  /* Accent */
+  --accent: #1E293B;
+  --accent-foreground: #F8FAFC;
+
+  /* Destructive */
+  --destructive: #F87171;
+
+  /* Border & Input */
+  --border: #1E293B;
+  --input: #1E293B;
+  --ring: #3B82F6;
+
+  /* NewsIQ specific */
+  --success: #34D399;
+  --warning: #FBBF24;
+  --trending: #A855F7;
+
+  /* Charts */
+  --chart-1: #3B82F6;
+  --chart-2: #34D399;
+  --chart-3: #FBBF24;
+  --chart-4: #F87171;
+  --chart-5: #A855F7;
+
+  /* Sidebar */
+  --sidebar: #0F172A;
+  --sidebar-foreground: #F8FAFC;
+  --sidebar-primary: #3B82F6;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1E293B;
+  --sidebar-accent-foreground: #F8FAFC;
+  --sidebar-border: #1E293B;
+  --sidebar-ring: #3B82F6;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+
+  /* Typography — per UX Design Brief §5 */
+  h1 {
+    @apply text-5xl font-bold leading-tight tracking-tight;
+    /* 48px, weight 700 */
+  }
+  h2 {
+    @apply text-4xl font-bold leading-tight;
+    /* 36px, weight 700 */
+  }
+  h3 {
+    @apply text-2xl font-semibold leading-snug;
+    /* 24px, weight 600 */
+  }
+  h4 {
+    @apply text-xl font-semibold leading-snug;
+    /* 20px, weight 600 */
+  }
+  p {
+    line-height: 1.6;
+  }
+}
+
+/* Scrollbar styling for dark mode */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted-foreground) transparent;
+  }
+}
