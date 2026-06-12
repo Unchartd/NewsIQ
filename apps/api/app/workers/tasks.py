@@ -63,6 +63,9 @@ def process_pending_embeddings_task() -> int:
 
             logger.info("Embedding batch of %d articles.", len(pending_articles))
             success_count = 0
+            merged_count = 0
+
+            from app.services.clustering_service import clustering_service
 
             for article in pending_articles:
                 try:
@@ -94,15 +97,29 @@ def process_pending_embeddings_task() -> int:
 
                     # Mark as completed in PostgreSQL
                     article.embedding_status = "completed"
+                    await session.commit()
                     success_count += 1
+
+                    # Try real-time incremental merge into similar story
+                    merged = await clustering_service.add_article_to_existing_story_if_similar(article.id, session)
+                    if merged:
+                        merged_count += 1
                 except Exception as e:
                     logger.error("Failed to generate embedding for article %s: %s", article.id, e)
                     article.embedding_status = "failed"
-                finally:
                     await session.commit()
 
-            logger.info("Successfully embedded %d/%d articles.", success_count, len(pending_articles))
+            logger.info(
+                "Successfully embedded %d/%d articles. Merged %d directly.",
+                success_count,
+                len(pending_articles),
+                merged_count
+            )
             
+            if success_count > 0:
+                # Trigger batch clustering to handle newly embedded articles
+                cluster_news_task.delay()
+
             # If we processed a full batch, check for more
             if len(pending_articles) == 50:
                 process_pending_embeddings_task.delay()
@@ -113,7 +130,14 @@ def process_pending_embeddings_task() -> int:
 
 
 @celery_app.task(name="app.workers.tasks.cluster_news_task")
-def cluster_news_task() -> str:
-    """Placeholder task for Phase 5 - Story clustering and generation."""
-    logger.info("Celery task: Clustering articles into stories (Phase 5).")
-    return "Clustering task stub completed. Ready for Phase 5 clustering engine."
+def cluster_news_task() -> int:
+    """Run batch clustering of unclustered articles into stories."""
+    logger.info("Celery task: Running batch clustering.")
+    
+    async def _run():
+        async with async_session_factory() as session:
+            from app.services.clustering_service import clustering_service
+            stories_created = await clustering_service.run_batch_clustering(session)
+            return stories_created
+
+    return run_async(_run())
