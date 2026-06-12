@@ -1,168 +1,162 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Check, Star, ShieldAlert, Sparkles, Building } from "lucide-react";
+import { Check, Minus } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
+import { useState } from "react";
 
 export default function PremiumPage() {
   const { user, isAuthenticated, setUser } = useAuthStore();
-  const queryClient = useQueryClient();
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
 
   const handleSubscribe = async (plan: "free" | "pro" | "enterprise") => {
     if (!isAuthenticated) {
-      toast.error("Please sign in to select a plan.");
+      toast.error("Please sign in to upgrade.");
       window.location.href = "/login";
       return;
     }
 
+    setLoadingPlan(plan);
     try {
-      // Simulate upgrading/subscribing by PATCHing user profile subscription_plan
       const response = await apiClient.patch("/users/profile", {
         subscription_plan: plan,
       });
-      
       setUser(response.data);
-      toast.success(`Successfully subscribed to the ${plan.toUpperCase()} plan!`);
+      toast.success(`Plan updated successfully to ${plan.toUpperCase()}!`);
     } catch {
-      toast.error("Subscription simulation failed.");
+      toast.error("Failed to update plan.");
+    } finally {
+      setLoadingPlan(null);
     }
   };
 
   const plans = [
     {
       name: "Free",
-      price: "$0",
-      description: "Essential intelligence for casual readers.",
-      icon: Star,
+      price: "₹0",
+      period: "/month",
+      desc: "For occasional readers",
       features: [
-        "View aggregated news stories",
-        "Basic 1-line and Short summaries",
-        "Source transparency overview",
-        "Chronological timeline",
+        { text: "10 stories/day", included: true },
+        { text: "1-line summaries", included: true },
+        { text: "Trending feed", included: true },
+        { text: "Source comparison", included: false },
+        { text: "Personalised feed", included: false },
+        { text: "AI chat", included: false },
+        { text: "Ad-free", included: false },
       ],
       planKey: "free",
+      cta: "Continue free",
+      isOutline: true,
     },
     {
       name: "Pro",
-      price: "$9",
-      period: "/mo",
-      description: "Deep analytics and detailed context for power users.",
-      icon: Sparkles,
+      price: "₹399",
+      period: "/month",
+      desc: "For professionals and power readers",
       features: [
-        "Everything in Free",
-        "Unlimited Detailed summaries",
-        "Full publisher differences analysis",
-        "Key facts extraction",
-        "Daily personalized digests",
-        "Priority feed loading",
+        { text: "Unlimited stories", included: true },
+        { text: "All 3 summary depths", included: true },
+        { text: "Source comparison table", included: true },
+        { text: "Difference Engine", included: true },
+        { text: "Personalised feed", included: true },
+        { text: "Daily digest", included: true },
+        { text: "Ad-free", included: true },
       ],
-      popular: true,
       planKey: "pro",
+      popular: true,
+      cta: "Upgrade to Pro",
+      isOutline: false,
     },
     {
       name: "Enterprise",
-      price: "$49",
-      period: "/mo",
-      description: "News analytics & API access for organizations.",
-      icon: Building,
+      price: "Custom",
+      period: "",
+      desc: "For newsrooms, analysts, and organisations",
       features: [
-        "Everything in Pro",
-        "Developer API Keys access",
-        "100k requests / month rate limit",
-        "Custom source ingestion requests",
-        "Dedicated account support",
+        { text: "Everything in Pro", included: true },
+        { text: "REST API access", included: true },
+        { text: "Bulk story exports", included: true },
+        { text: "Advanced analytics", included: true },
+        { text: "Dedicated support", included: true },
+        { text: "SLA guarantees", included: true },
+        { text: "Custom integrations", included: true },
       ],
       planKey: "enterprise",
+      cta: "Contact sales",
+      isOutline: true,
     },
   ];
 
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-8 pb-24">
-        {/* Title */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
-            Upgrade Your News Intelligence
+      <div style={{ paddingBottom: 60 }}>
+        {/* Premium Hero */}
+        <div className="niq-premium-hero">
+          <div className="niq-premium-eyebrow">NewsIQ Pro</div>
+          <h1 className="niq-premium-title">
+            Understand more.
+            <br />
+            Read less.
           </h1>
-          <p className="text-muted-foreground text-sm max-w-xl mx-auto">
-            Choose the plan that fits your reading depth. Get neutral, AI-synthesized updates on global events.
+          <p className="niq-premium-sub">
+            Unlock the full intelligence layer — source comparison, personalised feed, and AI-powered story chat.
           </p>
         </div>
 
-        {/* Pricing Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+        {/* Plans Grid */}
+        <div className="niq-plans-grid">
           {plans.map((plan) => {
-            const Icon = plan.icon;
-            const isCurrent =
-              (plan.planKey === "free" && user?.subscription_plan === "free") ||
-              (plan.planKey === "pro" && user?.subscription_plan === "pro") ||
-              (plan.planKey === "enterprise" && user?.subscription_plan === "enterprise");
+            const isCurrent = user?.subscription_plan === plan.planKey;
+            const isLoading = loadingPlan === plan.planKey;
 
             return (
-              <Card
+              <div
                 key={plan.name}
-                className={`relative border-border/50 rounded-2xl flex flex-col justify-between overflow-hidden ${
-                  plan.popular ? "ring-2 ring-primary bg-primary/5 dark:bg-primary/5" : ""
-                }`}
+                className={`niq-plan-card ${plan.popular ? "featured" : ""}`}
               >
-                {plan.popular && (
-                  <div className="absolute top-3 right-3">
-                    <Badge variant="default" className="text-[10px] rounded-full uppercase tracking-wider px-2 py-0.5">
-                      Most Popular
-                    </Badge>
-                  </div>
-                )}
+                {plan.popular && <div className="niq-popular-badge">Most popular</div>}
                 
-                <div>
-                  <CardHeader className="p-6">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        plan.popular ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
-                      }`}>
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <CardTitle className="text-base font-bold">{plan.name}</CardTitle>
-                    </div>
-                    
-                    <div className="flex items-baseline gap-0.5 mt-4">
-                      <span className="text-3xl font-bold tracking-tight text-foreground">{plan.price}</span>
-                      {plan.period && (
-                        <span className="text-xs text-muted-foreground font-medium">{plan.period}</span>
-                      )}
-                    </div>
-                    <CardDescription className="mt-2 text-xs leading-relaxed">
-                      {plan.description}
-                    </CardDescription>
-                  </CardHeader>
-                  
-                  <CardContent className="px-6 pb-6 pt-0">
-                    <ul className="space-y-2.5 text-xs text-muted-foreground">
-                      {plan.features.map((feat) => (
-                        <li key={feat} className="flex items-start gap-2 leading-relaxed">
-                          <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>{feat}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
+                <div className="niq-plan-name">{plan.name}</div>
+                <div className="niq-plan-price">
+                  {plan.price}
+                  {plan.period && <span style={{ fontSize: 14, fontWeight: 400, color: "var(--ink-3)" }}>{plan.period}</span>}
                 </div>
+                <div className="niq-plan-desc">{plan.desc}</div>
+                
+                <ul className="niq-plan-features">
+                  {plan.features.map((feat, i) => (
+                    <li key={i} className="niq-plan-feature">
+                      {feat.included ? (
+                        <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" style={{ marginTop: 2 }} />
+                      ) : (
+                        <Minus className="w-3.5 h-3.5 text-gray-300 shrink-0" style={{ marginTop: 2 }} />
+                      )}
+                      <span style={{ opacity: feat.included ? 1 : 0.5 }}>{feat.text}</span>
+                    </li>
+                  ))}
+                </ul>
 
-                <CardFooter className="p-6 pt-0">
-                  <Button
-                    onClick={() => handleSubscribe(plan.planKey as any)}
-                    variant={plan.popular ? "default" : "outline"}
-                    className="w-full rounded-xl"
-                  >
-                    {isCurrent ? "Current Plan" : `Select ${plan.name}`}
-                  </Button>
-                </CardFooter>
-              </Card>
+                <button
+                  type="button"
+                  className={`niq-plan-cta ${
+                    plan.popular ? "niq-plan-cta-primary" : "niq-plan-cta-outline"
+                  }`}
+                  disabled={isLoading}
+                  onClick={() => {
+                    if (plan.planKey === "enterprise") {
+                      toast.success("Sales team notified! We will contact you soon.");
+                    } else {
+                      handleSubscribe(plan.planKey as any);
+                    }
+                  }}
+                >
+                  {isLoading ? "Processing..." : isCurrent ? "Current Plan" : plan.cta}
+                </button>
+              </div>
             );
           })}
         </div>

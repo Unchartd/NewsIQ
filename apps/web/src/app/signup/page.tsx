@@ -52,6 +52,7 @@ export default function SignupPage() {
       setUser(data.user);
       toast.success("Account created!");
       router.push("/onboarding");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const message =
         err.response?.data?.detail || "Unable to create account.";

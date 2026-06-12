@@ -3,38 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Landmark,
-  Cpu,
-  Briefcase,
-  Trophy,
-  HeartPulse,
-  FlaskConical,
-  Clapperboard,
-  CloudSun,
-  Globe,
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  Zap,
-} from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Check, ArrowLeft, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 
 const CATEGORIES = [
-  { slug: "politics", name: "Politics", icon: Landmark },
-  { slug: "technology", name: "Technology", icon: Cpu },
-  { slug: "business", name: "Business", icon: Briefcase },
-  { slug: "sports", name: "Sports", icon: Trophy },
-  { slug: "health", name: "Health", icon: HeartPulse },
-  { slug: "science", name: "Science", icon: FlaskConical },
-  { slug: "entertainment", name: "Entertainment", icon: Clapperboard },
-  { slug: "weather", name: "Weather", icon: CloudSun },
-  { slug: "world", name: "World", icon: Globe },
+  { slug: "politics", name: "Politics", icon: "🏛️" },
+  { slug: "technology", name: "Technology", icon: "💻" },
+  { slug: "business", name: "Business", icon: "📈" },
+  { slug: "sports", name: "Sports", icon: "⚽" },
+  { slug: "health", name: "Health", icon: "❤️" },
+  { slug: "science", name: "Science", icon: "🔬" },
+  { slug: "world", name: "World", icon: "🌍" },
+  { slug: "weather", name: "Weather", icon: "🌦️" },
 ];
 
 const COUNTRIES = [
@@ -68,9 +49,9 @@ const SUMMARY_OPTIONS = [
 ];
 
 const slideVariants = {
-  enter: (dir: number) => ({ x: dir > 0 ? 300 : -300, opacity: 0 }),
+  enter: (dir: number) => ({ x: dir > 0 ? 150 : -150, opacity: 0 }),
   center: { x: 0, opacity: 1 },
-  exit: (dir: number) => ({ x: dir > 0 ? -300 : 300, opacity: 0 }),
+  exit: (dir: number) => ({ x: dir > 0 ? -150 : 150, opacity: 0 }),
 };
 
 export default function OnboardingPage() {
@@ -99,7 +80,7 @@ export default function OnboardingPage() {
 
   const nextStep = () => {
     if (step === 0 && selectedCategories.length === 0) {
-      toast.error("Please select at least one category.");
+      toast.error("Please select at least one topic.");
       return;
     }
     setDirection(1);
@@ -120,7 +101,7 @@ export default function OnboardingPage() {
         cities: selectedCities,
         preferred_summary_type: summaryType,
       });
-      toast.success("You're all set!");
+      toast.success("Preferences saved successfully!");
       router.push("/home");
     } catch {
       toast.error("Unable to save preferences.");
@@ -129,243 +110,356 @@ export default function OnboardingPage() {
     }
   };
 
+  const currentProgress = ((step + 1) / totalSteps) * 100;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <Zap className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold tracking-tight">NewsIQ</span>
+    <div style={{ background: "var(--surface)", minHeight: "100vh" }}>
+      {/* Mini Onboarding Navbar */}
+      <nav
+        style={{
+          height: "var(--navbar-h)",
+          background: "var(--card)",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 24px",
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <span
+            style={{
+              fontFamily: "var(--font-inter)",
+              fontWeight: 700,
+              fontSize: 16,
+              letterSpacing: "-0.02em",
+              color: "var(--ink)",
+            }}
+          >
+            News
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-newsreader)",
+              fontStyle: "italic",
+              fontWeight: 700,
+              fontSize: 18,
+              color: "var(--primary)",
+              marginLeft: 1,
+            }}
+          >
+            IQ
+          </span>
+        </div>
+      </nav>
+
+      {/* Dynamic progress bar below navbar */}
+      <div
+        style={{
+          height: "var(--signal-h)",
+          background: "var(--border)",
+          width: "100%",
+          position: "sticky",
+          top: "var(--navbar-h)",
+          zIndex: 100,
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            background: "var(--primary)",
+            width: `${currentProgress}%`,
+            transition: "width 0.3s ease-in-out",
+          }}
+        />
+      </div>
+
+      <div className="niq-onboard-wrap">
+        <div className="niq-onboard-card">
+          {/* Custom segmented step indicators */}
+          <div className="niq-onboard-step-bar">
+            {Array.from({ length: totalSteps }).map((_, i) => {
+              let segClass = "";
+              if (i < step) segClass = "done";
+              else if (i === step) segClass = "active";
+              return <div key={i} className={`niq-step-seg ${segClass}`} />;
+            })}
           </div>
-          <h1 className="text-2xl font-bold">Personalize your feed</h1>
-          <p className="text-muted-foreground mt-1">
-            Step {step + 1} of {totalSteps}
-          </p>
-        </div>
 
-        {/* Progress bar */}
-        <div className="flex gap-2 mb-8">
-          {Array.from({ length: totalSteps }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-                i <= step ? "bg-primary" : "bg-muted"
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Steps */}
-        <Card className="border-border/50 shadow-lg overflow-hidden">
-          <CardContent className="p-6 min-h-[320px]">
-            <AnimatePresence mode="wait" custom={direction}>
-              <motion.div
-                key={step}
-                custom={direction}
-                variants={slideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.25, ease: "easeInOut" }}
-              >
-                {/* Step 1: Categories */}
-                {step === 0 && (
-                  <div>
-                    <h2 className="text-lg font-semibold mb-4">
-                      What topics interest you?
-                    </h2>
-                    <div className="grid grid-cols-3 gap-3">
-                      {CATEGORIES.map((cat) => {
-                        const selected = selectedCategories.includes(cat.slug);
-                        const Icon = cat.icon;
-                        return (
-                          <button
-                            key={cat.slug}
-                            onClick={() =>
-                              toggleItem(
-                                cat.slug,
-                                selectedCategories,
-                                setSelectedCategories
-                              )
-                            }
-                            className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02] ${
-                              selected
-                                ? "border-primary bg-primary/5 text-primary"
-                                : "border-border hover:border-primary/50"
-                            }`}
-                          >
-                            <Icon className="w-6 h-6" />
-                            <span className="text-sm font-medium">
-                              {cat.name}
-                            </span>
-                            {selected && (
-                              <Check className="w-4 h-4 text-primary" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 2: Countries */}
-                {step === 1 && (
-                  <div>
-                    <h2 className="text-lg font-semibold mb-1">
-                      Which countries do you follow?
-                    </h2>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Optional — skip to get global news.
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {COUNTRIES.map((country) => {
-                        const selected = selectedCountries.includes(
-                          country.code
-                        );
-                        return (
-                          <button
-                            key={country.code}
-                            onClick={() =>
-                              toggleItem(
-                                country.code,
-                                selectedCountries,
-                                setSelectedCountries
-                              )
-                            }
-                            className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all duration-200 ${
-                              selected
-                                ? "border-primary bg-primary/5"
-                                : "border-border hover:border-primary/50"
-                            }`}
-                          >
-                            <span className="text-2xl">{country.flag}</span>
-                            <span className="text-sm font-medium">
-                              {country.name}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 3: Cities */}
-                {step === 2 && (
-                  <div>
-                    <h2 className="text-lg font-semibold mb-1">
-                      Any specific cities?
-                    </h2>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Optional — for local news.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {CITIES.map((city) => {
-                        const selected = selectedCities.includes(city);
-                        return (
-                          <Badge
-                            key={city}
-                            variant={selected ? "default" : "outline"}
-                            className={`cursor-pointer text-sm px-4 py-2 transition-all duration-200 hover:scale-105 ${
-                              selected ? "" : "hover:bg-primary/10"
-                            }`}
-                            onClick={() =>
-                              toggleItem(
-                                city,
-                                selectedCities,
-                                setSelectedCities
-                              )
-                            }
-                          >
-                            {city}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 4: Summary preference */}
-                {step === 3 && (
-                  <div>
-                    <h2 className="text-lg font-semibold mb-4">
-                      How detailed should summaries be?
-                    </h2>
-                    <div className="space-y-3">
-                      {SUMMARY_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setSummaryType(opt.value)}
-                          className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all duration-200 ${
-                            summaryType === opt.value
-                              ? "border-primary bg-primary/5"
-                              : "border-border hover:border-primary/50"
-                          }`}
-                        >
-                          <div className="text-left">
-                            <p className="font-medium">{opt.label}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {opt.desc}
-                            </p>
-                          </div>
-                          {summaryType === opt.value && (
-                            <Check className="w-5 h-5 text-primary flex-shrink-0" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            </AnimatePresence>
-          </CardContent>
-        </Card>
-
-        {/* Navigation */}
-        <div className="flex justify-between mt-6">
-          <Button
-            variant="ghost"
-            onClick={prevStep}
-            disabled={step === 0}
-            className="gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Button>
-
-          {step < totalSteps - 1 ? (
-            <Button onClick={nextStep} className="gap-2">
-              Continue
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          ) : (
-            <Button
-              onClick={handleFinish}
-              disabled={isLoading}
-              className="gap-2"
+          <AnimatePresence mode="wait" custom={direction}>
+            <motion.div
+              key={step}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: "easeInOut" }}
             >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  Finish
-                  <Check className="w-4 h-4" />
-                </>
+              {/* Step 1: Categories */}
+              {step === 0 && (
+                <div>
+                  <h1 className="niq-onboard-title">What do you follow?</h1>
+                  <p className="niq-onboard-sub">
+                    Pick at least one topic. Your feed is built around these.
+                  </p>
+                  <div className="niq-cat-grid">
+                    {CATEGORIES.map((cat) => {
+                      const isSelected = selectedCategories.includes(cat.slug);
+                      return (
+                        <div
+                          key={cat.slug}
+                          className={`niq-cat-option ${isSelected ? "selected" : ""}`}
+                          onClick={() =>
+                            toggleItem(
+                              cat.slug,
+                              selectedCategories,
+                              setSelectedCategories
+                            )
+                          }
+                        >
+                          {isSelected && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: 6,
+                                right: 6,
+                                width: 16,
+                                height: 16,
+                                backgroundColor: "var(--primary)",
+                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
+                          )}
+                          <div className="niq-cat-icon">{cat.icon}</div>
+                          <div className="niq-cat-name">{cat.name}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
-            </Button>
-          )}
-        </div>
 
-        {/* Skip */}
-        <div className="text-center mt-4">
-          <button
-            onClick={() => router.push("/home")}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              {/* Step 2: Countries */}
+              {step === 1 && (
+                <div>
+                  <h1 className="niq-onboard-title">Which countries do you follow?</h1>
+                  <p className="niq-onboard-sub">
+                    Optional — skip or leave blank for a global layout feed.
+                  </p>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 8,
+                      marginBottom: 28,
+                    }}
+                  >
+                    {COUNTRIES.map((country) => {
+                      const isSelected = selectedCountries.includes(country.code);
+                      return (
+                        <div
+                          key={country.code}
+                          className={`niq-cat-option ${isSelected ? "selected" : ""}`}
+                          style={{
+                            flexDirection: "row",
+                            padding: "10px 14px",
+                            justifyContent: "flex-start",
+                            gap: 12,
+                          }}
+                          onClick={() =>
+                            toggleItem(
+                              country.code,
+                              selectedCountries,
+                              setSelectedCountries
+                            )
+                          }
+                        >
+                          {isSelected && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: 6,
+                                right: 6,
+                                width: 16,
+                                height: 16,
+                                backgroundColor: "var(--primary)",
+                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
+                          )}
+                          <div style={{ fontSize: 20 }}>{country.flag}</div>
+                          <div className="niq-cat-name">{country.name}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Cities */}
+              {step === 2 && (
+                <div>
+                  <h1 className="niq-onboard-title">Any specific cities?</h1>
+                  <p className="niq-onboard-sub">
+                    Optional — select cities to inject local updates.
+                  </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      marginBottom: 28,
+                    }}
+                  >
+                    {CITIES.map((city) => {
+                      const isSelected = selectedCities.includes(city);
+                      return (
+                        <button
+                          key={city}
+                          type="button"
+                          className={`niq-filter-chip ${isSelected ? "active" : ""}`}
+                          style={{ padding: "6px 14px", fontSize: 13 }}
+                          onClick={() =>
+                            toggleItem(city, selectedCities, setSelectedCities)
+                          }
+                        >
+                          {city}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Summary Type */}
+              {step === 3 && (
+                <div>
+                  <h1 className="niq-onboard-title">How detailed should summaries be?</h1>
+                  <p className="niq-onboard-sub">
+                    Select your default depth. You can toggle this on any story.
+                  </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      marginBottom: 28,
+                    }}
+                  >
+                    {SUMMARY_OPTIONS.map((opt) => {
+                      const isSelected = summaryType === opt.value;
+                      return (
+                        <div
+                          key={opt.value}
+                          className={`niq-cat-option ${isSelected ? "selected" : ""}`}
+                          style={{
+                            alignItems: "flex-start",
+                            textAlign: "left",
+                            padding: "16px",
+                          }}
+                          onClick={() => setSummaryType(opt.value)}
+                        >
+                          {isSelected && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: 16,
+                                right: 16,
+                                width: 16,
+                                height: 16,
+                                backgroundColor: "var(--primary)",
+                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
+                          )}
+                          <div className="niq-cat-name" style={{ fontSize: 15 }}>
+                            {opt.label}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>
+                            {opt.desc}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Navigation Buttons */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 24,
+            }}
           >
-            Skip for now
-          </button>
+            {step > 0 ? (
+              <button
+                type="button"
+                className="niq-btn-outline"
+                style={{ padding: "6px 12px", fontSize: 13 }}
+                onClick={prevStep}
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="niq-btn-outline"
+                style={{
+                  border: "none",
+                  padding: "6px 0",
+                  color: "var(--ink-3)",
+                }}
+                onClick={() => router.push("/home")}
+              >
+                Skip Onboarding
+              </button>
+            )}
+
+            {step < totalSteps - 1 ? (
+              <button
+                type="button"
+                className="niq-btn-primary"
+                onClick={nextStep}
+              >
+                Continue
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="niq-btn-primary"
+                disabled={isLoading}
+                onClick={handleFinish}
+              >
+                {isLoading ? "Saving..." : "Finish Setup"}
+                <Check className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

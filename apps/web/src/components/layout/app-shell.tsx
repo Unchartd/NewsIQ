@@ -1,30 +1,39 @@
 "use client";
 
 import { Navbar } from "./navbar";
-import { Sidebar } from "./sidebar";
-import { RightPanel } from "./right-panel";
-import { MobileNav } from "./mobile-nav";
+import { SignalBar } from "./signal-bar";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 interface AppShellProps {
   children: React.ReactNode;
-  showRightPanel?: boolean;
+  signalVariant?: "pulse" | "progress";
+  signalProgress?: number;
+  sidebar?: React.ReactNode;
 }
 
-export function AppShell({ children, showRightPanel = true }: AppShellProps) {
+export function AppShell({ children, signalVariant = "pulse", signalProgress, sidebar }: AppShellProps) {
   return (
-    <div className="min-h-screen flex flex-col pb-16 lg:pb-0 bg-background text-foreground">
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
       <Navbar />
-      <div className="flex flex-1 relative">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto min-w-0">
+      <SignalBar variant={signalVariant} progress={signalProgress} />
+      {sidebar ? (
+        <div className="niq-page-layout">
+          <div className="niq-main-col">
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
+          </div>
+          <div className="niq-side-col">
+            {sidebar}
+          </div>
+        </div>
+      ) : (
+        <main className="flex-1">
           <ErrorBoundary>
             {children}
           </ErrorBoundary>
         </main>
-        {showRightPanel && <RightPanel />}
-      </div>
-      <MobileNav />
+      )}
     </div>
   );
 }

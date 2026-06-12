@@ -2,32 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTheme } from "next-themes";
 import {
   User,
-  Mail,
-  Shield,
   Crown,
-  Settings,
+  Bell,
+  Grid,
+  Map,
+  BookOpen,
+  Sun,
+  Moon,
   Bookmark,
+  ChevronRight,
   LogOut,
-  Zap,
 } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
+import type { Story, UserPreferences } from "@/types";
+import { AppShell } from "@/components/layout/app-shell";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
   const { user, isAuthenticated, logout: storeLogout } = useAuthStore();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -35,27 +36,42 @@ export default function ProfilePage() {
     }
   }, [isAuthenticated, router]);
 
+  // Query User Preferences
+  const { data: preferences } = useQuery<UserPreferences>({
+    queryKey: ["user-preferences"],
+    queryFn: async () => {
+      const response = await apiClient.get("/users/preferences");
+      return response.data;
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Query bookmarks to display current count
+  const { data: bookmarks } = useQuery<Story[]>({
+    queryKey: ["bookmarked-stories"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories/bookmarks");
+      return response.data;
+    },
+    enabled: isAuthenticated,
+  });
+
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
       await apiClient.post("/auth/logout");
     } catch {
-      // Still logout on client even if API fails
+      // Still logout locally if API fails
     }
     storeLogout();
-    toast.success("Logged out successfully.");
+    toast.success("Logged out successfully");
     router.push("/");
   };
 
-  const handleLogoutAll = async () => {
-    try {
-      await apiClient.post("/auth/logout-all");
-      storeLogout();
-      toast.success("Logged out from all devices.");
-      router.push("/");
-    } catch {
-      toast.error("Unable to logout from all devices.");
-    }
+  const toggleAppTheme = () => {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    toast.success(`Theme switched to ${nextTheme === "dark" ? "Dark" : "Light"}`);
   };
 
   if (!user) return null;
@@ -69,148 +85,173 @@ export default function ProfilePage() {
         .slice(0, 2)
     : user.email[0].toUpperCase();
 
+  const isPro = user.subscription_plan === "pro";
+  const bookmarkCount = bookmarks?.length || 0;
+
+  // Format preference labels
+  const categoriesCount = preferences?.categories?.length || 0;
+  const categoriesLabel = categoriesCount > 0 ? `${categoriesCount} selected` : "None";
+  
+  const locationsList = [];
+  if (preferences?.countries?.length) locationsList.push(...preferences.countries);
+  if (preferences?.cities?.length) locationsList.push(...preferences.cities);
+  const locationsLabel = locationsList.length > 0 ? locationsList.join(", ") : "Global";
+
+  const summaryLabel = preferences?.preferred_summary_type
+    ? preferences.preferred_summary_type.charAt(0).toUpperCase() + preferences.preferred_summary_type.slice(1)
+    : "Short";
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Simple top bar */}
-      <div className="border-b border-border">
-        <div className="max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
-          <button
-            onClick={() => router.push("/home")}
-            className="flex items-center gap-2"
-          >
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Zap className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <span className="font-bold">NewsIQ</span>
-          </button>
-          <Button variant="ghost" size="sm" onClick={() => router.push("/home")}>
-            Back to Feed
-          </Button>
+    <AppShell>
+      <div style={{ maxWidth: 680, margin: "0 auto", paddingBottom: 60 }}>
+        {/* Profile Header */}
+        <div className="niq-profile-header">
+          <div className="niq-profile-avatar-lg">{initials}</div>
+          <div>
+            <div className="niq-profile-name">{user.name || "User"}</div>
+            <div className="niq-profile-email">{user.email}</div>
+            {isPro ? (
+              <div className="niq-pro-badge">
+                <Crown className="w-3 h-3 mr-1" />
+                Pro member
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--ink-3)",
+                  padding: "2px 8px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 99,
+                  marginTop: 6,
+                }}
+              >
+                Free account
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ padding: "0 24px" }}>
+          {/* Account Section */}
+          <div style={{ marginTop: 24, marginBottom: 8 }} className="section-label">
+            Account
+          </div>
+          <ul className="niq-settings-list">
+            <li className="niq-settings-item" onClick={() => toast.info("Profile editing coming soon!")}>
+              <div className="niq-settings-icon">
+                <User className="w-4 h-4" />
+              </div>
+              <div className="niq-settings-label">Edit profile</div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </li>
+            
+            <li className="niq-settings-item" onClick={() => router.push("/premium")}>
+              <div className="niq-settings-icon">
+                <Crown className="w-4 h-4" />
+              </div>
+              <div className="niq-settings-label">Subscription</div>
+              <div className="niq-settings-value">
+                {isPro ? "Pro • Renews Jul 2026" : "Free • Upgrade available"}
+              </div>
+            </li>
+
+            <li className="niq-settings-item" onClick={() => router.push("/settings")}>
+              <div className="niq-settings-icon">
+                <Bell className="w-4 h-4" />
+              </div>
+              <div className="niq-settings-label">Notifications</div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </li>
+          </ul>
+
+          {/* Preferences Section */}
+          <div style={{ marginTop: 20, marginBottom: 8 }} className="section-label">
+            Preferences
+          </div>
+          <ul className="niq-settings-list">
+            <li className="niq-settings-item" onClick={() => router.push("/onboarding")}>
+              <div className="niq-settings-icon">
+                <Grid className="w-4 h-4" />
+              </div>
+              <div className="niq-settings-label">Topics & categories</div>
+              <div className="niq-settings-value">{categoriesLabel}</div>
+            </li>
+
+            <li className="niq-settings-item" onClick={() => router.push("/onboarding")}>
+              <div className="niq-settings-icon">
+                <Map className="w-4 h-4" />
+              </div>
+              <div className="niq-settings-label">Locations</div>
+              <div className="niq-settings-value" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {locationsLabel}
+              </div>
+            </li>
+
+            <li className="niq-settings-item" onClick={() => router.push("/onboarding")}>
+              <div className="niq-settings-icon">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div className="niq-settings-label">Default summary</div>
+              <div className="niq-settings-value">{summaryLabel}</div>
+            </li>
+
+            <li className="niq-settings-item" onClick={toggleAppTheme}>
+              <div className="niq-settings-icon">
+                {theme === "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </div>
+              <div className="niq-settings-label">Theme</div>
+              <div className="niq-settings-value" style={{ textTransform: "capitalize" }}>
+                {theme || "light"}
+              </div>
+            </li>
+          </ul>
+
+          {/* Reading Section */}
+          <div style={{ marginTop: 20, marginBottom: 8 }} className="section-label">
+            Reading
+          </div>
+          <ul className="niq-settings-list">
+            <li className="niq-settings-item" onClick={() => router.push("/bookmarks")}>
+              <div className="niq-settings-icon">
+                <Bookmark className="w-4 h-4" />
+              </div>
+              <div className="niq-settings-label">Saved stories</div>
+              <div className="niq-settings-value">
+                {bookmarkCount} {bookmarkCount === 1 ? "story" : "stories"}
+              </div>
+            </li>
+          </ul>
+
+          {/* Sign Out Button */}
+          <div style={{ marginTop: 28, paddingBottom: 40 }}>
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              style={{
+                color: "var(--error)",
+                fontSize: "14px",
+                fontWeight: 500,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "10px 0",
+                width: "100%",
+                textAlign: "left",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <LogOut className="w-4 h-4" />
+              {isLoggingOut ? "Signing out..." : "Sign out"}
+            </button>
+          </div>
         </div>
       </div>
-
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="space-y-6"
-        >
-          {/* Profile Header */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-4">
-                <Avatar className="w-16 h-16">
-                  <AvatarImage src={user.image_url || undefined} />
-                  <AvatarFallback className="text-lg font-semibold bg-primary/10 text-primary">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <h1 className="text-xl font-bold truncate">
-                    {user.name || "User"}
-                  </h1>
-                  <p className="text-muted-foreground text-sm truncate">
-                    {user.email}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Badge
-                      variant={
-                        user.subscription_plan === "pro"
-                          ? "default"
-                          : "secondary"
-                      }
-                      className="capitalize"
-                    >
-                      {user.subscription_plan === "pro" && (
-                        <Crown className="w-3 h-3 mr-1" />
-                      )}
-                      {user.subscription_plan}
-                    </Badge>
-                    <Badge variant="outline" className="capitalize">
-                      <Shield className="w-3 h-3 mr-1" />
-                      {user.role}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              {[
-                {
-                  icon: Settings,
-                  label: "Preferences",
-                  href: "/preferences",
-                  desc: "Categories, locations, summary style",
-                },
-                {
-                  icon: Bookmark,
-                  label: "Bookmarks",
-                  href: "/bookmarks",
-                  desc: "Your saved stories",
-                },
-                {
-                  icon: Shield,
-                  label: "Settings",
-                  href: "/settings",
-                  desc: "Theme, notifications, security",
-                },
-                {
-                  icon: Crown,
-                  label: "Upgrade to Pro",
-                  href: "/premium",
-                  desc: "Unlimited summaries, AI chat",
-                },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => router.push(item.href)}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted transition-colors text-left"
-                >
-                  <item.icon className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{item.label}</p>
-                    <p className="text-xs text-muted-foreground">{item.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Session Management */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Session</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-              >
-                <LogOut className="w-4 h-4" />
-                {isLoggingOut ? "Logging out..." : "Sign out"}
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start gap-2 text-destructive hover:text-destructive"
-                onClick={handleLogoutAll}
-              >
-                <LogOut className="w-4 h-4" />
-                Sign out from all devices
-              </Button>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-    </div>
+    </AppShell>
   );
 }
