@@ -26,6 +26,8 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+from app.core.rate_limiter import RateLimitMiddleware
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +36,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting
+app.add_middleware(RateLimitMiddleware, limit=100, window=60)
 
 # API routes
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
