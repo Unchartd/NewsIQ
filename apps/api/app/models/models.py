@@ -363,7 +363,7 @@ class UserEvent(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
     story_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"), index=True)
     event_type: Mapped[str | None] = mapped_column(String(50))  # view_story, bookmark_story, share_story, search
-    metadata: Mapped[dict | None] = mapped_column(JSONB)
+    event_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="user_events")
