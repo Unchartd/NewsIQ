@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, oauth, users, sources
+from app.api.v1 import auth, oauth, users, sources, stories
 
 api_router = APIRouter()
 
@@ -17,6 +17,9 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 
 # Source endpoints
 api_router.include_router(sources.router, prefix="/sources", tags=["sources"])
+
+# Story endpoints
+api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
 
 
 @api_router.get("/ping", tags=["system"])
