@@ -2,18 +2,21 @@
 
 from fastapi import APIRouter
 
+from app.api.v1 import auth, oauth, users
+
 api_router = APIRouter()
 
+# Auth endpoints
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
-# Placeholder health route for v1
+# Google OAuth endpoints
+api_router.include_router(oauth.router, prefix="/auth", tags=["oauth"])
+
+# User endpoints
+api_router.include_router(users.router, prefix="/users", tags=["users"])
+
+
 @api_router.get("/ping", tags=["system"])
 async def ping():
     """Simple ping endpoint to verify API v1 is reachable."""
     return {"message": "pong", "api_version": "v1"}
-
-
-# Sub-routers will be added in subsequent phases:
-# from app.api.v1 import auth, stories, search, users, trending, categories, bookmarks, admin
-# api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-# api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
-# etc.
