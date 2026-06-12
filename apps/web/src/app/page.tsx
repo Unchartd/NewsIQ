@@ -78,15 +78,15 @@ export default function LandingPage() {
 
           <div className="flex items-center gap-4">
             {isAuthenticated ? (
-              <Button render={<a href="/home" />} variant="default" className="rounded-xl px-4 text-xs font-semibold">
+              <Button render={<a href="/home" />} nativeButton={false} variant="default" className="rounded-xl px-4 text-xs font-semibold">
                 Go to Feed
               </Button>
             ) : (
               <>
-                <Button render={<a href="/login" />} variant="ghost" className="rounded-xl px-4 text-xs font-semibold">
+                <Button render={<a href="/login" />} nativeButton={false} variant="ghost" className="rounded-xl px-4 text-xs font-semibold">
                   Sign In
                 </Button>
-                <Button render={<a href="/signup" />} variant="default" className="rounded-xl px-4 text-xs font-semibold">
+                <Button render={<a href="/signup" />} nativeButton={false} variant="default" className="rounded-xl px-4 text-xs font-semibold">
                   Get Started
                 </Button>
               </>
@@ -141,6 +141,7 @@ export default function LandingPage() {
           >
             <Button
               render={<a href={isAuthenticated ? "/home" : "/signup"} />}
+              nativeButton={false}
               size="lg"
               className="rounded-xl w-full sm:w-auto px-6 font-semibold flex items-center gap-2 group shadow-lg shadow-primary/20"
             >
@@ -149,6 +150,7 @@ export default function LandingPage() {
             </Button>
             <Button
               render={<a href="#features" />}
+              nativeButton={false}
               size="lg"
               variant="outline"
               className="rounded-xl w-full sm:w-auto px-6 font-semibold"
@@ -219,7 +221,7 @@ export default function LandingPage() {
                 <p className="text-xs text-muted-foreground">Trace news back to exact origin sources.</p>
               </div>
             </div>
-            <Button render={<a href={isAuthenticated ? "/home" : "/signup"} />} className="rounded-xl px-5 mt-4">
+            <Button render={<a href={isAuthenticated ? "/home" : "/signup"} />} nativeButton={false} className="rounded-xl px-5 mt-4">
               Explore Dashboard
             </Button>
           </div>
@@ -331,6 +333,7 @@ export default function LandingPage() {
           </p>
           <Button
             render={<a href={isAuthenticated ? "/home" : "/signup"} />}
+            nativeButton={false}
             size="lg"
             className="rounded-xl px-8 font-semibold shadow-lg shadow-primary/20"
           >
