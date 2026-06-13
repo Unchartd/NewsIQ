@@ -24,9 +24,10 @@ export default function ForgotPasswordContent() {
     try {
       await apiClient.post("/auth/forgot-password", { email });
       setIsSuccess(true);
-    } catch (err: any) {
+    } catch (err) {
+      const error = err as { response?: { data?: { detail?: string } } };
       setError(
-        err.response?.data?.detail || "Failed to send reset link. Please try again later."
+        error.response?.data?.detail || "Failed to send reset link. Please try again later."
       );
     } finally {
       setIsLoading(false);
@@ -81,7 +82,7 @@ export default function ForgotPasswordContent() {
                 Check your email
               </h2>
               <p style={{ color: "var(--ink-3)", fontSize: 14, lineHeight: 1.5, marginBottom: 24 }}>
-                We've sent a password reset link to <strong>{email}</strong>.
+                We&apos;ve sent a password reset link to <strong>{email}</strong>.
               </p>
               <Link href="/login" style={{ width: "100%", display: "block" }}>
                 <Button variant="default" style={{ width: "100%" }}>Return to log in</Button>
@@ -90,7 +91,7 @@ export default function ForgotPasswordContent() {
           ) : (
             <>
               <p style={{ color: "var(--ink-3)", fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>
-                Enter your email address and we'll send you a link to reset your password.
+                Enter your email address and we&apos;ll send you a link to reset your password.
               </p>
 
               {error && (

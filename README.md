@@ -12,6 +12,8 @@ NewsIQ is a dense, multi-source AI comprehension engine built for professionals 
 - **Difference Engine:** Compare how different sources are reporting the same event. Automatically detect missing facts, contradictions, and focus areas.
 - **Fact Extraction:** Instantly view structured data like key locations, people, dates, and organizations involved in a story.
 - **Trend Engine:** Discover what the world is talking about. Stories are algorithmically ranked based on recency, publisher volume, and real-time user engagement.
+- **Personalized Feed:** Logged-in users receive a tailored news feed based on their reading history and explicitly chosen categories.
+- **Account Security:** Includes a complete user authentication flow featuring email verification and secure forgot-password flows.
 - **Premium Editorial UI:** A visually stunning, high-density reader interface styled like a modern broadsheet, ensuring zero visual noise.
 
 ---
@@ -30,9 +32,11 @@ NewsIQ is built as a robust monorepo, splitting concerns between a high-performa
 ### Backend (`apps/api`)
 - **Framework:** FastAPI (Python)
 - **Database:** PostgreSQL (Primary), Redis (Caching/Sessions), Qdrant (Vector Search)
-- **Message Broker:** Apache Kafka / Redis PubSub
-- **AI Ecosystem:** Agno (Agent framework), spaCy, LangChain, Sentence-Transformers
+- **Message Broker:** Celery / Redis
+- **AI Ecosystem:** Agno (Agent framework), Google Gemini, spaCy, LangChain, Sentence-Transformers, Tenacity (Resilience)
 - **Search Engine:** Meilisearch
+- **Observability:** Sentry SDK, Structured JSON Logging
+- **Security:** Strict Origin-validated CSRF Protection
 
 ---
 
@@ -51,31 +55,21 @@ cp .env.example .env
 ```
 *Ensure you fill in the required API keys (e.g., OpenAI/Gemini API keys) in the `.env` file.*
 
-### 2. Start Infrastructure
-Boot up the required local services (PostgreSQL, Redis, Qdrant, Meilisearch):
+### 2. Start the Platform
+NewsIQ is fully containerized. You can boot the entire stack (PostgreSQL, Redis, Qdrant, Meilisearch, FastAPI backend, Celery workers, and the Next.js frontend) with a single command:
 ```bash
-docker-compose up -d
+docker-compose up -d --build
 ```
 
-### 3. Start the Backend (API)
-Navigate to the API directory and boot up FastAPI:
-```bash
-cd apps/api
-pip install -e ".[dev]"
-alembic upgrade head
-python -m app.scripts.seed  # Seed the database with initial news data
-uvicorn app.main:app --reload --port 8000
-```
-*The API will be available at `http://localhost:8000`. You can view the swagger docs at `http://localhost:8000/docs`.*
+**Accessing the Platform:**
+- **Frontend (Web App):** `http://localhost:3000`
+- **Backend API Docs:** `http://localhost:8000/docs`
 
-### 4. Start the Frontend (Web)
-In a new terminal window, boot the Next.js app:
+*(Optional) To seed the database with initial news sources, run:*
 ```bash
-cd apps/web
-npm install
-npm run dev
+docker-compose exec api python -m app.scripts.seed
 ```
-*The web app will be available at `http://localhost:3000`.*
+
 
 ---
 

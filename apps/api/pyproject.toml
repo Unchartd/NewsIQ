@@ -2,7 +2,6 @@
 name = "newsiq-api"
 version = "0.1.0"
 description = "NewsIQ — AI News Intelligence Platform Backend"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # Web framework
@@ -78,3 +77,7 @@ ignore = ["E501", "N806"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+# Only include the 'app' package — avoids the flat-layout ambiguity with 'alembic/'
+include = ["app*"]

@@ -11,15 +11,15 @@ interface TrendingWidgetProps {
 
 export function TrendingWidget({ stories }: TrendingWidgetProps) {
   return (
-    <div className="niq-widget">
-      <div className="niq-section-label">Trending Now</div>
+    <div className="widget">
+      <div className="slbl">Trending Now</div>
       {stories.slice(0, 4).map((story, i) => (
         <Link key={story.id} href={`/story/${story.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-          <div className="niq-trending-item">
-            <span className="niq-ti-rank">{i + 1}</span>
-            <div className="niq-ti-body">
-              <div className="niq-ti-headline">{story.headline}</div>
-              <div className="niq-ti-meta">
+          <div className="titem">
+            <span className="ti-r">{i + 1}</span>
+            <div>
+              <div className="ti-h">{story.headline}</div>
+              <div className="ti-m">
                 {story.source_count} sources · {formatTimeAgo(story.updated_at)}
               </div>
             </div>
@@ -42,12 +42,12 @@ const SAMPLE_SOURCES = [
 
 export function TopSourcesWidget() {
   return (
-    <div className="niq-widget">
-      <div className="niq-section-label">Top Sources</div>
+    <div className="widget">
+      <div className="slbl">Top Sources</div>
       <div style={{ display: "flex", flexWrap: "wrap" }}>
         {SAMPLE_SOURCES.map((src) => (
-          <div key={src.name} className="niq-source-pill">
-            <div className="niq-source-dot-sm" style={{ background: src.color }} />
+          <div key={src.name} className="spill">
+            <div className="sdsm" style={{ background: src.color }} />
             {src.name}
           </div>
         ))}
@@ -59,12 +59,12 @@ export function TopSourcesWidget() {
 /* ─── Digest CTA Widget ──────────────────────── */
 export function DigestWidget() {
   return (
-    <div className="niq-widget">
-      <div className="niq-digest-widget">
-        <div className="niq-digest-title">Morning Digest</div>
-        <div className="niq-digest-sub">Top 10 stories. 3-minute read. Every day at 7 AM.</div>
+    <div className="widget">
+      <div className="dwidget">
+        <div className="dw-t">Morning Digest</div>
+        <div className="dw-s">Top 10 stories. 3-minute read. Every day at 7 AM.</div>
         <Link href="/digest">
-          <button className="niq-btn-primary">
+          <button className="btnp">
             <Bell size={14} />
             Subscribe free
           </button>
@@ -77,8 +77,8 @@ export function DigestWidget() {
 /* ─── Premium Upsell Widget ──────────────────── */
 export function PremiumUpsellWidget() {
   return (
-    <div className="niq-widget">
-      <div className="niq-panel-card" style={{ background: "var(--background)" }}>
+    <div className="widget">
+      <div className="pcrd" style={{ background: "var(--surface)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <Crown size={16} style={{ color: "var(--primary)" }} />
           <span style={{
@@ -89,12 +89,12 @@ export function PremiumUpsellWidget() {
           </span>
         </div>
         <div style={{
-          fontSize: 14, color: "var(--ink-2)", lineHeight: 1.6, marginBottom: 12,
+          fontSize: 14, color: "var(--ink2)", lineHeight: 1.6, marginBottom: 12,
         }}>
           Unlock source comparison, AI chat, and personalised feed. ₹399/month.
         </div>
         <Link href="/premium">
-          <button className="niq-btn-outline" style={{ width: "100%", justifyContent: "center" }}>
+          <button className="btno" style={{ width: "100%", justifyContent: "center" }}>
             See what&apos;s included
           </button>
         </Link>
@@ -110,7 +110,7 @@ interface SidebarWidgetsProps {
 
 export function SidebarWidgets({ trendingStories = [] }: SidebarWidgetsProps) {
   return (
-    <div style={{ position: "sticky", top: "calc(var(--navbar-h) + var(--signal-h) + 24px)" }}>
+    <div className="sticky-p">
       {trendingStories.length > 0 && <TrendingWidget stories={trendingStories} />}
       <TopSourcesWidget />
       <DigestWidget />

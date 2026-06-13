@@ -15,7 +15,6 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { CategoryBadge } from "@/components/ui/category-badge";
-import { SourceDots } from "@/components/ui/source-dots";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { StoryDetail } from "@/types";
@@ -25,10 +24,34 @@ interface Props {
   initialStory: StoryDetail | null;
 }
 
+const SOURCE_COLORS = [
+  "#1D4ED8", "#DC2626", "#16A34A", "#D97706", "#7C3AED",
+  "#0E7490", "#065F46", "#374151", "#6B21A8", "#0369A1",
+];
+
+function formatTimeAgo(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / (1000 * 60));
+    const diffHr = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHr / 24);
+
+    if (diffMin < 1) return "Just now";
+    if (diffMin < 60) return `${diffMin} min ago`;
+    if (diffHr < 24) return `${diffHr}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
 export function StoryDetailClient({ storyId, initialStory }: Props) {
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
-  const [summaryType, setSummaryType] = useState<"one_line" | "short" | "detailed">("short");
+  const [summaryType, setSummaryType] = useState<"one_line" | "short" | "detailed" >("short");
 
   const { data: story, isLoading, error } = useQuery<StoryDetail>({
     queryKey: ["story-detail", storyId],
@@ -56,7 +79,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
     apiClient
       .post("/users/events", null, { params: { event_type: "view_story", story_id: storyId } })
       .catch(() => { /* fire-and-forget */ });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story?.id]);
 
   const bookmarkMutation = useMutation({
@@ -102,10 +125,10 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
   if (error || !story) {
     return (
       <AppShell>
-        <div className="niq-empty-state">
-          <div className="niq-empty-title">Story Not Found</div>
-          <div className="niq-empty-desc">The story you are looking for does not exist or may have been removed.</div>
-          <Link href="/home"><button className="niq-btn-primary">Go Back Home</button></Link>
+        <div style={{ textAlign: "center", padding: "80px 24px" }}>
+          <h2 style={{ fontFamily: "var(--fd)", fontSize: 24, fontWeight: 600, marginBottom: 8 }}>Story Not Found</h2>
+          <p style={{ color: "var(--ink3)", marginBottom: 24 }}>The story you are looking for does not exist or may have been removed.</p>
+          <Link href="/home"><button className="btnp">Go Back Home</button></Link>
         </div>
       </AppShell>
     );
@@ -120,46 +143,122 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
 
   const locationLabel = story.location_city || story.location_state || story.location_country;
 
+  const sidebar = (
+    <div className="sticky-p">
+      <div className="pcrd">
+        <div className="slbl" style={{ marginBottom: 10 }}>Summary depth</div>
+        <div className="swit" style={{ width: "100%" }}>
+          {(["one_line", "short", "detailed"] as const).map((key) => (
+            <button
+              key={key}
+              className={`switbtn ${summaryType === key ? "on" : ""}`}
+              onClick={() => setSummaryType(key)}
+              style={{ flex: 1, textAlign: "center" }}
+            >
+              {key === "one_line" ? "1-line" : key === "short" ? "Short" : "Detailed"}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: "var(--ink3)", display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 11 }}>✦</span>Summarised from {story.source_count} sources
+        </div>
+      </div>
+
+      <div className="pcrd">
+        <div className="slbl" style={{ marginBottom: 10 }}>Coverage</div>
+        <div style={{ display: "flex", gap: 16, marginBottom: 14 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: "var(--fd)", fontSize: 28, fontWeight: 700, color: "var(--ink)", lineHeight: 1 }}>
+              {story.source_count}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink3)" }}>Sources</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: "var(--fd)", fontSize: 28, fontWeight: 700, color: "var(--amber)", lineHeight: 1 }}>
+              {story.differences?.filter((d) => d.contradictions).length ?? 0}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink3)" }}>Conflicts</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: "var(--fd)", fontSize: 28, fontWeight: 700, color: "var(--ink3)", lineHeight: 1 }}>
+              {story.differences?.filter((d) => d.missing_information).length ?? 0}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink3)" }}>Missing</div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {story.source_coverage?.slice(0, 4).map((cov, i) => (
+            <div key={cov.id || i} className="spill" style={{ fontSize: 11, padding: "4px 8px" }}>
+              <div className="sdsm" style={{ background: SOURCE_COLORS[i % SOURCE_COLORS.length] }} />
+              {cov.source?.name}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {story.related_stories && story.related_stories.length > 0 && (
+        <div className="pcrd">
+          <div className="slbl" style={{ marginBottom: 10 }}>Related</div>
+          {story.related_stories.slice(0, 3).map((relStory) => (
+            <Link key={relStory.id} href={`/story/${relStory.id}`} style={{ textDecoration: "none" }}>
+              <div className="titem" style={{ padding: "8px 0" }}>
+                <div>
+                  <div className="ti-h" style={{ fontSize: 13 }}>
+                    {relStory.headline}
+                  </div>
+                  <div className="ti-m">
+                    {relStory.source_count} sources · {formatTimeAgo(relStory.updated_at)}
+                  </div>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <AppShell>
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "24px 24px 64px" }}>
+    <AppShell sidebar={sidebar}>
+      <div style={{ padding: "0 0 48px 0" }}>
         {/* Back */}
-        <Link href="/home" style={{ fontSize: 13, color: "var(--ink-3)", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 24, textDecoration: "none" }}>
+        <Link href="/home" style={{ fontSize: 13, color: "var(--ink3)", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 24, textDecoration: "none" }}>
           <ChevronLeft size={14} /> Back to feed
         </Link>
 
         {/* Story Header */}
         <div style={{ marginBottom: 28 }}>
-          <div className="niq-card-meta" style={{ marginBottom: 12 }}>
+          <div className="sd-meta">
             {story.category && <CategoryBadge category={story.category.name} />}
             {locationLabel && (
               <>
-                <span className="niq-meta-dot" />
-                <span className="niq-meta-loc"><MapPin size={11} />{locationLabel}</span>
+                <span className="mdot" />
+                <span className="mloc"><MapPin size={11} />{locationLabel}</span>
               </>
             )}
-            <span className="niq-meta-time">
-              {story.first_seen_at && <>First seen {new Date(story.first_seen_at).toLocaleDateString()} · </>}
-              {story.updated_at && <>Updated {new Date(story.updated_at).toLocaleString()}</>}
+            <span className="mdot" />
+            <span style={{ fontSize: 12, color: "var(--ink3)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {story.updated_at && <>{formatTimeAgo(story.updated_at)}</>}
             </span>
           </div>
 
-          <h1 style={{
-            fontFamily: "var(--font-newsreader), Georgia, serif",
-            fontSize: 32, fontWeight: 600, lineHeight: 1.2, marginBottom: 12,
-          }}>
+          <h1 className="sd-head">
             {story.headline}
           </h1>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
-            <SourceDots count={story.source_count} />
-            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--ink-3)", background: "rgba(29,78,216,0.08)", padding: "2px 8px", borderRadius: 99 }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14 2 9.27l6.91-1.01z"/></svg>
-              AI generated
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+            <span>{story.source_count} sources</span>
+            <span>·</span>
+            <div className="ai-lbl">✦ AI Summary</div>
+            <span>·</span>
+            <span style={{ fontSize: 12, color: "var(--ink3)" }}>
+              Summarised from {story.articles?.slice(0, 3).map((a) => a.source?.name).join(", ")}
+              {(story.articles?.length ?? 0) > 3 ? ` +${(story.articles?.length ?? 0) - 3} more` : ""}
+            </span>
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <button
-                className="niq-btn-outline"
+                className="btno"
                 style={{ padding: "5px 12px", fontSize: 12, gap: 4 }}
                 aria-label={isBookmarked ? "Remove bookmark" : "Save story"}
                 onClick={() => {
@@ -167,44 +266,41 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                   bookmarkMutation.mutate();
                 }}
               >
-                <Bookmark size={14} className={isBookmarked ? "fill-current" : ""} aria-hidden="true" />
+                <Bookmark size={14} fill={isBookmarked ? "currentColor" : "none"} aria-hidden="true" />
                 {isBookmarked ? "Saved" : "Save"}
               </button>
-              <button className="niq-btn-outline" style={{ padding: "5px 12px", fontSize: 12, gap: 4 }} aria-label="Share story" onClick={handleShare}>
+              <button className="btno" style={{ padding: "5px 12px", fontSize: 12, gap: 4 }} aria-label="Share story" onClick={handleShare}>
                 <Share2 size={14} aria-hidden="true" /> Share
               </button>
             </div>
           </div>
         </div>
 
-        {/* Summary Switcher */}
-        <div className="niq-section-label">AI Summary</div>
-        <div className="niq-summary-switcher" role="tablist" aria-label="Summary length">
+        {/* Summary Switcher (Visible on mobile/tablet because .sc is hidden) */}
+        <div className="swit" style={{ marginBottom: 14 }}>
           {(["one_line", "short", "detailed"] as const).map((key) => (
             <button
               key={key}
-              role="tab"
-              aria-selected={summaryType === key}
-              className={`niq-switch-btn ${summaryType === key ? "active" : ""}`}
+              className={`switbtn ${summaryType === key ? "on" : ""}`}
               onClick={() => setSummaryType(key)}
             >
               {key === "one_line" ? "1-line" : key === "short" ? "Short" : "Detailed"}
             </button>
           ))}
         </div>
-        <div className="niq-summary-block" key={summaryType}>
+        <div className="sumblock">
           {activeSummary}
         </div>
 
         {/* Key Facts */}
         {story.entities && story.entities.length > 0 && (
           <>
-            <div className="niq-section-label">Key Facts</div>
-            <div className="niq-facts-grid">
-              {story.entities.slice(0, 6).map((fact, i) => (
-                <div key={fact.id || i} className="niq-fact-chip">
-                  <div className="niq-fact-label">{fact.entity_type}</div>
-                  <div className="niq-fact-value">{fact.entity_value}</div>
+            <div className="slbl">Key Facts</div>
+            <div className="fgrid">
+              {story.entities.slice(0, 4).map((fact, i) => (
+                <div key={fact.id || i} className="fchip">
+                  <div className="flbl">{fact.entity_type}</div>
+                  <div className="fval">{fact.entity_value}</div>
                 </div>
               ))}
             </div>
@@ -214,20 +310,21 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
         {/* Timeline */}
         {story.timeline && story.timeline.length > 0 && (
           <>
-            <div className="niq-section-label">Timeline</div>
-            <div className="niq-timeline">
+            <div className="slbl" style={{ marginTop: 8 }}>How it unfolded</div>
+            <div style={{ marginBottom: 28 }}>
               {story.timeline.map((ev, i) => (
-                <div key={ev.id || i} className="niq-timeline-item">
-                  <div className="niq-timeline-rail">
-                    <div className={`niq-timeline-dot ${i === 0 ? "latest" : ""}`} />
-                    <div className="niq-timeline-line" />
+                <div key={ev.id || i} className="tl-item">
+                  <div className="tl-time">
+                    {ev.event_time ? new Date(ev.event_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
                   </div>
-                  <div className="niq-timeline-body">
-                    <div className="niq-timeline-event">{ev.description}</div>
-                    <div className="niq-timeline-source">
-                      {ev.event_time
-                        ? new Date(ev.event_time).toLocaleString()
-                        : ev.event_time_raw || ""}
+                  <div className="tl-rail">
+                    <div className={`tl-dot ${i === 0 ? "lat" : ""}`} />
+                    <div className="tl-line" />
+                  </div>
+                  <div>
+                    <div className="tl-ev">{ev.description}</div>
+                    <div className="tl-src">
+                      {ev.event_time ? new Date(ev.event_time).toLocaleDateString() : ""}
                     </div>
                   </div>
                 </div>
@@ -239,97 +336,103 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
         {/* Source Coverage Table */}
         {story.source_coverage && story.source_coverage.length > 0 && (
           <>
-            <div className="niq-section-label">Source Coverage</div>
-            <table className="niq-coverage-table">
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Focus Area</th>
-                  <th>Published</th>
-                  <th>Link</th>
-                </tr>
-              </thead>
-              <tbody>
-                {story.source_coverage.map((cov) => (
-                  <tr key={cov.id}>
-                    <td>
-                      <span className="niq-src-name">
-                        <div className="niq-source-dot" style={{ background: "#1D4ED8", width: 7, height: 7, borderRadius: "50%" }} />
-                        {cov.source?.name}
-                      </span>
-                    </td>
-                    <td className="niq-src-focus">{cov.focus_area}</td>
-                    <td className="niq-src-time">{cov.published_at ? new Date(cov.published_at).toLocaleDateString() : "—"}</td>
-                    <td>
-                      {(() => {
-                        const srcArticle = story.articles?.find(
-                          (a) => a.source?.id === cov.source?.id,
-                        );
-                        const href = srcArticle?.url || cov.source?.website_url;
-                        return href ? (
-                          <a
-                            href={href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="niq-src-link"
-                          >
-                            Read <ExternalLink size={11} aria-hidden="true" />
-                          </a>
-                        ) : (
-                          <span className="niq-missing-val">—</span>
-                        );
-                      })()}
-                    </td>
+            <div className="slbl">Source Coverage</div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="ctbl">
+                <thead>
+                  <tr>
+                    <th style={{ minWidth: 120 }}>Source</th>
+                    <th style={{ minWidth: 180 }}>Primary focus</th>
+                    <th>Published</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {story.source_coverage.map((cov, i) => (
+                    <tr key={cov.id}>
+                      <td>
+                        <div className="sname">
+                          <div
+                            className="sdot"
+                            style={{
+                              background: SOURCE_COLORS[i % SOURCE_COLORS.length],
+                            }}
+                          />
+                          {cov.source?.name}
+                        </div>
+                      </td>
+                      <td className="sfoc">{cov.focus_area}</td>
+                      <td className="stim">{cov.published_at ? new Date(cov.published_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}</td>
+                      <td>
+                        {(() => {
+                          const srcArticle = story.articles?.find(
+                            (a) => a.source?.id === cov.source?.id,
+                          );
+                          const href = srcArticle?.url || cov.source?.website_url;
+                          return href ? (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="slink"
+                            >
+                              Read <ExternalLink size={11} aria-hidden="true" />
+                            </a>
+                          ) : (
+                            <span className="miss">—</span>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
 
         {/* Difference Engine */}
         {story.differences && story.differences.length > 0 && (
           <>
-            <div className="niq-section-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              Difference Engine
-              <AlertTriangle size={14} style={{ color: "var(--warning)" }} aria-hidden="true" />
-            </div>
-            <table className="niq-diff-table">
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Unique Info</th>
-                  <th>Missing</th>
-                  <th>Contradictions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {story.differences.map((diff) => (
-                  <tr key={diff.id} className={diff.contradictions ? "niq-diff-row-conflict" : ""}>
-                    <td style={{ fontWeight: 500 }}>{diff.source?.name}</td>
-                    <td>{diff.unique_information || <span className="niq-missing-val">—</span>}</td>
-                    <td>{diff.missing_information || <span className="niq-missing-val">—</span>}</td>
-                    <td>
-                      {diff.contradictions ? (
-                        <span className="niq-conflict-icon">
-                          <AlertTriangle size={12} aria-hidden="true" />
-                          {diff.contradictions}
-                        </span>
-                      ) : (
-                        <span className="niq-missing-val">None</span>
-                      )}
-                    </td>
+            <div className="slbl">Where sources differ</div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="dtbl">
+                <thead>
+                  <tr>
+                    <th style={{ minWidth: 120 }}>Source</th>
+                    <th>Unique Info</th>
+                    <th>Missing</th>
+                    <th>Contradictions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {story.differences.map((diff) => (
+                    <tr key={diff.id} className={diff.contradictions ? "dconfl" : ""}>
+                      <td style={{ fontWeight: 500 }}>{diff.source?.name}</td>
+                      <td>{diff.unique_information || <span className="miss">—</span>}</td>
+                      <td>{diff.missing_information || <span className="miss">—</span>}</td>
+                      <td>
+                        {diff.contradictions ? (
+                          <span className="confl-ic">
+                            <AlertTriangle size={12} aria-hidden="true" />
+                            {diff.contradictions}
+                          </span>
+                        ) : (
+                          <span className="miss">None</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
 
         {/* Original Articles */}
         {story.articles && story.articles.length > 0 && (
           <>
-            <div className="niq-section-label" style={{ marginTop: 32 }}>Original Articles</div>
+            <div className="slbl" style={{ marginTop: 32 }}>Original Articles</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {story.articles.map((art) => (
                 <a
@@ -337,16 +440,18 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                   href={art.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="niq-bk-card"
+                  className="bkcard"
+                  style={{ display: "flex", justifyContent: "space-between", textDecoration: "none" }}
                 >
-                  <div className="niq-bk-body">
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", marginBottom: 3 }}>
-                      {art.source?.name}
-                      {art.author && <span style={{ color: "var(--ink-3)", fontWeight: 400, marginLeft: 8 }}>By {art.author}</span>}
+                  <div style={{ flex: 1 }}>
+                    <div className="bk-hl">{art.title}</div>
+                    <div className="bk-mt">
+                      <span>{art.source?.name}</span>
+                      {art.author && <span>By {art.author}</span>}
+                      <span>{new Date(art.published_at).toLocaleDateString()}</span>
                     </div>
-                    <div className="niq-bk-headline">{art.title}</div>
                   </div>
-                  <ExternalLink size={14} style={{ color: "var(--ink-3)", flexShrink: 0, marginTop: 4 }} aria-hidden="true" />
+                  <ExternalLink size={14} style={{ color: "var(--ink3)", flexShrink: 0, marginTop: 4 }} aria-hidden="true" />
                 </a>
               ))}
             </div>

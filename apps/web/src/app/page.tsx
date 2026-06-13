@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { SignalBar } from "@/components/layout/signal-bar";
 import { CategoryBadge } from "@/components/ui/category-badge";
+import { Home } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
 
 const PREVIEW_CARDS = [
@@ -39,70 +40,69 @@ export default function LandingPage() {
       <SignalBar />
 
       {/* Hero */}
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 24px" }}>
-        <div className="niq-landing-hero">
-          <div className="niq-hero-left">
-            <div className="niq-hero-eyebrow">
-              <div className="niq-hero-pulse" />
-              Live intelligence · 1,240 stories indexed today
-            </div>
-            <h1 className="niq-hero-title">
-              Every story,<br />
-              <em>understood</em><br />
-              in 30 seconds.
-            </h1>
-            <p className="niq-hero-desc">
-              NewsIQ clusters thousands of articles into single, clear stories — with AI summaries,
-              source comparisons, and timelines. Stop reading. Start understanding.
-            </p>
-            <div className="niq-hero-btns">
-              <Link href={isAuthenticated ? "/home" : "/signup"}>
-                <button className="niq-btn-primary" style={{ padding: "11px 24px", fontSize: 15 }}>
-                  Start reading free
-                </button>
-              </Link>
-              <Link href="/premium">
-                <button className="niq-btn-outline" style={{ padding: "11px 24px", fontSize: 15 }}>
-                  See plans
-                </button>
-              </Link>
-            </div>
-            <div className="niq-hero-stats">
-              <div>
-                <div className="niq-stat-num">10k+</div>
-                <div className="niq-stat-label">Sources indexed</div>
-              </div>
-              <div>
-                <div className="niq-stat-num">98%</div>
-                <div className="niq-stat-label">Cluster accuracy</div>
-              </div>
-              <div>
-                <div className="niq-stat-num">&lt;5 min</div>
-                <div className="niq-stat-label">Story freshness</div>
-              </div>
-            </div>
+      <div className="lhero">
+        <div className="lh-l">
+          <div className="ley">
+            <div className="lpulse" />
+            Live intelligence · 1,240 stories indexed today
           </div>
-
-          {/* Preview Cards */}
-          <div className="niq-hero-right">
-            {PREVIEW_CARDS.map((card, i) => (
-              <div key={i} className="niq-hero-card-preview">
-                <div style={{ marginBottom: 8 }}>
-                  <CategoryBadge category={card.category} />
-                </div>
-                <div className="niq-hcp-headline">{card.headline}</div>
-                <div className="niq-hcp-footer">
-                  <span>{card.sources} sources</span>
-                  {card.trending && <span>↑ Trending</span>}
-                  {card.location && <span>{card.location}</span>}
-                  <span>{card.time}</span>
-                </div>
-              </div>
-            ))}
+          <h1 className="ltitle">
+            Every story,<br />
+            <em>understood</em><br />
+            in 30 seconds.
+          </h1>
+          <p className="ldesc">
+            NewsIQ clusters thousands of articles into single, clear stories — with AI summaries,
+            source comparisons, and timelines. Stop reading. Start understanding.
+          </p>
+          <div className="lbtns">
+            <Link href={isAuthenticated ? "/home" : "/signup"}>
+              <button className="btnp" style={{ padding: "11px 24px", fontSize: 15 }}>
+                <Home size={16} />
+                Start reading free
+              </button>
+            </Link>
+            <Link href="/premium">
+              <button className="btno" style={{ padding: "11px 24px", fontSize: 15 }}>
+                See plans
+              </button>
+            </Link>
+          </div>
+          <div className="lstats">
+            <div>
+              <div className="lsn">10k+</div>
+              <div className="lsl">Sources indexed</div>
+            </div>
+            <div>
+              <div className="lsn">98%</div>
+              <div className="lsl">Cluster accuracy</div>
+            </div>
+            <div>
+              <div className="lsn">&lt;5 min</div>
+              <div className="lsl">Story freshness</div>
+            </div>
           </div>
         </div>
 
-        {/* Value proposition strip */}
+        {/* Preview Cards */}
+        <div className="lh-r">
+          {PREVIEW_CARDS.map((card, i) => (
+            <div key={i} className="hprev">
+              <CategoryBadge category={card.category} />
+              <div className="hph">{card.headline}</div>
+              <div className="hpf">
+                <span>{card.sources} sources</span>
+                {card.trending && <span>↑ Trending</span>}
+                {card.location && <span>{card.location}</span>}
+                <span>{card.time}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Value proposition strip */}
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 24px" }}>
         <div style={{
           borderTop: "1px solid var(--border)",
           padding: "48px 0",
@@ -135,12 +135,12 @@ export default function LandingPage() {
                 {item.label}
               </div>
               <div style={{
-                fontFamily: "var(--font-newsreader), Georgia, serif",
+                fontFamily: "var(--fd)",
                 fontSize: 18, fontWeight: 500, marginBottom: 8, color: "var(--ink)",
               }}>
                 {item.title}
               </div>
-              <div style={{ fontSize: 14, color: "var(--ink-3)", lineHeight: 1.7 }}>
+              <div style={{ fontSize: 14, color: "var(--ink3)", lineHeight: 1.7 }}>
                 {item.desc}
               </div>
             </div>
@@ -154,7 +154,7 @@ export default function LandingPage() {
         padding: "32px 24px",
         textAlign: "center",
         fontSize: 12,
-        color: "var(--ink-3)",
+        color: "var(--ink3)",
       }}>
         © {new Date().getFullYear()} NewsIQ. All rights reserved.
       </footer>

@@ -1,7 +1,13 @@
 """Alembic environment configuration for async SQLAlchemy."""
 
 import asyncio
+import sys
+from pathlib import Path
 from logging.config import fileConfig
+
+# Ensure the project root (apps/api) is on sys.path so 'app' is importable
+# regardless of how alembic is invoked (uv run, venv .exe, or system alembic).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -13,6 +19,10 @@ from app.models import *  # noqa: F401, F403 — import all models so metadata i
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Override sqlalchemy.url with the dynamic setting (which handles Docker vs Local envs correctly)
+from app.core.config import settings
+config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
 
 target_metadata = Base.metadata
 

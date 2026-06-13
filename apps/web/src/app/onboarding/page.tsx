@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 
@@ -116,53 +116,25 @@ export default function OnboardingPage() {
     <div style={{ background: "var(--surface)", minHeight: "100vh" }}>
       {/* Mini Onboarding Navbar */}
       <nav
+        className="nav"
         style={{
-          height: "var(--navbar-h)",
-          background: "var(--card)",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 24px",
           position: "sticky",
           top: 0,
           zIndex: 100,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <span
-            style={{
-              fontFamily: "var(--font-inter)",
-              fontWeight: 700,
-              fontSize: 16,
-              letterSpacing: "-0.02em",
-              color: "var(--ink)",
-            }}
-          >
-            News
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-newsreader)",
-              fontStyle: "italic",
-              fontWeight: 700,
-              fontSize: 18,
-              color: "var(--primary)",
-              marginLeft: 1,
-            }}
-          >
-            IQ
-          </span>
+        <div className="logo">
+          <b>News</b>
+          <i>IQ</i>
         </div>
       </nav>
 
       {/* Dynamic progress bar below navbar */}
       <div
+        className="sig"
         style={{
-          height: "var(--signal-h)",
-          background: "var(--border)",
-          width: "100%",
           position: "sticky",
-          top: "var(--navbar-h)",
+          top: "var(--nav)",
           zIndex: 100,
         }}
       >
@@ -176,15 +148,15 @@ export default function OnboardingPage() {
         />
       </div>
 
-      <div className="niq-onboard-wrap">
-        <div className="niq-onboard-card">
-          {/* Custom segmented step indicators */}
-          <div className="niq-onboard-step-bar">
+      <div className="ob-wrap">
+        <div className="ob-card">
+          {/* Segmented step indicators */}
+          <div className="ob-sbar">
             {Array.from({ length: totalSteps }).map((_, i) => {
               let segClass = "";
               if (i < step) segClass = "done";
-              else if (i === step) segClass = "active";
-              return <div key={i} className={`niq-step-seg ${segClass}`} />;
+              else if (i === step) segClass = "act";
+              return <div key={i} className={`ob-seg ${segClass}`} />;
             })}
           </div>
 
@@ -201,17 +173,17 @@ export default function OnboardingPage() {
               {/* Step 1: Categories */}
               {step === 0 && (
                 <div>
-                  <h1 className="niq-onboard-title">What do you follow?</h1>
-                  <p className="niq-onboard-sub">
+                  <h1 className="ob-title">What do you follow?</h1>
+                  <p className="ob-sub">
                     Pick at least one topic. Your feed is built around these.
                   </p>
-                  <div className="niq-cat-grid">
+                  <div className="catgrid">
                     {CATEGORIES.map((cat) => {
                       const isSelected = selectedCategories.includes(cat.slug);
                       return (
                         <div
                           key={cat.slug}
-                          className={`niq-cat-option ${isSelected ? "selected" : ""}`}
+                          className={`catopt ${isSelected ? "sel" : ""}`}
                           onClick={() =>
                             toggleItem(
                               cat.slug,
@@ -220,26 +192,13 @@ export default function OnboardingPage() {
                             )
                           }
                         >
-                          {isSelected && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                top: 6,
-                                right: 6,
-                                width: 16,
-                                height: 16,
-                                backgroundColor: "var(--primary)",
-                                borderRadius: "50%",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Check className="w-2.5 h-2.5 text-white" />
-                            </div>
-                          )}
-                          <div className="niq-cat-icon">{cat.icon}</div>
-                          <div className="niq-cat-name">{cat.name}</div>
+                          <div className="chk">
+                            <svg width="10" height="10" style={{ color: "#fff" }} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3">
+                              <path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                          <div className="ci">{cat.icon}</div>
+                          <div className="cn">{cat.name}</div>
                         </div>
                       );
                     })}
@@ -250,8 +209,8 @@ export default function OnboardingPage() {
               {/* Step 2: Countries */}
               {step === 1 && (
                 <div>
-                  <h1 className="niq-onboard-title">Which countries do you follow?</h1>
-                  <p className="niq-onboard-sub">
+                  <h1 className="ob-title">Which countries do you follow?</h1>
+                  <p className="ob-sub">
                     Optional — skip or leave blank for a global layout feed.
                   </p>
                   <div
@@ -267,7 +226,7 @@ export default function OnboardingPage() {
                       return (
                         <div
                           key={country.code}
-                          className={`niq-cat-option ${isSelected ? "selected" : ""}`}
+                          className={`catopt ${isSelected ? "sel" : ""}`}
                           style={{
                             flexDirection: "row",
                             padding: "10px 14px",
@@ -282,26 +241,13 @@ export default function OnboardingPage() {
                             )
                           }
                         >
-                          {isSelected && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                top: 6,
-                                right: 6,
-                                width: 16,
-                                height: 16,
-                                backgroundColor: "var(--primary)",
-                                borderRadius: "50%",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Check className="w-2.5 h-2.5 text-white" />
-                            </div>
-                          )}
+                          <div className="chk">
+                            <svg width="10" height="10" style={{ color: "#fff" }} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3">
+                              <path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
                           <div style={{ fontSize: 20 }}>{country.flag}</div>
-                          <div className="niq-cat-name">{country.name}</div>
+                          <div className="cn">{country.name}</div>
                         </div>
                       );
                     })}
@@ -312,8 +258,8 @@ export default function OnboardingPage() {
               {/* Step 3: Cities */}
               {step === 2 && (
                 <div>
-                  <h1 className="niq-onboard-title">Any specific cities?</h1>
-                  <p className="niq-onboard-sub">
+                  <h1 className="ob-title">Any specific cities?</h1>
+                  <p className="ob-sub">
                     Optional — select cities to inject local updates.
                   </p>
                   <div
@@ -330,7 +276,7 @@ export default function OnboardingPage() {
                         <button
                           key={city}
                           type="button"
-                          className={`niq-filter-chip ${isSelected ? "active" : ""}`}
+                          className={`fchp ${isSelected ? "on" : ""}`}
                           style={{ padding: "6px 14px", fontSize: 13 }}
                           onClick={() =>
                             toggleItem(city, selectedCities, setSelectedCities)
@@ -347,8 +293,8 @@ export default function OnboardingPage() {
               {/* Step 4: Summary Type */}
               {step === 3 && (
                 <div>
-                  <h1 className="niq-onboard-title">How detailed should summaries be?</h1>
-                  <p className="niq-onboard-sub">
+                  <h1 className="ob-title">How detailed should summaries be?</h1>
+                  <p className="ob-sub">
                     Select your default depth. You can toggle this on any story.
                   </p>
                   <div
@@ -364,7 +310,7 @@ export default function OnboardingPage() {
                       return (
                         <div
                           key={opt.value}
-                          className={`niq-cat-option ${isSelected ? "selected" : ""}`}
+                          className={`catopt ${isSelected ? "sel" : ""}`}
                           style={{
                             alignItems: "flex-start",
                             textAlign: "left",
@@ -372,28 +318,15 @@ export default function OnboardingPage() {
                           }}
                           onClick={() => setSummaryType(opt.value)}
                         >
-                          {isSelected && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                top: 16,
-                                right: 16,
-                                width: 16,
-                                height: 16,
-                                backgroundColor: "var(--primary)",
-                                borderRadius: "50%",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Check className="w-2.5 h-2.5 text-white" />
-                            </div>
-                          )}
-                          <div className="niq-cat-name" style={{ fontSize: 15 }}>
+                          <div className="chk">
+                            <svg width="10" height="10" style={{ color: "#fff" }} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3">
+                              <path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                          <div className="cn" style={{ fontSize: 15 }}>
                             {opt.label}
                           </div>
-                          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>
+                          <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>
                             {opt.desc}
                           </div>
                         </div>
@@ -406,18 +339,11 @@ export default function OnboardingPage() {
           </AnimatePresence>
 
           {/* Navigation Buttons */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginTop: 24,
-            }}
-          >
+          <div className="ob-btns">
             {step > 0 ? (
               <button
                 type="button"
-                className="niq-btn-outline"
+                className="btno"
                 style={{ padding: "6px 12px", fontSize: 13 }}
                 onClick={prevStep}
               >
@@ -427,12 +353,7 @@ export default function OnboardingPage() {
             ) : (
               <button
                 type="button"
-                className="niq-btn-outline"
-                style={{
-                  border: "none",
-                  padding: "6px 0",
-                  color: "var(--ink-3)",
-                }}
+                className="btng"
                 onClick={() => router.push("/home")}
               >
                 Skip Onboarding
@@ -442,7 +363,7 @@ export default function OnboardingPage() {
             {step < totalSteps - 1 ? (
               <button
                 type="button"
-                className="niq-btn-primary"
+                className="btnp"
                 onClick={nextStep}
               >
                 Continue
@@ -451,12 +372,11 @@ export default function OnboardingPage() {
             ) : (
               <button
                 type="button"
-                className="niq-btn-primary"
+                className="btnp"
                 disabled={isLoading}
                 onClick={handleFinish}
               >
                 {isLoading ? "Saving..." : "Finish Setup"}
-                <Check className="w-4 h-4" />
               </button>
             )}
           </div>

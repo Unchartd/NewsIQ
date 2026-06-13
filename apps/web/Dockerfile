@@ -10,6 +10,8 @@ RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
+# Install certificates so next/font/google can fetch fonts over HTTPS during build
+RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -17,6 +19,9 @@ COPY . .
 # Next.js collects completely anonymous telemetry data about general usage.
 # Disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED=1
+
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 RUN npm run build
 
