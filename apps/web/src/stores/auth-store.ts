@@ -5,6 +5,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { clearAccessToken } from "@/lib/token-store";
+
 export interface User {
   id: string;
   email: string;
@@ -41,9 +43,7 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (loading) => set({ isLoading: loading }),
 
       logout: () => {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("access_token");
-        }
+        clearAccessToken();
         set({ user: null, isAuthenticated: false, isLoading: false });
       },
     }),
