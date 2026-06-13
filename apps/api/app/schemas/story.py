@@ -49,6 +49,7 @@ class StoryArticleResponse(BaseModel):
 class StoryTimelineEventResponse(BaseModel):
     id: uuid.UUID
     event_time: datetime | None = None
+    event_time_raw: str | None = None  # Raw AI string (e.g. "08:00 AM UTC") for display fallback
     description: str | None = None
 
     class Config:
@@ -123,6 +124,7 @@ class StoryListResponse(BaseModel):
     updated_at: datetime | None = None
     category: CategoryInStory | None = None
     article_count: int = Field(0, description="Total count of articles covering this story")
+    source_count: int = Field(0, description="Number of unique sources covering this story")
     source_logos: list[str] = Field(
         default_factory=list, description="URLs of logos for reporting sources"
     )
@@ -146,6 +148,7 @@ class StoryDetailResponse(BaseModel):
     first_seen_at: datetime | None = None
     updated_at: datetime | None = None
     category: CategoryInStory | None = None
+    source_count: int = Field(0, description="Number of unique sources covering this story")
 
     # Associated items
     timeline_events: list[StoryTimelineEventResponse] = []
@@ -182,3 +185,31 @@ class PopularSourceWidget(BaseModel):
 class TrendingWidgetsResponse(BaseModel):
     trending_topics: list[TrendingTopicWidget]
     popular_sources: list[PopularSourceWidget]
+
+
+class SearchResultResponse(BaseModel):
+    """Lightweight story result for search."""
+
+    id: uuid.UUID
+    headline: str | None = None
+    one_line_summary: str | None = None
+    category: CategoryInStory | None = None
+    trend_score: float | None = None
+    updated_at: datetime | None = None
+    article_count: int = 0
+    source_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class CategoryResponse(BaseModel):
+    """Public category schema."""
+
+    id: uuid.UUID
+    slug: str
+    name: str
+    icon: str | None = None
+
+    class Config:
+        from_attributes = True

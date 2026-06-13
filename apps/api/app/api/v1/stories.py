@@ -1,10 +1,10 @@
-"""API endpoints for news stories, feeds, and analytics."""
+"""API endpoints for news stories, feeds, analytics, search, and categories."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -24,7 +24,9 @@ from app.models.models import (
     User,
 )
 from app.schemas.story import (
+    CategoryResponse,
     PopularSourceWidget,
+    SearchResultResponse,
     SourceInStory,
     StoryArticleResponse,
     StoryDetailResponse,
@@ -36,16 +38,44 @@ from app.schemas.story import (
 router = APIRouter()
 
 
+def _build_story_list_response(story: Story) -> StoryListResponse:
+    """Map a Story ORM object to StoryListResponse."""
+    logos: list[str] = []
+    source_ids: set[uuid.UUID] = set()
+    for art_link in story.articles:
+        if art_link.article and art_link.article.source:
+            source_ids.add(art_link.article.source.id)
+            if art_link.article.source.logo_url and art_link.article.source.logo_url not in logos:
+                logos.append(art_link.article.source.logo_url)
+
+    return StoryListResponse(
+        id=story.id,
+        headline=story.headline,
+        one_line_summary=story.one_line_summary,
+        short_summary=story.short_summary,
+        location_country=story.location_country,
+        location_state=story.location_state,
+        location_city=story.location_city,
+        trend_score=float(story.trend_score) if story.trend_score is not None else 0.0,
+        first_seen_at=story.first_seen_at,
+        updated_at=story.updated_at,
+        category=story.category,
+        article_count=len(story.articles),
+        source_count=len(source_ids),
+        source_logos=logos[:5],
+    )
+
+
 @router.get("", response_model=list[StoryListResponse])
 async def list_stories(
     category: str | None = None,
     country: str | None = None,
     state: str | None = None,
     city: str | None = None,
-    q: str | None = None,
+    q: str | None = Query(None, max_length=200),
     trending: bool = False,
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve news stories with filtering, pagination, and sorting."""
@@ -56,11 +86,11 @@ async def list_stories(
         .selectinload(Article.source),
     )
 
-    # Filtering by category slug
     if category:
-        stmt = stmt.join(Category).where(Category.slug == category)
+        stmt = stmt.join(Category, Story.category_id == Category.id).where(
+            Category.slug == category
+        )
 
-    # Filtering by location
     if country:
         stmt = stmt.where(Story.location_country == country)
     if state:
@@ -68,57 +98,88 @@ async def list_stories(
     if city:
         stmt = stmt.where(Story.location_city == city)
 
-    # Filtering by search text
     if q:
-        # Simple case-insensitive contains search
+        # Escape SQL LIKE wildcards in user input
+        safe_q = q.replace("%", r"\%").replace("_", r"\_")
         stmt = stmt.where(
-            Story.headline.ilike(f"%{q}%")
-            | Story.one_line_summary.ilike(f"%{q}%")
-            | Story.short_summary.ilike(f"%{q}%")
+            Story.headline.ilike(f"%{safe_q}%")
+            | Story.one_line_summary.ilike(f"%{safe_q}%")
+            | Story.short_summary.ilike(f"%{safe_q}%")
         )
 
-    # Sorting
     if trending:
         stmt = stmt.order_by(Story.trend_score.desc())
     else:
         stmt = stmt.order_by(Story.updated_at.desc())
 
-    # Pagination
     stmt = stmt.limit(limit).offset(offset)
 
     result = await db.execute(stmt)
     stories = result.scalars().all()
 
-    # Map to StoryListResponse
-    response_list = []
-    for story in stories:
-        # Gather source logos and total count
-        logos = []
-        for art_link in story.articles:
-            if art_link.article and art_link.article.source and art_link.article.source.logo_url:
-                logos.append(art_link.article.source.logo_url)
-        # Ensure logos are unique
-        logos = list(set(logos))
+    return [_build_story_list_response(s) for s in stories]
 
-        response_list.append(
-            StoryListResponse(
-                id=story.id,
-                headline=story.headline,
-                one_line_summary=story.one_line_summary,
-                short_summary=story.short_summary,
-                location_country=story.location_country,
-                location_state=story.location_state,
-                location_city=story.location_city,
-                trend_score=float(story.trend_score) if story.trend_score is not None else 0.0,
-                first_seen_at=story.first_seen_at,
-                updated_at=story.updated_at,
-                category=story.category,
-                article_count=len(story.articles),
-                source_logos=logos[:5],  # Limit to first 5 source logos
-            )
+
+@router.get("/search", response_model=list[SearchResultResponse])
+async def search_stories(
+    q: str = Query(..., min_length=1, max_length=200, description="Search query"),
+    category: str | None = None,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Full-text search across story headlines and summaries.
+
+    Uses PostgreSQL ILIKE for now. Meilisearch integration is planned for Phase 2.
+    """
+    safe_q = q.replace("%", r"\%").replace("_", r"\_")
+
+    stmt = (
+        select(Story)
+        .options(
+            selectinload(Story.category),
+            selectinload(Story.articles)
+            .selectinload(StoryArticle.article)
+            .selectinload(Article.source),
+        )
+        .where(
+            Story.headline.ilike(f"%{safe_q}%")
+            | Story.one_line_summary.ilike(f"%{safe_q}%")
+            | Story.short_summary.ilike(f"%{safe_q}%")
+            | Story.detailed_summary.ilike(f"%{safe_q}%")
+        )
+    )
+
+    if category:
+        stmt = stmt.join(Category, Story.category_id == Category.id).where(
+            Category.slug == category
         )
 
-    return response_list
+    stmt = stmt.order_by(Story.trend_score.desc()).limit(limit).offset(offset)
+
+    result = await db.execute(stmt)
+    stories = result.scalars().all()
+
+    return [
+        SearchResultResponse(
+            id=s.id,
+            headline=s.headline,
+            one_line_summary=s.one_line_summary,
+            category=s.category,
+            trend_score=float(s.trend_score) if s.trend_score is not None else 0.0,
+            updated_at=s.updated_at,
+            article_count=len(s.articles),
+            source_count=len({sa.article.source_id for sa in s.articles if sa.article}),
+        )
+        for s in stories
+    ]
+
+
+@router.get("/categories", response_model=list[CategoryResponse])
+async def list_categories(db: AsyncSession = Depends(get_db)):
+    """Return all available news categories."""
+    result = await db.execute(select(Category).order_by(Category.name))
+    return result.scalars().all()
 
 
 @router.get("/trending-widgets", response_model=TrendingWidgetsResponse)
@@ -126,18 +187,16 @@ async def get_trending_widgets(
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve trending topics and popular trusted sources for dashboard side widgets."""
-    # Retrieve top active tags
     stmt_tags = select(StoryTag.tag_name).group_by(StoryTag.tag_name).limit(4)
     res_tags = await db.execute(stmt_tags)
     tags = res_tags.scalars().all()
 
-    trending_topics = []
-    for i, tag in enumerate(tags):
-        trending_topics.append(
-            TrendingTopicWidget(topic=tag, count="8 stories", category="general")
-        )
+    trending_topics = [
+        TrendingTopicWidget(topic=tag, count="8 stories", category="general")
+        for tag in tags
+        if not tag.startswith("fact:")  # Exclude persisted key_facts tags from widget
+    ]
 
-    # Fallback to default trending topics if DB is empty
     if not trending_topics:
         trending_topics = [
             TrendingTopicWidget(topic="Generative AI", count="12 stories", category="technology"),
@@ -146,18 +205,15 @@ async def get_trending_widgets(
             TrendingTopicWidget(topic="Space Exploration", count="5 stories", category="science"),
         ]
 
-    # Retrieve popular sources
     stmt_sources = select(Source).where(Source.active).limit(3)
     res_sources = await db.execute(stmt_sources)
     sources = res_sources.scalars().all()
 
-    popular_sources = []
-    for src in sources:
-        popular_sources.append(
-            PopularSourceWidget(name=src.name, slug=src.slug, rating="94% neutrality")
-        )
+    popular_sources = [
+        PopularSourceWidget(name=src.name, slug=src.slug, rating="94% neutrality")
+        for src in sources
+    ]
 
-    # Fallback default sources
     if not popular_sources:
         popular_sources = [
             PopularSourceWidget(name="Reuters", slug="reuters", rating="94% neutrality"),
@@ -187,33 +243,7 @@ async def list_bookmarked_stories(
     )
     result = await db.execute(stmt)
     stories = result.scalars().all()
-
-    response_list = []
-    for story in stories:
-        logos = []
-        for art_link in story.articles:
-            if art_link.article and art_link.article.source and art_link.article.source.logo_url:
-                logos.append(art_link.article.source.logo_url)
-        logos = list(set(logos))
-
-        response_list.append(
-            StoryListResponse(
-                id=story.id,
-                headline=story.headline,
-                one_line_summary=story.one_line_summary,
-                short_summary=story.short_summary,
-                location_country=story.location_country,
-                location_state=story.location_state,
-                location_city=story.location_city,
-                trend_score=float(story.trend_score) if story.trend_score is not None else 0.0,
-                first_seen_at=story.first_seen_at,
-                updated_at=story.updated_at,
-                category=story.category,
-                article_count=len(story.articles),
-                source_logos=logos[:5],
-            )
-        )
-    return response_list
+    return [_build_story_list_response(s) for s in stories]
 
 
 @router.get("/{story_id}", response_model=StoryDetailResponse)
@@ -222,7 +252,6 @@ async def get_story_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve detailed story object with timeline, differences, and source coverage."""
-    # We load all related items using selectinload
     stmt = (
         select(Story)
         .options(
@@ -249,36 +278,40 @@ async def get_story_detail(
             detail="Story not found.",
         )
 
-    # Increment views counter in background/metrics
+    # Increment views counter
     if story.metrics:
         story.metrics.views += 1
     else:
         story.metrics = StoryMetric(story_id=story.id, views=1, bookmarks=0, shares=0, clicks=0)
     await db.commit()
 
+    # Compute source_count from unique source IDs across linked articles
+    source_ids = {
+        sa.article.source_id for sa in story.articles if sa.article and sa.article.source_id
+    }
+
     # Map articles to Pydantic responses
-    mapped_articles = []
-    for sa in story.articles:
-        if sa.article:
-            mapped_articles.append(
-                StoryArticleResponse(
-                    id=sa.article.id,
-                    title=sa.article.title,
-                    description=sa.article.description,
-                    url=sa.article.url,
-                    author=sa.article.author,
-                    image_url=sa.article.image_url,
-                    published_at=sa.article.published_at,
-                    source=SourceInStory(
-                        id=sa.article.source.id,
-                        name=sa.article.source.name,
-                        slug=sa.article.source.slug,
-                        website_url=sa.article.source.website_url,
-                        logo_url=sa.article.source.logo_url,
-                        country_code=sa.article.source.country_code,
-                    ),
-                )
-            )
+    mapped_articles = [
+        StoryArticleResponse(
+            id=sa.article.id,
+            title=sa.article.title,
+            description=sa.article.description,
+            url=sa.article.url,
+            author=sa.article.author,
+            image_url=sa.article.image_url,
+            published_at=sa.article.published_at,
+            source=SourceInStory(
+                id=sa.article.source.id,
+                name=sa.article.source.name,
+                slug=sa.article.source.slug,
+                website_url=sa.article.source.website_url,
+                logo_url=sa.article.source.logo_url,
+                country_code=sa.article.source.country_code,
+            ),
+        )
+        for sa in story.articles
+        if sa.article and sa.article.source
+    ]
 
     return StoryDetailResponse(
         id=story.id,
@@ -293,6 +326,7 @@ async def get_story_detail(
         first_seen_at=story.first_seen_at,
         updated_at=story.updated_at,
         category=story.category,
+        source_count=len(source_ids),
         timeline_events=story.timeline_events,
         source_coverage=story.source_coverage,
         differences=story.differences,
@@ -310,17 +344,12 @@ async def bookmark_story(
     db: AsyncSession = Depends(get_db),
 ):
     """Add a story to the user's bookmarks."""
-    # Check if story exists
     stmt_story = select(Story).where(Story.id == story_id)
     res_story = await db.execute(stmt_story)
     story = res_story.scalar_one_or_none()
     if not story:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Story not found.",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found.")
 
-    # Check if already bookmarked
     stmt_bm = select(Bookmark).where(
         Bookmark.user_id == current_user.id, Bookmark.story_id == story_id
     )
@@ -328,10 +357,13 @@ async def bookmark_story(
     if res_bm.scalar_one_or_none():
         return {"message": "Already bookmarked."}
 
-    bookmark = Bookmark(user_id=current_user.id, story_id=story_id, created_at=datetime.utcnow())
+    bookmark = Bookmark(
+        user_id=current_user.id,
+        story_id=story_id,
+        created_at=datetime.now(UTC).replace(tzinfo=None),
+    )
     db.add(bookmark)
 
-    # Increment bookmarks metric
     if story.metrics:
         story.metrics.bookmarks += 1
     else:
@@ -354,14 +386,10 @@ async def unbookmark_story(
     res_bm = await db.execute(stmt_bm)
     bookmark = res_bm.scalar_one_or_none()
     if not bookmark:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bookmark not found.",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bookmark not found.")
 
     await db.delete(bookmark)
 
-    # Decrement bookmarks metric
     stmt_story = select(Story).where(Story.id == story_id)
     res_story = await db.execute(stmt_story)
     story = res_story.scalar_one_or_none()
