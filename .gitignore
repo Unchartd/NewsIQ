@@ -47,3 +47,7 @@ coverage/
 
 # Build artifacts
 *.tgz
+
+# Celery Beat
+celerybeat-schedule
+celerybeat-schedule.*

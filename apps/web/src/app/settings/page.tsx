@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Settings, User, Shield, AlertTriangle, Moon, Sun, Laptop, Mail, BellRing } from "lucide-react";
+import { Settings, User, Shield, AlertTriangle, Moon, Sun, Laptop, Mail, BellRing, Smartphone, Globe, Trash2, LogOut } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
@@ -101,6 +101,45 @@ export default function SettingsPage() {
       return response.data;
     },
     enabled: isAuthenticated,
+  });
+
+  // Load Active Sessions
+  const { data: sessions = [], isLoading: isLoadingSessions, refetch: refetchSessions } = useQuery({
+    queryKey: ["active-sessions"],
+    queryFn: async () => {
+      const response = await apiClient.get("/auth/sessions");
+      return response.data;
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Revoke Session Mutation
+  const revokeSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await apiClient.delete(`/auth/sessions/${sessionId}`);
+    },
+    onSuccess: () => {
+      toast.success("Session revoked successfully.");
+      refetchSessions();
+    },
+    onError: () => {
+      toast.error("Failed to revoke session.");
+    },
+  });
+
+  // Logout All Devices Mutation
+  const logoutAllMutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.post("/auth/logout-all");
+    },
+    onSuccess: () => {
+      toast.success("Logged out from all devices.");
+      localStorage.removeItem("access_token");
+      window.location.href = "/login";
+    },
+    onError: () => {
+      toast.error("Failed to logout from all devices.");
+    },
   });
 
   // Update Digest Mutation
@@ -381,6 +420,103 @@ export default function SettingsPage() {
               </div>
             </div>
           </CardContent>
+        </Card>
+
+        {/* Active Sessions Card */}
+        <Card className="border-border/50 rounded-2xl">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Shield className="w-4 h-4 text-muted-foreground" />
+              Active Sessions & Security
+            </CardTitle>
+            <CardDescription>
+              Manage the devices currently logged into your NewsIQ account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isLoadingSessions ? (
+              <div className="flex items-center justify-center py-6">
+                <div className="w-6 h-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No active sessions found.</p>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {sessions.map((session: any) => {
+                  const isCurrent = session.is_current;
+                  return (
+                    <div key={session.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 p-2 rounded-lg bg-secondary/30 text-muted-foreground">
+                          {session.device_name?.toLowerCase().includes("phone") || session.device_name?.toLowerCase().includes("mobile") ? (
+                            <Smartphone className="w-4 h-4" />
+                          ) : (
+                            <Laptop className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-foreground">
+                              {session.device_name || "Unknown Device"}
+                            </span>
+                            {isCurrent && (
+                              <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/15 border-0 rounded-full px-2 py-0 text-[10px] font-medium">
+                                Current Session
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Globe className="w-3 h-3" />
+                              {session.ip_address || "Unknown IP"}
+                            </span>
+                            <span>•</span>
+                            <span>Last active: {new Date(session.last_used_at).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {!isCurrent && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm("Are you sure you want to revoke this session? You will be logged out on that device.")) {
+                              revokeSessionMutation.mutate(session.id);
+                            }
+                          }}
+                          disabled={revokeSessionMutation.isPending}
+                          className="rounded-xl text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 px-2.5 h-8 flex items-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Revoke
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+          <CardFooter className="bg-secondary/20 py-3 flex justify-between items-center">
+            <span className="text-[10px] text-muted-foreground">
+              Revoking a session immediately invalidates its tokens.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm("Are you sure you want to logout from all devices? All active sessions (including this one) will be revoked.")) {
+                  logoutAllMutation.mutate();
+                }
+              }}
+              disabled={logoutAllMutation.isPending}
+              className="rounded-xl text-xs border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive flex items-center gap-1.5 h-8"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Logout All Devices
+            </Button>
+          </CardFooter>
         </Card>
 
         {/* Danger Zone */}

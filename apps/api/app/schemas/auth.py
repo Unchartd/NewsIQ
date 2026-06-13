@@ -73,6 +73,7 @@ class SessionResponse(BaseModel):
     last_used_at: str
     created_at: str
     expires_at: str
+    is_current: bool = False
 
     model_config = {"from_attributes": True}
 

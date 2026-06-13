@@ -1,5 +1,6 @@
 """Auth API endpoints: register, login, logout, refresh, me, sessions, email/password workflows."""
 
+import hashlib
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -241,10 +242,16 @@ async def reset_password(
 
 @router.get("/sessions", response_model=list[SessionResponse])
 async def get_sessions(
+    request: Request,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all active sessions for the current user."""
+    refresh_token_cookie = request.cookies.get("refresh_token")
+    current_hash = None
+    if refresh_token_cookie:
+        current_hash = hashlib.sha256(refresh_token_cookie.encode()).hexdigest()
+
     auth_service = AuthService(db)
     sessions = await auth_service.session_service.get_active_sessions(user.id)
     return [
@@ -256,6 +263,7 @@ async def get_sessions(
             last_used_at=s.last_used_at.isoformat() if s.last_used_at else "",
             created_at=s.created_at.isoformat() if s.created_at else "",
             expires_at=s.expires_at.isoformat() if s.expires_at else "",
+            is_current=(s.token_hash == current_hash) if current_hash else False,
         )
         for s in sessions
     ]

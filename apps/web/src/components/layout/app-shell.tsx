@@ -19,8 +19,9 @@ export function AppShell({ children, signalVariant = "pulse", signalProgress, si
   const [sentVerification, setSentVerification] = useState(false);
 
   const handleResendVerification = async () => {
+    if (!user?.email) return;
     try {
-      await apiClient.post("/auth/resend-verification");
+      await apiClient.post("/auth/resend-verification", { email: user.email });
       setSentVerification(true);
     } catch {
       // Ignored for UI simplicity

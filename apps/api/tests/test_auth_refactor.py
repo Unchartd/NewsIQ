@@ -379,7 +379,7 @@ async def test_email_verification(mock_db_session):
 
 
 @pytest.mark.asyncio
-async def test_session_revocation(mock_db_session):
+async def test_session_revocation(mock_db_session, mock_request):
     """Test retrieving active sessions and revoking a specific session."""
     user = User(
         id=uuid.uuid4(),
@@ -395,7 +395,7 @@ async def test_session_revocation(mock_db_session):
     mock_execute_res.scalars.return_value.all.return_value = [session]
     mock_db_session.execute.return_value = mock_execute_res
 
-    sessions_res = await get_sessions(user, mock_db_session)
+    sessions_res = await get_sessions(mock_request, user, mock_db_session)
     assert len(sessions_res) == 1
     assert sessions_res[0].id == str(session_id)
 
