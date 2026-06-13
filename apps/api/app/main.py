@@ -97,8 +97,9 @@ async def readiness_check():
 
     # PostgreSQL check
     try:
-        from sqlalchemy import text
         from app.core.database import async_session_factory
+        from sqlalchemy import text
+
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))
         checks["postgres"] = "ok"
