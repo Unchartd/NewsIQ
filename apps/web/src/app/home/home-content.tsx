@@ -11,6 +11,7 @@ import { BreakingBanner } from "@/components/ui/breaking-banner";
 import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
 import { Newspaper } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { useAuthStore } from "@/stores/auth-store";
 import type { Story } from "@/types";
 
 const CATEGORIES = [
@@ -27,14 +28,25 @@ const CATEGORIES = [
 
 export function HomeContent() {
   const [category, setCategory] = useState<string>("all");
+  const { isAuthenticated } = useAuthStore();
+
+  // Serve personalized feed when authenticated + on the "all" tab.
+  // Gracefully falls back to global /stories if the endpoint returns empty or errors.
+  const isPersonalized = isAuthenticated && category === "all";
 
   const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
-    queryKey: ["stories", category],
+    queryKey: isPersonalized ? ["stories", "personalized"] : ["stories", category],
     queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (category !== "all") {
-        params.category = category;
+      if (isPersonalized) {
+        try {
+          const res = await apiClient.get("/stories/feed/personalized");
+          if (res.data && res.data.length > 0) return res.data;
+        } catch {
+          // Personalized endpoint unavailable — fall through to global feed
+        }
       }
+      const params: Record<string, string> = {};
+      if (category !== "all") params.category = category;
       const response = await apiClient.get("/stories", { params });
       return response.data;
     },
@@ -42,7 +54,6 @@ export function HomeContent() {
 
   // Use first few stories as trending sidebar data
   const trendingStories = stories?.slice(0, 4) || [];
-
   const sidebar = <SidebarWidgets trendingStories={trendingStories} />;
 
   return (
@@ -56,14 +67,18 @@ export function HomeContent() {
         />
       </div>
 
-      {/* Breaking banner */}
-      <BreakingBanner
-        text="India's Supreme Court delivers landmark verdict on electoral bond scheme — 9 sources covering"
-        time="4 min ago"
-      />
+      {/* Breaking banner — driven by the top story, not hardcoded */}
+      {stories && stories.length > 0 && (
+        <BreakingBanner
+          text={`${stories[0].headline} — ${stories[0].source_count ?? 1} sources covering`}
+          time="Just now"
+        />
+      )}
 
       {/* Section label */}
-      <div className="niq-section-label">Top Stories</div>
+      <div className="niq-section-label">
+        {isPersonalized ? "Your Personalized Feed" : "Top Stories"}
+      </div>
 
       {/* Feed Content */}
       {isLoading ? (

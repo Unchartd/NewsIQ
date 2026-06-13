@@ -19,6 +19,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Payload for password reset."""
+
+    email: EmailStr
+
+
 class AuthResponse(BaseModel):
     """Returned after successful login/register."""
 
@@ -44,6 +50,7 @@ class UserResponse(BaseModel):
     role: str
     subscription_plan: str
     status: str
+    email_verified: bool
     created_at: str
 
     model_config = {"from_attributes": True}

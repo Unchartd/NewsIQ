@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
@@ -49,6 +49,15 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
   });
 
   const isBookmarked = bookmarkedStories?.some((s) => s.id === storyId) || false;
+
+  // Fire reading history event once when story data is first available
+  useEffect(() => {
+    if (!story || !isAuthenticated) return;
+    apiClient
+      .post("/users/events", null, { params: { event_type: "view_story", story_id: storyId } })
+      .catch(() => { /* fire-and-forget */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id]);
 
   const bookmarkMutation = useMutation({
     mutationFn: async () => {

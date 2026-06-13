@@ -10,6 +10,7 @@ from app.models.models import User
 from app.schemas.auth import (
     AuthResponse,
     LoginRequest,
+    ForgotPasswordRequest,
     MessageResponse,
     RefreshResponse,
     RegisterRequest,
@@ -30,6 +31,7 @@ def _user_to_response(user: User) -> UserResponse:
         role=user.role,
         subscription_plan=user.subscription_plan,
         status=user.status,
+        email_verified=user.email_verified,
         created_at=user.created_at.isoformat() if user.created_at else "",
     )
 
@@ -182,3 +184,24 @@ async def logout_all(
 async def get_me(user: User = Depends(require_user)):
     """Get the currently authenticated user."""
     return _user_to_response(user)
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a password reset link to the user's email."""
+    # Note: Full email integration is stubbed for now.
+    # We would normally look up the user, generate a secure token, and send an email via an external provider.
+    return MessageResponse(message="If the email exists, a reset link has been sent.")
+
+
+@router.post("/resend-verification", response_model=MessageResponse)
+async def resend_verification(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resend the email verification link."""
+    # Stubbed for now.
+    return MessageResponse(message="Verification email sent.")
