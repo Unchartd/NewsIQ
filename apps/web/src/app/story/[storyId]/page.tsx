@@ -131,7 +131,8 @@ export default function StoryDetailPage({ params }: PageProps) {
               </>
             )}
             <span className="niq-meta-time">
-              First seen {new Date(story.first_seen_at).toLocaleDateString()} · Updated {new Date(story.updated_at).toLocaleString()}
+              {story.first_seen_at && <>First seen {new Date(story.first_seen_at).toLocaleDateString()} · </>}
+              {story.updated_at && <>Updated {new Date(story.updated_at).toLocaleString()}</>}
             </span>
           </div>
 
@@ -213,7 +214,9 @@ export default function StoryDetailPage({ params }: PageProps) {
                   <div className="niq-timeline-body">
                     <div className="niq-timeline-event">{ev.description}</div>
                     <div className="niq-timeline-source">
-                      {new Date(ev.event_time).toLocaleString()}
+                      {ev.event_time
+                        ? new Date(ev.event_time).toLocaleString()
+                        : ev.event_time_raw || ""}
                     </div>
                   </div>
                 </div>
@@ -245,11 +248,26 @@ export default function StoryDetailPage({ params }: PageProps) {
                       </span>
                     </td>
                     <td className="niq-src-focus">{cov.focus_area}</td>
-                    <td className="niq-src-time">{new Date(cov.published_at).toLocaleDateString()}</td>
+                    <td className="niq-src-time">{cov.published_at ? new Date(cov.published_at).toLocaleDateString() : "—"}</td>
                     <td>
-                      <span className="niq-src-link">
-                        Read <ExternalLink size={11} />
-                      </span>
+                      {(() => {
+                        const srcArticle = story.articles?.find(
+                          (a) => a.source?.id === cov.source?.id,
+                        );
+                        const href = srcArticle?.url || cov.source?.website_url;
+                        return href ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="niq-src-link"
+                          >
+                            Read <ExternalLink size={11} />
+                          </a>
+                        ) : (
+                          <span className="niq-missing-val">—</span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
