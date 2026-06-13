@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import {
   User,
@@ -15,7 +15,6 @@ import {
   Moon,
   Bookmark,
   ChevronRight,
-  LogOut,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
@@ -28,7 +27,6 @@ export default function ProfilePage() {
   const { theme, setTheme } = useTheme();
   const { user, isAuthenticated, logout: storeLogout } = useAuthStore();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -103,16 +101,16 @@ export default function ProfilePage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 680, margin: "0 auto", paddingBottom: 60 }}>
+      <div style={{ maxWidth: 660, margin: "0 auto", paddingBottom: 60 }}>
         {/* Profile Header */}
-        <div className="niq-profile-header">
-          <div className="niq-profile-avatar-lg">{initials}</div>
+        <div className="prof-hdr">
+          <div className="prof-av">{initials}</div>
           <div>
-            <div className="niq-profile-name">{user.name || "User"}</div>
-            <div className="niq-profile-email">{user.email}</div>
+            <div className="prof-name">{user.name || "User"}</div>
+            <div className="prof-em">{user.email}</div>
             {isPro ? (
-              <div className="niq-pro-badge">
-                <Crown className="w-3 h-3 mr-1" />
+              <div className="probadge">
+                <Crown size={11} style={{ marginRight: 4 }} />
                 Pro member
               </div>
             ) : (
@@ -122,7 +120,7 @@ export default function ProfilePage() {
                   alignItems: "center",
                   fontSize: 11,
                   fontWeight: 600,
-                  color: "var(--ink-3)",
+                  color: "var(--ink3)",
                   padding: "2px 8px",
                   border: "1px solid var(--border)",
                   borderRadius: 99,
@@ -137,102 +135,102 @@ export default function ProfilePage() {
 
         <div style={{ padding: "0 24px" }}>
           {/* Account Section */}
-          <div style={{ marginTop: 24, marginBottom: 8 }} className="section-label">
+          <div style={{ marginTop: 24, marginBottom: 8 }} className="slbl">
             Account
           </div>
-          <ul className="niq-settings-list">
-            <li className="niq-settings-item" onClick={() => toast.info("Profile editing coming soon!")}>
-              <div className="niq-settings-icon">
-                <User className="w-4 h-4" />
+          <ul className="slist">
+            <li className="sitem" onClick={() => toast.info("Profile editing coming soon!")}>
+              <div className="si-icon">
+                <User size={15} />
               </div>
-              <div className="niq-settings-label">Edit profile</div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <div className="si-lbl">Edit profile</div>
+              <ChevronRight size={14} style={{ color: "var(--ink3)" }} />
             </li>
             
-            <li className="niq-settings-item" onClick={() => router.push("/premium")}>
-              <div className="niq-settings-icon">
-                <Crown className="w-4 h-4" />
+            <li className="sitem" onClick={() => router.push("/premium")}>
+              <div className="si-icon">
+                <Crown size={15} />
               </div>
-              <div className="niq-settings-label">Subscription</div>
-              <div className="niq-settings-value">
-                {isPro ? "Pro • Renews Jul 2026" : "Free • Upgrade available"}
+              <div className="si-lbl">Subscription</div>
+              <div className="si-val">
+                {isPro ? "Pro · Renews Jul 2026" : "Free · Upgrade available"}
               </div>
             </li>
 
-            <li className="niq-settings-item" onClick={() => router.push("/settings")}>
-              <div className="niq-settings-icon">
-                <Bell className="w-4 h-4" />
+            <li className="sitem" onClick={() => router.push("/settings")}>
+              <div className="si-icon">
+                <Bell size={15} />
               </div>
-              <div className="niq-settings-label">Notifications</div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <div className="si-lbl">Notifications</div>
+              <ChevronRight size={14} style={{ color: "var(--ink3)" }} />
             </li>
           </ul>
 
           {/* Preferences Section */}
-          <div style={{ marginTop: 20, marginBottom: 8 }} className="section-label">
+          <div style={{ marginTop: 20, marginBottom: 8 }} className="slbl">
             Preferences
           </div>
-          <ul className="niq-settings-list">
-            <li className="niq-settings-item" onClick={() => router.push("/onboarding")}>
-              <div className="niq-settings-icon">
-                <Grid className="w-4 h-4" />
+          <ul className="slist">
+            <li className="sitem" onClick={() => router.push("/onboarding")}>
+              <div className="si-icon">
+                <Grid size={15} />
               </div>
-              <div className="niq-settings-label">Topics & categories</div>
-              <div className="niq-settings-value">{categoriesLabel}</div>
+              <div className="si-lbl">Topics & categories</div>
+              <div className="si-val">{categoriesLabel}</div>
             </li>
 
-            <li className="niq-settings-item" onClick={() => router.push("/onboarding")}>
-              <div className="niq-settings-icon">
-                <Map className="w-4 h-4" />
+            <li className="sitem" onClick={() => router.push("/onboarding")}>
+              <div className="si-icon">
+                <Map size={15} />
               </div>
-              <div className="niq-settings-label">Locations</div>
-              <div className="niq-settings-value" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div className="si-lbl">Locations</div>
+              <div className="si-val" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {locationsLabel}
               </div>
             </li>
 
-            <li className="niq-settings-item" onClick={() => router.push("/onboarding")}>
-              <div className="niq-settings-icon">
-                <BookOpen className="w-4 h-4" />
+            <li className="sitem" onClick={() => router.push("/onboarding")}>
+              <div className="si-icon">
+                <BookOpen size={15} />
               </div>
-              <div className="niq-settings-label">Default summary</div>
-              <div className="niq-settings-value">{summaryLabel}</div>
+              <div className="si-lbl">Default summary</div>
+              <div className="si-val">{summaryLabel}</div>
             </li>
 
-            <li className="niq-settings-item" onClick={toggleAppTheme}>
-              <div className="niq-settings-icon">
-                {theme === "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            <li className="sitem" onClick={toggleAppTheme}>
+              <div className="si-icon">
+                {theme === "dark" ? <Moon size={15} /> : <Sun size={15} />}
               </div>
-              <div className="niq-settings-label">Theme</div>
-              <div className="niq-settings-value" style={{ textTransform: "capitalize" }}>
+              <div className="si-lbl">Theme</div>
+              <div className="si-val" style={{ textTransform: "capitalize" }}>
                 {theme || "light"}
               </div>
             </li>
           </ul>
 
           {/* Reading Section */}
-          <div style={{ marginTop: 20, marginBottom: 8 }} className="section-label">
+          <div style={{ marginTop: 20, marginBottom: 8 }} className="slbl">
             Reading
           </div>
-          <ul className="niq-settings-list">
-            <li className="niq-settings-item" onClick={() => router.push("/bookmarks")}>
-              <div className="niq-settings-icon">
-                <Bookmark className="w-4 h-4" />
+          <ul className="slist">
+            <li className="sitem" onClick={() => router.push("/bookmarks")}>
+              <div className="si-icon">
+                <Bookmark size={15} />
               </div>
-              <div className="niq-settings-label">Saved stories</div>
-              <div className="niq-settings-value">
+              <div className="si-lbl">Saved stories</div>
+              <div className="si-val">
                 {bookmarkCount} {bookmarkCount === 1 ? "story" : "stories"}
               </div>
             </li>
           </ul>
 
           {/* Sign Out Button */}
-          <div style={{ marginTop: 28, paddingBottom: 40 }}>
+          <div style={{ marginTop: 28, paddingBottom: 48 }}>
             <button
               onClick={handleLogout}
               disabled={isLoggingOut}
               style={{
-                color: "var(--error)",
+                color: "var(--err)",
                 fontSize: "14px",
                 fontWeight: 500,
                 background: "none",
@@ -241,12 +239,8 @@ export default function ProfilePage() {
                 padding: "10px 0",
                 width: "100%",
                 textAlign: "left",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
               }}
             >
-              <LogOut className="w-4 h-4" />
               {isLoggingOut ? "Signing out..." : "Sign out"}
             </button>
           </div>

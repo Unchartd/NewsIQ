@@ -57,13 +57,13 @@ export function AppShell({ children, signalVariant = "pulse", signalProgress, si
       <Navbar />
       <SignalBar variant={signalVariant} progress={signalProgress} />
       {sidebar ? (
-        <div className="niq-page-layout">
-          <div className="niq-main-col">
+        <div className="layout">
+          <div className="mc">
             <ErrorBoundary>
               {children}
             </ErrorBoundary>
           </div>
-          <div className="niq-side-col">
+          <div className="sc">
             {sidebar}
           </div>
         </div>

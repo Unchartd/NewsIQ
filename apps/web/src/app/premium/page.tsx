@@ -76,7 +76,7 @@ export default function PremiumPage() {
       name: "Enterprise",
       price: "Custom",
       period: "",
-      desc: "For newsrooms, analysts, and organisations",
+      desc: "For newsrooms, organisations",
       features: [
         { text: "Everything in Pro", included: true },
         { text: "REST API access", included: true },
@@ -96,20 +96,20 @@ export default function PremiumPage() {
     <AppShell>
       <div style={{ paddingBottom: 60 }}>
         {/* Premium Hero */}
-        <div className="niq-premium-hero">
-          <div className="niq-premium-eyebrow">NewsIQ Pro</div>
-          <h1 className="niq-premium-title">
+        <div className="pm-hero">
+          <div className="pm-ey">NewsIQ Pro</div>
+          <h1 className="pm-title">
             Understand more.
             <br />
             Read less.
           </h1>
-          <p className="niq-premium-sub">
+          <p className="pm-sub">
             Unlock the full intelligence layer — source comparison, personalised feed, and AI-powered story chat.
           </p>
         </div>
 
         {/* Plans Grid */}
-        <div className="niq-plans-grid">
+        <div className="plans">
           {plans.map((plan) => {
             const isCurrent = user?.subscription_plan === plan.planKey;
             const isLoading = loadingPlan === plan.planKey;
@@ -117,24 +117,24 @@ export default function PremiumPage() {
             return (
               <div
                 key={plan.name}
-                className={`niq-plan-card ${plan.popular ? "featured" : ""}`}
+                className={`plan ${plan.popular ? "feat" : ""}`}
               >
-                {plan.popular && <div className="niq-popular-badge">Most popular</div>}
+                {plan.popular && <div className="pop-badge">Most popular</div>}
                 
-                <div className="niq-plan-name">{plan.name}</div>
-                <div className="niq-plan-price">
+                <div className="pn">{plan.name}</div>
+                <div className="pp">
                   {plan.price}
-                  {plan.period && <span style={{ fontSize: 14, fontWeight: 400, color: "var(--ink-3)" }}>{plan.period}</span>}
+                  {plan.period && <span>{plan.period}</span>}
                 </div>
-                <div className="niq-plan-desc">{plan.desc}</div>
+                <div className="pd">{plan.desc}</div>
                 
-                <ul className="niq-plan-features">
+                <ul className="pf">
                   {plan.features.map((feat, i) => (
-                    <li key={i} className="niq-plan-feature">
+                    <li key={i} className="pfi">
                       {feat.included ? (
-                        <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" style={{ marginTop: 2 }} />
+                        <Check className="pfc shrink-0" size={14} style={{ marginTop: 2 }} />
                       ) : (
-                        <Minus className="w-3.5 h-3.5 text-gray-300 shrink-0" style={{ marginTop: 2 }} />
+                        <Minus className="pfd shrink-0" size={14} style={{ marginTop: 2 }} />
                       )}
                       <span style={{ opacity: feat.included ? 1 : 0.5 }}>{feat.text}</span>
                     </li>
@@ -143,9 +143,7 @@ export default function PremiumPage() {
 
                 <button
                   type="button"
-                  className={`niq-plan-cta ${
-                    plan.popular ? "niq-plan-cta-primary" : "niq-plan-cta-outline"
-                  }`}
+                  className={`pcta ${plan.popular ? "pctap" : "pctao"}`}
                   disabled={isLoading}
                   onClick={() => {
                     if (plan.planKey === "enterprise") {

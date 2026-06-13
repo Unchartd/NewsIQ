@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { MapPin, TrendingUp, Bookmark, BookmarkCheck } from "lucide-react";
+import { MapPin, TrendingUp, Bookmark } from "lucide-react";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { SourceDots } from "@/components/ui/source-dots";
 import type { Story } from "@/types";
@@ -14,6 +15,8 @@ interface StoryCardProps {
 }
 
 export function StoryCard({ story, summaryType = "short", index = 0 }: StoryCardProps) {
+  const [isSaved, setIsSaved] = useState(false);
+
   const summary =
     summaryType === "one_line"
       ? story.one_line_summary
@@ -31,51 +34,52 @@ export function StoryCard({ story, summaryType = "short", index = 0 }: StoryCard
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, delay: index * 0.04 }}
     >
-      <Link href={`/story/${story.id}`} className="niq-story-card" tabIndex={0}>
+      <Link href={`/story/${story.id}`} className="card" tabIndex={0} style={{ display: "block", textDecoration: "none" }}>
         {/* Meta row */}
-        <div className="niq-card-meta">
+        <div className="cmeta">
           {story.category && (
             <CategoryBadge category={story.category.name} />
           )}
           {locationLabel && (
             <>
-              <span className="niq-meta-dot" />
-              <span className="niq-meta-loc">
+              <span className="mdot" />
+              <span className="mloc">
                 <MapPin size={11} />
                 {locationLabel}
               </span>
             </>
           )}
-          <span className="niq-meta-time">{timeAgo}</span>
+          <span className="mtime">{timeAgo}</span>
         </div>
 
         {/* Headline */}
-        <h2 className="niq-card-headline">{story.headline}</h2>
+        <h2 className="chead">{story.headline}</h2>
 
         {/* Summary */}
         {summary && (
-          <p className="niq-card-summary">{summary}</p>
+          <p className="csum">{summary}</p>
         )}
 
         {/* Footer */}
-        <div className="niq-card-footer">
+        <div className="cfoot">
           <SourceDots count={story.source_count} />
           {isTrending && (
-            <span className="niq-trending-badge">
+            <span className="tbadge">
               <TrendingUp size={11} />
               Trending
             </span>
           )}
           <button
-            className="niq-bookmark-btn"
+            className={`bkbtn ${isSaved ? "saved" : ""}`}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              setIsSaved(!isSaved);
               // TODO: toggle bookmark via API
             }}
             title="Bookmark story"
           >
-            <Bookmark size={16} />
+            <Bookmark size={16} fill={isSaved ? "currentColor" : "none"} />
           </button>
         </div>
       </Link>

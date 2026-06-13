@@ -6,10 +6,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import { StoryCard } from "@/components/story/story-card";
 import { StoryCardSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/empty-states";
-import { Search, SearchX, X } from "lucide-react";
+import { Search, SearchX } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import type { Story } from "@/types";
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState } from "react";
 
 const RECENT_SEARCHES = [
   "OpenAI GPT-5",
@@ -37,7 +37,7 @@ function SearchResults() {
   const [activeFilter, setActiveFilter] = useState("all");
   const [prevUrlQuery, setPrevUrlQuery] = useState(urlQuery);
 
-  // Keep local search input in sync when URL changes (e.g. from navbar search)
+  // Keep local search input in sync when URL changes
   if (urlQuery !== prevUrlQuery) {
     setPrevUrlQuery(urlQuery);
     setSearchInput(urlQuery);
@@ -68,7 +68,6 @@ function SearchResults() {
         if (activeFilter === "trending") {
           params.trending = "true";
         } else if (activeFilter === "today") {
-          // Mock or real filter for today
           params.limit = "5";
         } else {
           params.category = activeFilter;
@@ -82,12 +81,12 @@ function SearchResults() {
   });
 
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", padding: "0 24px" }}>
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 24px" }}>
       {/* Search Hero Section */}
-      <div className="niq-search-hero">
-        <h1 className="niq-search-hero-title">Find any story</h1>
-        <form onSubmit={handleSearchSubmit} className="niq-search-big">
-          <Search className="w-5 h-5 text-gray-400 shrink-0" />
+      <div style={{ padding: "32px 0 24px" }}>
+        <h1 className="sh-title">Find any story</h1>
+        <form onSubmit={handleSearchSubmit} className="bigsch">
+          <Search size={18} style={{ color: "var(--ink3)", flexShrink: 0 }} />
           <input
             type="text"
             placeholder="Bengaluru floods, RBI rate, GPT-5…"
@@ -100,34 +99,38 @@ function SearchResults() {
               onClick={handleClear}
               style={{
                 fontSize: 12,
-                color: "var(--ink-3)",
+                color: "var(--ink3)",
                 cursor: "pointer",
                 padding: "4px 8px",
                 border: "1px solid var(--border)",
-                borderRadius: 4,
+                borderRadius: "var(--r4)",
                 background: "var(--surface)",
                 whiteSpace: "nowrap",
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
               }}
             >
-              <X className="w-3 h-3" />
               Clear
             </button>
           )}
         </form>
 
         {/* Recent Searches */}
-        <div className="niq-recent-chips">
-          <span style={{ fontSize: 11, color: "var(--ink-3)", alignSelf: "center", marginRight: 4 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 6,
+            marginTop: 12,
+          }}
+        >
+          <span style={{ fontSize: 11, color: "var(--ink3)" }}>
             Recent:
           </span>
           {RECENT_SEARCHES.map((term) => (
             <button
               key={term}
               type="button"
-              className="niq-recent-chip"
+              className="rchip"
               onClick={() => handleRecentClick(term)}
             >
               {term}
@@ -137,13 +140,21 @@ function SearchResults() {
       </div>
 
       {/* Filters Row */}
-      <div className="niq-filter-row">
-        <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600 }}>Filter:</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 20,
+        }}
+      >
+        <span style={{ fontSize: 12, color: "var(--ink3)", fontWeight: 600 }}>Filter:</span>
         {FILTER_CHIPS.map((chip) => (
           <button
             key={chip.slug}
             type="button"
-            className={`niq-filter-chip ${activeFilter === chip.slug ? "active" : ""}`}
+            className={`fchp ${activeFilter === chip.slug ? "on" : ""}`}
             onClick={() => setActiveFilter(chip.slug)}
           >
             {chip.name}
@@ -152,7 +163,7 @@ function SearchResults() {
       </div>
 
       {/* Results Section */}
-      <div className="section-label">
+      <div className="slbl">
         {isLoading
           ? "Searching..."
           : stories
@@ -169,7 +180,7 @@ function SearchResults() {
           />
         </div>
       ) : isLoading ? (
-        <div className="space-y-4">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <StoryCardSkeleton />
           <StoryCardSkeleton />
         </div>
@@ -187,7 +198,7 @@ function SearchResults() {
           description={`We couldn't find any clustered stories matching "${urlQuery}". Try different terms.`}
         />
       ) : (
-        <div className="space-y-4 pb-24">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 96 }}>
           {stories.map((story) => (
             <StoryCard key={story.id} story={story} />
           ))}

@@ -76,7 +76,7 @@ export function HomeContent() {
       )}
 
       {/* Section label */}
-      <div className="niq-section-label">
+      <div className="slbl">
         {isPersonalized ? "Your Personalized Feed" : "Top Stories"}
       </div>
 

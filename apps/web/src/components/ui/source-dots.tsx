@@ -13,12 +13,12 @@ interface SourceDotsProps {
 export function SourceDots({ count, max = 5 }: SourceDotsProps) {
   const dotsToShow = Math.min(count, max);
   return (
-    <div className="niq-sources-count">
-      <div className="niq-source-dots">
+    <div className="srcs">
+      <div className="sdots">
         {Array.from({ length: dotsToShow }).map((_, i) => (
           <div
             key={i}
-            className="niq-source-dot"
+            className="sdot"
             style={{ background: SOURCE_COLORS[i % SOURCE_COLORS.length] }}
           />
         ))}

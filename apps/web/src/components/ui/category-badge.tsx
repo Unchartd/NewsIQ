@@ -1,16 +1,22 @@
 "use client";
 
 const CATEGORY_CLASS_MAP: Record<string, string> = {
-  politics: "niq-badge-politics",
-  technology: "niq-badge-technology",
-  tech: "niq-badge-tech",
-  business: "niq-badge-business",
-  sports: "niq-badge-sports",
-  health: "niq-badge-health",
-  science: "niq-badge-science",
-  weather: "niq-badge-weather",
-  world: "niq-badge-world",
-  entertainment: "niq-badge-entertainment",
+  politics: "bp",
+  pol: "bp",
+  technology: "bt",
+  tech: "bt",
+  business: "bb",
+  biz: "bb",
+  sports: "bs",
+  spo: "bs",
+  health: "bh",
+  hlt: "bh",
+  science: "bsc",
+  sci: "bsc",
+  weather: "bw",
+  wea: "bw",
+  world: "bwl",
+  wld: "bwl",
 };
 
 interface CategoryBadgeProps {
@@ -20,10 +26,10 @@ interface CategoryBadgeProps {
 
 export function CategoryBadge({ category, className = "" }: CategoryBadgeProps) {
   const slug = category.toLowerCase();
-  const colorClass = CATEGORY_CLASS_MAP[slug] || "niq-badge-world";
+  const colorClass = CATEGORY_CLASS_MAP[slug] || "bwl";
 
   return (
-    <span className={`niq-cat-badge ${colorClass} ${className}`}>
+    <span className={`cbadge ${colorClass} ${className}`}>
       {category}
     </span>
   );

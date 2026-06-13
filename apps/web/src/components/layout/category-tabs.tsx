@@ -8,12 +8,12 @@ interface CategoryTabsProps {
 
 export function CategoryTabs({ categories, activeCategory, onSelect }: CategoryTabsProps) {
   return (
-    <div className="niq-cat-tabs-wrap">
-      <div className="niq-cat-tabs">
+    <div className="ctabs-wrap">
+      <div className="ctabs">
         {categories.map((cat) => (
           <button
             key={cat.slug}
-            className={`niq-cat-tab ${activeCategory === cat.slug ? "active" : ""}`}
+            className={`ctab ${activeCategory === cat.slug ? "on" : ""}`}
             onClick={() => onSelect(cat.slug)}
           >
             {cat.name}
