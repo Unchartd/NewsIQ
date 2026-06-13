@@ -2,15 +2,14 @@
 
 import uuid
 from datetime import datetime
-from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_user
+from app.core.deps import require_user
 from app.models.models import (
     Article,
     Bookmark,
@@ -19,33 +18,31 @@ from app.models.models import (
     Story,
     StoryArticle,
     StoryDifference,
-    StoryEntity,
     StoryMetric,
     StorySourceCoverage,
     StoryTag,
-    StoryTimelineEvent,
     User,
 )
 from app.schemas.story import (
+    PopularSourceWidget,
+    SourceInStory,
+    StoryArticleResponse,
     StoryDetailResponse,
     StoryListResponse,
-    StoryArticleResponse,
-    SourceInStory,
-    TrendingWidgetsResponse,
     TrendingTopicWidget,
-    PopularSourceWidget,
+    TrendingWidgetsResponse,
 )
 
 router = APIRouter()
 
 
-@router.get("", response_model=List[StoryListResponse])
+@router.get("", response_model=list[StoryListResponse])
 async def list_stories(
-    category: Optional[str] = None,
-    country: Optional[str] = None,
-    state: Optional[str] = None,
-    city: Optional[str] = None,
-    q: Optional[str] = None,
+    category: str | None = None,
+    country: str | None = None,
+    state: str | None = None,
+    city: str | None = None,
+    q: str | None = None,
     trending: bool = False,
     limit: int = 20,
     offset: int = 0,
@@ -54,7 +51,9 @@ async def list_stories(
     """Retrieve news stories with filtering, pagination, and sorting."""
     stmt = select(Story).options(
         selectinload(Story.category),
-        selectinload(Story.articles).selectinload(StoryArticle.article).selectinload(Article.source)
+        selectinload(Story.articles)
+        .selectinload(StoryArticle.article)
+        .selectinload(Article.source),
     )
 
     # Filtering by category slug
@@ -73,9 +72,9 @@ async def list_stories(
     if q:
         # Simple case-insensitive contains search
         stmt = stmt.where(
-            Story.headline.ilike(f"%{q}%") |
-            Story.one_line_summary.ilike(f"%{q}%") |
-            Story.short_summary.ilike(f"%{q}%")
+            Story.headline.ilike(f"%{q}%")
+            | Story.one_line_summary.ilike(f"%{q}%")
+            | Story.short_summary.ilike(f"%{q}%")
         )
 
     # Sorting
@@ -86,7 +85,7 @@ async def list_stories(
 
     # Pagination
     stmt = stmt.limit(limit).offset(offset)
-    
+
     result = await db.execute(stmt)
     stories = result.scalars().all()
 
@@ -115,7 +114,7 @@ async def list_stories(
                 updated_at=story.updated_at,
                 category=story.category,
                 article_count=len(story.articles),
-                source_logos=logos[:5]  # Limit to first 5 source logos
+                source_logos=logos[:5],  # Limit to first 5 source logos
             )
         )
 
@@ -131,39 +130,31 @@ async def get_trending_widgets(
     stmt_tags = select(StoryTag.tag_name).group_by(StoryTag.tag_name).limit(4)
     res_tags = await db.execute(stmt_tags)
     tags = res_tags.scalars().all()
-    
+
     trending_topics = []
     for i, tag in enumerate(tags):
         trending_topics.append(
-            TrendingTopicWidget(
-                topic=tag,
-                count="8 stories",
-                category="general"
-            )
+            TrendingTopicWidget(topic=tag, count="8 stories", category="general")
         )
-    
+
     # Fallback to default trending topics if DB is empty
     if not trending_topics:
         trending_topics = [
             TrendingTopicWidget(topic="Generative AI", count="12 stories", category="technology"),
             TrendingTopicWidget(topic="Federal Reserve", count="8 stories", category="business"),
             TrendingTopicWidget(topic="Climate Policy", count="6 stories", category="science"),
-            TrendingTopicWidget(topic="Space Exploration", count="5 stories", category="science")
+            TrendingTopicWidget(topic="Space Exploration", count="5 stories", category="science"),
         ]
 
     # Retrieve popular sources
-    stmt_sources = select(Source).where(Source.active == True).limit(3)
+    stmt_sources = select(Source).where(Source.active).limit(3)
     res_sources = await db.execute(stmt_sources)
     sources = res_sources.scalars().all()
 
     popular_sources = []
     for src in sources:
         popular_sources.append(
-            PopularSourceWidget(
-                name=src.name,
-                slug=src.slug,
-                rating="94% neutrality"
-            )
+            PopularSourceWidget(name=src.name, slug=src.slug, rating="94% neutrality")
         )
 
     # Fallback default sources
@@ -171,24 +162,28 @@ async def get_trending_widgets(
         popular_sources = [
             PopularSourceWidget(name="Reuters", slug="reuters", rating="94% neutrality"),
             PopularSourceWidget(name="BBC News", slug="bbc-news", rating="91% neutrality"),
-            PopularSourceWidget(name="Bloomberg", slug="bloomberg", rating="89% neutrality")
+            PopularSourceWidget(name="Bloomberg", slug="bloomberg", rating="89% neutrality"),
         ]
 
-    return TrendingWidgetsResponse(
-        trending_topics=trending_topics,
-        popular_sources=popular_sources
-    )
+    return TrendingWidgetsResponse(trending_topics=trending_topics, popular_sources=popular_sources)
 
 
-@router.get("/bookmarks", response_model=List[StoryListResponse])
+@router.get("/bookmarks", response_model=list[StoryListResponse])
 async def list_bookmarked_stories(
     current_user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve all stories bookmarked by the current user."""
-    stmt = select(Story).join(Bookmark).where(Bookmark.user_id == current_user.id).options(
-        selectinload(Story.category),
-        selectinload(Story.articles).selectinload(StoryArticle.article).selectinload(Article.source)
+    stmt = (
+        select(Story)
+        .join(Bookmark)
+        .where(Bookmark.user_id == current_user.id)
+        .options(
+            selectinload(Story.category),
+            selectinload(Story.articles)
+            .selectinload(StoryArticle.article)
+            .selectinload(Article.source),
+        )
     )
     result = await db.execute(stmt)
     stories = result.scalars().all()
@@ -215,7 +210,7 @@ async def list_bookmarked_stories(
                 updated_at=story.updated_at,
                 category=story.category,
                 article_count=len(story.articles),
-                source_logos=logos[:5]
+                source_logos=logos[:5],
             )
         )
     return response_list
@@ -228,20 +223,26 @@ async def get_story_detail(
 ):
     """Retrieve detailed story object with timeline, differences, and source coverage."""
     # We load all related items using selectinload
-    stmt = select(Story).options(
-        selectinload(Story.category),
-        selectinload(Story.timeline_events),
-        selectinload(Story.source_coverage).selectinload(StorySourceCoverage.source),
-        selectinload(Story.differences).selectinload(StoryDifference.source),
-        selectinload(Story.tags),
-        selectinload(Story.entities),
-        selectinload(Story.metrics),
-        selectinload(Story.articles).selectinload(StoryArticle.article).selectinload(Article.source)
-    ).where(Story.id == story_id)
-    
+    stmt = (
+        select(Story)
+        .options(
+            selectinload(Story.category),
+            selectinload(Story.timeline_events),
+            selectinload(Story.source_coverage).selectinload(StorySourceCoverage.source),
+            selectinload(Story.differences).selectinload(StoryDifference.source),
+            selectinload(Story.tags),
+            selectinload(Story.entities),
+            selectinload(Story.metrics),
+            selectinload(Story.articles)
+            .selectinload(StoryArticle.article)
+            .selectinload(Article.source),
+        )
+        .where(Story.id == story_id)
+    )
+
     res = await db.execute(stmt)
     story = res.scalar_one_or_none()
-    
+
     if not story:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -274,8 +275,8 @@ async def get_story_detail(
                         slug=sa.article.source.slug,
                         website_url=sa.article.source.website_url,
                         logo_url=sa.article.source.logo_url,
-                        country_code=sa.article.source.country_code
-                    )
+                        country_code=sa.article.source.country_code,
+                    ),
                 )
             )
 
@@ -298,7 +299,7 @@ async def get_story_detail(
         tags=story.tags,
         entities=story.entities,
         metrics=story.metrics,
-        articles=mapped_articles
+        articles=mapped_articles,
     )
 
 
@@ -321,8 +322,7 @@ async def bookmark_story(
 
     # Check if already bookmarked
     stmt_bm = select(Bookmark).where(
-        Bookmark.user_id == current_user.id,
-        Bookmark.story_id == story_id
+        Bookmark.user_id == current_user.id, Bookmark.story_id == story_id
     )
     res_bm = await db.execute(stmt_bm)
     if res_bm.scalar_one_or_none():
@@ -330,7 +330,7 @@ async def bookmark_story(
 
     bookmark = Bookmark(user_id=current_user.id, story_id=story_id, created_at=datetime.utcnow())
     db.add(bookmark)
-    
+
     # Increment bookmarks metric
     if story.metrics:
         story.metrics.bookmarks += 1
@@ -349,8 +349,7 @@ async def unbookmark_story(
 ):
     """Remove a story from the user's bookmarks."""
     stmt_bm = select(Bookmark).where(
-        Bookmark.user_id == current_user.id,
-        Bookmark.story_id == story_id
+        Bookmark.user_id == current_user.id, Bookmark.story_id == story_id
     )
     res_bm = await db.execute(stmt_bm)
     bookmark = res_bm.scalar_one_or_none()
@@ -361,7 +360,7 @@ async def unbookmark_story(
         )
 
     await db.delete(bookmark)
-    
+
     # Decrement bookmarks metric
     stmt_story = select(Story).where(Story.id == story_id)
     res_story = await db.execute(stmt_story)

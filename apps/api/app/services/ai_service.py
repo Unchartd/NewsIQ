@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import google.generativeai as genai
 from pydantic import BaseModel, Field
@@ -19,19 +19,33 @@ class TimelineEventSchema(BaseModel):
 
 class SourceDifferenceSchema(BaseModel):
     source_name: str = Field(description="Name of the news source/publisher, e.g. Reuters, BBC")
-    unique_information: str = Field(description="Details mentioned ONLY by this source, or empty string")
-    missing_information: str = Field(description="Key details omitted by this source that others covered, or empty string")
-    contradictions: str = Field(description="Any factual contradictions or conflicting claims made by this source, or empty string")
+    unique_information: str = Field(
+        description="Details mentioned ONLY by this source, or empty string"
+    )
+    missing_information: str = Field(
+        description="Key details omitted by this source that others covered, or empty string"
+    )
+    contradictions: str = Field(
+        description="Any factual contradictions or conflicting claims made by this source, or empty string"
+    )
 
 
 class StoryAIResponse(BaseModel):
-    headline: str = Field(description="A highly neutral, objective, and non-clickbait headline summarizing the event")
+    headline: str = Field(
+        description="A highly neutral, objective, and non-clickbait headline summarizing the event"
+    )
     one_line_summary: str = Field(description="A concise 1-sentence summary of the story")
     short_summary: str = Field(description="A short 1-paragraph summary (3-4 sentences)")
-    detailed_summary: str = Field(description="A detailed multi-paragraph summary covering all angles and context")
-    key_facts: List[str] = Field(description="List of 3 to 6 key objective bullet points of fact")
-    timeline: List[TimelineEventSchema] = Field(description="Chronological timeline of events leading up to and during the story")
-    differences: List[SourceDifferenceSchema] = Field(description="Analysis of differences, biases, omissions, or contradictions per news source")
+    detailed_summary: str = Field(
+        description="A detailed multi-paragraph summary covering all angles and context"
+    )
+    key_facts: list[str] = Field(description="List of 3 to 6 key objective bullet points of fact")
+    timeline: list[TimelineEventSchema] = Field(
+        description="Chronological timeline of events leading up to and during the story"
+    )
+    differences: list[SourceDifferenceSchema] = Field(
+        description="Analysis of differences, biases, omissions, or contradictions per news source"
+    )
 
 
 class AIService:
@@ -48,15 +62,15 @@ class AIService:
         else:
             logger.warning("GEMINI_API_KEY is not set. AI service will run in fallback mock mode.")
 
-    def _generate_mock_response(self, articles: List[Dict[str, Any]]) -> StoryAIResponse:
+    def _generate_mock_response(self, articles: list[dict[str, Any]]) -> StoryAIResponse:
         """Generate a realistic mock response for local testing without API key."""
         primary_article = articles[0] if articles else {"title": "Global Event", "content": ""}
         title = primary_article.get("title") or "Major News Event"
         source_name = primary_article.get("source_name") or "Reuters"
-        
+
         # Build list of sources
         sources = list(set(a.get("source_name", "Unknown Source") for a in articles))
-        
+
         mock_differences = []
         for src in sources:
             mock_differences.append(
@@ -64,7 +78,7 @@ class AIService:
                     source_name=src,
                     unique_information=f"{src} highlighted specific context regarding local regulatory implications.",
                     missing_information=f"{src} did not cover the international diplomatic responses covered by other sources.",
-                    contradictions=""
+                    contradictions="",
                 )
             )
 
@@ -88,17 +102,26 @@ class AIService:
             key_facts=[
                 f"Event first reported by {source_name} with subsequent coverage from {len(sources)} publishers.",
                 "Primary impact includes regulatory scrutiny and economic market reaction.",
-                "Investigation is underway with preliminary results expected within days."
+                "Investigation is underway with preliminary results expected within days.",
             ],
             timeline=[
-                TimelineEventSchema(date="08:00 AM UTC", description="Initial incident occurs and is first reported."),
-                TimelineEventSchema(date="10:30 AM UTC", description="Emergency response teams and investigators arrive at the scene."),
-                TimelineEventSchema(date="02:00 PM UTC", description="Official joint press conference held by authorities.")
+                TimelineEventSchema(
+                    date="08:00 AM UTC",
+                    description="Initial incident occurs and is first reported.",
+                ),
+                TimelineEventSchema(
+                    date="10:30 AM UTC",
+                    description="Emergency response teams and investigators arrive at the scene.",
+                ),
+                TimelineEventSchema(
+                    date="02:00 PM UTC",
+                    description="Official joint press conference held by authorities.",
+                ),
             ],
-            differences=mock_differences
+            differences=mock_differences,
         )
 
-    async def analyze_story(self, articles: List[Dict[str, Any]]) -> StoryAIResponse:
+    async def analyze_story(self, articles: list[dict[str, Any]]) -> StoryAIResponse:
         """Analyze a collection of articles about the same story and generate structured AI summaries, timeline, and differences."""
         if not articles:
             raise ValueError("No articles provided for AI analysis.")
@@ -111,7 +134,7 @@ class AIService:
             articles_text = ""
             for i, art in enumerate(articles):
                 articles_text += (
-                    f"--- ARTICLE {i+1} ---\n"
+                    f"--- ARTICLE {i + 1} ---\n"
                     f"Source: {art.get('source_name', 'Unknown')}\n"
                     f"Published: {art.get('published_at', 'Unknown')}\n"
                     f"Title: {art.get('title', 'No Title')}\n"
@@ -135,8 +158,8 @@ class AIService:
                 generation_config=genai.GenerationConfig(
                     response_mime_type="application/json",
                     response_schema=StoryAIResponse,
-                    temperature=0.1
-                )
+                    temperature=0.1,
+                ),
             )
 
             # Parse response JSON

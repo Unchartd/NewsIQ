@@ -10,9 +10,8 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from app.core.database import async_session_factory, engine, Base
+from app.core.database import async_session_factory
 from app.models.models import Category, Source
-
 
 CATEGORIES = [
     {"slug": "politics", "name": "Politics", "icon": "landmark"},
@@ -138,9 +137,7 @@ async def seed():
 
         # Seed sources
         for src_data in SOURCES:
-            result = await session.execute(
-                select(Source).where(Source.slug == src_data["slug"])
-            )
+            result = await session.execute(select(Source).where(Source.slug == src_data["slug"]))
             existing = result.scalar_one_or_none()
             if not existing:
                 source = Source(

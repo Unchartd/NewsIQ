@@ -2,7 +2,6 @@
 
 import logging
 import re
-from typing import Dict, List, Set, Tuple
 
 import spacy
 
@@ -21,20 +20,21 @@ class NERService:
             try:
                 import subprocess
                 import sys
+
                 subprocess.run(
                     [sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
                     check=True,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
                 )
                 self.nlp = spacy.load("en_core_web_sm")
                 logger.info("Successfully downloaded and loaded 'en_core_web_sm'")
             except Exception as e:
                 logger.error("Failed to download spaCy model: %s. Using regex fallback.", e)
 
-    def _regex_fallback_ner(self, text: str) -> List[Tuple[str, str]]:
+    def _regex_fallback_ner(self, text: str) -> list[tuple[str, str]]:
         """Fallback rule-based NER using regex to identify potential Persons, Orgs, and Locations.
-        
+
         Extracts consecutive capitalized words and runs simple heuristics.
         """
         entities = []
@@ -43,14 +43,46 @@ class NERService:
 
         # Simple pattern to match capitalized word sequences (potential proper nouns)
         # Matches sequences like 'United States', 'Elon Musk', 'Google Inc.'
-        pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b'
+        pattern = r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b"
         matches = re.findall(pattern, text)
 
         # Basic dictionaries for common categories
-        org_indicators = {"Google", "Microsoft", "Apple", "Federal", "Reserve", "Inc", "Co", "Corp", "Organization", "Council", "Nations", "UN", "NATO", "EU"}
-        loc_indicators = {"US", "UK", "USA", "India", "London", "Washington", "Delhi", "Mumbai", "Paris", "Berlin", "Tokyo", "State", "City", "China", "Europe", "Asia"}
+        org_indicators = {
+            "Google",
+            "Microsoft",
+            "Apple",
+            "Federal",
+            "Reserve",
+            "Inc",
+            "Co",
+            "Corp",
+            "Organization",
+            "Council",
+            "Nations",
+            "UN",
+            "NATO",
+            "EU",
+        }
+        loc_indicators = {
+            "US",
+            "UK",
+            "USA",
+            "India",
+            "London",
+            "Washington",
+            "Delhi",
+            "Mumbai",
+            "Paris",
+            "Berlin",
+            "Tokyo",
+            "State",
+            "City",
+            "China",
+            "Europe",
+            "Asia",
+        }
 
-        seen: Set[str] = set()
+        seen: set[str] = set()
         for entity in matches:
             if entity in seen or len(entity) < 3:
                 continue
@@ -68,9 +100,9 @@ class NERService:
 
         return entities
 
-    def extract_entities(self, text: str) -> List[Dict[str, str]]:
+    def extract_entities(self, text: str) -> list[dict[str, str]]:
         """Extract entities (PERSON, ORG, LOCATION, EVENT) from text.
-        
+
         Returns a list of dicts: [{"value": "Entity Name", "type": "PERSON"}]
         """
         if not text or not text.strip():

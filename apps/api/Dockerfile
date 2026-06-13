@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -14,6 +14,9 @@ RUN pip install uv
 # Copy project files
 COPY pyproject.toml .
 RUN uv pip install --system -e ".[dev]"
+
+# Pre-download spaCy model to avoid runtime downloads
+RUN python -m spacy download en_core_web_sm
 
 COPY . .
 

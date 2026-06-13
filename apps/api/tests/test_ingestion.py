@@ -1,12 +1,12 @@
 """Unit tests for the news ingestion and embedding services."""
 
-import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from app.models.models import Source
-from app.services.ingestion_service import ingestion_service
 from app.services.embedding_service import embedding_service
+from app.services.ingestion_service import ingestion_service
 
 
 def test_clean_html():
@@ -37,7 +37,7 @@ def test_generate_mock_embedding():
     assert len(vec1) == 1536
     assert len(vec2) == 1536
     assert len(vec3) == 1536
-    
+
     # Check determinism: same input must yield same vector
     assert vec1 == vec2
     # Check variance: different input must yield different vector
@@ -45,6 +45,7 @@ def test_generate_mock_embedding():
 
     # Check normalization: vector norm should be approximately 1.0
     import math
+
     norm = math.sqrt(sum(x * x for x in vec1))
     assert abs(norm - 1.0) < 1e-5
 
@@ -58,7 +59,7 @@ async def test_ingest_rss_source_no_new(mock_db_session):
         name="Test News",
         slug="test-news",
         rss_url="http://example.com/rss",
-        active=True
+        active=True,
     )
 
     # Mock DB query to return an existing article (simulating a duplicate URL)
@@ -87,6 +88,7 @@ async def test_ingest_rss_source_no_new(mock_db_session):
         def __init__(self, text, status_code=200):
             self.text = text
             self.status_code = status_code
+
         def raise_for_status(self):
             pass
 

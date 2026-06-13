@@ -2,15 +2,15 @@
 
 import asyncio
 import logging
-from typing import Any, Coroutine
+from collections.abc import Coroutine
+from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
 from app.models.models import Article
-from app.services.ingestion_service import ingestion_service
 from app.services.embedding_service import embedding_service
+from app.services.ingestion_service import ingestion_service
 from app.services.vector_service import vector_service
 from app.workers.celery_app import celery_app
 
@@ -31,7 +31,7 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
 def ingest_news_task() -> dict[str, int]:
     """Ingest articles from all active news sources."""
     logger.info("Celery task: Starting news ingestion.")
-    
+
     async def _run():
         async with async_session_factory() as session:
             results = await ingestion_service.ingest_all_active_sources(session)
@@ -85,7 +85,9 @@ def process_pending_embeddings_task() -> int:
                         "title": article.title,
                         "url": article.url,
                         "source_id": str(article.source_id),
-                        "published_at": article.published_at.isoformat() if article.published_at else None,
+                        "published_at": article.published_at.isoformat()
+                        if article.published_at
+                        else None,
                     }
 
                     # Upsert to Qdrant
@@ -101,7 +103,9 @@ def process_pending_embeddings_task() -> int:
                     success_count += 1
 
                     # Try real-time incremental merge into similar story
-                    merged = await clustering_service.add_article_to_existing_story_if_similar(article.id, session)
+                    merged = await clustering_service.add_article_to_existing_story_if_similar(
+                        article.id, session
+                    )
                     if merged:
                         merged_count += 1
                 except Exception as e:
@@ -113,9 +117,9 @@ def process_pending_embeddings_task() -> int:
                 "Successfully embedded %d/%d articles. Merged %d directly.",
                 success_count,
                 len(pending_articles),
-                merged_count
+                merged_count,
             )
-            
+
             if success_count > 0:
                 # Trigger batch clustering to handle newly embedded articles
                 cluster_news_task.delay()
@@ -133,10 +137,11 @@ def process_pending_embeddings_task() -> int:
 def cluster_news_task() -> int:
     """Run batch clustering of unclustered articles into stories."""
     logger.info("Celery task: Running batch clustering.")
-    
+
     async def _run():
         async with async_session_factory() as session:
             from app.services.clustering_service import clustering_service
+
             stories_created = await clustering_service.run_batch_clustering(session)
             return stories_created
 

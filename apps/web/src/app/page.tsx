@@ -1,65 +1,163 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from "next/link";
+import { Navbar } from "@/components/layout/navbar";
+import { SignalBar } from "@/components/layout/signal-bar";
+import { CategoryBadge } from "@/components/ui/category-badge";
+import { useAuthStore } from "@/stores/auth-store";
+
+const PREVIEW_CARDS = [
+  {
+    category: "Technology",
+    headline: "OpenAI releases new reasoning model with 40% improvement in benchmark performance",
+    sources: 12,
+    trending: true,
+    time: "43 min ago",
+  },
+  {
+    category: "Business",
+    headline: "RBI holds repo rate steady at 6.5% amid global inflation uncertainty",
+    sources: 8,
+    location: "Mumbai",
+    time: "1h ago",
+  },
+  {
+    category: "Weather",
+    headline: "Heavy monsoon rains disrupt transport across Bengaluru; schools closed",
+    sources: 6,
+    location: "Bengaluru",
+    time: "2h ago",
+  },
+];
+
+export default function LandingPage() {
+  const { isAuthenticated } = useAuthStore();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-background text-foreground">
+      <Navbar />
+      <SignalBar />
+
+      {/* Hero */}
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 24px" }}>
+        <div className="niq-landing-hero">
+          <div className="niq-hero-left">
+            <div className="niq-hero-eyebrow">
+              <div className="niq-hero-pulse" />
+              Live intelligence · 1,240 stories indexed today
+            </div>
+            <h1 className="niq-hero-title">
+              Every story,<br />
+              <em>understood</em><br />
+              in 30 seconds.
+            </h1>
+            <p className="niq-hero-desc">
+              NewsIQ clusters thousands of articles into single, clear stories — with AI summaries,
+              source comparisons, and timelines. Stop reading. Start understanding.
+            </p>
+            <div className="niq-hero-btns">
+              <Link href={isAuthenticated ? "/home" : "/signup"}>
+                <button className="niq-btn-primary" style={{ padding: "11px 24px", fontSize: 15 }}>
+                  Start reading free
+                </button>
+              </Link>
+              <Link href="/premium">
+                <button className="niq-btn-outline" style={{ padding: "11px 24px", fontSize: 15 }}>
+                  See plans
+                </button>
+              </Link>
+            </div>
+            <div className="niq-hero-stats">
+              <div>
+                <div className="niq-stat-num">10k+</div>
+                <div className="niq-stat-label">Sources indexed</div>
+              </div>
+              <div>
+                <div className="niq-stat-num">98%</div>
+                <div className="niq-stat-label">Cluster accuracy</div>
+              </div>
+              <div>
+                <div className="niq-stat-num">&lt;5 min</div>
+                <div className="niq-stat-label">Story freshness</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Preview Cards */}
+          <div className="niq-hero-right">
+            {PREVIEW_CARDS.map((card, i) => (
+              <div key={i} className="niq-hero-card-preview">
+                <div style={{ marginBottom: 8 }}>
+                  <CategoryBadge category={card.category} />
+                </div>
+                <div className="niq-hcp-headline">{card.headline}</div>
+                <div className="niq-hcp-footer">
+                  <span>{card.sources} sources</span>
+                  {card.trending && <span>↑ Trending</span>}
+                  {card.location && <span>{card.location}</span>}
+                  <span>{card.time}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Value proposition strip */}
+        <div style={{
+          borderTop: "1px solid var(--border)",
+          padding: "48px 0",
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 40,
+        }}>
+          {[
+            {
+              label: "AI Clustering",
+              title: "One story from dozens of articles",
+              desc: "Articles covering the same event are grouped and synthesized — eliminating redundancy, preserving nuance.",
+            },
+            {
+              label: "Source Transparency",
+              title: "See exactly what each outlet emphasised",
+              desc: "The Source Coverage table and Difference Engine show you where publishers agree, disagree, and go silent.",
+            },
+            {
+              label: "Neutral Headlines",
+              title: "Facts, not clickbait",
+              desc: "AI rewrites every headline to be factual and informative. You know what happened before you click.",
+            },
+          ].map((item) => (
+            <div key={item.label}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: "0.09em",
+                textTransform: "uppercase" as const, color: "var(--primary)", marginBottom: 10,
+              }}>
+                {item.label}
+              </div>
+              <div style={{
+                fontFamily: "var(--font-newsreader), Georgia, serif",
+                fontSize: 18, fontWeight: 500, marginBottom: 8, color: "var(--ink)",
+              }}>
+                {item.title}
+              </div>
+              <div style={{ fontSize: 14, color: "var(--ink-3)", lineHeight: 1.7 }}>
+                {item.desc}
+              </div>
+            </div>
+          ))}
         </div>
-      </main>
+      </div>
+
+      {/* Footer */}
+      <footer style={{
+        borderTop: "1px solid var(--border)",
+        padding: "32px 24px",
+        textAlign: "center",
+        fontSize: 12,
+        color: "var(--ink-3)",
+      }}>
+        © {new Date().getFullYear()} NewsIQ. All rights reserved.
+      </footer>
     </div>
   );
 }

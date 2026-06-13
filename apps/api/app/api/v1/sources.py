@@ -1,7 +1,7 @@
 """API endpoints for news source management."""
 
 import uuid
-from typing import List, Any
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -9,14 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import require_admin, require_user
-from app.models.models import Source, User
+from app.models.models import Source
 from app.schemas.source import SourceCreate, SourceResponse, SourceUpdate
 from app.workers.tasks import ingest_news_task
 
 router = APIRouter()
 
 
-@router.get("", response_model=List[SourceResponse])
+@router.get("", response_model=list[SourceResponse])
 async def list_sources(
     active_only: bool = True,
     db: AsyncSession = Depends(get_db),
@@ -24,8 +24,8 @@ async def list_sources(
     """Retrieve news sources."""
     stmt = select(Source)
     if active_only:
-        stmt = stmt.where(Source.active == True)
-    
+        stmt = stmt.where(Source.active)
+
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -46,10 +46,7 @@ async def create_source(
             detail="Source with this slug already exists.",
         )
 
-    source = Source(
-        id=uuid.uuid4(),
-        **payload.model_dump()
-    )
+    source = Source(id=uuid.uuid4(), **payload.model_dump())
     db.add(source)
     await db.commit()
     await db.refresh(source)
@@ -124,7 +121,7 @@ async def trigger_ingestion(
     current_user: Any = Depends(require_user),
 ):
     """Manually trigger the news ingestion task.
-    
+
     Can be run by any authenticated user for testing purposes.
     """
     task = ingest_news_task.delay()
