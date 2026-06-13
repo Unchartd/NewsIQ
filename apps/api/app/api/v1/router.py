@@ -18,7 +18,7 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 # Source endpoints
 api_router.include_router(sources.router, prefix="/sources", tags=["sources"])
 
-# Story endpoints
+# Story endpoints (includes /search, /categories, /trending-widgets, /bookmarks)
 api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
 
 

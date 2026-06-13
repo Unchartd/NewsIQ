@@ -11,6 +11,19 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Canonical category slugs the AI must choose from
+CATEGORY_SLUGS = [
+    "politics",
+    "world",
+    "business",
+    "technology",
+    "sports",
+    "entertainment",
+    "health",
+    "science",
+    "weather",
+]
+
 
 class TimelineEventSchema(BaseModel):
     date: str = Field(description="Date or time of the event, e.g. YYYY-MM-DD or time of day")
@@ -40,6 +53,12 @@ class StoryAIResponse(BaseModel):
         description="A detailed multi-paragraph summary covering all angles and context"
     )
     key_facts: list[str] = Field(description="List of 3 to 6 key objective bullet points of fact")
+    category: str = Field(
+        description=(
+            f"The single best-matching category slug for this story. "
+            f"Must be one of: {', '.join(CATEGORY_SLUGS)}"
+        )
+    )
     timeline: list[TimelineEventSchema] = Field(
         description="Chronological timeline of events leading up to and during the story"
     )
@@ -104,6 +123,7 @@ class AIService:
                 "Primary impact includes regulatory scrutiny and economic market reaction.",
                 "Investigation is underway with preliminary results expected within days.",
             ],
+            category="world",
             timeline=[
                 TimelineEventSchema(
                     date="08:00 AM UTC",
@@ -148,7 +168,9 @@ class AIService:
                 f"{articles_text}\n"
                 "Synthesize this information into a single cohesive story, extracting the headline, summaries at "
                 "3 detail levels (one-line, short, detailed), key bulleted facts, a chronological timeline, "
-                "and an analysis of source differences/contradictions."
+                "and an analysis of source differences/contradictions.\n"
+                f"For the 'category' field, choose exactly one slug from: {', '.join(CATEGORY_SLUGS)}.\n"
+                "For timeline dates, use ISO 8601 format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS) whenever possible."
             )
 
             # Query Gemini using structured JSON schema output
@@ -164,6 +186,9 @@ class AIService:
 
             # Parse response JSON
             data = json.loads(response.text)
+            # Validate category is one of the allowed slugs
+            if data.get("category") not in CATEGORY_SLUGS:
+                data["category"] = "world"
             return StoryAIResponse(**data)
 
         except Exception as e:
