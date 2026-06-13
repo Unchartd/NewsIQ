@@ -65,12 +65,20 @@ docker-compose up -d
 Navigate to the API directory and boot up FastAPI:
 ```bash
 cd apps/api
-pip install -e ".[dev]"
-alembic upgrade head
-python -m app.scripts.seed  # Seed the database with initial news data
-uvicorn app.main:app --reload --port 8000
+
+# Install all dependencies (including dev extras) using uv
+uv sync --all-extras
+
+# Run database migrations using the venv's alembic
+uv run alembic upgrade head
+
+# (Optional) Seed the database with initial news sources
+uv run python -m app.scripts.seed
+
+# Start the API server
+uv run uvicorn app.main:app --reload --port 8000
 ```
-*The API will be available at `http://localhost:8000`. You can view the swagger docs at `http://localhost:8000/docs`.*
+*The API will be available at `http://localhost:8000`. Swagger docs are at `http://localhost:8000/docs` (dev mode only).*
 
 ### 4. Start the Frontend (Web)
 In a new terminal window, boot the Next.js app:
