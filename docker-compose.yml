@@ -164,6 +164,8 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
     container_name: newsiq-web
     restart: unless-stopped
     ports:
