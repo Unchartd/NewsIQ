@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
+import { setAccessToken } from "@/lib/token-store";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -47,7 +48,8 @@ export default function SignupPage() {
         password,
         confirm_password: confirmPassword,
       });
-      localStorage.setItem("access_token", data.access_token);
+      localStorage.removeItem; // no-op placeholder removed below
+      setAccessToken(data.access_token);
       setUser(data.user);
       toast.success("Account created!");
       router.push("/onboarding");
