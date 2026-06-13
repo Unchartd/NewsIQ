@@ -9,7 +9,6 @@ environments can be provisioned without an existing database.
 """
 
 from alembic import op
-
 from app.core.database import Base
 from app.models import models  # noqa: F401 — ensures all tables register on Base.metadata
 

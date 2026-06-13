@@ -378,3 +378,33 @@ async def get_latest_digest(
         "title": "Your NewsIQ Intelligence Briefing",
         "items": digest_items,
     }
+
+
+@router.post("/events", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+async def track_user_event(
+    event_type: str,
+    story_id: uuid.UUID | None = None,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record a user interaction event (view_story, share_story, etc.) for analytics.
+
+    Called fire-and-forget from the frontend — always returns 201 even when the
+    story_id does not resolve, so the client is never blocked by this call.
+    """
+    from app.models.models import UserEvent
+
+    event = UserEvent(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        story_id=story_id,
+        event_type=event_type,
+        created_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(event)
+    try:
+        await db.flush()
+    except Exception:
+        # Non-critical — swallow errors so client is never blocked
+        await db.rollback()
+    return MessageResponse(message="Event recorded.")

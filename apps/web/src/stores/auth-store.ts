@@ -12,6 +12,7 @@ export interface User {
   email: string;
   name: string | null;
   image_url: string | null;
+  email_verified: boolean;
   role: "guest" | "user" | "premium" | "admin";
   subscription_plan: "free" | "pro" | "enterprise";
 }

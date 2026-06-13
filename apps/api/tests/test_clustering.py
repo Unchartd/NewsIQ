@@ -78,6 +78,7 @@ async def test_run_batch_clustering(
                     contradictions="",
                 )
             ],
+            category="technology",
         )
 
         # Mock NER Service output

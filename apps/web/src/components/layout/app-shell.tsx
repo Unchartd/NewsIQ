@@ -3,6 +3,9 @@
 import { Navbar } from "./navbar";
 import { SignalBar } from "./signal-bar";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { useAuthStore } from "@/stores/auth-store";
+import apiClient from "@/lib/api-client";
+import { useState } from "react";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -12,8 +15,45 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, signalVariant = "pulse", signalProgress, sidebar }: AppShellProps) {
+  const { user, isAuthenticated } = useAuthStore();
+  const [sentVerification, setSentVerification] = useState(false);
+
+  const handleResendVerification = async () => {
+    try {
+      await apiClient.post("/auth/resend-verification");
+      setSentVerification(true);
+    } catch {
+      // Ignored for UI simplicity
+    }
+  };
+
+  const showVerificationBanner = isAuthenticated && user && !user.email_verified;
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
+      {showVerificationBanner && (
+        <div style={{
+          backgroundColor: "var(--warning-light)",
+          color: "var(--warning-dark)",
+          padding: "8px 16px",
+          textAlign: "center",
+          fontSize: 13,
+          fontWeight: 500,
+          borderBottom: "1px solid var(--warning)",
+        }}>
+          Please verify your email address. 
+          {sentVerification ? (
+            <span style={{ marginLeft: 8, color: "var(--warning)" }}>Verification sent!</span>
+          ) : (
+            <button 
+              onClick={handleResendVerification}
+              style={{ marginLeft: 8, textDecoration: "underline", color: "var(--warning-dark)" }}
+            >
+              Resend email
+            </button>
+          )}
+        </div>
+      )}
       <Navbar />
       <SignalBar variant={signalVariant} progress={signalProgress} />
       {sidebar ? (

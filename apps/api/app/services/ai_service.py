@@ -6,6 +6,7 @@ from typing import Any
 
 import google.generativeai as genai
 from pydantic import BaseModel, Field
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.core.config import settings
 
@@ -173,16 +174,25 @@ class AIService:
                 "For timeline dates, use ISO 8601 format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS) whenever possible."
             )
 
-            # Query Gemini using structured JSON schema output
-            model = genai.GenerativeModel(settings.SUMMARIZATION_MODEL)
-            response = await model.generate_content_async(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json",
-                    response_schema=StoryAIResponse,
-                    temperature=0.1,
-                ),
+            @retry(
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=2, max=10),
+                retry=retry_if_exception_type(Exception),
+                reraise=True,
             )
+            async def _call_gemini():
+                model = genai.GenerativeModel(settings.SUMMARIZATION_MODEL)
+                return await model.generate_content_async(
+                    prompt,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json",
+                        response_schema=StoryAIResponse,
+                        temperature=0.1,
+                    ),
+                )
+
+            # Query Gemini using structured JSON schema output
+            response = await _call_gemini()
 
             # Parse response JSON
             data = json.loads(response.text)
