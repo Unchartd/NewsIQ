@@ -7,7 +7,7 @@ All tables follow the Backend Schema Document:
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -17,11 +17,17 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+
+def _now() -> datetime:
+    """Return current UTC time (timezone-naive, consistent with DB storage)."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def generate_uuid() -> uuid.UUID:
@@ -53,8 +59,8 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(30), default="user")
     subscription_plan: Mapped[str] = mapped_column(String(30), default="free")
     status: Mapped[str] = mapped_column(String(30), default="active")
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
 
     # Relationships
     preferences: Mapped["UserPreference | None"] = relationship(
@@ -104,10 +110,8 @@ class UserPreference(Base):
     preferred_summary_type: Mapped[str | None] = mapped_column(String(20))
     theme: Mapped[str | None] = mapped_column(String(20))
     language: Mapped[str | None] = mapped_column(String(20))
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime | None] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
 
     user: Mapped["User"] = relationship(back_populates="preferences")
 
@@ -125,7 +129,7 @@ class Session(Base):
     ip_address: Mapped[str | None] = mapped_column(Text)
     user_agent: Mapped[str | None] = mapped_column(Text)
     expires_at: Mapped[datetime | None] = mapped_column()
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     user: Mapped["User"] = relationship(back_populates="sessions")
 
@@ -188,7 +192,7 @@ class Category(Base):
     slug: Mapped[str] = mapped_column(String(100), unique=True)
     name: Mapped[str] = mapped_column(String(100))
     icon: Mapped[str | None] = mapped_column(String(100))
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
 
 class Source(Base):
@@ -204,7 +208,7 @@ class Source(Base):
     country_code: Mapped[str | None] = mapped_column(String(10))
     rss_url: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     articles: Mapped[list["Article"]] = relationship(back_populates="source")
 
@@ -226,7 +230,7 @@ class Article(Base):
     published_at: Mapped[datetime | None] = mapped_column(index=True)
     crawled_at: Mapped[datetime | None] = mapped_column()
     embedding_status: Mapped[str | None] = mapped_column(String(30), default="pending")
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     source: Mapped["Source"] = relationship(back_populates="articles")
 
@@ -257,12 +261,12 @@ class Story(Base):
     location_country: Mapped[str | None] = mapped_column(String(100))
     location_state: Mapped[str | None] = mapped_column(String(100))
     location_city: Mapped[str | None] = mapped_column(String(100))
-    trend_score: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    trend_score: Mapped[float | None] = mapped_column(Numeric(10, 6))
     story_status: Mapped[str | None] = mapped_column(String(30), default="active")
     first_seen_at: Mapped[datetime | None] = mapped_column()
-    updated_at: Mapped[datetime | None] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    # created_at is the canonical creation timestamp used for ordering/digest queries
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+    updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
 
     category: Mapped["Category | None"] = relationship()
     articles: Mapped[list["StoryArticle"]] = relationship(
@@ -290,6 +294,7 @@ class Story(Base):
     __table_args__ = (
         Index("idx_stories_trend", trend_score.desc()),
         Index("idx_stories_updated", updated_at.desc()),
+        Index("idx_stories_created", created_at.desc()),
     )
 
 
@@ -317,8 +322,10 @@ class StoryTimelineEvent(Base):
         UUID(as_uuid=True), ForeignKey("stories.id"), index=True
     )
     event_time: Mapped[datetime | None] = mapped_column()
+    # Raw date string from AI (e.g. "08:00 AM UTC") stored for display when parsing fails
+    event_time_raw: Mapped[str | None] = mapped_column(String(100))
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     story: Mapped["Story"] = relationship(back_populates="timeline_events")
 
@@ -329,13 +336,19 @@ class StorySourceCoverage(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), index=True
+    )
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sources.id"))
     focus_area: Mapped[str | None] = mapped_column(Text)
     published_at: Mapped[datetime | None] = mapped_column()
 
     story: Mapped["Story"] = relationship(back_populates="source_coverage")
     source: Mapped["Source"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("story_id", "source_id", name="uq_story_source_coverage"),
+    )
 
 
 class StoryDifference(Base):
@@ -344,7 +357,9 @@ class StoryDifference(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), index=True
+    )
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sources.id"))
     unique_information: Mapped[str | None] = mapped_column(Text)
     missing_information: Mapped[str | None] = mapped_column(Text)
@@ -353,6 +368,10 @@ class StoryDifference(Base):
     story: Mapped["Story"] = relationship(back_populates="differences")
     source: Mapped["Source"] = relationship()
 
+    __table_args__ = (
+        UniqueConstraint("story_id", "source_id", name="uq_story_difference"),
+    )
+
 
 class StoryTag(Base):
     __tablename__ = "story_tags"
@@ -360,7 +379,9 @@ class StoryTag(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), index=True
+    )
     tag_name: Mapped[str] = mapped_column(String(100))
 
     story: Mapped["Story"] = relationship(back_populates="tags")
@@ -372,7 +393,9 @@ class StoryEntity(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), index=True
+    )
     entity_type: Mapped[str] = mapped_column(String(30))  # PERSON, ORG, LOCATION, EVENT, COUNTRY
     entity_value: Mapped[str] = mapped_column(String(255))
 
@@ -407,7 +430,7 @@ class Bookmark(Base):
     story_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("stories.id"), primary_key=True
     )
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     user: Mapped["User"] = relationship(back_populates="bookmarks")
     story: Mapped["Story"] = relationship()
@@ -421,7 +444,7 @@ class SearchHistory(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     query: Mapped[str | None] = mapped_column(Text)
-    searched_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    searched_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     user: Mapped["User"] = relationship(back_populates="search_history")
 
@@ -439,7 +462,7 @@ class Notification(Base):
     body: Mapped[str | None] = mapped_column(Text)
     notification_type: Mapped[str | None] = mapped_column(String(50))
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     user: Mapped["User"] = relationship(back_populates="notifications")
 
@@ -474,7 +497,7 @@ class UserEvent(Base):
         String(50)
     )  # view_story, bookmark_story, share_story, search
     event_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     user: Mapped["User"] = relationship(back_populates="user_events")
     story: Mapped["Story | None"] = relationship()
@@ -490,6 +513,6 @@ class ApiKey(Base):
     key_hash: Mapped[str | None] = mapped_column(Text)
     plan: Mapped[str | None] = mapped_column(String(30))
     expires_at: Mapped[datetime | None] = mapped_column()
-    created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     user: Mapped["User"] = relationship(back_populates="api_keys")
