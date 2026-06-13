@@ -311,7 +311,26 @@ async def get_story_detail(
     story_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve detailed story object with timeline, differences, and source coverage."""
+    """Retrieve detailed story object with timeline, differences, and source coverage.
+
+    The serialized payload is cached in Redis for 15 minutes. View counts are
+    always incremented in the database regardless of cache hits.
+    """
+    cache_key = cache_service.story_key(str(story_id))
+
+    # Increment the view counter directly (keeps metrics accurate on cache hits)
+    await db.execute(
+        StoryMetric.__table__.update()
+        .where(StoryMetric.story_id == story_id)
+        .values(views=StoryMetric.views + 1)
+    )
+    await db.commit()
+
+    # Serve from cache when available
+    cached = await cache_service.get(cache_key)
+    if cached is not None:
+        return StoryDetailResponse(**cached)
+
     stmt = (
         select(Story)
         .options(
@@ -338,19 +357,15 @@ async def get_story_detail(
             detail="Story not found.",
         )
 
-    # Increment views counter
-    if story.metrics:
-        story.metrics.views += 1
-    else:
+    # Ensure a metrics row exists (first view)
+    if not story.metrics:
         story.metrics = StoryMetric(story_id=story.id, views=1, bookmarks=0, shares=0, clicks=0)
-    await db.commit()
+        await db.commit()
 
-    # Compute source_count from unique source IDs across linked articles
     source_ids = {
         sa.article.source_id for sa in story.articles if sa.article and sa.article.source_id
     }
 
-    # Map articles to Pydantic responses
     mapped_articles = [
         StoryArticleResponse(
             id=sa.article.id,
@@ -373,7 +388,7 @@ async def get_story_detail(
         if sa.article and sa.article.source
     ]
 
-    return StoryDetailResponse(
+    response = StoryDetailResponse(
         id=story.id,
         headline=story.headline,
         one_line_summary=story.one_line_summary,
@@ -395,6 +410,11 @@ async def get_story_detail(
         metrics=story.metrics,
         articles=mapped_articles,
     )
+
+    # Cache the JSON-serialized payload
+    await cache_service.set(cache_key, response.model_dump(mode="json"), ttl=TTL_STORY)
+
+    return response
 
 
 @router.post("/{story_id}/bookmark", status_code=status.HTTP_201_CREATED)
