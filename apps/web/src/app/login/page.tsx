@@ -34,9 +34,10 @@ export default function LoginPage() {
       setUser(data.user);
       toast.success("Login successful.");
       router.push("/home");
-    } catch (err: any) {
+    } catch (err) {
+      const error = err as { response?: { data?: { detail?: string } } };
       const message =
-        err.response?.data?.detail || "Invalid credentials.";
+        error.response?.data?.detail || "Invalid credentials.";
       toast.error(message);
     } finally {
       setIsLoading(false);

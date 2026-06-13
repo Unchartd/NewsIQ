@@ -95,7 +95,7 @@ export default function DigestPage() {
             <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto" />
             <h3 className="text-lg font-semibold text-foreground">No Briefing Available</h3>
             <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              We couldn't compile a briefing right now. Ensure you have selected preferred categories in settings and check back in a few minutes.
+              We couldn&apos;t compile a briefing right now. Ensure you have selected preferred categories in settings and check back in a few minutes.
             </p>
             <Button render={<a href="/settings" />} variant="outline" className="rounded-xl">
               Manage Settings
@@ -124,7 +124,7 @@ export default function DigestPage() {
                   </CardHeader>
                   <CardContent className="space-y-4 pb-6">
                     <div className="p-3.5 rounded-xl bg-violet-500/5 border border-violet-500/10 text-xs italic text-foreground/90 font-medium">
-                      "{item.one_line_summary}"
+                      &ldquo;{item.one_line_summary}&rdquo;
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {item.short_summary}

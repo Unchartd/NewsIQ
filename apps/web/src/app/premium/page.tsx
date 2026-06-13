@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Check, Minus } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
@@ -9,13 +9,14 @@ import { toast } from "sonner";
 import { useState } from "react";
 
 export default function PremiumPage() {
+  const router = useRouter();
   const { user, isAuthenticated, setUser } = useAuthStore();
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
 
   const handleSubscribe = async (plan: "free" | "pro" | "enterprise") => {
     if (!isAuthenticated) {
       toast.error("Please sign in to upgrade.");
-      window.location.href = "/login";
+      router.push("/login");
       return;
     }
 
@@ -150,7 +151,7 @@ export default function PremiumPage() {
                     if (plan.planKey === "enterprise") {
                       toast.success("Sales team notified! We will contact you soon.");
                     } else {
-                      handleSubscribe(plan.planKey as any);
+                      handleSubscribe(plan.planKey as "free" | "pro" | "enterprise");
                     }
                   }}
                 >

@@ -35,11 +35,13 @@ function SearchResults() {
   
   const [searchInput, setSearchInput] = useState(urlQuery);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [prevUrlQuery, setPrevUrlQuery] = useState(urlQuery);
 
   // Keep local search input in sync when URL changes (e.g. from navbar search)
-  useEffect(() => {
+  if (urlQuery !== prevUrlQuery) {
+    setPrevUrlQuery(urlQuery);
     setSearchInput(urlQuery);
-  }, [urlQuery]);
+  }
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

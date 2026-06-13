@@ -33,15 +33,19 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [summaryType, setSummaryType] = useState<"one_line" | "short" | "detailed">("short");
 
-  useEffect(() => {
+  const [prevUser, setPrevUser] = useState(user);
+  if (user !== prevUser) {
+    setPrevUser(user);
     if (user?.name) setName(user.name);
-  }, [user]);
+  }
 
-  useEffect(() => {
+  const [prevPreferences, setPrevPreferences] = useState(preferences);
+  if (preferences !== prevPreferences) {
+    setPrevPreferences(preferences);
     if (preferences?.preferred_summary_type) {
       setSummaryType(preferences.preferred_summary_type);
     }
-  }, [preferences]);
+  }
 
   // Update Profile Mutation
   const updateProfileMutation = useMutation({
@@ -127,7 +131,8 @@ export default function SettingsPage() {
 
   const isDigestEnabled = (frequency: string, delivery_channel: string) => {
     const sub = digestSubscriptions.find(
-      (s: any) => s.frequency === frequency && s.delivery_channel === delivery_channel
+      (s: { frequency: string; delivery_channel: string; enabled: boolean }) =>
+        s.frequency === frequency && s.delivery_channel === delivery_channel
     );
     return sub ? sub.enabled : false;
   };
@@ -265,7 +270,7 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between pb-3 border-b border-border/40">
                 <div className="space-y-0.5">
                   <p className="text-xs font-semibold text-foreground">Morning Briefing</p>
-                  <p className="text-[10px] text-muted-foreground">Receive a summary of yesterday's stories at 8:00 AM.</p>
+                  <p className="text-[10px] text-muted-foreground">Receive a summary of yesterday&apos;s stories at 8:00 AM.</p>
                 </div>
                 <div className="flex gap-4">
                   <div className="flex items-center gap-1.5">
@@ -303,7 +308,7 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between pb-3 border-b border-border/40">
                 <div className="space-y-0.5">
                   <p className="text-xs font-semibold text-foreground">Evening Briefing</p>
-                  <p className="text-[10px] text-muted-foreground">Receive a summary of today's events at 6:00 PM.</p>
+                  <p className="text-[10px] text-muted-foreground">Receive a summary of today&apos;s events at 6:00 PM.</p>
                 </div>
                 <div className="flex gap-4">
                   <div className="flex items-center gap-1.5">
@@ -341,7 +346,7 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <p className="text-xs font-semibold text-foreground">Weekly Digest</p>
-                  <p className="text-[10px] text-muted-foreground">A curated digest of the week's major stories every Sunday.</p>
+                  <p className="text-[10px] text-muted-foreground">A curated digest of the week&apos;s major stories every Sunday.</p>
                 </div>
                 <div className="flex gap-4">
                   <div className="flex items-center gap-1.5">
