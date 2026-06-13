@@ -12,6 +12,8 @@ NewsIQ is a dense, multi-source AI comprehension engine built for professionals 
 - **Difference Engine:** Compare how different sources are reporting the same event. Automatically detect missing facts, contradictions, and focus areas.
 - **Fact Extraction:** Instantly view structured data like key locations, people, dates, and organizations involved in a story.
 - **Trend Engine:** Discover what the world is talking about. Stories are algorithmically ranked based on recency, publisher volume, and real-time user engagement.
+- **Personalized Feed:** Logged-in users receive a tailored news feed based on their reading history and explicitly chosen categories.
+- **Account Security:** Includes a complete user authentication flow featuring email verification and secure forgot-password flows.
 - **Premium Editorial UI:** A visually stunning, high-density reader interface styled like a modern broadsheet, ensuring zero visual noise.
 
 ---
@@ -30,9 +32,11 @@ NewsIQ is built as a robust monorepo, splitting concerns between a high-performa
 ### Backend (`apps/api`)
 - **Framework:** FastAPI (Python)
 - **Database:** PostgreSQL (Primary), Redis (Caching/Sessions), Qdrant (Vector Search)
-- **Message Broker:** Apache Kafka / Redis PubSub
-- **AI Ecosystem:** Agno (Agent framework), spaCy, LangChain, Sentence-Transformers
+- **Message Broker:** Celery / Redis
+- **AI Ecosystem:** Agno (Agent framework), Google Gemini, spaCy, LangChain, Sentence-Transformers, Tenacity (Resilience)
 - **Search Engine:** Meilisearch
+- **Observability:** Sentry SDK, Structured JSON Logging
+- **Security:** Strict Origin-validated CSRF Protection
 
 ---
 
