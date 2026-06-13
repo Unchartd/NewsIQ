@@ -27,7 +27,7 @@ class UserPreferencesResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ProfileUpdateRequest(BaseModel):
+class ProfileUpdateRequest(BaseModel):  # subscription_plan intentionally excluded — use admin endpoint
     """Payload for updating user profile."""
 
     name: str | None = Field(None, min_length=1, max_length=255)

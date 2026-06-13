@@ -51,19 +51,13 @@ async def update_profile(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update user profile (name, image)."""
+    """Update user profile (name, image only). Role/plan changes require admin."""
     if body.name is not None:
         user.name = body.name
     if body.image_url is not None:
         user.image_url = body.image_url
-    if body.subscription_plan is not None:
-        user.subscription_plan = body.subscription_plan
-        if body.subscription_plan == "pro":
-            user.role = "premium"
-        elif body.subscription_plan == "enterprise":
-            user.role = "admin"
-        else:
-            user.role = "user"
+    # NOTE: subscription_plan and role are intentionally NOT updatable here.
+    # Use the admin endpoint PATCH /admin/users/{user_id}/role instead.
     user.updated_at = datetime.now(UTC)
     await db.flush()
 
