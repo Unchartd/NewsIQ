@@ -82,6 +82,8 @@ services:
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8000:8000"
+    volumes:
+      - ./apps/api:/app
     environment:
       - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
@@ -112,6 +114,8 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-worker
+    volumes:
+      - ./apps/api:/app
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
     restart: unless-stopped
     environment:
@@ -140,6 +144,8 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-beat
+    volumes:
+      - ./apps/api:/app
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
     restart: unless-stopped
     environment:
