@@ -128,4 +128,15 @@ async def delete_story(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found.")
     await db.delete(story)
     await db.commit()
+
+    # Remove from search index and caches
+    try:
+        from app.services.cache_service import cache_service
+        from app.services.search_service import search_service
+
+        await search_service.delete_story(str(story_id))
+        await cache_service.invalidate_story(str(story_id))
+    except Exception:
+        pass
+
     return MessageResponse(message="Story deleted.")
