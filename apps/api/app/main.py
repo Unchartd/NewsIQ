@@ -3,13 +3,19 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import sentry_sdk
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+import uuid
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.rate_limiter import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.logging import setup_logging, request_id_ctx_var
+
+# Initialize structured logging
+setup_logging(settings.DEBUG)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +70,13 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None,
 )
 
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+    )
+
 
 # CORS
 app.add_middleware(
@@ -79,6 +92,37 @@ app.add_middleware(RateLimitMiddleware, limit=100, window=60)
 
 # Security headers
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Request ID middleware
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    token = request_id_ctx_var.set(request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    request_id_ctx_var.reset(token)
+    return response
+
+# CSRF middleware
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    # Only check state-changing methods
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin")
+        referer = request.headers.get("referer")
+        
+        # If both are missing, it might be a server-to-server or non-browser client.
+        # Strict CSRF would block it, but for our API we'll allow it if neither is present.
+        # If either is present, it must match allowed origins.
+        if origin or referer:
+            client_origin = origin or (referer.split("/", 3)[0] + "//" + referer.split("/", 3)[2] if referer else None)
+            if client_origin and client_origin not in settings.CORS_ORIGINS:
+                # Reject request
+                return __import__("fastapi").responses.JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={"detail": "CSRF check failed: invalid Origin or Referer"},
+                )
+    return await call_next(request)
 
 # API routes
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
