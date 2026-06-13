@@ -55,39 +55,21 @@ cp .env.example .env
 ```
 *Ensure you fill in the required API keys (e.g., OpenAI/Gemini API keys) in the `.env` file.*
 
-### 2. Start Infrastructure
-Boot up the required local services (PostgreSQL, Redis, Qdrant, Meilisearch):
+### 2. Start the Platform
+NewsIQ is fully containerized. You can boot the entire stack (PostgreSQL, Redis, Qdrant, Meilisearch, FastAPI backend, Celery workers, and the Next.js frontend) with a single command:
 ```bash
-docker-compose up -d
+docker-compose up -d --build
 ```
 
-### 3. Start the Backend (API)
-Navigate to the API directory and boot up FastAPI:
+**Accessing the Platform:**
+- **Frontend (Web App):** `http://localhost:3000`
+- **Backend API Docs:** `http://localhost:8000/docs`
+
+*(Optional) To seed the database with initial news sources, run:*
 ```bash
-cd apps/api
-
-# Install all dependencies (including dev extras) using uv
-uv sync --all-extras
-
-# Run database migrations using the venv's alembic
-uv run alembic upgrade head
-
-# (Optional) Seed the database with initial news sources
-uv run python -m app.scripts.seed
-
-# Start the API server
-uv run uvicorn app.main:app --reload --port 8000
+docker-compose exec api python -m app.scripts.seed
 ```
-*The API will be available at `http://localhost:8000`. Swagger docs are at `http://localhost:8000/docs` (dev mode only).*
 
-### 4. Start the Frontend (Web)
-In a new terminal window, boot the Next.js app:
-```bash
-cd apps/web
-npm install
-npm run dev
-```
-*The web app will be available at `http://localhost:3000`.*
 
 ---
 
