@@ -2,10 +2,10 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import (
@@ -21,13 +21,17 @@ from app.models.models import (
     StoryTag,
     StoryTimelineEvent,
 )
-from app.services.ai_service import ai_service
+from app.services.ai_service import CATEGORY_SLUGS, ai_service
 from app.services.ner_service import ner_service
 from app.services.vector_service import vector_service
 
 logger = logging.getLogger(__name__)
 
 SIMILARITY_THRESHOLD = 0.80  # Cosine similarity threshold for real-time merge
+
+
+def _now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class ClusteringService:
@@ -44,10 +48,15 @@ class ClusteringService:
             return cat.id
 
         # Create category
-        new_cat = Category(id=uuid.uuid4(), slug=slug, name=name, icon="globe")
+        new_cat = Category(id=uuid.uuid4(), slug=slug, name=name.title(), icon="globe")
         session.add(new_cat)
         await session.commit()
         return new_cat.id
+
+    async def _ensure_all_categories(self, session: AsyncSession) -> None:
+        """Ensure all canonical category slugs exist in the DB."""
+        for slug in CATEGORY_SLUGS:
+            await self.get_or_create_category(slug, slug.replace("-", " ").title(), session)
 
     async def generate_story_content(
         self, story: Story, articles: list[Article], session: AsyncSession
@@ -84,55 +93,74 @@ class ClusteringService:
         story.short_summary = ai_res.short_summary
         story.detailed_summary = ai_res.detailed_summary
 
-        # Clear existing timeline events, differences, entities, tags to regenerate cleanly
-        await session.execute(
-            select(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
+        # 3. Resolve and assign category from AI response
+        cat_slug = ai_res.category if ai_res.category in CATEGORY_SLUGS else "world"
+        cat_id = await self.get_or_create_category(
+            cat_slug, cat_slug.replace("-", " ").title(), session
         )
-        # Clear cascade is handled by SQLAlchemy back_populates cascading, but we can do it explicitly
-        story.timeline_events.clear()
-        story.differences.clear()
-        story.entities.clear()
-        story.tags.clear()
-        story.source_coverage.clear()
+        story.category_id = cat_id
 
-        # 3. Save Timeline Events
+        # 4. Clear existing sub-table rows explicitly before regenerating
+        #    Using DELETE statements is safer than .clear() on lazy-loaded collections
+        await session.execute(
+            delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
+        )
+        await session.execute(
+            delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story.id)
+        )
+        await session.execute(
+            delete(StoryDifference).where(StoryDifference.story_id == story.id)
+        )
+        await session.execute(
+            delete(StoryEntity).where(StoryEntity.story_id == story.id)
+        )
+        await session.execute(
+            delete(StoryTag).where(StoryTag.story_id == story.id)
+        )
+        await session.flush()
+
+        # 5. Save Timeline Events
         for ev in ai_res.timeline:
-            event_time = None
+            event_time: datetime | None = None
             try:
-                # Try parsing standard ISO/times, else default to None or parsed
                 event_time = datetime.fromisoformat(ev.date)
-            except Exception:
-                pass
-            story.timeline_events.append(
+            except (ValueError, TypeError):
+                pass  # Store raw string; frontend will display it as-is
+
+            session.add(
                 StoryTimelineEvent(
                     id=uuid.uuid4(),
+                    story_id=story.id,
                     event_time=event_time,
-                    description=f"[{ev.date}] {ev.description}",
-                    created_at=datetime.utcnow(),
+                    event_time_raw=ev.date,  # Always store the raw AI string
+                    description=ev.description,
+                    created_at=_now(),
                 )
             )
 
-        # 4. Save Source Coverages & Differences
+        # 6. Save Source Coverages & Differences
+        seen_sources: set[uuid.UUID] = set()
         for diff in ai_res.differences:
-            # Find the source ID by name matching
             stmt = select(Source).where(Source.name == diff.source_name)
             res = await session.execute(stmt)
             source = res.scalar_one_or_none()
-            if not source:
+            if not source or source.id in seen_sources:
                 continue
+            seen_sources.add(source.id)
 
-            story.source_coverage.append(
+            session.add(
                 StorySourceCoverage(
                     id=uuid.uuid4(),
+                    story_id=story.id,
                     source_id=source.id,
                     focus_area=diff.unique_information or "General coverage",
-                    published_at=datetime.utcnow(),
+                    published_at=_now(),
                 )
             )
-
-            story.differences.append(
+            session.add(
                 StoryDifference(
                     id=uuid.uuid4(),
+                    story_id=story.id,
                     source_id=source.id,
                     unique_information=diff.unique_information,
                     missing_information=diff.missing_information,
@@ -140,22 +168,34 @@ class ClusteringService:
                 )
             )
 
-        # 5. Extract Named Entities using NER Service
+        # 7. Extract Named Entities using NER Service
         entities = ner_service.extract_entities(full_text_corpus)
         for ent in entities[:15]:  # Limit to top 15 entities for storage
-            story.entities.append(
-                StoryEntity(id=uuid.uuid4(), entity_type=ent["type"], entity_value=ent["value"])
+            session.add(
+                StoryEntity(
+                    id=uuid.uuid4(),
+                    story_id=story.id,
+                    entity_type=ent["type"],
+                    entity_value=ent["value"],
+                )
             )
 
-        # 6. Save Story Tags (Use a few prominent entities or mock tags)
-        tags_added = set()
+        # 8. Save Story Tags from entities
+        tags_added: set[str] = set()
         for ent in entities:
             tag = ent["value"].lower().strip()
             if tag and len(tag) < 30 and tag not in tags_added:
                 tags_added.add(tag)
-                story.tags.append(StoryTag(id=uuid.uuid4(), tag_name=tag))
+                session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
                 if len(tags_added) >= 5:
                     break
+
+        # 9. Persist key_facts as tags (prefixed) so they are not lost
+        for fact in ai_res.key_facts[:6]:
+            fact_tag = f"fact:{fact[:80]}"
+            if fact_tag not in tags_added:
+                tags_added.add(fact_tag)
+                session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=fact_tag))
 
         await session.commit()
 
@@ -194,8 +234,6 @@ class ClusteringService:
                 len(all_articles),
             )
             await self.generate_story_content(story, all_articles, session)
-
-            # Recalculate trending score
             await self.compute_trending_score(story, session)
 
         return True
@@ -238,14 +276,15 @@ class ClusteringService:
             res = await session.execute(stmt)
             story_id = res.scalar()
             if story_id:
-                # Found a match! Merge it.
                 return await self.merge_article_into_existing_story(article, story_id, session)
 
         return False
 
     async def run_batch_clustering(self, session: AsyncSession) -> int:
         """Run HDBSCAN clustering on unclustered articles."""
-        # 1. Fetch unclustered articles
+        # Ensure all canonical categories exist
+        await self._ensure_all_categories(session)
+
         # Select articles where embedding is completed and they are not in story_articles
         subquery = select(StoryArticle.article_id)
         stmt = select(Article).where(
@@ -292,12 +331,11 @@ class ClusteringService:
 
         X = np.array(vectors)
 
-        # HDBSCAN parameters suited for small clusters
         clusterer = HDBSCAN(
             min_cluster_size=2,
             min_samples=1,
-            metric="euclidean",  # cosine similarity is equivalent to euclidean for normalized vectors
-            cluster_selection_epsilon=0.35,  # threshold for maximum distance
+            metric="euclidean",
+            cluster_selection_epsilon=0.35,
         )
         labels = clusterer.fit_predict(X)
 
@@ -311,20 +349,21 @@ class ClusteringService:
             clusters[label].append(valid_articles[idx])
 
         stories_created = 0
-        default_cat_id = await self.get_or_create_category("world", "World", session)
 
         for label, art_list in clusters.items():
             logger.info("Found cluster label %d with %d articles.", label, len(art_list))
 
-            # Create a new story
             story_id = uuid.uuid4()
+            now = _now()
             story = Story(
                 id=story_id,
-                category_id=default_cat_id,
                 story_status="active",
-                first_seen_at=min(a.published_at or datetime.utcnow() for a in art_list),
+                first_seen_at=min(
+                    (a.published_at for a in art_list if a.published_at), default=now
+                ),
                 trend_score=1.0,
-                updated_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             session.add(story)
 
@@ -339,7 +378,7 @@ class ClusteringService:
 
             await session.commit()
 
-            # Populate story summaries & timeline & differences
+            # Populate story summaries, timeline, differences, and category
             try:
                 await self.generate_story_content(story, art_list, session)
                 await self.compute_trending_score(story, session)
@@ -351,17 +390,19 @@ class ClusteringService:
 
     async def compute_trending_score(self, story: Story, session: AsyncSession) -> float:
         """Compute the trending score for a story based on coverage count and recency."""
-        # Fetch the count of articles linked to this story
-        stmt = select(StoryArticle).where(StoryArticle.story_id == story.id)
+        # Use COUNT aggregate instead of fetching all rows
+        stmt = select(func.count()).select_from(StoryArticle).where(
+            StoryArticle.story_id == story.id
+        )
         res = await session.execute(stmt)
-        article_count = len(res.scalars().all())
+        article_count: int = res.scalar_one() or 0
 
         # Recency calculation: hours since first seen
-        first_seen = story.first_seen_at or datetime.utcnow()
-        hours_elapsed = (datetime.utcnow() - first_seen).total_seconds() / 3600.0
+        first_seen = story.first_seen_at or _now()
+        hours_elapsed = (_now() - first_seen).total_seconds() / 3600.0
 
-        # Exponential gravity decay factor (similar to Hacker News / Reddit)
-        # Score = (article_count) / (hours_elapsed + 2)^1.5
+        # Exponential gravity decay (Hacker News / Reddit style)
+        # Score = article_count / (hours_elapsed + 2)^1.5
         score = article_count / ((hours_elapsed + 2.0) ** 1.5)
 
         story.trend_score = score
