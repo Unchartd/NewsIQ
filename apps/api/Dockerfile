@@ -13,7 +13,12 @@ RUN pip install uv
 
 # Copy project files
 COPY pyproject.toml .
-RUN uv pip install --system -e ".[dev]"
+
+# Pre-install CPU-only PyTorch to avoid massive CUDA dependencies (saves ~5+ GB)
+RUN uv pip install --system --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining project dependencies without caching wheels in the image
+RUN uv pip install --system --no-cache-dir -e ".[dev]"
 
 # Pre-download spaCy model to avoid runtime downloads
 RUN python -m spacy download en_core_web_sm
