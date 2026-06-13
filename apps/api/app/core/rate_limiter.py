@@ -32,10 +32,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self.redis or request.url.path in ["/health", "/ready", "/docs", "/redoc"]:
             return await call_next(request)
 
-        # Allow testing environment to bypass rate limits
-        user_agent = request.headers.get("user-agent", "").lower()
-        if "test" in user_agent or "pytest" in user_agent:
-            return await call_next(request)
+        # Allow bypass only in DEBUG mode for the test suite. Never bypass in production.
+        if settings.DEBUG:
+            user_agent = request.headers.get("user-agent", "").lower()
+            if "test" in user_agent or "pytest" in user_agent:
+                return await call_next(request)
 
         # Client key definition
         client_ip = request.client.host if request.client else "unknown"

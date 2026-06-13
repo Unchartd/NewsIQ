@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.rate_limiter import RateLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,9 @@ app.add_middleware(
 
 # Rate limiting
 app.add_middleware(RateLimitMiddleware, limit=100, window=60)
+
+# Security headers
+app.add_middleware(SecurityHeadersMiddleware)
 
 # API routes
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
