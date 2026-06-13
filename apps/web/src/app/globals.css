@@ -299,22 +299,40 @@
 /* ─── SIGNAL BAR ──────────────────────────────── */
 .signal-bar {
   height: var(--signal-h);
-  background: var(--border);
+  background: transparent;
   position: sticky;
   top: var(--navbar-h);
   z-index: 90;
   overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.25s ease-in-out, background-color 0.25s ease-in-out;
+}
+.signal-bar.active {
+  background: var(--border);
+  opacity: 1;
 }
 .signal-bar::after {
   content: '';
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: var(--primary);
-  animation: signalPulse 2.4s ease-in-out infinite;
+  top: 0; bottom: 0;
+  left: -200%;
+  width: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--primary) 50%,
+    transparent 100%
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+.signal-bar.active::after {
+  opacity: 1;
+  animation: signalPulse 1.5s infinite linear;
 }
 @keyframes signalPulse {
-  0%, 100% { opacity: 0.5; transform: scaleX(0.3); transform-origin: left; }
-  50% { opacity: 1; transform: scaleX(0.85); transform-origin: left; }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 .signal-bar.progress::after {
   animation: none;
@@ -322,6 +340,8 @@
   transform: none;
   opacity: 1;
   transition: width 300ms ease;
+  background: var(--primary);
+  left: 0;
 }
 
 /* ─── ANIMATIONS ──────────────────────────────── */

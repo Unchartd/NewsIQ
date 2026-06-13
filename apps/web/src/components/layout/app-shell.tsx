@@ -6,6 +6,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { useState } from "react";
+import { useIsFetching, useIsMutating } from "@tanstack/react-query";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -17,6 +18,10 @@ interface AppShellProps {
 export function AppShell({ children, signalVariant = "pulse", signalProgress, sidebar }: AppShellProps) {
   const { user, isAuthenticated } = useAuthStore();
   const [sentVerification, setSentVerification] = useState(false);
+
+  const isFetching = useIsFetching();
+  const isMutating = useIsMutating();
+  const isLoading = isFetching > 0 || isMutating > 0;
 
   const handleResendVerification = async () => {
     if (!user?.email) return;
@@ -56,7 +61,7 @@ export function AppShell({ children, signalVariant = "pulse", signalProgress, si
         </div>
       )}
       <Navbar />
-      <SignalBar variant={signalVariant} progress={signalProgress} />
+      <SignalBar variant={signalVariant} progress={signalProgress} active={isLoading || signalVariant === "progress"} />
       {sidebar ? (
         <div className="layout">
           <div className="mc">
