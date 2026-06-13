@@ -48,7 +48,6 @@ export default function SignupPage() {
         password,
         confirm_password: confirmPassword,
       });
-      localStorage.removeItem; // no-op placeholder removed below
       setAccessToken(data.access_token);
       setUser(data.user);
       toast.success("Account created!");
