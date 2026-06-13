@@ -83,6 +83,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -114,6 +115,7 @@ services:
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
     restart: unless-stopped
     environment:
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -141,6 +143,7 @@ services:
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
     restart: unless-stopped
     environment:
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
