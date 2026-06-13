@@ -227,7 +227,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                     <div className="niq-timeline-source">
                       {ev.event_time
                         ? new Date(ev.event_time).toLocaleString()
-                        : ev.event_time_raw || ""}
+                        : ""}
                     </div>
                   </div>
                 </div>
