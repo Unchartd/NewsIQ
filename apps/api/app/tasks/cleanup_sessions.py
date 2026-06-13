@@ -1,6 +1,7 @@
 """Background task for cleaning up expired sessions."""
 
 import logging
+
 from app.core.database import async_session_factory
 from app.services.session_service import SessionService
 from app.workers.celery_app import celery_app

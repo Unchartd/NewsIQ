@@ -2,9 +2,11 @@
 
 import uuid
 from datetime import datetime
-from sqlalchemy import select, delete
-from sqlalchemy.orm import selectinload
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.models.session import Session
 
 

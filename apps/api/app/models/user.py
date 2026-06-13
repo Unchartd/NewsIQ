@@ -3,7 +3,8 @@
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Text, Boolean, ForeignKey
+
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,18 +26,18 @@ def generate_uuid() -> uuid.UUID:
 
 
 if TYPE_CHECKING:
-    from app.models.session import Session
     from app.models.models import (
-        OAuthAccount,
-        Bookmark,
-        Notification,
-        SearchHistory,
-        DigestSubscription,
-        UserEvent,
-        UserCategory,
-        UserLocation,
         ApiKey,
+        Bookmark,
+        DigestSubscription,
+        Notification,
+        OAuthAccount,
+        SearchHistory,
+        UserCategory,
+        UserEvent,
+        UserLocation,
     )
+    from app.models.session import Session
 
 
 class User(Base):

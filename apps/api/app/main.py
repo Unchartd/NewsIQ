@@ -1,18 +1,20 @@
 """FastAPI application entry point."""
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-import uuid
+from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.logging import request_id_ctx_var, setup_logging
 from app.core.rate_limiter import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
-from app.core.logging import setup_logging, request_id_ctx_var
+from app.exceptions.auth import AuthException
 
 # Initialize structured logging
 setup_logging(settings.DEBUG)
@@ -110,7 +112,7 @@ async def csrf_middleware(request: Request, call_next):
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         origin = request.headers.get("origin")
         referer = request.headers.get("referer")
-        
+
         # If both are missing, it might be a server-to-server or non-browser client.
         # Strict CSRF would block it, but for our API we'll allow it if neither is present.
         # If either is present, it must match allowed origins.
@@ -125,8 +127,6 @@ async def csrf_middleware(request: Request, call_next):
     return await call_next(request)
 
 # Exception handlers
-from app.exceptions.auth import AuthException
-from fastapi.responses import JSONResponse
 
 @app.exception_handler(AuthException)
 async def auth_exception_handler(request: Request, exc: AuthException):
@@ -152,8 +152,9 @@ async def readiness_check():
 
     # PostgreSQL check
     try:
-        from app.core.database import async_session_factory
         from sqlalchemy import text
+
+        from app.core.database import async_session_factory
 
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))

@@ -1,6 +1,6 @@
 """Custom authentication exceptions."""
 
-class AuthException(Exception):
+class AuthException(Exception):  # noqa: N818
     """Base exception for all authentication-related errors."""
     status_code: int = 400
     detail: str = "Authentication error."

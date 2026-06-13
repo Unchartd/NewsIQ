@@ -1,6 +1,7 @@
 """Email service for sending verification and password reset emails."""
 
 import logging
+
 from app.models.user import User
 
 logger = logging.getLogger(__name__)

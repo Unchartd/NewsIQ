@@ -1,24 +1,25 @@
 """Auth API endpoints: register, login, logout, refresh, me, sessions, email/password workflows."""
 
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_user
-from app.models.user import User
 from app.exceptions.auth import AuthException
+from app.models.user import User
 from app.schemas.auth import (
     AuthResponse,
-    LoginRequest,
     ForgotPasswordRequest,
-    ResetPasswordRequest,
+    LoginRequest,
     MessageResponse,
     RefreshResponse,
     RegisterRequest,
-    UserResponse,
+    ResetPasswordRequest,
     SessionResponse,
+    UserResponse,
 )
 from app.services.auth_service import AuthService
 

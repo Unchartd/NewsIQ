@@ -23,6 +23,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.session import Session as Session  # noqa: F401
+from app.models.user import User as User  # noqa: F401
+from app.models.user import UserPreference as UserPreference  # noqa: F401
 
 
 def _now() -> datetime:
@@ -41,11 +44,8 @@ def generate_uuid() -> uuid.UUID:
 
 
 # ──────────────────────────────────────────────
-# Users & Auth (Imported)
+# Users & Auth
 # ──────────────────────────────────────────────
-
-from app.models.user import User, UserPreference
-from app.models.session import Session
 
 
 class OAuthAccount(Base):
