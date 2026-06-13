@@ -20,6 +20,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Override sqlalchemy.url with the dynamic setting (which handles Docker vs Local envs correctly)
+from app.core.config import settings
+config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
+
 target_metadata = Base.metadata
 
 
