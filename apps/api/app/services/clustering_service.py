@@ -1,9 +1,8 @@
 """Service for clustering articles into stories using HDBSCAN and incremental vector match."""
 
-from datetime import datetime
 import logging
 import uuid
-from typing import Any, Dict, List
+from datetime import datetime
 
 import numpy as np
 from sqlalchemy import select
@@ -34,26 +33,25 @@ SIMILARITY_THRESHOLD = 0.80  # Cosine similarity threshold for real-time merge
 class ClusteringService:
     """Clustering service using HDBSCAN and incremental Qdrant vector lookups."""
 
-    async def get_or_create_category(self, slug: str, name: str, session: AsyncSession) -> uuid.UUID:
+    async def get_or_create_category(
+        self, slug: str, name: str, session: AsyncSession
+    ) -> uuid.UUID:
         """Helper to get a category ID by slug, or create one if missing."""
         stmt = select(Category).where(Category.slug == slug)
         res = await session.execute(stmt)
         cat = res.scalar_one_or_none()
         if cat:
             return cat.id
-        
+
         # Create category
-        new_cat = Category(
-            id=uuid.uuid4(),
-            slug=slug,
-            name=name,
-            icon="globe"
-        )
+        new_cat = Category(id=uuid.uuid4(), slug=slug, name=name, icon="globe")
         session.add(new_cat)
         await session.commit()
         return new_cat.id
 
-    async def generate_story_content(self, story: Story, articles: List[Article], session: AsyncSession) -> None:
+    async def generate_story_content(
+        self, story: Story, articles: list[Article], session: AsyncSession
+    ) -> None:
         """Trigger AI generation and NER extraction to populate a story's sub-tables."""
         # 1. Prepare article details for Gemini prompt
         article_data = []
@@ -64,14 +62,18 @@ class ClusteringService:
             res = await session.execute(stmt)
             source = res.scalar_one_or_none()
             src_name = source.name if source else "Unknown Source"
-            
-            article_data.append({
-                "source_name": src_name,
-                "title": art.title,
-                "content": art.content or art.description or "",
-                "published_at": art.published_at.isoformat() if art.published_at else None
-            })
-            full_text_corpus += f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
+
+            article_data.append(
+                {
+                    "source_name": src_name,
+                    "title": art.title,
+                    "content": art.content or art.description or "",
+                    "published_at": art.published_at.isoformat() if art.published_at else None,
+                }
+            )
+            full_text_corpus += (
+                f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
+            )
 
         # 2. Call AI Service
         ai_res = await ai_service.analyze_story(article_data)
@@ -81,9 +83,11 @@ class ClusteringService:
         story.one_line_summary = ai_res.one_line_summary
         story.short_summary = ai_res.short_summary
         story.detailed_summary = ai_res.detailed_summary
-        
+
         # Clear existing timeline events, differences, entities, tags to regenerate cleanly
-        await session.execute(select(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id))
+        await session.execute(
+            select(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
+        )
         # Clear cascade is handled by SQLAlchemy back_populates cascading, but we can do it explicitly
         story.timeline_events.clear()
         story.differences.clear()
@@ -104,7 +108,7 @@ class ClusteringService:
                     id=uuid.uuid4(),
                     event_time=event_time,
                     description=f"[{ev.date}] {ev.description}",
-                    created_at=datetime.utcnow()
+                    created_at=datetime.utcnow(),
                 )
             )
 
@@ -122,7 +126,7 @@ class ClusteringService:
                     id=uuid.uuid4(),
                     source_id=source.id,
                     focus_area=diff.unique_information or "General coverage",
-                    published_at=datetime.utcnow()
+                    published_at=datetime.utcnow(),
                 )
             )
 
@@ -132,7 +136,7 @@ class ClusteringService:
                     source_id=source.id,
                     unique_information=diff.unique_information,
                     missing_information=diff.missing_information,
-                    contradictions=diff.contradictions
+                    contradictions=diff.contradictions,
                 )
             )
 
@@ -140,11 +144,7 @@ class ClusteringService:
         entities = ner_service.extract_entities(full_text_corpus)
         for ent in entities[:15]:  # Limit to top 15 entities for storage
             story.entities.append(
-                StoryEntity(
-                    id=uuid.uuid4(),
-                    entity_type=ent["type"],
-                    entity_value=ent["value"]
-                )
+                StoryEntity(id=uuid.uuid4(), entity_type=ent["type"], entity_value=ent["value"])
             )
 
         # 6. Save Story Tags (Use a few prominent entities or mock tags)
@@ -165,8 +165,7 @@ class ClusteringService:
         """Merge a new article into an existing story cluster."""
         # Check if relation already exists
         stmt = select(StoryArticle).where(
-            StoryArticle.story_id == story_id,
-            StoryArticle.article_id == article.id
+            StoryArticle.story_id == story_id, StoryArticle.article_id == article.id
         )
         res = await session.execute(stmt)
         if res.scalar_one_or_none():
@@ -181,22 +180,29 @@ class ClusteringService:
         stmt = select(Story).where(Story.id == story_id)
         res = await session.execute(stmt)
         story = res.scalar_one_or_none()
-        
+
         if story:
             # Get all articles in this story
             stmt = select(Article).join(StoryArticle).where(StoryArticle.story_id == story_id)
             res = await session.execute(stmt)
             all_articles = list(res.scalars().all())
-            
-            logger.info("Merging article %s into story %s. Total articles: %d", article.id, story_id, len(all_articles))
+
+            logger.info(
+                "Merging article %s into story %s. Total articles: %d",
+                article.id,
+                story_id,
+                len(all_articles),
+            )
             await self.generate_story_content(story, all_articles, session)
-            
+
             # Recalculate trending score
             await self.compute_trending_score(story, session)
 
         return True
 
-    async def add_article_to_existing_story_if_similar(self, article_id: uuid.UUID, session: AsyncSession) -> bool:
+    async def add_article_to_existing_story_if_similar(
+        self, article_id: uuid.UUID, session: AsyncSession
+    ) -> bool:
         """Incremental similarity check. Merges article into an existing story if highly similar."""
         stmt = select(Article).where(Article.id == article_id)
         res = await session.execute(stmt)
@@ -208,20 +214,20 @@ class ClusteringService:
         point_id = str(article_id)
         try:
             point_info = await vector_service.client.retrieve(
-                collection_name="articles",
-                ids=[point_id],
-                with_vectors=True
+                collection_name="articles", ids=[point_id], with_vectors=True
             )
             if not point_info or not point_info[0].vector:
                 return False
-            
+
             vector = point_info[0].vector
         except Exception as e:
             logger.error("Failed to retrieve vector for article %s: %s", article_id, e)
             return False
 
         # Search for similar articles
-        matches = await vector_service.search_similar(vector, limit=3, score_threshold=SIMILARITY_THRESHOLD)
+        matches = await vector_service.search_similar(
+            vector, limit=3, score_threshold=SIMILARITY_THRESHOLD
+        )
         for match in matches:
             match_id = match["id"]
             if match_id == article_id:
@@ -243,17 +249,21 @@ class ClusteringService:
         # Select articles where embedding is completed and they are not in story_articles
         subquery = select(StoryArticle.article_id)
         stmt = select(Article).where(
-            Article.embedding_status == "completed",
-            ~Article.id.in_(subquery)
+            Article.embedding_status == "completed", ~Article.id.in_(subquery)
         )
         res = await session.execute(stmt)
         unclustered_articles = list(res.scalars().all())
 
         if len(unclustered_articles) < 2:
-            logger.info("Not enough unclustered articles to run batch clustering (count: %d).", len(unclustered_articles))
+            logger.info(
+                "Not enough unclustered articles to run batch clustering (count: %d).",
+                len(unclustered_articles),
+            )
             return 0
 
-        logger.info("Running batch clustering on %d unclustered articles.", len(unclustered_articles))
+        logger.info(
+            "Running batch clustering on %d unclustered articles.", len(unclustered_articles)
+        )
 
         # Retrieve vectors for all these articles
         article_ids = [str(a.id) for a in unclustered_articles]
@@ -262,12 +272,10 @@ class ClusteringService:
 
         try:
             points = await vector_service.client.retrieve(
-                collection_name="articles",
-                ids=article_ids,
-                with_vectors=True
+                collection_name="articles", ids=article_ids, with_vectors=True
             )
             points_dict = {uuid.UUID(p.id): p.vector for p in points if p.vector}
-            
+
             for art in unclustered_articles:
                 if art.id in points_dict:
                     vectors.append(points_dict[art.id])
@@ -281,19 +289,20 @@ class ClusteringService:
 
         # Run HDBSCAN
         from hdbscan import HDBSCAN
+
         X = np.array(vectors)
-        
+
         # HDBSCAN parameters suited for small clusters
         clusterer = HDBSCAN(
             min_cluster_size=2,
             min_samples=1,
             metric="euclidean",  # cosine similarity is equivalent to euclidean for normalized vectors
-            cluster_selection_epsilon=0.35  # threshold for maximum distance
+            cluster_selection_epsilon=0.35,  # threshold for maximum distance
         )
         labels = clusterer.fit_predict(X)
 
         # Group articles by labels
-        clusters: Dict[int, List[Article]] = {}
+        clusters: dict[int, list[Article]] = {}
         for idx, label in enumerate(labels):
             if label == -1:
                 continue  # Outlier
@@ -306,7 +315,7 @@ class ClusteringService:
 
         for label, art_list in clusters.items():
             logger.info("Found cluster label %d with %d articles.", label, len(art_list))
-            
+
             # Create a new story
             story_id = uuid.uuid4()
             story = Story(
@@ -315,10 +324,10 @@ class ClusteringService:
                 story_status="active",
                 first_seen_at=min(a.published_at or datetime.utcnow() for a in art_list),
                 trend_score=1.0,
-                updated_at=datetime.utcnow()
+                updated_at=datetime.utcnow(),
             )
             session.add(story)
-            
+
             # Initialize metrics
             metrics = StoryMetric(story_id=story_id, views=0, bookmarks=0, shares=0, clicks=0)
             session.add(metrics)
@@ -350,11 +359,11 @@ class ClusteringService:
         # Recency calculation: hours since first seen
         first_seen = story.first_seen_at or datetime.utcnow()
         hours_elapsed = (datetime.utcnow() - first_seen).total_seconds() / 3600.0
-        
+
         # Exponential gravity decay factor (similar to Hacker News / Reddit)
         # Score = (article_count) / (hours_elapsed + 2)^1.5
         score = article_count / ((hours_elapsed + 2.0) ** 1.5)
-        
+
         story.trend_score = score
         await session.commit()
         return score

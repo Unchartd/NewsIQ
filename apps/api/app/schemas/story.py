@@ -1,20 +1,20 @@
 """Pydantic schemas for story endpoints."""
 
-from datetime import datetime
-from typing import List, Optional
 import uuid
-from pydantic import BaseModel, Field
+from datetime import datetime
 
+from pydantic import BaseModel, Field
 
 # ──────────────────────────────────────────────
 # Story Sub-schemas
 # ──────────────────────────────────────────────
 
+
 class CategoryInStory(BaseModel):
     id: uuid.UUID
     slug: str
     name: str
-    icon: Optional[str] = None
+    icon: str | None = None
 
     class Config:
         from_attributes = True
@@ -24,9 +24,9 @@ class SourceInStory(BaseModel):
     id: uuid.UUID
     name: str
     slug: str
-    website_url: Optional[str] = None
-    logo_url: Optional[str] = None
-    country_code: Optional[str] = None
+    website_url: str | None = None
+    logo_url: str | None = None
+    country_code: str | None = None
 
     class Config:
         from_attributes = True
@@ -34,12 +34,12 @@ class SourceInStory(BaseModel):
 
 class StoryArticleResponse(BaseModel):
     id: uuid.UUID
-    title: Optional[str] = None
-    description: Optional[str] = None
+    title: str | None = None
+    description: str | None = None
     url: str
-    author: Optional[str] = None
-    image_url: Optional[str] = None
-    published_at: Optional[datetime] = None
+    author: str | None = None
+    image_url: str | None = None
+    published_at: datetime | None = None
     source: SourceInStory
 
     class Config:
@@ -48,8 +48,8 @@ class StoryArticleResponse(BaseModel):
 
 class StoryTimelineEventResponse(BaseModel):
     id: uuid.UUID
-    event_time: Optional[datetime] = None
-    description: Optional[str] = None
+    event_time: datetime | None = None
+    description: str | None = None
 
     class Config:
         from_attributes = True
@@ -58,8 +58,8 @@ class StoryTimelineEventResponse(BaseModel):
 class StorySourceCoverageResponse(BaseModel):
     id: uuid.UUID
     source: SourceInStory
-    focus_area: Optional[str] = None
-    published_at: Optional[datetime] = None
+    focus_area: str | None = None
+    published_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -68,9 +68,9 @@ class StorySourceCoverageResponse(BaseModel):
 class StoryDifferenceResponse(BaseModel):
     id: uuid.UUID
     source: SourceInStory
-    unique_information: Optional[str] = None
-    missing_information: Optional[str] = None
-    contradictions: Optional[str] = None
+    unique_information: str | None = None
+    missing_information: str | None = None
+    contradictions: str | None = None
 
     class Config:
         from_attributes = True
@@ -107,21 +107,25 @@ class StoryMetricResponse(BaseModel):
 # Main Story Schemas
 # ──────────────────────────────────────────────
 
+
 class StoryListResponse(BaseModel):
     """Schema for listing stories in the feed."""
+
     id: uuid.UUID
-    headline: Optional[str] = None
-    one_line_summary: Optional[str] = None
-    short_summary: Optional[str] = None
-    location_country: Optional[str] = None
-    location_state: Optional[str] = None
-    location_city: Optional[str] = None
-    trend_score: Optional[float] = None
-    first_seen_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    category: Optional[CategoryInStory] = None
+    headline: str | None = None
+    one_line_summary: str | None = None
+    short_summary: str | None = None
+    location_country: str | None = None
+    location_state: str | None = None
+    location_city: str | None = None
+    trend_score: float | None = None
+    first_seen_at: datetime | None = None
+    updated_at: datetime | None = None
+    category: CategoryInStory | None = None
     article_count: int = Field(0, description="Total count of articles covering this story")
-    source_logos: List[str] = Field(default_factory=list, description="URLs of logos for reporting sources")
+    source_logos: list[str] = Field(
+        default_factory=list, description="URLs of logos for reporting sources"
+    )
 
     class Config:
         from_attributes = True
@@ -129,29 +133,30 @@ class StoryListResponse(BaseModel):
 
 class StoryDetailResponse(BaseModel):
     """Schema for detailed story page."""
+
     id: uuid.UUID
-    headline: Optional[str] = None
-    one_line_summary: Optional[str] = None
-    short_summary: Optional[str] = None
-    detailed_summary: Optional[str] = None
-    location_country: Optional[str] = None
-    location_state: Optional[str] = None
-    location_city: Optional[str] = None
-    trend_score: Optional[float] = None
-    first_seen_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    category: Optional[CategoryInStory] = None
-    
+    headline: str | None = None
+    one_line_summary: str | None = None
+    short_summary: str | None = None
+    detailed_summary: str | None = None
+    location_country: str | None = None
+    location_state: str | None = None
+    location_city: str | None = None
+    trend_score: float | None = None
+    first_seen_at: datetime | None = None
+    updated_at: datetime | None = None
+    category: CategoryInStory | None = None
+
     # Associated items
-    timeline_events: List[StoryTimelineEventResponse] = []
-    source_coverage: List[StorySourceCoverageResponse] = []
-    differences: List[StoryDifferenceResponse] = []
-    tags: List[StoryTagResponse] = []
-    entities: List[StoryEntityResponse] = []
-    metrics: Optional[StoryMetricResponse] = None
-    
+    timeline_events: list[StoryTimelineEventResponse] = []
+    source_coverage: list[StorySourceCoverageResponse] = []
+    differences: list[StoryDifferenceResponse] = []
+    tags: list[StoryTagResponse] = []
+    entities: list[StoryEntityResponse] = []
+    metrics: StoryMetricResponse | None = None
+
     # Linked articles
-    articles: List[StoryArticleResponse] = []
+    articles: list[StoryArticleResponse] = []
 
     class Config:
         from_attributes = True
@@ -160,6 +165,7 @@ class StoryDetailResponse(BaseModel):
 # ──────────────────────────────────────────────
 # Widget Response Schemas
 # ──────────────────────────────────────────────
+
 
 class TrendingTopicWidget(BaseModel):
     topic: str
@@ -174,5 +180,5 @@ class PopularSourceWidget(BaseModel):
 
 
 class TrendingWidgetsResponse(BaseModel):
-    trending_topics: List[TrendingTopicWidget]
-    popular_sources: List[PopularSourceWidget]
+    trending_topics: list[TrendingTopicWidget]
+    popular_sources: list[PopularSourceWidget]

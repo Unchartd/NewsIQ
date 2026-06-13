@@ -1,19 +1,22 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
-import { StoryCard } from "@/components/story/story-card";
 import { StoryCardSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/empty-states";
-import { Bookmark, Lock } from "lucide-react";
+import { CategoryBadge } from "@/components/ui/category-badge";
+import { Bookmark, Lock, Search, Share2, Trash2 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Story } from "@/types";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 
 export default function BookmarksPage() {
   const { isAuthenticated } = useAuthStore();
+  const queryClient = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
     queryKey: ["bookmarked-stories"],
@@ -24,23 +27,97 @@ export default function BookmarksPage() {
     enabled: isAuthenticated,
   });
 
+  const removeBookmarkMutation = useMutation({
+    mutationFn: async (storyId: string) => {
+      await apiClient.delete(`/stories/${storyId}/bookmark`);
+    },
+    onSuccess: () => {
+      toast.success("Story removed from bookmarks");
+      queryClient.invalidateQueries({ queryKey: ["bookmarked-stories"] });
+    },
+    onError: () => {
+      toast.error("Failed to remove bookmark");
+    },
+  });
+
+  const handleShare = (story: Story, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (navigator.share) {
+      navigator.share({
+        title: story.headline,
+        text: story.one_line_summary,
+        url: `${window.location.origin}/story/${story.id}`,
+      })
+      .then(() => toast.success("Shared successfully"))
+      .catch(() => {});
+    } else {
+      navigator.clipboard.writeText(`${window.location.origin}/story/${story.id}`);
+      toast.success("Link copied to clipboard!");
+    }
+  };
+
+  const handleRemove = (storyId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    removeBookmarkMutation.mutate(storyId);
+  };
+
+  // Filter bookmarks locally by headline or category
+  const filteredStories = stories?.filter((story) => {
+    const matchesSearch = story.headline.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (story.category?.name && story.category.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesSearch;
+  }) || [];
+
   return (
     <AppShell>
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6 pb-24">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
-            <Bookmark className="w-5 h-5 fill-current" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Bookmarked Stories</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">
-              Stories you have saved for reading later.
-            </p>
-          </div>
+      <div style={{ maxWidth: 800, margin: "0 auto", padding: "0 24px" }}>
+        {/* Bookmarks Header */}
+        <div style={{ padding: "28px 0 20px" }}>
+          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 600, marginBottom: 4 }}>
+            Saved stories
+          </h1>
+          <p style={{ fontSize: 14, color: "var(--ink-3)" }}>
+            {stories ? `${stories.length} bookmarked stories` : "0 bookmarked stories"}
+          </p>
         </div>
 
-        {/* Auth Check */}
+        {/* Search Saved Stories Input */}
+        <div
+          className="bk-search"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+            padding: "0 14px",
+            height: 40,
+            marginBottom: 20,
+          }}
+        >
+          <Search className="w-4 h-4 text-gray-400 shrink-0" />
+          <input
+            type="text"
+            placeholder="Search saved stories…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              flex: 1,
+              border: "none",
+              background: "none",
+              outline: "none",
+              fontSize: 13,
+              fontFamily: "var(--font-inter), sans-serif",
+              color: "var(--ink)",
+            }}
+          />
+        </div>
+
+        {/* Main Content */}
         {!isAuthenticated ? (
           <EmptyState
             icon={Lock}
@@ -69,10 +146,95 @@ export default function BookmarksPage() {
             title="No bookmarks yet"
             description="Bookmark interesting stories from your feed to save them here."
           />
+        ) : filteredStories.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No matches found"
+            description={`We couldn't find any bookmarks matching "${searchQuery}".`}
+          />
         ) : (
-          <div className="space-y-4">
-            {stories.map((story, index) => (
-              <StoryCard key={story.id} story={story} index={index} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: 60 }}>
+            {filteredStories.map((story) => (
+              <Link
+                href={`/story/${story.id}`}
+                key={story.id}
+                className="niq-bk-card"
+              >
+                <div className="niq-bk-body">
+                  <div style={{ marginBottom: 6 }}>
+                    {story.category && <CategoryBadge category={story.category.name} />}
+                  </div>
+                  <div className="niq-bk-headline">{story.headline}</div>
+                  <div className="niq-bk-meta">
+                    <span>{story.source_count || 1} sources</span>
+                    <span>•</span>
+                    <span>Saved recently</span>
+                  </div>
+                </div>
+                
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    alignItems: "flex-end",
+                    justifyContent: "center",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => handleShare(story, e)}
+                    style={{
+                      padding: "5px 10px",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: "var(--ink-3)",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      transition: "all 150ms",
+                      background: "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--ink-2)";
+                      e.currentTarget.style.color = "var(--ink)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.color = "var(--ink-3)";
+                    }}
+                  >
+                    Share
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleRemove(story.id, e)}
+                    style={{
+                      padding: "5px 10px",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: "var(--ink-3)",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      transition: "all 150ms",
+                      background: "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--error)";
+                      e.currentTarget.style.color = "var(--error)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.color = "var(--ink-3)";
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </Link>
             ))}
           </div>
         )}

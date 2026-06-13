@@ -1,12 +1,14 @@
 """Pydantic schemas for news sources."""
 
-from datetime import datetime
 import uuid
-from pydantic import BaseModel, Field, HttpUrl
+from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class SourceBase(BaseModel):
     """Base news source payload."""
+
     name: str = Field(..., min_length=1, max_length=255)
     website_url: str | None = Field(None, max_length=2000)
     logo_url: str | None = Field(None, max_length=2000)
@@ -17,11 +19,13 @@ class SourceBase(BaseModel):
 
 class SourceCreate(SourceBase):
     """Payload for creating a news source."""
+
     slug: str = Field(..., min_length=1, max_length=255)
 
 
 class SourceUpdate(BaseModel):
     """Payload for updating a news source."""
+
     name: str | None = Field(None, min_length=1, max_length=255)
     website_url: str | None = Field(None, max_length=2000)
     logo_url: str | None = Field(None, max_length=2000)
@@ -32,6 +36,7 @@ class SourceUpdate(BaseModel):
 
 class SourceResponse(SourceBase):
     """Response payload for news source."""
+
     id: uuid.UUID
     slug: str
     created_at: datetime

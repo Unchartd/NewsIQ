@@ -17,7 +17,6 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -29,6 +28,7 @@ def generate_uuid() -> uuid.UUID:
     """Generate a UUID v7 (time-ordered) if uuid7 is available, else v4."""
     try:
         from uuid7 import uuid7
+
         return uuid7()
     except ImportError:
         return uuid.uuid4()
@@ -38,10 +38,13 @@ def generate_uuid() -> uuid.UUID:
 # Users & Auth
 # ──────────────────────────────────────────────
 
+
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(255))
     image_url: Mapped[str | None] = mapped_column(Text)
@@ -54,29 +57,57 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    preferences: Mapped["UserPreference | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
-    sessions: Mapped[list["Session"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    bookmarks: Mapped[list["Bookmark"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    notifications: Mapped[list["Notification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    search_history: Mapped[list["SearchHistory"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    digest_subscriptions: Mapped[list["DigestSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    user_events: Mapped[list["UserEvent"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    user_categories: Mapped[list["UserCategory"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    user_locations: Mapped[list["UserLocation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    preferences: Mapped["UserPreference | None"] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    sessions: Mapped[list["Session"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    bookmarks: Mapped[list["Bookmark"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    search_history: Mapped[list["SearchHistory"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    digest_subscriptions: Mapped[list["DigestSubscription"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    user_events: Mapped[list["UserEvent"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    user_categories: Mapped[list["UserCategory"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    user_locations: Mapped[list["UserLocation"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    api_keys: Mapped[list["ApiKey"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserPreference(Base):
     __tablename__ = "user_preferences"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
     preferred_summary_type: Mapped[str | None] = mapped_column(String(20))
     theme: Mapped[str | None] = mapped_column(String(20))
     language: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     user: Mapped["User"] = relationship(back_populates="preferences")
 
@@ -84,8 +115,12 @@ class UserPreference(Base):
 class Session(Base):
     __tablename__ = "sessions"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True
+    )
     token: Mapped[str] = mapped_column(Text, unique=True)
     ip_address: Mapped[str | None] = mapped_column(Text)
     user_agent: Mapped[str | None] = mapped_column(Text)
@@ -98,7 +133,9 @@ class Session(Base):
 class OAuthAccount(Base):
     __tablename__ = "oauth_accounts"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     provider: Mapped[str] = mapped_column(String(50))
     provider_account_id: Mapped[str] = mapped_column(Text)
@@ -112,8 +149,12 @@ class OAuthAccount(Base):
 class UserCategory(Base):
     __tablename__ = "user_categories"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
-    category_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True
+    )
+    category_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("categories.id"), primary_key=True
+    )
 
     user: Mapped["User"] = relationship(back_populates="user_categories")
     category: Mapped["Category"] = relationship()
@@ -122,7 +163,9 @@ class UserCategory(Base):
 class UserLocation(Base):
     __tablename__ = "user_locations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     country_code: Mapped[str | None] = mapped_column(String(10))
     state_name: Mapped[str | None] = mapped_column(String(100))
@@ -135,10 +178,13 @@ class UserLocation(Base):
 # Content: Categories, Sources, Articles
 # ──────────────────────────────────────────────
 
+
 class Category(Base):
     __tablename__ = "categories"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     slug: Mapped[str] = mapped_column(String(100), unique=True)
     name: Mapped[str] = mapped_column(String(100))
     icon: Mapped[str | None] = mapped_column(String(100))
@@ -148,7 +194,9 @@ class Category(Base):
 class Source(Base):
     __tablename__ = "sources"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     name: Mapped[str] = mapped_column(String(255))
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     website_url: Mapped[str | None] = mapped_column(Text)
@@ -164,7 +212,9 @@ class Source(Base):
 class Article(Base):
     __tablename__ = "articles"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sources.id"))
     title: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
@@ -190,31 +240,52 @@ class Article(Base):
 # Stories & Related
 # ──────────────────────────────────────────────
 
+
 class Story(Base):
     __tablename__ = "stories"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     headline: Mapped[str | None] = mapped_column(Text)
     one_line_summary: Mapped[str | None] = mapped_column(Text)
     short_summary: Mapped[str | None] = mapped_column(Text)
     detailed_summary: Mapped[str | None] = mapped_column(Text)
-    category_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), index=True)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("categories.id"), index=True
+    )
     location_country: Mapped[str | None] = mapped_column(String(100))
     location_state: Mapped[str | None] = mapped_column(String(100))
     location_city: Mapped[str | None] = mapped_column(String(100))
     trend_score: Mapped[float | None] = mapped_column(Numeric(10, 2))
     story_status: Mapped[str | None] = mapped_column(String(30), default="active")
     first_seen_at: Mapped[datetime | None] = mapped_column()
-    updated_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     category: Mapped["Category | None"] = relationship()
-    articles: Mapped[list["StoryArticle"]] = relationship(back_populates="story", cascade="all, delete-orphan")
-    timeline_events: Mapped[list["StoryTimelineEvent"]] = relationship(back_populates="story", cascade="all, delete-orphan")
-    entities: Mapped[list["StoryEntity"]] = relationship(back_populates="story", cascade="all, delete-orphan")
-    source_coverage: Mapped[list["StorySourceCoverage"]] = relationship(back_populates="story", cascade="all, delete-orphan")
-    differences: Mapped[list["StoryDifference"]] = relationship(back_populates="story", cascade="all, delete-orphan")
-    tags: Mapped[list["StoryTag"]] = relationship(back_populates="story", cascade="all, delete-orphan")
-    metrics: Mapped["StoryMetric | None"] = relationship(back_populates="story", uselist=False, cascade="all, delete-orphan")
+    articles: Mapped[list["StoryArticle"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
+    timeline_events: Mapped[list["StoryTimelineEvent"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
+    entities: Mapped[list["StoryEntity"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
+    source_coverage: Mapped[list["StorySourceCoverage"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
+    differences: Mapped[list["StoryDifference"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
+    tags: Mapped[list["StoryTag"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
+    metrics: Mapped["StoryMetric | None"] = relationship(
+        back_populates="story", uselist=False, cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("idx_stories_trend", trend_score.desc()),
@@ -225,8 +296,12 @@ class Story(Base):
 class StoryArticle(Base):
     __tablename__ = "story_articles"
 
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), primary_key=True)
-    article_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("articles.id"), primary_key=True)
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), primary_key=True
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id"), primary_key=True
+    )
 
     story: Mapped["Story"] = relationship(back_populates="articles")
     article: Mapped["Article"] = relationship()
@@ -235,8 +310,12 @@ class StoryArticle(Base):
 class StoryTimelineEvent(Base):
     __tablename__ = "story_timeline_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"), index=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), index=True
+    )
     event_time: Mapped[datetime | None] = mapped_column()
     description: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
@@ -247,7 +326,9 @@ class StoryTimelineEvent(Base):
 class StorySourceCoverage(Base):
     __tablename__ = "story_source_coverage"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sources.id"))
     focus_area: Mapped[str | None] = mapped_column(Text)
@@ -260,7 +341,9 @@ class StorySourceCoverage(Base):
 class StoryDifference(Base):
     __tablename__ = "story_differences"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sources.id"))
     unique_information: Mapped[str | None] = mapped_column(Text)
@@ -274,7 +357,9 @@ class StoryDifference(Base):
 class StoryTag(Base):
     __tablename__ = "story_tags"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
     tag_name: Mapped[str] = mapped_column(String(100))
 
@@ -284,7 +369,9 @@ class StoryTag(Base):
 class StoryEntity(Base):
     __tablename__ = "story_entities"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
     entity_type: Mapped[str] = mapped_column(String(30))  # PERSON, ORG, LOCATION, EVENT, COUNTRY
     entity_value: Mapped[str] = mapped_column(String(255))
@@ -295,7 +382,9 @@ class StoryEntity(Base):
 class StoryMetric(Base):
     __tablename__ = "story_metrics"
 
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"), primary_key=True)
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), primary_key=True
+    )
     views: Mapped[int] = mapped_column(BigInteger, default=0)
     bookmarks: Mapped[int] = mapped_column(BigInteger, default=0)
     shares: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -308,11 +397,16 @@ class StoryMetric(Base):
 # User Engagement
 # ──────────────────────────────────────────────
 
+
 class Bookmark(Base):
     __tablename__ = "bookmarks"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True, index=True)
-    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True, index=True
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), primary_key=True
+    )
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="bookmarks")
@@ -322,7 +416,9 @@ class Bookmark(Base):
 class SearchHistory(Base):
     __tablename__ = "search_history"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     query: Mapped[str | None] = mapped_column(Text)
     searched_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
@@ -333,8 +429,12 @@ class SearchHistory(Base):
 class Notification(Base):
     __tablename__ = "notifications"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True
+    )
     title: Mapped[str | None] = mapped_column(Text)
     body: Mapped[str | None] = mapped_column(Text)
     notification_type: Mapped[str | None] = mapped_column(String(50))
@@ -347,7 +447,9 @@ class Notification(Base):
 class DigestSubscription(Base):
     __tablename__ = "digest_subscriptions"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     frequency: Mapped[str | None] = mapped_column(String(30))
     delivery_channel: Mapped[str | None] = mapped_column(String(30))
@@ -359,10 +461,18 @@ class DigestSubscription(Base):
 class UserEvent(Base):
     __tablename__ = "user_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
-    story_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"), index=True)
-    event_type: Mapped[str | None] = mapped_column(String(50))  # view_story, bookmark_story, share_story, search
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True
+    )
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id"), index=True
+    )
+    event_type: Mapped[str | None] = mapped_column(
+        String(50)
+    )  # view_story, bookmark_story, share_story, search
     event_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.utcnow)
 
@@ -373,7 +483,9 @@ class UserEvent(Base):
 class ApiKey(Base):
     __tablename__ = "api_keys"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     key_hash: Mapped[str | None] = mapped_column(Text)
     plan: Mapped[str | None] = mapped_column(String(30))

@@ -1,9 +1,11 @@
 """Pytest configuration and common fixtures."""
 
 import asyncio
-from typing import Generator
+from collections.abc import Generator
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:

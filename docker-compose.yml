@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   # ──────────────────────────────────────────────
-  # PostgreSQL 17
+  # Infrastructure Services
   # ──────────────────────────────────────────────
   postgres:
     image: postgres:17-alpine
@@ -22,9 +22,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ──────────────────────────────────────────────
-  # Redis 7
-  # ──────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: newsiq-redis
@@ -39,16 +36,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # ──────────────────────────────────────────────
-  # Qdrant (Vector DB)
-  # ──────────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:latest
     container_name: newsiq-qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333"    # REST API
-      - "6334:6334"    # gRPC
+      - "6333:6333"
+      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -57,9 +51,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ──────────────────────────────────────────────
-  # Meilisearch
-  # ──────────────────────────────────────────────
   meilisearch:
     image: getmeili/meilisearch:latest
     container_name: newsiq-meilisearch
@@ -76,6 +67,108 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ──────────────────────────────────────────────
+  # Application Services
+  # ──────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=newsiq-dev-key
+      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
+      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+
+  celery_worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-celery-worker
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=newsiq-dev-key
+      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
+      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-celery-beat
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=newsiq-dev-key
+      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
+      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: newsiq-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

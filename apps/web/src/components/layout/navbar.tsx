@@ -1,41 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useState, useEffect } from "react";
 import {
-  Zap,
   Search,
   Sun,
   Moon,
-  Monitor,
-  User,
-  Menu,
-  X,
+  Bookmark,
+  Bell,
 } from "lucide-react";
-import { useState, useEffect } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuthStore } from "@/stores/auth-store";
-import { useUIStore } from "@/stores/ui-store";
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { user, isAuthenticated } = useAuthStore();
-  const { toggleSidebar, sidebarOpen } = useUIStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => setMounted(true), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const initials = user?.name
     ? user.name
@@ -46,106 +36,116 @@ export function Navbar() {
         .slice(0, 2)
     : "?";
 
-  const themeIcon = mounted
-    ? theme === "dark"
-      ? Moon
-      : theme === "light"
-        ? Sun
-        : Monitor
-    : Monitor;
+  const isLanding = pathname === "/";
+  const isDark = mounted && theme === "dark";
 
-  const ThemeIcon = themeIcon;
+  const navLinks = [
+    { href: "/home", label: "Home", active: pathname === "/home" },
+    { href: "/trending", label: "Trending", active: pathname === "/trending" },
+    { href: "/search", label: "Search", active: pathname === "/search" },
+  ];
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
-      <div className="flex items-center h-16 px-4 lg:px-6 gap-4">
-        {/* Hamburger for mobile / sidebar toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="lg:hidden"
-          onClick={toggleSidebar}
-          aria-label="Toggle sidebar"
-        >
-          {sidebarOpen ? (
-            <X className="w-5 h-5" />
-          ) : (
-            <Menu className="w-5 h-5" />
-          )}
-        </Button>
-
-        {/* Logo */}
-        <Link
-          href="/home"
-          className="flex items-center gap-2 flex-shrink-0"
-        >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-sm">
-            <Zap className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <span className="text-xl font-bold tracking-tight hidden sm:inline">
-            NewsIQ
-          </span>
-        </Link>
-
-        {/* Search bar — center */}
-        <div className="flex-1 max-w-lg mx-auto">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (searchQuery.trim()) {
-                window.location.href = `/search?q=${encodeURIComponent(searchQuery.trim())}`;
-              }
-            }}
-          >
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search stories, topics, sources..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-10 bg-muted/50 border-0 focus-visible:ring-1 rounded-xl"
-              />
-            </div>
-          </form>
+    <nav className="niq-navbar">
+      {/* Logo */}
+      <Link href={isAuthenticated ? "/home" : "/"} style={{ textDecoration: "none" }}>
+        <div className="niq-logo">
+          <span className="niq-logo-news">News</span>
+          <span className="niq-logo-iq">IQ</span>
         </div>
+      </Link>
 
-        {/* Right actions */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Theme toggle */}
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="rounded-lg" />}>
-              <ThemeIcon className="w-4 h-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setTheme("light")}>
-                <Sun className="w-4 h-4 mr-2" /> Light
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("dark")}>
-                <Moon className="w-4 h-4 mr-2" /> Dark
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("system")}>
-                <Monitor className="w-4 h-4 mr-2" /> System
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      {/* Search bar */}
+      {!isLanding && (
+        <form
+          className="niq-search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (searchQuery.trim()) {
+              router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+            }
+          }}
+        >
+          <Search size={14} />
+          <input
+            type="text"
+            placeholder="Search stories, topics, locations…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </form>
+      )}
 
-          {/* Auth */}
-          {isAuthenticated ? (
-            <Link href="/profile">
-              <Avatar className="w-8 h-8 cursor-pointer ring-2 ring-transparent hover:ring-primary/20 transition-all">
-                <AvatarImage src={user?.image_url || undefined} />
-                <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
+      {/* Nav links */}
+      {!isLanding && isAuthenticated && (
+        <div className="niq-nav-links">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`niq-nav-link ${link.active ? "active" : ""}`}
+            >
+              {link.label}
             </Link>
-          ) : (
-            <Button render={<Link href="/login" />} size="sm" className="rounded-lg">
-              Sign In
-            </Button>
-          )}
+          ))}
         </div>
+      )}
+
+      {/* Landing nav links */}
+      {isLanding && (
+        <div className="niq-nav-links">
+          <Link href="/trending" className="niq-nav-link">Trending</Link>
+          <Link href="/search" className="niq-nav-link">Categories</Link>
+        </div>
+      )}
+
+      {/* Right actions */}
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: isLanding ? "auto" : "0" }}>
+        {isAuthenticated ? (
+          <>
+            <Link href="/bookmarks">
+              <button className="niq-icon-btn" title="Bookmarks">
+                <Bookmark size={18} />
+              </button>
+            </Link>
+            <Link href="/notifications">
+              <button className="niq-icon-btn" title="Notifications">
+                <Bell size={18} />
+              </button>
+            </Link>
+            <button
+              className="niq-icon-btn"
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+              title="Toggle theme"
+            >
+              {isDark ? <Moon size={16} /> : <Sun size={16} />}
+            </button>
+            <Link href="/profile">
+              <div className="niq-avatar">{initials}</div>
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link href="/login">
+              <button className="niq-btn-outline" style={{ height: 34, padding: "0 14px", fontSize: 13 }}>
+                Sign in
+              </button>
+            </Link>
+            <Link href="/signup">
+              <button className="niq-btn-primary" style={{ height: 34, padding: "0 14px" }}>
+                Get started
+              </button>
+            </Link>
+            <button
+              className="niq-icon-btn"
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+              title="Toggle theme"
+            >
+              {isDark ? <Moon size={16} /> : <Sun size={16} />}
+            </button>
+          </>
+        )}
       </div>
-    </header>
+    </nav>
   );
 }
