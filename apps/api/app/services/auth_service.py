@@ -1,9 +1,9 @@
-"""Authentication service — business logic for register, login, sessions."""
+"""Authentication service — business logic for register, login, sessions, verification, resets."""
 
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -11,149 +11,403 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
+    validate_password,
     verify_password,
 )
-from app.models.models import Session as SessionModel
-from app.models.models import User, UserPreference
+from app.exceptions.auth import (
+    AccountLockedException,
+    EmailNotVerifiedException,
+    InvalidCredentialsException,
+    InvalidRefreshTokenException,
+    SessionExpiredException,
+    UserAlreadyExistsException,
+)
+from app.models.models import UserPreference
+from app.models.user import User
+from app.repositories.user_repository import UserRepository
+from app.services.email_service import EmailService
+from app.services.session_service import SessionService
 
 
 class AuthService:
-    """Handles user authentication workflows."""
+    """Handles user authentication workflows and security constraints."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.user_repo = UserRepository(db)
+        self.session_service = SessionService(db)
+        self.email_service = EmailService()
 
-    async def register(self, name: str, email: str, password: str) -> tuple[User, str, str]:
-        """Register a new user. Returns (user, access_token, refresh_token).
+    async def register(
+        self,
+        name: str,
+        email: str,
+        password: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[User, str, str]:
+        """Register a new user, create default preferences, and issue tokens.
 
-        Raises ValueError if email already exists.
+        Flow:
+        1. Check email uniqueness
+        2. Validate password
+        3. Hash password
+        4. Create user
+        5. Create default preferences
+        6. Commit transaction
+        7. Generate tokens
+        8. Create session
+        9. Return tokens
         """
-        # Check for existing user
-        result = await self.db.execute(select(User).where(User.email == email))
-        if result.scalar_one_or_none():
-            raise ValueError("An account with this email already exists.")
+        # 1. Check email uniqueness
+        existing_user = await self.user_repo.get_by_email(email)
+        if existing_user:
+            raise UserAlreadyExistsException()
 
+        # 2. Validate password
+        validate_password(password)
+
+        # 3. Hash password
+        password_hash = hash_password(password)
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+
+        # 4. Create user
         user = User(
             id=uuid.uuid4(),
             email=email,
             name=name,
-            password_hash=hash_password(password),
+            password_hash=password_hash,
             email_verified=False,
+            email_verification_token=secrets.token_urlsafe(32),
+            email_verification_expiry=now + timedelta(hours=24),
             role="user",
             subscription_plan="free",
             status="active",
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+            created_at=now,
+            updated_at=now,
         )
-        self.db.add(user)
+        await self.user_repo.create(user)
 
-        # Create default preferences
+        # 5. Create default preferences
         prefs = UserPreference(
             id=uuid.uuid4(),
             user_id=user.id,
             preferred_summary_type="short",
             theme="system",
             language="en",
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+            created_at=now,
+            updated_at=now,
         )
         self.db.add(prefs)
 
-        await self.db.flush()
+        # 6. Commit transaction
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
 
-        access_token = create_access_token({"sub": str(user.id)})
-        refresh_token = create_refresh_token({"sub": str(user.id)})
-
-        return user, access_token, refresh_token
-
-    async def login(self, email: str, password: str) -> tuple[User, str, str]:
-        """Authenticate user by email/password. Returns (user, access_token, refresh_token).
-
-        Raises ValueError if credentials are invalid.
-        """
-        result = await self.db.execute(
-            select(User).where(User.email == email, User.status == "active")
+        # 7. Generate tokens
+        access_token = create_access_token(
+            {"sub": str(user.id), "email": user.email, "role": user.role}
         )
-        user = result.scalar_one_or_none()
-
-        if not user or not user.password_hash:
-            raise ValueError("Invalid credentials.")
-
-        if not verify_password(password, user.password_hash):
-            raise ValueError("Invalid credentials.")
-
-        access_token = create_access_token({"sub": str(user.id)})
         refresh_token = create_refresh_token({"sub": str(user.id)})
+
+        # 8. Create session
+        await self.session_service.create_session(
+            user_id=user.id,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        # Send verification email asynchronously / mock log
+        await self.email_service.send_verification_email(user, user.email_verification_token)
+
+        # 9. Return tokens
+        return user, access_token, refresh_token
+
+    async def login(
+        self,
+        email: str,
+        password: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[User, str, str]:
+        """Authenticate active user by email & password with lockout and verification checks.
+
+        Flow:
+        1. Find active user
+        2. Verify password
+        3. Verify account not locked
+        4. Verify email confirmed
+        5. Reset failed attempts on success
+        6. Update last_login_at
+        7. Create access token
+        8. Create refresh token
+        9. Create session
+        10. Commit transaction
+        """
+        # 1. Find active user
+        user = await self.user_repo.get_by_email(email)
+        now = datetime.now(UTC).replace(tzinfo=None)
+
+        if not user:
+            # Timing attack mitigation: run password verification on dummy hash
+            verify_password(password, "$argon2id$v=19$m=65536,t=3,p=4$dummyhashdummyhash")
+            raise InvalidCredentialsException()
+
+        # 3. Verify account not locked
+        if user.locked_until and user.locked_until > now:
+            raise AccountLockedException(
+                f"Account is temporarily locked. Locked until {user.locked_until.isoformat()}."
+            )
+
+        # 2. Verify password
+        if not user.password_hash or not verify_password(password, user.password_hash):
+            # Increment failed login attempts
+            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+            if user.failed_login_attempts >= 5:
+                user.locked_until = now + timedelta(minutes=15)
+            try:
+                await self.db.commit()
+            except Exception:
+                await self.db.rollback()
+            raise InvalidCredentialsException()
+
+        # 4. Verify email confirmed
+        if not user.email_verified:
+            raise EmailNotVerifiedException()
+
+        if user.status != "active":
+            raise InvalidCredentialsException("Account is not active.")
+
+        # 5. Reset failed attempts on success
+        user.failed_login_attempts = 0
+        user.locked_until = None
+
+        # 6. Update last_login_at
+        user.last_login_at = now
+        user.updated_at = now
+
+        # 7. Create access token
+        access_token = create_access_token(
+            {"sub": str(user.id), "email": user.email, "role": user.role}
+        )
+
+        # 8. Create refresh token
+        refresh_token = create_refresh_token({"sub": str(user.id)})
+
+        # 9. Create session
+        await self.session_service.create_session(
+            user_id=user.id,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        # 10. Commit transaction
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
 
         return user, access_token, refresh_token
 
-    async def create_session(
+    async def rotate_refresh_token(
         self,
-        user_id: uuid.UUID,
         refresh_token: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> SessionModel:
-        """Create a new session record in the database."""
-        from app.core.config import settings
+    ) -> tuple[str, str, User]:
+        """Verify, rotate refresh token, and generate new token pair.
 
-        session = SessionModel(
-            id=uuid.uuid4(),
-            user_id=user_id,
-            token=refresh_token,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            expires_at=datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-            created_at=datetime.now(UTC),
-        )
-        self.db.add(session)
-        await self.db.flush()
-        return session
-
-    async def refresh_access_token(self, refresh_token: str) -> tuple[str, User]:
-        """Validate refresh token and return a new access token.
-
-        Raises ValueError if refresh token is invalid or expired.
+        Old refresh tokens must become unusable. Revoke all sessions on reuse detection.
         """
         payload = decode_token(refresh_token)
         if not payload or payload.get("type") != "refresh":
-            raise ValueError("Invalid refresh token.")
+            raise InvalidRefreshTokenException()
 
-        user_id = payload.get("sub")
-        if not user_id:
-            raise ValueError("Invalid refresh token.")
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise InvalidRefreshTokenException()
 
-        # Verify session exists in DB
-        result = await self.db.execute(
-            select(SessionModel).where(
-                SessionModel.token == refresh_token,
-                SessionModel.expires_at > datetime.now(UTC),
-            )
-        )
-        session = result.scalar_one_or_none()
+        token_hash = self.session_service.hash_token(refresh_token)
+
+        # Verify session
+        session = await self.session_service.repo.get_by_token_hash(token_hash)
         if not session:
-            raise ValueError("Session expired or invalid.")
+            # Token reuse/theft detection: invalidate all sessions of the user
+            try:
+                user_id = uuid.UUID(user_id_str)
+                await self.session_service.logout_all(user_id)
+                await self.db.commit()
+            except Exception:
+                await self.db.rollback()
+            raise InvalidRefreshTokenException(
+                "Refresh token reused or session invalid. Revoking all sessions."
+            )
 
-        # Fetch user
-        result = await self.db.execute(
-            select(User).where(User.id == uuid.UUID(user_id), User.status == "active")
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if session.expires_at < now:
+            await self.session_service.repo.delete(session)
+            try:
+                await self.db.commit()
+            except Exception:
+                await self.db.rollback()
+            raise SessionExpiredException()
+
+        user = session.user
+        if not user or user.status != "active":
+            await self.session_service.repo.delete(session)
+            try:
+                await self.db.commit()
+            except Exception:
+                await self.db.rollback()
+            raise InvalidCredentialsException("User inactive or not found.")
+
+        # Delete session A
+        await self.session_service.repo.delete(session)
+
+        # Generate new access token
+        access_token = create_access_token(
+            {"sub": str(user.id), "email": user.email, "role": user.role}
         )
-        user = result.scalar_one_or_none()
-        if not user:
-            raise ValueError("User not found.")
 
-        access_token = create_access_token({"sub": str(user.id)})
-        return access_token, user
+        # Generate refresh token B
+        new_refresh_token = create_refresh_token({"sub": str(user.id)})
+
+        # Create session B
+        await self.session_service.create_session(
+            user_id=user.id,
+            refresh_token=new_refresh_token,
+            ip_address=ip_address or session.ip_address,
+            user_agent=user_agent or session.user_agent,
+        )
+
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        return access_token, new_refresh_token, user
 
     async def logout(self, refresh_token: str) -> None:
-        """Delete the session associated with the refresh token."""
-        await self.db.execute(delete(SessionModel).where(SessionModel.token == refresh_token))
+        """Logout current device by deleting only its session."""
+        try:
+            await self.session_service.logout(refresh_token)
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
 
     async def logout_all(self, user_id: uuid.UUID) -> None:
-        """Delete all sessions for a user."""
-        await self.db.execute(delete(SessionModel).where(SessionModel.user_id == user_id))
+        """Logout all devices belonging to the user."""
+        try:
+            await self.session_service.logout_all(user_id)
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
 
-    async def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
-        """Fetch a user by ID."""
-        result = await self.db.execute(select(User).where(User.id == user_id))
-        return result.scalar_one_or_none()
+    async def request_email_verification(self, email: str) -> None:
+        """Generate email verification token and send email."""
+        user = await self.user_repo.get_by_email(email)
+        if not user or user.email_verified:
+            return
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        user.email_verification_token = secrets.token_urlsafe(32)
+        user.email_verification_expiry = now + timedelta(hours=24)
+        user.updated_at = now
+
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        await self.email_service.send_verification_email(user, user.email_verification_token)
+
+    async def verify_email(self, token: str) -> User:
+        """Verify email using verification token."""
+        user = await self.user_repo.get_by_verification_token(token)
+        if not user:
+            raise InvalidCredentialsException("Invalid or expired verification token.")
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if user.email_verification_expiry and user.email_verification_expiry < now:
+            raise InvalidCredentialsException("Verification token has expired.")
+
+        user.email_verified = True
+        user.email_verification_token = None
+        user.email_verification_expiry = None
+        user.updated_at = now
+
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        return user
+
+    async def request_password_reset(self, email: str) -> None:
+        """Generate password reset token and send email."""
+        user = await self.user_repo.get_by_email(email)
+        if not user:
+            return
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        user.password_reset_token = secrets.token_urlsafe(32)
+        user.password_reset_expiry = now + timedelta(hours=1)
+        user.updated_at = now
+
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        await self.email_service.send_password_reset_email(user, user.password_reset_token)
+
+    async def verify_password_reset_token(self, token: str) -> User:
+        """Verify password reset token and return User if valid."""
+        user = await self.user_repo.get_by_password_reset_token(token)
+        if not user:
+            raise InvalidCredentialsException("Invalid or expired password reset token.")
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if user.password_reset_expiry and user.password_reset_expiry < now:
+            raise InvalidCredentialsException("Password reset token has expired.")
+
+        return user
+
+    async def reset_password(self, token: str, new_password: str) -> None:
+        """Verify password reset token, update password, and invalidate all active sessions."""
+        user = await self.verify_password_reset_token(token)
+        validate_password(new_password)
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        user.password_hash = hash_password(new_password)
+        user.password_reset_token = None
+        user.password_reset_expiry = None
+        user.updated_at = now
+
+        # Invalidate old sessions after password change
+        await self.session_service.logout_all(user.id)
+
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise

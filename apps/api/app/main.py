@@ -124,6 +124,17 @@ async def csrf_middleware(request: Request, call_next):
                 )
     return await call_next(request)
 
+# Exception handlers
+from app.exceptions.auth import AuthException
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(AuthException)
+async def auth_exception_handler(request: Request, exc: AuthException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
 # API routes
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
