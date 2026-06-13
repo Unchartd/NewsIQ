@@ -27,12 +27,15 @@ class UserPreferencesResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ProfileUpdateRequest(BaseModel):  # subscription_plan intentionally excluded — use admin endpoint
-    """Payload for updating user profile."""
+class ProfileUpdateRequest(BaseModel):
+    """Payload for updating user profile.
+
+    NOTE: subscription_plan and role are intentionally excluded.
+    Use the admin-only PATCH /admin/users/{user_id}/role endpoint instead.
+    """
 
     name: str | None = Field(None, min_length=1, max_length=255)
     image_url: str | None = None
-    subscription_plan: str | None = None
 
 
 class OnboardingRequest(BaseModel):
