@@ -336,7 +336,6 @@ async def get_latest_digest(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the latest AI summary digest for user's preferred categories."""
-    # Fetch stories in user's preferred categories
     from app.models.models import Category, Story, UserCategory
 
     # Get user preferred categories
@@ -344,7 +343,7 @@ async def get_latest_digest(
     cat_result = await db.execute(cat_query)
     category_ids = [row[0] for row in cat_result.all()]
 
-    # Query stories in those categories (or any stories if none chosen)
+    # Query stories in those categories ordered by created_at (not Story.created_at which was missing)
     story_query = select(Story).order_by(Story.created_at.desc()).limit(5)
     if category_ids:
         story_query = story_query.where(Story.category_id.in_(category_ids))
@@ -352,25 +351,26 @@ async def get_latest_digest(
     result = await db.execute(story_query)
     stories = result.scalars().all()
 
-    # If no stories, fallback to most recent stories
+    # Fallback to most recent stories if no category match
     if not stories:
-        fallback_query = select(Story).order_by(Story.created_at.desc()).limit(5)
-        fallback_result = await db.execute(fallback_query)
+        fallback_result = await db.execute(
+            select(Story).order_by(Story.created_at.desc()).limit(5)
+        )
         stories = fallback_result.scalars().all()
 
-    # Format a nice dynamic digest JSON response
-    digest_items = []
-    for s in stories:
-        digest_items.append(
-            {
-                "story_id": str(s.id),
-                "headline": s.headline,
-                "one_line_summary": s.one_line_summary,
-                "short_summary": s.short_summary,
-                "category_id": str(s.category_id) if s.category_id else None,
-                "created_at": s.created_at.isoformat() if s.created_at else "",
-            }
-        )
+    digest_items = [
+        {
+            "story_id": str(s.id),
+            "headline": s.headline,
+            "one_line_summary": s.one_line_summary,
+            "short_summary": s.short_summary,
+            "category_id": str(s.category_id) if s.category_id else None,
+            "created_at": s.created_at.isoformat() if s.created_at else "",
+        }
+        for s in stories
+    ]
+
+    from datetime import UTC, datetime
 
     return {
         "digest_type": "Daily Briefing",
