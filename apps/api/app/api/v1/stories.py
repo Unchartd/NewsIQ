@@ -132,37 +132,50 @@ async def search_stories(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    """Full-text search across story headlines and summaries.
+    """Full-text search across stories.
 
-    Uses PostgreSQL ILIKE for now. Meilisearch integration is planned for Phase 2.
+    Uses Meilisearch when available (ranked relevance) and transparently falls
+    back to a PostgreSQL ILIKE query if Meilisearch is unreachable.
     """
-    safe_q = q.replace("%", r"\%").replace("_", r"\_")
-
-    stmt = (
-        select(Story)
-        .options(
-            selectinload(Story.category),
-            selectinload(Story.articles)
-            .selectinload(StoryArticle.article)
-            .selectinload(Article.source),
-        )
-        .where(
-            Story.headline.ilike(f"%{safe_q}%")
-            | Story.one_line_summary.ilike(f"%{safe_q}%")
-            | Story.short_summary.ilike(f"%{safe_q}%")
-            | Story.detailed_summary.ilike(f"%{safe_q}%")
-        )
+    base_options = (
+        selectinload(Story.category),
+        selectinload(Story.articles)
+        .selectinload(StoryArticle.article)
+        .selectinload(Article.source),
     )
 
-    if category:
-        stmt = stmt.join(Category, Story.category_id == Category.id).where(
-            Category.slug == category
+    # 1. Try Meilisearch first — returns ranked story IDs or None on failure
+    matched_ids = await search_service.search(q, category=category, limit=limit, offset=offset)
+
+    if matched_ids is not None:
+        if not matched_ids:
+            return []
+        uuid_ids = [uuid.UUID(i) for i in matched_ids]
+        stmt = select(Story).options(*base_options).where(Story.id.in_(uuid_ids))
+        result = await db.execute(stmt)
+        stories_by_id = {s.id: s for s in result.scalars().all()}
+        # Preserve Meilisearch ranking order
+        stories = [stories_by_id[i] for i in uuid_ids if i in stories_by_id]
+    else:
+        # 2. PostgreSQL fallback
+        safe_q = q.replace("%", r"\%").replace("_", r"\_")
+        stmt = (
+            select(Story)
+            .options(*base_options)
+            .where(
+                Story.headline.ilike(f"%{safe_q}%")
+                | Story.one_line_summary.ilike(f"%{safe_q}%")
+                | Story.short_summary.ilike(f"%{safe_q}%")
+                | Story.detailed_summary.ilike(f"%{safe_q}%")
+            )
         )
-
-    stmt = stmt.order_by(Story.trend_score.desc()).limit(limit).offset(offset)
-
-    result = await db.execute(stmt)
-    stories = result.scalars().all()
+        if category:
+            stmt = stmt.join(Category, Story.category_id == Category.id).where(
+                Category.slug == category
+            )
+        stmt = stmt.order_by(Story.trend_score.desc()).limit(limit).offset(offset)
+        result = await db.execute(stmt)
+        stories = result.scalars().all()
 
     return [
         SearchResultResponse(
@@ -184,6 +197,51 @@ async def list_categories(db: AsyncSession = Depends(get_db)):
     """Return all available news categories."""
     result = await db.execute(select(Category).order_by(Category.name))
     return result.scalars().all()
+
+
+@router.get("/feed/personalized", response_model=list[StoryListResponse])
+async def personalized_feed(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a feed filtered by the user's preferred categories and locations.
+
+    Falls back to the global recency feed when the user has no preferences set.
+    """
+    # Resolve preferred category IDs
+    cat_res = await db.execute(
+        select(UserCategory.category_id).where(UserCategory.user_id == current_user.id)
+    )
+    category_ids = [row[0] for row in cat_res.all()]
+
+    # Resolve preferred country codes
+    loc_res = await db.execute(
+        select(UserLocation.country_code).where(
+            UserLocation.user_id == current_user.id, UserLocation.country_code.isnot(None)
+        )
+    )
+    countries = [row[0] for row in loc_res.all()]
+
+    stmt = select(Story).options(
+        selectinload(Story.category),
+        selectinload(Story.articles)
+        .selectinload(StoryArticle.article)
+        .selectinload(Article.source),
+    )
+
+    if category_ids:
+        stmt = stmt.where(Story.category_id.in_(category_ids))
+    if countries:
+        stmt = stmt.where(Story.location_country.in_(countries))
+
+    stmt = stmt.order_by(Story.trend_score.desc(), Story.updated_at.desc())
+    stmt = stmt.limit(limit).offset(offset)
+
+    result = await db.execute(stmt)
+    stories = result.scalars().all()
+    return [_build_story_list_response(s) for s in stories]
 
 
 @router.get("/trending-widgets", response_model=TrendingWidgetsResponse)
