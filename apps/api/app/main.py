@@ -42,6 +42,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Could not initialize Qdrant collection at startup: %s", e)
 
+    # Initialize Meilisearch index on startup
+    try:
+        from app.services.search_service import search_service
+        await search_service.init_index()
+        logger.info("Meilisearch index initialized.")
+    except Exception as e:
+        logger.warning("Could not initialize Meilisearch index at startup: %s", e)
+
     yield
     # ——— Shutdown ———
     logger.info("NewsIQ API shutting down.")

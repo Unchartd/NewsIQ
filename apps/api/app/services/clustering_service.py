@@ -199,6 +199,27 @@ class ClusteringService:
 
         await session.commit()
 
+        # 10. Index in Meilisearch and invalidate caches for this story
+        await self._index_and_invalidate(story, cat_slug, list(tags_added))
+
+    async def _index_and_invalidate(
+        self,
+        story: Story,
+        category_slug: str | None,
+        tags: list[str],
+    ) -> None:
+        """Push the story document to Meilisearch and clear its Redis caches."""
+        try:
+            from app.services.cache_service import cache_service
+            from app.services.search_service import build_story_document, search_service
+
+            public_tags = [t for t in tags if not t.startswith("fact:")]
+            document = build_story_document(story, category_slug, public_tags)
+            await search_service.index_story(document)
+            await cache_service.invalidate_story(str(story.id))
+        except Exception as e:
+            logger.warning("Failed to index/invalidate story %s: %s", story.id, e)
+
     async def merge_article_into_existing_story(
         self, article: Article, story_id: uuid.UUID, session: AsyncSession
     ) -> bool:

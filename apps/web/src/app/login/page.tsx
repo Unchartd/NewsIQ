@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
+import { setAccessToken } from "@/lib/token-store";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export default function LoginPage() {
 
     try {
       const { data } = await apiClient.post("/auth/login", { email, password });
-      localStorage.setItem("access_token", data.access_token);
+      setAccessToken(data.access_token);
       setUser(data.user);
       toast.success("Login successful.");
       router.push("/home");

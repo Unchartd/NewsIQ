@@ -42,7 +42,7 @@ dependencies = [
     "qdrant-client>=1.13.0",
 
     # Search
-    "meilisearch>=0.33.0",
+    "meilisearch-python-sdk>=3.4.0",
 
     # RSS / Ingestion
     "feedparser>=6.0.0",

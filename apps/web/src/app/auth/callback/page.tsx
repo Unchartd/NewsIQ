@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
+import { setAccessToken } from "@/lib/token-store";
 import { Suspense } from "react";
 
 function CallbackContent() {
@@ -19,8 +20,8 @@ function CallbackContent() {
       return;
     }
 
-    // Store the token and fetch user info
-    localStorage.setItem("access_token", accessToken);
+    // Store the token in memory and fetch user info
+    setAccessToken(accessToken);
 
     apiClient
       .get("/auth/me")

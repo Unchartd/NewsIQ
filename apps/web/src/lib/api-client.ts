@@ -5,6 +5,8 @@
 
 import axios from "axios";
 
+import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/token-store";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -13,25 +15,23 @@ export const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  withCredentials: true, // Send cookies for auth
+  withCredentials: true, // Send the HTTP-only refresh cookie for auth
   timeout: 15000,
 });
 
-// Request interceptor — attach access token
+// Request interceptor — attach the in-memory access token
 apiClient.interceptors.request.use(
   (config) => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("access_token");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    const token = getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor — handle 401 (token expired)
+// Response interceptor — handle 401 (token expired) via refresh
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -40,18 +40,18 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        // Attempt token refresh
+        // Attempt token refresh using the HTTP-only refresh cookie
         const { data } = await axios.post(
           `${API_BASE_URL}/auth/refresh`,
           {},
           { withCredentials: true }
         );
-        localStorage.setItem("access_token", data.access_token);
+        setAccessToken(data.access_token);
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
         return apiClient(originalRequest);
       } catch {
-        // Refresh failed — clear auth state
-        localStorage.removeItem("access_token");
+        // Refresh failed — clear auth state and redirect to login
+        clearAccessToken();
         if (typeof window !== "undefined") {
           window.location.href = "/login";
         }
