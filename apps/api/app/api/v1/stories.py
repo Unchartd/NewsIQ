@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.deps import require_user
+from app.core.deps import get_current_user, require_user
 from app.models.models import (
     Article,
     Bookmark,
@@ -22,6 +22,8 @@ from app.models.models import (
     StorySourceCoverage,
     StoryTag,
     User,
+    UserCategory,
+    UserLocation,
 )
 from app.schemas.story import (
     CategoryResponse,
@@ -34,6 +36,8 @@ from app.schemas.story import (
     TrendingTopicWidget,
     TrendingWidgetsResponse,
 )
+from app.services.cache_service import TTL_STORY, cache_service
+from app.services.search_service import search_service
 
 router = APIRouter()
 
