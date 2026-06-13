@@ -1,14 +1,13 @@
 """Service for ingesting news articles from RSS feeds and other news APIs."""
 
-import asyncio
-from datetime import datetime, timezone
 import logging
 import time
+from datetime import UTC, datetime
 from typing import Any
 
-from bs4 import BeautifulSoup
 import feedparser
 import httpx
+from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +38,7 @@ class IngestionService:
             parsed = getattr(entry, field, None)
             if parsed:
                 try:
-                    return datetime.fromtimestamp(time.mktime(parsed), tz=timezone.utc).replace(tzinfo=None)
+                    return datetime.fromtimestamp(time.mktime(parsed), tz=UTC).replace(tzinfo=None)
                 except Exception:
                     pass
         return datetime.utcnow()
@@ -77,7 +76,9 @@ class IngestionService:
 
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
-            content = self.clean_html(getattr(entry, "content", [{"value": ""}])[0].get("value", ""))
+            content = self.clean_html(
+                getattr(entry, "content", [{"value": ""}])[0].get("value", "")
+            )
             if not content:
                 content = description  # Fallback
 
@@ -117,7 +118,9 @@ class IngestionService:
         if new_articles_count > 0:
             try:
                 await session.commit()
-                logger.info("Ingested %d new articles for source '%s'", new_articles_count, source.name)
+                logger.info(
+                    "Ingested %d new articles for source '%s'", new_articles_count, source.name
+                )
             except Exception as e:
                 await session.rollback()
                 logger.error("Failed to save ingested articles for '%s': %s", source.name, e)
@@ -129,7 +132,7 @@ class IngestionService:
 
     async def ingest_all_active_sources(self, session: AsyncSession) -> dict[str, int]:
         """Ingest articles from all active news sources."""
-        stmt = select(Source).where(Source.active == True)
+        stmt = select(Source).where(Source.active)
         result = await session.execute(stmt)
         sources = result.scalars().all()
 

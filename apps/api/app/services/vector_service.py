@@ -2,11 +2,10 @@
 
 import logging
 import uuid
-from typing import Any, Dict, List
+from typing import Any
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
-from qdrant_client.http.exceptions import UnexpectedResponse
 
 from app.core.config import settings
 
@@ -50,7 +49,9 @@ class VectorService:
             logger.error("Failed to initialize Qdrant collection: %s", e)
             raise
 
-    async def upsert_article(self, article_id: uuid.UUID, vector: List[float], payload: Dict[str, Any]) -> None:
+    async def upsert_article(
+        self, article_id: uuid.UUID, vector: list[float], payload: dict[str, Any]
+    ) -> None:
         """Upsert a single article embedding with metadata payload."""
         await self.init_collection()
         try:
@@ -71,8 +72,8 @@ class VectorService:
             raise
 
     async def search_similar(
-        self, vector: List[float], limit: int = 10, score_threshold: float = 0.7
-    ) -> List[Dict[str, Any]]:
+        self, vector: list[float], limit: int = 10, score_threshold: float = 0.7
+    ) -> list[dict[str, Any]]:
         """Search for similar article vectors."""
         await self.init_collection()
         try:

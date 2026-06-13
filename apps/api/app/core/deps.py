@@ -1,17 +1,15 @@
 """FastAPI dependencies for authentication, authorization, and DB sessions."""
 
 import uuid
-from datetime import datetime, timezone
 
-from fastapi import Cookie, Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.models.models import Session as SessionModel, User
+from app.models.models import User
 
 # Optional bearer scheme — doesn't force 401 on missing token
 optional_bearer = HTTPBearer(auto_error=False)

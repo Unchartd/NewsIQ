@@ -1,11 +1,12 @@
 """Redis-based rate limiting middleware."""
 
-import time
 import logging
+import time
+
+import redis.asyncio as aioredis
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-import redis.asyncio as aioredis
 
 from app.core.config import settings
 

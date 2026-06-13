@@ -1,7 +1,7 @@
 """Google OAuth routes — handles redirect to Google and callback."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -119,8 +119,8 @@ async def google_callback(
                 role="user",
                 subscription_plan="free",
                 status="active",
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.add(user)
 
@@ -178,4 +178,5 @@ async def google_callback(
     redirect_url = f"{frontend_url}/auth/callback?access_token={access_token}"
 
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse(url=redirect_url)

@@ -1,7 +1,7 @@
 """Authentication service — business logic for register, login, sessions."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,8 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.models import Session as SessionModel, User, UserPreference
+from app.models.models import Session as SessionModel
+from app.models.models import User, UserPreference
 
 
 class AuthService:
@@ -22,9 +23,7 @@ class AuthService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def register(
-        self, name: str, email: str, password: str
-    ) -> tuple[User, str, str]:
+    async def register(self, name: str, email: str, password: str) -> tuple[User, str, str]:
         """Register a new user. Returns (user, access_token, refresh_token).
 
         Raises ValueError if email already exists.
@@ -43,8 +42,8 @@ class AuthService:
             role="user",
             subscription_plan="free",
             status="active",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         self.db.add(user)
 
@@ -55,8 +54,8 @@ class AuthService:
             preferred_summary_type="short",
             theme="system",
             language="en",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         self.db.add(prefs)
 
@@ -67,9 +66,7 @@ class AuthService:
 
         return user, access_token, refresh_token
 
-    async def login(
-        self, email: str, password: str
-    ) -> tuple[User, str, str]:
+    async def login(self, email: str, password: str) -> tuple[User, str, str]:
         """Authenticate user by email/password. Returns (user, access_token, refresh_token).
 
         Raises ValueError if credentials are invalid.
@@ -106,9 +103,8 @@ class AuthService:
             token=refresh_token,
             ip_address=ip_address,
             user_agent=user_agent,
-            expires_at=datetime.now(timezone.utc)
-            + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-            created_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+            created_at=datetime.now(UTC),
         )
         self.db.add(session)
         await self.db.flush()
@@ -131,7 +127,7 @@ class AuthService:
         result = await self.db.execute(
             select(SessionModel).where(
                 SessionModel.token == refresh_token,
-                SessionModel.expires_at > datetime.now(timezone.utc),
+                SessionModel.expires_at > datetime.now(UTC),
             )
         )
         session = result.scalar_one_or_none()
@@ -151,15 +147,11 @@ class AuthService:
 
     async def logout(self, refresh_token: str) -> None:
         """Delete the session associated with the refresh token."""
-        await self.db.execute(
-            delete(SessionModel).where(SessionModel.token == refresh_token)
-        )
+        await self.db.execute(delete(SessionModel).where(SessionModel.token == refresh_token))
 
     async def logout_all(self, user_id: uuid.UUID) -> None:
         """Delete all sessions for a user."""
-        await self.db.execute(
-            delete(SessionModel).where(SessionModel.user_id == user_id)
-        )
+        await self.db.execute(delete(SessionModel).where(SessionModel.user_id == user_id))
 
     async def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
         """Fetch a user by ID."""

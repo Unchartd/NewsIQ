@@ -1,7 +1,7 @@
 """Application configuration loaded from environment variables."""
 
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -14,9 +14,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # Database
-    DATABASE_URL: str = Field(
-        default="postgresql+asyncpg://newsiq:newsiq@localhost:5432/newsiq"
-    )
+    DATABASE_URL: str = Field(default="postgresql+asyncpg://newsiq:newsiq@localhost:5432/newsiq")
 
     # Redis
     REDIS_URL: str = Field(default="redis://localhost:6379/0")
