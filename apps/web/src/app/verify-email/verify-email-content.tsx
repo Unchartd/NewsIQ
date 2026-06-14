@@ -67,10 +67,6 @@ export default function VerifyEmailContent() {
       try {
         await apiClient.post(`/auth/verify-email?token=${token}`);
         setStatus("success");
-        // Automatically mark the user as verified if logged in
-        if (user) {
-          setUser({ ...user, email_verified: true });
-        }
         toast.success("Email verified successfully!");
       } catch (err: any) {
         setStatus("error");
@@ -81,7 +77,14 @@ export default function VerifyEmailContent() {
     };
 
     verify();
-  }, [token, user, setUser]);
+  }, [token]);
+
+  // Sync state to local Zustand store once user hydrates and verification succeeds
+  useEffect(() => {
+    if (status === "success" && user && !user.email_verified) {
+      setUser({ ...user, email_verified: true });
+    }
+  }, [status, user, setUser]);
 
   const handleResend = async (e: React.FormEvent) => {
     e.preventDefault();
