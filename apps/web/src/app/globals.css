@@ -371,14 +371,17 @@
   background: rgba(247, 247, 245, 0.95);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
+  transition: background 0.2s;
+  width: 100%;
+}
+.nav-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  height: 100%;
   display: flex;
   align-items: center;
   padding: 0 24px;
   gap: 16px;
-  transition: background 0.2s;
-  max-width: 1280px;
-  margin: 0 auto;
-  width: 100%;
 }
 [data-theme="dark"] .nav, .dark .nav {
   background: rgba(17, 17, 16, 0.95);
@@ -499,6 +502,8 @@
   z-index: 80;
 }
 .ctabs {
+  max-width: 1280px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   gap: 2px;
