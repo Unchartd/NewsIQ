@@ -271,6 +271,7 @@
   html {
     @apply font-sans;
     scroll-behavior: smooth;
+    scrollbar-gutter: stable;
   }
   a {
     color: var(--blue);
@@ -540,12 +541,13 @@
 
 /* ── LAYOUT ── */
 .layout {
+  width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1fr 312px;
   padding: 0 24px;
-  align-items: start;
+  align-items: stretch;
 }
 .mc {
   padding: 24px 24px 48px 0;
@@ -644,11 +646,11 @@
   border: 1px solid var(--border);
   border-radius: var(--r10);
   padding: 20px;
-  min-height: 184px;
+  height: 220px;
   width: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   cursor: pointer;
   transition:
     box-shadow 0.12s ease-out,
@@ -717,10 +719,10 @@
 .csum {
   font-size: 14px;
   color: var(--ink2);
-  line-height: 1.65;
-  margin-bottom: 14px;
+  line-height: 1.6;
+  margin-bottom: 10px;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

@@ -103,15 +103,41 @@ export function PremiumUpsellWidget() {
   );
 }
 
+/* ─── Trending Skeleton ────────────────────────── */
+export function TrendingWidgetSkeleton() {
+  return (
+    <div className="widget" style={{ pointerEvents: "none" }}>
+      <div className="slbl">Trending Now</div>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="titem" style={{ borderBottom: i === 3 ? "none" : undefined }}>
+          <span className="ti-r">{i + 1}</span>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+            {/* Headline skeleton (2 lines) */}
+            <div className="sk-bar" style={{ width: "100%", height: 13, borderRadius: 4 }} />
+            <div className="sk-bar" style={{ width: "65%", height: 13, borderRadius: 4 }} />
+            {/* Meta skeleton */}
+            <div className="sk-bar" style={{ width: "45%", height: 10, borderRadius: 3, marginTop: 4 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ─── Combined Sidebar ────────────────────────── */
 interface SidebarWidgetsProps {
   trendingStories?: Story[];
+  isLoading?: boolean;
 }
 
-export function SidebarWidgets({ trendingStories = [] }: SidebarWidgetsProps) {
+export function SidebarWidgets({ trendingStories = [], isLoading = false }: SidebarWidgetsProps) {
   return (
     <div className="sticky-p">
-      {trendingStories.length > 0 && <TrendingWidget stories={trendingStories} />}
+      {isLoading ? (
+        <TrendingWidgetSkeleton />
+      ) : (
+        trendingStories.length > 0 && <TrendingWidget stories={trendingStories} />
+      )}
       <TopSourcesWidget />
       <DigestWidget />
       <PremiumUpsellWidget />

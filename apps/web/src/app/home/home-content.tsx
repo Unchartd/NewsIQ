@@ -51,7 +51,7 @@ export function HomeContent() {
     },
   });
 
-  const { data: trendingStories = [] } = useQuery<Story[]>({
+  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
     queryKey: ["stories", "trending-sidebar"],
     queryFn: async () => {
       const response = await apiClient.get("/stories", {
@@ -64,7 +64,7 @@ export function HomeContent() {
     },
   });
 
-  const sidebar = <SidebarWidgets trendingStories={trendingStories} />;
+  const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
 
   return (
     <AppShell

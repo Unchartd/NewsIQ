@@ -54,9 +54,8 @@ export function StoryCardSkeleton() {
         <Bar w="72%" h={19} />
       </div>
 
-      {/* Summary — mirrors .csum (3 lines clamped) */}
+      {/* Summary — mirrors .csum (2 lines clamped) */}
       <div className="csum" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        <Bar h={14} />
         <Bar h={14} />
         <Bar w="83%" h={14} />
       </div>
