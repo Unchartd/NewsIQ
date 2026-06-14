@@ -100,7 +100,7 @@ export function Navbar() {
       )}
 
       {/* Right actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: isLanding ? "auto" : "0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
         {isAuthenticated ? (
           <>
             <Link href="/bookmarks">

@@ -13,6 +13,7 @@ import { Newspaper } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Story } from "@/types";
+import { ARTICLE_LIST_GAP } from "@/lib/layout-constants";
 
 const CATEGORIES = [
   { slug: "all", name: "All" },
@@ -52,8 +53,19 @@ export function HomeContent() {
     },
   });
 
-  // Use first few stories as trending sidebar data
-  const trendingStories = stories?.slice(0, 4) || [];
+  const { data: trendingStories = [] } = useQuery<Story[]>({
+    queryKey: ["stories", "trending-sidebar"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories", {
+        params: {
+          trending: "true",
+          limit: 4,
+        },
+      });
+      return response.data;
+    },
+  });
+
   const sidebar = <SidebarWidgets trendingStories={trendingStories} />;
 
   return (
@@ -82,7 +94,7 @@ export function HomeContent() {
 
       {/* Feed Content */}
       {isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
           <StoryCardSkeleton />
           <StoryCardSkeleton />
           <StoryCardSkeleton />
@@ -119,7 +131,7 @@ export function HomeContent() {
           }
         />
       ) : (
-        <>
+        <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
           {stories.map((story, index) => (
             <StoryCard key={story.id} story={story} index={index} />
           ))}
@@ -136,7 +148,7 @@ export function HomeContent() {
             }} />
             Loading more stories…
           </div>
-        </>
+        </div>
       )}
     </AppShell>
   );

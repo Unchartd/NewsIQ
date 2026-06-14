@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { StoryCard } from "@/components/story/story-card";
 import { StoryCardSkeleton } from "@/components/skeletons";
+import { ARTICLE_LIST_GAP } from "@/lib/layout-constants";
 import { EmptyState } from "@/components/empty-states";
 import { Search, SearchX } from "lucide-react";
 import apiClient from "@/lib/api-client";
@@ -180,7 +181,7 @@ function SearchResults() {
           />
         </div>
       ) : isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
           <StoryCardSkeleton />
           <StoryCardSkeleton />
         </div>
@@ -198,7 +199,7 @@ function SearchResults() {
           description={`We couldn't find any clustered stories matching "${urlQuery}". Try different terms.`}
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 96 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP, paddingBottom: 96 }}>
           {stories.map((story) => (
             <StoryCard key={story.id} story={story} />
           ))}

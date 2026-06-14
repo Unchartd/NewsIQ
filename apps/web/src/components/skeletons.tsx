@@ -1,29 +1,54 @@
 "use client";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { CARD_PADDING, SKELETON_CARD_HEIGHT, CARD_WIDTH } from "@/lib/layout-constants";
 
 export function StoryCardSkeleton() {
   return (
-    <Card className="border-border/50">
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <Skeleton className="h-5 w-20 rounded-full" />
-          <Skeleton className="h-4 w-14" />
-        </div>
+    <div
+      className="card"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: SKELETON_CARD_HEIGHT,
+        width: CARD_WIDTH,
+        padding: CARD_PADDING,
+        cursor: "default",
+      }}
+    >
+      {/* Meta row matching .cmeta */}
+      <div className="cmeta">
+        <Skeleton className="h-5 w-16 rounded-full" />
+        <span className="mdot" />
+        <Skeleton className="h-4 w-20" />
+        <span className="mtime" style={{ marginLeft: "auto" }}>
+          <Skeleton className="h-4 w-12" />
+        </span>
+      </div>
+
+      {/* Headline matching .chead */}
+      <div className="chead">
         <Skeleton className="h-5 w-full mb-2" />
-        <Skeleton className="h-5 w-3/4 mb-3" />
-        <Skeleton className="h-4 w-full mb-1" />
-        <Skeleton className="h-4 w-5/6 mb-3" />
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-4 w-24" />
-          <div className="flex gap-1.5">
-            <Skeleton className="h-4 w-12 rounded-full" />
-            <Skeleton className="h-4 w-12 rounded-full" />
-          </div>
+        <Skeleton className="h-5 w-3/4" />
+      </div>
+
+      {/* Summary matching .csum */}
+      <div className="csum">
+        <Skeleton className="h-4 w-full mb-1.5" />
+        <Skeleton className="h-4 w-5/6" />
+      </div>
+
+      {/* Footer matching .cfoot */}
+      <div className="cfoot">
+        <div className="srcs">
+          <Skeleton className="h-4 w-20" />
         </div>
-      </CardContent>
-    </Card>
+        <div className="bkbtn" style={{ marginLeft: "auto", cursor: "default", background: "none" }}>
+          <Skeleton className="h-8 w-8 rounded-full" />
+        </div>
+      </div>
+    </div>
   );
 }
 
