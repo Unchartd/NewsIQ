@@ -25,6 +25,13 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
+class ResetPasswordRequest(BaseModel):
+    """Payload for resetting password with token."""
+
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 class AuthResponse(BaseModel):
     """Returned after successful login/register."""
 
@@ -52,6 +59,21 @@ class UserResponse(BaseModel):
     status: str
     email_verified: bool
     created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class SessionResponse(BaseModel):
+    """Session representation for active sessions list."""
+
+    id: str
+    device_name: str | None
+    ip_address: str | None
+    user_agent: str | None
+    last_used_at: str
+    created_at: str
+    expires_at: str
+    is_current: bool = False
 
     model_config = {"from_attributes": True}
 

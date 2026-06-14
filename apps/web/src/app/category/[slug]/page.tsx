@@ -62,7 +62,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
 
         {/* Stories List */}
         {isLoading ? (
-          <div className="space-y-4">
+          <div className="feed-list">
             <StoryCardSkeleton />
             <StoryCardSkeleton />
           </div>
@@ -80,7 +80,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             description="There are currently no AI-clustered stories for this category."
           />
         ) : (
-          <div className="space-y-4">
+          <div className="feed-list">
             {stories.map((story, index) => (
               <StoryCard key={story.id} story={story} index={index} />
             ))}

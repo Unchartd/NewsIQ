@@ -23,6 +23,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.session import Session as Session  # noqa: F401
+from app.models.user import User as User  # noqa: F401
+from app.models.user import UserPreference as UserPreference  # noqa: F401
 
 
 def _now() -> datetime:
@@ -43,95 +46,6 @@ def generate_uuid() -> uuid.UUID:
 # ──────────────────────────────────────────────
 # Users & Auth
 # ──────────────────────────────────────────────
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=generate_uuid
-    )
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    name: Mapped[str | None] = mapped_column(String(255))
-    image_url: Mapped[str | None] = mapped_column(Text)
-    password_hash: Mapped[str | None] = mapped_column(Text)
-    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    role: Mapped[str] = mapped_column(String(30), default="user")
-    subscription_plan: Mapped[str] = mapped_column(String(30), default="free")
-    status: Mapped[str] = mapped_column(String(30), default="active")
-    created_at: Mapped[datetime] = mapped_column(default=_now)
-    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
-
-    # Relationships
-    preferences: Mapped["UserPreference | None"] = relationship(
-        back_populates="user", uselist=False, cascade="all, delete-orphan"
-    )
-    sessions: Mapped[list["Session"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    bookmarks: Mapped[list["Bookmark"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    notifications: Mapped[list["Notification"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    search_history: Mapped[list["SearchHistory"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    digest_subscriptions: Mapped[list["DigestSubscription"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    user_events: Mapped[list["UserEvent"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    user_categories: Mapped[list["UserCategory"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    user_locations: Mapped[list["UserLocation"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-    api_keys: Mapped[list["ApiKey"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
-
-
-class UserPreference(Base):
-    __tablename__ = "user_preferences"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=generate_uuid
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True
-    )
-    preferred_summary_type: Mapped[str | None] = mapped_column(String(20))
-    theme: Mapped[str | None] = mapped_column(String(20))
-    language: Mapped[str | None] = mapped_column(String(20))
-    created_at: Mapped[datetime | None] = mapped_column(default=_now)
-    updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
-
-    user: Mapped["User"] = relationship(back_populates="preferences")
-
-
-class Session(Base):
-    __tablename__ = "sessions"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=generate_uuid
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), index=True
-    )
-    token: Mapped[str] = mapped_column(Text, unique=True)
-    ip_address: Mapped[str | None] = mapped_column(Text)
-    user_agent: Mapped[str | None] = mapped_column(Text)
-    expires_at: Mapped[datetime | None] = mapped_column()
-    created_at: Mapped[datetime | None] = mapped_column(default=_now)
-
-    user: Mapped["User"] = relationship(back_populates="sessions")
 
 
 class OAuthAccount(Base):

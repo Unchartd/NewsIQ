@@ -130,7 +130,7 @@ export default function BookmarksPage() {
             }}
           />
         ) : isLoading ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="feed-list">
             <StoryCardSkeleton />
             <StoryCardSkeleton />
           </div>
@@ -154,7 +154,7 @@ export default function BookmarksPage() {
             description={`We couldn't find any bookmarks matching "${searchQuery}".`}
           />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: 96 }}>
+          <div className="feed-list" style={{ paddingBottom: 96 }}>
             {filteredStories.map((story) => (
               <Link
                 href={`/story/${story.id}`}

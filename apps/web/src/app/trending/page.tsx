@@ -122,7 +122,7 @@ export default function TrendingPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="feed-list">
           <StoryCardSkeleton />
           <StoryCardSkeleton />
           <StoryCardSkeleton />

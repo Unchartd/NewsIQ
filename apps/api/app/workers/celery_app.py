@@ -23,8 +23,8 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    # Configure auto-discovery of tasks in the workers package
-    imports=["app.workers.tasks"],
+    # Configure auto-discovery of tasks in the workers/tasks packages
+    imports=["app.workers.tasks", "app.tasks.cleanup_sessions"],
 )
 
 # Configure Periodic Tasks (Celery Beat Schedule)
@@ -36,5 +36,9 @@ celery_app.conf.beat_schedule = {
     "cluster-news-every-10-minutes": {
         "task": "app.workers.tasks.cluster_news_task",
         "schedule": crontab(minute="*/10"),
+    },
+    "cleanup-expired-sessions-daily": {
+        "task": "app.tasks.cleanup_sessions.cleanup_expired_sessions_task",
+        "schedule": crontab(hour="0", minute="0"),
     },
 }

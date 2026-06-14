@@ -148,7 +148,7 @@ class IngestionService:
                 results[source.name] = 0
             else:
                 results[source.name] = count
-                
+
         return results
 
 

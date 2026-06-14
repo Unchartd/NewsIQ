@@ -1,4 +1,7 @@
-"""Auth API endpoints: register, login, logout, refresh, me."""
+"""Auth API endpoints: register, login, logout, refresh, me, sessions, email/password workflows."""
+
+import hashlib
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,14 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_user
-from app.models.models import User
+from app.exceptions.auth import AuthException
+from app.models.user import User
 from app.schemas.auth import (
     AuthResponse,
-    LoginRequest,
     ForgotPasswordRequest,
+    LoginRequest,
     MessageResponse,
     RefreshResponse,
     RegisterRequest,
+    ResetPasswordRequest,
+    SessionResponse,
     UserResponse,
 )
 from app.services.auth_service import AuthService
@@ -69,17 +75,10 @@ async def register(
         )
 
     auth_service = AuthService(db)
-    try:
-        user, access_token, refresh_token = await auth_service.register(
-            name=body.name, email=body.email, password=body.password
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-
-    # Create session record
-    await auth_service.create_session(
-        user_id=user.id,
-        refresh_token=refresh_token,
+    user, access_token, refresh_token = await auth_service.register(
+        name=body.name,
+        email=body.email,
+        password=body.password,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -101,19 +100,9 @@ async def login(
 ):
     """Authenticate with email and password."""
     auth_service = AuthService(db)
-    try:
-        user, access_token, refresh_token = await auth_service.login(
-            email=body.email, password=body.password
-        )
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials.",
-        )
-
-    await auth_service.create_session(
-        user_id=user.id,
-        refresh_token=refresh_token,
+    user, access_token, refresh_token = await auth_service.login(
+        email=body.email,
+        password=body.password,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -129,11 +118,12 @@ async def login(
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh_token(
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Refresh the access token using the refresh token cookie."""
-    refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
+    """Refresh the access token using rotating refresh token cookie."""
+    refresh_token_cookie = request.cookies.get("refresh_token")
+    if not refresh_token_cookie:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No refresh token.",
@@ -141,12 +131,19 @@ async def refresh_token(
 
     auth_service = AuthService(db)
     try:
-        access_token, user = await auth_service.refresh_access_token(refresh_token)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+        access_token, new_refresh_token, _ = await auth_service.rotate_refresh_token(
+            refresh_token=refresh_token_cookie,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
         )
+    except AuthException as e:
+        _clear_refresh_cookie(response)
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=e.detail,
+        )
+
+    _set_refresh_cookie(response, new_refresh_token)
 
     return RefreshResponse(access_token=access_token)
 
@@ -158,10 +155,10 @@ async def logout(
     db: AsyncSession = Depends(get_db),
 ):
     """Logout — delete the current session."""
-    refresh_token = request.cookies.get("refresh_token")
-    if refresh_token:
+    refresh_token_cookie = request.cookies.get("refresh_token")
+    if refresh_token_cookie:
         auth_service = AuthService(db)
-        await auth_service.logout(refresh_token)
+        await auth_service.logout(refresh_token_cookie)
 
     _clear_refresh_cookie(response)
     return MessageResponse(message="Logged out successfully.")
@@ -186,22 +183,106 @@ async def get_me(user: User = Depends(require_user)):
     return _user_to_response(user)
 
 
+@router.post("/verify-email", response_model=MessageResponse)
+async def verify_email(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify email using verification token."""
+    auth_service = AuthService(db)
+    await auth_service.verify_email(token)
+    return MessageResponse(message="Email verified successfully.")
+
+
+@router.post("/resend-verification", response_model=MessageResponse)
+async def resend_verification(
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resend email verification token."""
+    auth_service = AuthService(db)
+    await auth_service.request_email_verification(data.email)
+    return MessageResponse(
+        message="Verification email sent if the account exists and is not verified."
+    )
+
+
 @router.post("/forgot-password", response_model=MessageResponse)
 async def forgot_password(
     data: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """Send a password reset link to the user's email."""
-    # Note: Full email integration is stubbed for now.
-    # We would normally look up the user, generate a secure token, and send an email via an external provider.
+    auth_service = AuthService(db)
+    await auth_service.request_password_reset(data.email)
     return MessageResponse(message="If the email exists, a reset link has been sent.")
 
 
-@router.post("/resend-verification", response_model=MessageResponse)
-async def resend_verification(
+@router.post("/verify-reset-token", response_model=MessageResponse)
+async def verify_reset_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify password reset token validity."""
+    auth_service = AuthService(db)
+    await auth_service.verify_password_reset_token(token)
+    return MessageResponse(message="Token is valid.")
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset password using reset token."""
+    auth_service = AuthService(db)
+    await auth_service.reset_password(data.token, data.new_password)
+    return MessageResponse(message="Password reset successfully.")
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def get_sessions(
+    request: Request,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Resend the email verification link."""
-    # Stubbed for now.
-    return MessageResponse(message="Verification email sent.")
+    """Get all active sessions for the current user."""
+    refresh_token_cookie = request.cookies.get("refresh_token")
+    current_hash = None
+    if refresh_token_cookie:
+        current_hash = hashlib.sha256(refresh_token_cookie.encode()).hexdigest()
+
+    auth_service = AuthService(db)
+    sessions = await auth_service.session_service.get_active_sessions(user.id)
+    return [
+        SessionResponse(
+            id=str(s.id),
+            device_name=s.device_name,
+            ip_address=s.ip_address,
+            user_agent=s.user_agent,
+            last_used_at=s.last_used_at.isoformat() if s.last_used_at else "",
+            created_at=s.created_at.isoformat() if s.created_at else "",
+            expires_at=s.expires_at.isoformat() if s.expires_at else "",
+            is_current=(s.token_hash == current_hash) if current_hash else False,
+        )
+        for s in sessions
+    ]
+
+
+@router.delete("/sessions/{session_id}", response_model=MessageResponse)
+async def revoke_session(
+    session_id: uuid.UUID,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke a specific session."""
+    auth_service = AuthService(db)
+    session = await auth_service.session_service.repo.get_by_id(session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found.",
+        )
+    await auth_service.session_service.revoke_session(session_id)
+    await db.commit()
+    return MessageResponse(message="Session revoked successfully.")

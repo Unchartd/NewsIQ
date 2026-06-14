@@ -33,8 +33,14 @@ export function StoryCard({ story, summaryType = "short", index = 0 }: StoryCard
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, delay: index * 0.04 }}
+      style={{ width: "100%" }}
     >
-      <Link href={`/story/${story.id}`} className="card" tabIndex={0} style={{ display: "block", textDecoration: "none" }}>
+      <Link
+        href={`/story/${story.id}`}
+        className="card"
+        tabIndex={0}
+        style={{ textDecoration: "none" }}
+      >
         {/* Meta row */}
         <div className="cmeta">
           {story.category && (

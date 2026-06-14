@@ -139,7 +139,7 @@ export default function ProfilePage() {
             Account
           </div>
           <ul className="slist">
-            <li className="sitem" onClick={() => toast.info("Profile editing coming soon!")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=edit")}>
               <div className="si-icon">
                 <User size={15} />
               </div>
@@ -147,7 +147,7 @@ export default function ProfilePage() {
               <ChevronRight size={14} style={{ color: "var(--ink3)" }} />
             </li>
             
-            <li className="sitem" onClick={() => router.push("/premium")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=sub")}>
               <div className="si-icon">
                 <Crown size={15} />
               </div>
@@ -157,7 +157,7 @@ export default function ProfilePage() {
               </div>
             </li>
 
-            <li className="sitem" onClick={() => router.push("/settings")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=notif")}>
               <div className="si-icon">
                 <Bell size={15} />
               </div>
@@ -171,7 +171,7 @@ export default function ProfilePage() {
             Preferences
           </div>
           <ul className="slist">
-            <li className="sitem" onClick={() => router.push("/onboarding")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=topics")}>
               <div className="si-icon">
                 <Grid size={15} />
               </div>
@@ -179,7 +179,7 @@ export default function ProfilePage() {
               <div className="si-val">{categoriesLabel}</div>
             </li>
 
-            <li className="sitem" onClick={() => router.push("/onboarding")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=locs")}>
               <div className="si-icon">
                 <Map size={15} />
               </div>
@@ -189,7 +189,7 @@ export default function ProfilePage() {
               </div>
             </li>
 
-            <li className="sitem" onClick={() => router.push("/onboarding")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=summary")}>
               <div className="si-icon">
                 <BookOpen size={15} />
               </div>
@@ -197,7 +197,7 @@ export default function ProfilePage() {
               <div className="si-val">{summaryLabel}</div>
             </li>
 
-            <li className="sitem" onClick={toggleAppTheme}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=theme")}>
               <div className="si-icon">
                 {theme === "dark" ? <Moon size={15} /> : <Sun size={15} />}
               </div>
@@ -221,6 +221,13 @@ export default function ProfilePage() {
               <div className="si-val">
                 {bookmarkCount} {bookmarkCount === 1 ? "story" : "stories"}
               </div>
+            </li>
+            <li className="sitem" onClick={() => router.push("/settings?tab=history")}>
+              <div className="si-icon">
+                <BookOpen size={15} />
+              </div>
+              <div className="si-lbl">Reading history</div>
+              <ChevronRight size={14} style={{ color: "var(--ink3)" }} />
             </li>
           </ul>
 

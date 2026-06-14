@@ -80,11 +80,53 @@ function SearchResults() {
     enabled: !!urlQuery,
   });
 
+  const sidebar = (
+    <div className="sticky-p">
+      <div className="widget">
+        <div className="slbl">Recent Searches</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {RECENT_SEARCHES.map((term) => (
+            <button
+              key={term}
+              type="button"
+              onClick={() => handleRecentClick(term)}
+              style={{
+                textAlign: "left",
+                padding: "10px 12px",
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--r6)",
+                fontSize: 13,
+                fontWeight: 500,
+                color: "var(--ink2)",
+                cursor: "pointer",
+                width: "100%",
+                transition: "border-color 0.15s, color 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "var(--primary)";
+                e.currentTarget.style.color = "var(--primary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "var(--border)";
+                e.currentTarget.style.color = "var(--ink2)";
+              }}
+            >
+              {term}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 24px" }}>
+    <AppShell sidebar={sidebar}>
       {/* Search Hero Section */}
-      <div style={{ padding: "32px 0 24px" }}>
-        <h1 className="sh-title">Find any story</h1>
+      <div style={{ padding: "28px 0 20px" }}>
+        <h1 style={{ fontFamily: "var(--fd)", fontSize: 26, fontWeight: 600, marginBottom: 12 }}>
+          Find any story
+        </h1>
         <form onSubmit={handleSearchSubmit} className="bigsch">
           <Search size={18} style={{ color: "var(--ink3)", flexShrink: 0 }} />
           <input
@@ -112,31 +154,6 @@ function SearchResults() {
             </button>
           )}
         </form>
-
-        {/* Recent Searches */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 6,
-            marginTop: 12,
-          }}
-        >
-          <span style={{ fontSize: 11, color: "var(--ink3)" }}>
-            Recent:
-          </span>
-          {RECENT_SEARCHES.map((term) => (
-            <button
-              key={term}
-              type="button"
-              className="rchip"
-              onClick={() => handleRecentClick(term)}
-            >
-              {term}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Filters Row */}
@@ -180,7 +197,7 @@ function SearchResults() {
           />
         </div>
       ) : isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="feed-list">
           <StoryCardSkeleton />
           <StoryCardSkeleton />
         </div>
@@ -198,28 +215,28 @@ function SearchResults() {
           description={`We couldn't find any clustered stories matching "${urlQuery}". Try different terms.`}
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 96 }}>
+        <div className="feed-list" style={{ paddingBottom: 96 }}>
           {stories.map((story) => (
             <StoryCard key={story.id} story={story} />
           ))}
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }
 
 export default function SearchPage() {
   return (
-    <AppShell>
-      <Suspense
-        fallback={
+    <Suspense
+      fallback={
+        <AppShell>
           <div style={{ maxWidth: 800, margin: "0 auto", padding: "24px" }}>
             <StoryCardSkeleton />
           </div>
-        }
-      >
-        <SearchResults />
-      </Suspense>
-    </AppShell>
+        </AppShell>
+      }
+    >
+      <SearchResults />
+    </Suspense>
   );
 }

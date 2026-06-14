@@ -7,7 +7,6 @@ import { CategoryTabs } from "@/components/layout/category-tabs";
 import { StoryCard } from "@/components/story/story-card";
 import { StoryCardSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/empty-states";
-import { BreakingBanner } from "@/components/ui/breaking-banner";
 import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
 import { Newspaper } from "lucide-react";
 import apiClient from "@/lib/api-client";
@@ -52,37 +51,40 @@ export function HomeContent() {
     },
   });
 
-  // Use first few stories as trending sidebar data
-  const trendingStories = stories?.slice(0, 4) || [];
-  const sidebar = <SidebarWidgets trendingStories={trendingStories} />;
+  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
+    queryKey: ["stories", "trending-sidebar"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories", {
+        params: {
+          trending: "true",
+          limit: 4,
+        },
+      });
+      return response.data;
+    },
+  });
+
+  const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
 
   return (
-    <AppShell sidebar={sidebar}>
-      {/* Category Tabs (rendered above the 2-col layout, full-width) */}
-      <div style={{ marginLeft: -24, marginRight: -24, marginTop: -24, marginBottom: 24 }}>
+    <AppShell
+      sidebar={sidebar}
+      categoryTabs={
         <CategoryTabs
           categories={CATEGORIES}
           activeCategory={category}
           onSelect={setCategory}
         />
-      </div>
-
-      {/* Breaking banner — driven by the top story, not hardcoded */}
-      {stories && stories.length > 0 && (
-        <BreakingBanner
-          text={`${stories[0].headline} — ${stories[0].source_count ?? 1} sources covering`}
-          time="Just now"
-        />
-      )}
-
-      {/* Section label */}
-      <div className="slbl">
+      }
+    >
+      {/* Section label — fixed height, never changes */}
+      <div className="slbl" style={{ marginTop: 24 }}>
         {isPersonalized ? "Your Personalized Feed" : "Top Stories"}
       </div>
 
-      {/* Feed Content */}
+      {/* Feed Content — all states use .feed-list so dimensions are stable */}
       {isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="feed-list">
           <StoryCardSkeleton />
           <StoryCardSkeleton />
           <StoryCardSkeleton />
@@ -119,24 +121,11 @@ export function HomeContent() {
           }
         />
       ) : (
-        <>
+        <div className="feed-list">
           {stories.map((story, index) => (
             <StoryCard key={story.id} story={story} index={index} />
           ))}
-
-          {/* Loading indicator */}
-          <div style={{
-            textAlign: "center", padding: "28px 0", color: "var(--ink-3)",
-            fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}>
-            <div style={{
-              width: 18, height: 18, border: "2px solid var(--border)",
-              borderTopColor: "var(--primary)", borderRadius: "50%",
-              animation: "spin 0.8s linear infinite",
-            }} />
-            Loading more stories…
-          </div>
-        </>
+        </div>
       )}
     </AppShell>
   );

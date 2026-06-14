@@ -40,13 +40,12 @@ NewsIQ is built as a robust monorepo, splitting concerns between a high-performa
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start & Development Setup
 
 ### Prerequisites
-- [Docker](https://www.docker.com/) & Docker Compose
-- Node.js 18+ & npm
-- Python 3.10+
-- (Optional) `uv` for faster Python package management
+- [Docker](https://www.docker.com/) & Docker Compose (for running infrastructure)
+- Node.js 20+ & npm (for frontend)
+- Python 3.11+ & `uv` (recommended) or `pip` (for backend)
 
 ### 1. Setup Environment
 Clone the repository and set up your local environment variables:
@@ -55,20 +54,71 @@ cp .env.example .env
 ```
 *Ensure you fill in the required API keys (e.g., OpenAI/Gemini API keys) in the `.env` file.*
 
-### 2. Start the Platform
-NewsIQ is fully containerized. You can boot the entire stack (PostgreSQL, Redis, Qdrant, Meilisearch, FastAPI backend, Celery workers, and the Next.js frontend) with a single command:
+---
+
+### Option A: Running with Docker Compose (Recommended)
+This boots the entire stack—including PostgreSQL, Redis, Qdrant, Meilisearch, the FastAPI backend, Celery workers, and the Next.js frontend—in containerized environments.
+
 ```bash
+# Start all services and build images
 docker-compose up -d --build
-```
 
-**Accessing the Platform:**
-- **Frontend (Web App):** `http://localhost:3000`
-- **Backend API Docs:** `http://localhost:8000/docs`
-
-*(Optional) To seed the database with initial news sources, run:*
-```bash
+# Seed the database with default news sources and categories
 docker-compose exec api python -m app.scripts.seed
 ```
+
+- **Frontend (Web App):** `http://localhost:3000`
+- **Backend API Docs (Swagger):** `http://localhost:8000/docs`
+
+> [!TIP]
+> The backend services have volume mounts mapping `./apps/api` to `/app` inside the container. This means you can edit Python files on your host machine and Uvicorn/Celery will automatically hot-reload inside Docker without rebuilding. Only run `--build` when updating python dependencies in `pyproject.toml`.
+
+---
+
+### Option B: Running Local Servers (Native Setup)
+For active development with step-through debugging, you can run the FastAPI backend and Next.js frontend locally while running only the database/caching infrastructure in Docker.
+
+#### Step 1: Start Infrastructure (PostgreSQL, Redis, Qdrant, Meilisearch)
+```bash
+# Spin up only the backing databases and caches
+docker-compose up -d postgres redis qdrant meilisearch
+```
+
+#### Step 2: Run Backend API Locally (`apps/api`)
+```bash
+cd apps/api
+
+# Create and activate virtual environment (using uv for speed)
+uv venv
+.venv\Scripts\activate      # On Windows
+# source .venv/bin/activate  # On macOS/Linux
+
+# Install dependencies and package
+uv pip install -e ".[dev]"
+
+# Run database migrations
+uv run alembic upgrade head
+
+# Seed initial database records
+uv run python -m app.scripts.seed
+
+# Start the uvicorn development server
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+#### Step 3: Run Frontend Web Locally (`apps/web`)
+```bash
+cd apps/web
+
+# Install dependencies
+npm install
+
+# Run the next.js dev server
+npm run dev
+```
+
+- **Frontend Local:** `http://localhost:3000`
+- **Backend Docs Local:** `http://localhost:8000/docs`
 
 
 ---

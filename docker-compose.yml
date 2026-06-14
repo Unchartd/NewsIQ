@@ -1,4 +1,3 @@
-version: "3.9"
 
 services:
   # ──────────────────────────────────────────────
@@ -21,6 +20,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: newsiq-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@newsiq.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
 
   redis:
     image: redis:7-alpine
@@ -82,7 +93,10 @@ services:
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8000:8000"
+    volumes:
+      - ./apps/api:/app
     environment:
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -105,15 +119,35 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+    # ── Docker Watch ──────────────────────────────────────────────
+    # uvicorn --reload handles Python file changes automatically.
+    # pyproject.toml changes require a full rebuild (new deps).
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/api/app
+          target: /app/app
+          ignore:
+            - __pycache__/
+            - "**/*.pyc"
+            - "**/*.pyo"
+        - action: sync
+          path: ./apps/api/alembic
+          target: /app/alembic
+        - action: rebuild
+          path: ./apps/api/pyproject.toml
 
   celery_worker:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-worker
+    volumes:
+      - ./apps/api:/app
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
     restart: unless-stopped
     environment:
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -132,15 +166,31 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # ── Docker Watch ──────────────────────────────────────────────
+    # Celery doesn't auto-reload — sync source then restart the worker.
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./apps/api/app
+          target: /app/app
+          ignore:
+            - __pycache__/
+            - "**/*.pyc"
+            - "**/*.pyo"
+        - action: rebuild
+          path: ./apps/api/pyproject.toml
 
   celery_beat:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-beat
+    volumes:
+      - ./apps/api:/app
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
     restart: unless-stopped
     environment:
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -159,21 +209,56 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # ── Docker Watch ──────────────────────────────────────────────
+    # Beat scheduler needs a restart to pick up task schedule changes.
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./apps/api/app
+          target: /app/app
+          ignore:
+            - __pycache__/
+            - "**/*.pyc"
+            - "**/*.pyo"
+        - action: rebuild
+          path: ./apps/api/pyproject.toml
 
   web:
     build:
       context: ./apps/web
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      # Dockerfile.dev runs "next dev" for HMR — use Dockerfile for production
+      dockerfile: Dockerfile.dev
     container_name: newsiq-web
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - WATCHPACK_POLLING=true   # needed on Windows/WSL2 for inotify to work
     depends_on:
       - api
+    # ── Docker Watch ──────────────────────────────────────────────
+    # Source files: sync directly — Next.js HMR picks them up instantly.
+    # package.json / lock file: rebuild so node_modules stays current.
+    # next.config.*: restart to apply config changes.
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/src
+          target: /app/src
+        - action: sync
+          path: ./apps/web/public
+          target: /app/public
+        - action: rebuild
+          path: ./apps/web/package.json
+        - action: rebuild
+          path: ./apps/web/package-lock.json
+        - action: sync+restart
+          path: ./apps/web/next.config.ts
+          target: /app/next.config.ts
+        - action: sync+restart
+          path: ./apps/web/tailwind.config.ts
+          target: /app/tailwind.config.ts
 
 volumes:
   postgres_data:

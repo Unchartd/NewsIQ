@@ -47,104 +47,106 @@ export function Navbar() {
 
   return (
     <nav className="nav">
-      {/* Logo */}
-      <Link href={isAuthenticated ? "/home" : "/"} style={{ textDecoration: "none" }}>
-        <div className="logo">
-          <b>News</b>
-          <i>IQ</i>
-        </div>
-      </Link>
+      <div className="nav-inner">
+        {/* Logo */}
+        <Link href={isAuthenticated ? "/home" : "/"} style={{ textDecoration: "none" }}>
+          <div className="logo">
+            <b>News</b>
+            <i>IQ</i>
+          </div>
+        </Link>
 
-      {/* Search bar */}
-      {!isLanding && (
-        <form
-          className="nsearch"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (searchQuery.trim()) {
-              router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-            }
-          }}
-        >
-          <Search size={14} />
-          <input
-            type="text"
-            placeholder="Search stories, topics, locations…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </form>
-      )}
-
-      {/* Nav links */}
-      {!isLanding && isAuthenticated && (
-        <div className="nlinks">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`nlink ${link.active ? "on" : ""}`}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {/* Landing nav links */}
-      {isLanding && (
-        <div className="nlinks">
-          <Link href="/trending" className="nlink">Trending</Link>
-          <Link href="/search" className="nlink">Categories</Link>
-        </div>
-      )}
-
-      {/* Right actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: isLanding ? "auto" : "0" }}>
-        {isAuthenticated ? (
-          <>
-            <Link href="/bookmarks">
-              <button className="nibn" title="Bookmarks">
-                <Bookmark size={18} />
-              </button>
-            </Link>
-            <Link href="/notifications">
-              <button className="nibn" title="Notifications">
-                <Bell size={18} />
-              </button>
-            </Link>
-            <button
-              className="nibn"
-              onClick={() => setTheme(isDark ? "light" : "dark")}
-              title="Toggle theme"
-            >
-              {isDark ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
-            <Link href="/profile">
-              <div className="navtr">{initials}</div>
-            </Link>
-          </>
-        ) : (
-          <>
-            <Link href="/login">
-              <button className="btno" style={{ height: 34, padding: "0 14px", fontSize: 13 }}>
-                Sign in
-              </button>
-            </Link>
-            <Link href="/signup">
-              <button className="btnp" style={{ height: 34, padding: "0 14px" }}>
-                Get started
-              </button>
-            </Link>
-            <button
-              className="nibn"
-              onClick={() => setTheme(isDark ? "light" : "dark")}
-              title="Toggle theme"
-            >
-              {isDark ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
-          </>
+        {/* Search bar */}
+        {!isLanding && (
+          <form
+            className="nsearch"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (searchQuery.trim()) {
+                router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+              }
+            }}
+          >
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Search stories, topics, locations…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </form>
         )}
+
+        {/* Nav links */}
+        {!isLanding && isAuthenticated && (
+          <div className="nlinks">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`nlink ${link.active ? "on" : ""}`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {/* Landing nav links */}
+        {isLanding && (
+          <div className="nlinks">
+            <Link href="/trending" className="nlink">Trending</Link>
+            <Link href="/search" className="nlink">Categories</Link>
+          </div>
+        )}
+
+        {/* Right actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+          {isAuthenticated ? (
+            <>
+              <Link href="/bookmarks">
+                <button className="nibn" title="Bookmarks">
+                  <Bookmark size={18} />
+                </button>
+              </Link>
+              <Link href="/notifications">
+                <button className="nibn" title="Notifications">
+                  <Bell size={18} />
+                </button>
+              </Link>
+              <button
+                className="nibn"
+                onClick={() => setTheme(isDark ? "light" : "dark")}
+                title="Toggle theme"
+              >
+                {isDark ? <Moon size={16} /> : <Sun size={16} />}
+              </button>
+              <Link href="/profile">
+                <div className="navtr">{initials}</div>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/login">
+                <button className="btno" style={{ height: 34, padding: "0 14px", fontSize: 13 }}>
+                  Sign in
+                </button>
+              </Link>
+              <Link href="/signup">
+                <button className="btnp" style={{ height: 34, padding: "0 14px" }}>
+                  Get started
+                </button>
+              </Link>
+              <button
+                className="nibn"
+                onClick={() => setTheme(isDark ? "light" : "dark")}
+                title="Toggle theme"
+              >
+                {isDark ? <Moon size={16} /> : <Sun size={16} />}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </nav>
   );

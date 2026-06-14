@@ -19,7 +19,8 @@ dependencies = [
 
     # Auth
     "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
+    "passlib>=1.7.4",
+    "argon2-cffi>=23.1.0",
     "authlib>=1.4.0",
     "httpx>=0.28.0",
 
