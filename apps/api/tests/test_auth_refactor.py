@@ -343,7 +343,8 @@ async def test_password_reset_flow(mock_db_session):
     with patch("app.services.auth_service.secrets.token_urlsafe", return_value="resettoken"):
         res = await forgot_password(forgot_body, mock_db_session)
         assert "reset link has been sent" in res.message
-        assert user.password_reset_token == "resettoken"
+        import hashlib
+        assert user.password_reset_token == hashlib.sha256(b"resettoken").hexdigest()
         assert user.password_reset_expiry is not None
 
     # 2. Reset password

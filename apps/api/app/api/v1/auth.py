@@ -197,11 +197,13 @@ async def verify_email(
 @router.post("/resend-verification", response_model=MessageResponse)
 async def resend_verification(
     data: ForgotPasswordRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Resend email verification token."""
     auth_service = AuthService(db)
-    await auth_service.request_email_verification(data.email)
+    ip_address = request.client.host if request.client else None
+    await auth_service.request_email_verification(data.email, ip_address=ip_address)
     return MessageResponse(
         message="Verification email sent if the account exists and is not verified."
     )

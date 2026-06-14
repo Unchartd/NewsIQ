@@ -51,7 +51,7 @@ export default function SignupPage() {
       setAccessToken(data.access_token);
       setUser(data.user);
       toast.success("Account created!");
-      router.push("/onboarding");
+      router.push(`/verify-email/confirm?email=${encodeURIComponent(email)}`);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const message =
