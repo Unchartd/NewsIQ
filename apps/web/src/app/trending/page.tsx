@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { StoryCardSkeleton } from "@/components/skeletons";
-import { ARTICLE_LIST_GAP } from "@/lib/layout-constants";
 import { EmptyState } from "@/components/empty-states";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { TrendingUp } from "lucide-react";
@@ -123,7 +122,7 @@ export default function TrendingPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
+        <div className="feed-list">
           <StoryCardSkeleton />
           <StoryCardSkeleton />
           <StoryCardSkeleton />

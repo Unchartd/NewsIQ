@@ -3,7 +3,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { StoryCardSkeleton } from "@/components/skeletons";
-import { ARTICLE_LIST_GAP } from "@/lib/layout-constants";
 import { EmptyState } from "@/components/empty-states";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { Bookmark, Lock, Search } from "lucide-react";
@@ -131,7 +130,7 @@ export default function BookmarksPage() {
             }}
           />
         ) : isLoading ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
+          <div className="feed-list">
             <StoryCardSkeleton />
             <StoryCardSkeleton />
           </div>
@@ -155,7 +154,7 @@ export default function BookmarksPage() {
             description={`We couldn't find any bookmarks matching "${searchQuery}".`}
           />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP, paddingBottom: 96 }}>
+          <div className="feed-list" style={{ paddingBottom: 96 }}>
             {filteredStories.map((story) => (
               <Link
                 href={`/story/${story.id}`}

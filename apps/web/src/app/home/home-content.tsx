@@ -7,13 +7,11 @@ import { CategoryTabs } from "@/components/layout/category-tabs";
 import { StoryCard } from "@/components/story/story-card";
 import { StoryCardSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/empty-states";
-import { BreakingBanner } from "@/components/ui/breaking-banner";
 import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
 import { Newspaper } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Story } from "@/types";
-import { ARTICLE_LIST_GAP } from "@/lib/layout-constants";
 
 const CATEGORIES = [
   { slug: "all", name: "All" },
@@ -69,32 +67,24 @@ export function HomeContent() {
   const sidebar = <SidebarWidgets trendingStories={trendingStories} />;
 
   return (
-    <AppShell sidebar={sidebar}>
-      {/* Category Tabs (rendered above the 2-col layout, full-width) */}
-      <div style={{ marginLeft: -24, marginRight: -24, marginTop: -24, marginBottom: 24 }}>
+    <AppShell
+      sidebar={sidebar}
+      categoryTabs={
         <CategoryTabs
           categories={CATEGORIES}
           activeCategory={category}
           onSelect={setCategory}
         />
-      </div>
-
-      {/* Breaking banner — driven by the top story, not hardcoded */}
-      {stories && stories.length > 0 && (
-        <BreakingBanner
-          text={`${stories[0].headline} — ${stories[0].source_count ?? 1} sources covering`}
-          time="Just now"
-        />
-      )}
-
-      {/* Section label */}
-      <div className="slbl">
+      }
+    >
+      {/* Section label — fixed height, never changes */}
+      <div className="slbl" style={{ marginTop: 24 }}>
         {isPersonalized ? "Your Personalized Feed" : "Top Stories"}
       </div>
 
-      {/* Feed Content */}
+      {/* Feed Content — all states use .feed-list so dimensions are stable */}
       {isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
+        <div className="feed-list">
           <StoryCardSkeleton />
           <StoryCardSkeleton />
           <StoryCardSkeleton />
@@ -131,23 +121,10 @@ export function HomeContent() {
           }
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
+        <div className="feed-list">
           {stories.map((story, index) => (
             <StoryCard key={story.id} story={story} index={index} />
           ))}
-
-          {/* Loading indicator */}
-          <div style={{
-            textAlign: "center", padding: "28px 0", color: "var(--ink-3)",
-            fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}>
-            <div style={{
-              width: 18, height: 18, border: "2px solid var(--border)",
-              borderTopColor: "var(--primary)", borderRadius: "50%",
-              animation: "spin 0.8s linear infinite",
-            }} />
-            Loading more stories…
-          </div>
         </div>
       )}
     </AppShell>

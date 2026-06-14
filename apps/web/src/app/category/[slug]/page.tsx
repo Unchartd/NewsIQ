@@ -9,7 +9,6 @@ import { EmptyState } from "@/components/empty-states";
 import apiClient from "@/lib/api-client";
 import type { Story } from "@/types";
 import { Newspaper } from "lucide-react";
-import { ARTICLE_LIST_GAP } from "@/lib/layout-constants";
 
 interface CategoryPageProps {
   params: Promise<{ slug: string }>;
@@ -63,7 +62,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
 
         {/* Stories List */}
         {isLoading ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
+          <div className="feed-list">
             <StoryCardSkeleton />
             <StoryCardSkeleton />
           </div>
@@ -81,7 +80,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             description="There are currently no AI-clustered stories for this category."
           />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: ARTICLE_LIST_GAP }}>
+          <div className="feed-list">
             {stories.map((story, index) => (
               <StoryCard key={story.id} story={story} index={index} />
             ))}

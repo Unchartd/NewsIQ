@@ -1,60 +1,82 @@
 "use client";
 
-import { Skeleton } from "@/components/ui/skeleton";
-import { Card } from "@/components/ui/card";
-import { CARD_PADDING, SKELETON_CARD_HEIGHT, CARD_WIDTH } from "@/lib/layout-constants";
+/* ─────────────────────────────────────────────────────────────────────────────
+   SKELETONS
+   All skeletons must mirror the exact DOM structure of the real components
+   they stand in for.  Use the same CSS classes (.card, .cmeta, .chead,
+   .csum, .cfoot) so dimensions are driven by the stylesheet, not inline
+   values — this eliminates the "jump" when real data replaces the placeholder.
+───────────────────────────────────────────────────────────────────────────── */
+
+/** Pulsing placeholder bar */
+function Bar({ w = "100%", h = 14, r = 4, mb = 0 }: { w?: string | number; h?: number; r?: number; mb?: number }) {
+  return (
+    <div
+      className="sk-bar"
+      style={{
+        width: w,
+        height: h,
+        borderRadius: r,
+        marginBottom: mb || undefined,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+/** Pulsing placeholder circle */
+function Circle({ size = 20 }: { size?: number }) {
+  return (
+    <div
+      className="sk-bar"
+      style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0 }}
+    />
+  );
+}
 
 export function StoryCardSkeleton() {
   return (
-    <div
-      className="card"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: SKELETON_CARD_HEIGHT,
-        width: CARD_WIDTH,
-        padding: CARD_PADDING,
-        cursor: "default",
-      }}
-    >
-      {/* Meta row matching .cmeta */}
+    /* Use the identical .card class so CSS drives all box-model dimensions */
+    <div className="card" style={{ cursor: "default", pointerEvents: "none" }}>
+      {/* Meta row — mirrors .cmeta */}
       <div className="cmeta">
-        <Skeleton className="h-5 w-16 rounded-full" />
+        <Bar w={60} h={18} r={99} />      {/* category badge */}
         <span className="mdot" />
-        <Skeleton className="h-4 w-20" />
+        <Bar w={80} h={13} />              {/* location */}
         <span className="mtime" style={{ marginLeft: "auto" }}>
-          <Skeleton className="h-4 w-12" />
+          <Bar w={48} h={13} />
         </span>
       </div>
 
-      {/* Headline matching .chead */}
-      <div className="chead">
-        <Skeleton className="h-5 w-full mb-2" />
-        <Skeleton className="h-5 w-3/4" />
+      {/* Headline — mirrors .chead (2 lines clamped) */}
+      <div className="chead" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <Bar h={19} />
+        <Bar w="72%" h={19} />
       </div>
 
-      {/* Summary matching .csum */}
-      <div className="csum">
-        <Skeleton className="h-4 w-full mb-1.5" />
-        <Skeleton className="h-4 w-5/6" />
+      {/* Summary — mirrors .csum (3 lines clamped) */}
+      <div className="csum" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        <Bar h={14} />
+        <Bar h={14} />
+        <Bar w="83%" h={14} />
       </div>
 
-      {/* Footer matching .cfoot */}
+      {/* Footer — mirrors .cfoot */}
       <div className="cfoot">
         <div className="srcs">
-          <Skeleton className="h-4 w-20" />
+          <Bar w={80} h={13} />
         </div>
-        <div className="bkbtn" style={{ marginLeft: "auto", cursor: "default", background: "none" }}>
-          <Skeleton className="h-8 w-8 rounded-full" />
+        <div className="bkbtn" style={{ marginLeft: "auto", cursor: "default" }}>
+          <Circle size={32} />
         </div>
       </div>
     </div>
   );
 }
 
-export function StoryFeedSkeleton({ count = 5 }: { count?: number }) {
+export function StoryFeedSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="space-y-4">
+    <div className="feed-list">
       {Array.from({ length: count }).map((_, i) => (
         <StoryCardSkeleton key={i} />
       ))}
@@ -62,19 +84,5 @@ export function StoryFeedSkeleton({ count = 5 }: { count?: number }) {
   );
 }
 
-export function TrendingBannerSkeleton() {
-  return (
-    <Card className="border-border/50 p-6">
-      <Skeleton className="h-6 w-32 mb-4" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="space-y-2">
-            <Skeleton className="h-4 w-16 rounded-full" />
-            <Skeleton className="h-5 w-full" />
-            <Skeleton className="h-4 w-3/4" />
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
+// Legacy export kept for any pages that import it
+export { StoryFeedSkeleton as TrendingBannerSkeleton };

@@ -550,9 +550,29 @@
 .mc {
   padding: 24px 24px 48px 0;
   border-right: 1px solid var(--border);
+  /* Prevent the main column from collapsing when empty / loading */
+  min-height: calc(100vh - var(--nav) - var(--sig) - 48px);
 }
 .sc {
   padding: 24px 0 48px 24px;
+}
+
+/* ── ARTICLE FEED LIST ── */
+/* Wraps story cards and skeleton cards with identical spacing */
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+/* ── EMPTY STATE ── */
+/* Centered placeholder shown when there are no results, errors, etc.
+   min-height keeps the main column from collapsing and prevents the
+   sidebar from jumping when transitioning between tabs. */
+.em-state {
+  min-height: 480px;
+  width: 100%;
 }
 
 /* ── SECTION LABEL ── */
@@ -625,6 +645,7 @@
   border-radius: var(--r10);
   padding: 20px;
   min-height: 184px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -633,6 +654,19 @@
     box-shadow 0.12s ease-out,
     border-color 0.12s ease-out;
   box-shadow: var(--sh1);
+  box-sizing: border-box;
+}
+
+/* ── SKELETON BARS ── */
+/* Pulsing placeholder elements inside skeleton cards */
+.sk-bar {
+  background: var(--border);
+  border-radius: 4px;
+  animation: skPulse 1.4s ease-in-out infinite;
+}
+@keyframes skPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
 }
 .card:hover {
   box-shadow: var(--sh2);

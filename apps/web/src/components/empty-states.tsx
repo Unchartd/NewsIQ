@@ -3,7 +3,6 @@
 import { motion } from "framer-motion";
 import { Inbox, SearchX, ServerCrash, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EMPTY_STATE_MIN_HEIGHT } from "@/lib/layout-constants";
 
 interface EmptyStateProps {
   icon?: LucideIcon;
@@ -25,8 +24,7 @@ export function EmptyState({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.3 }}
-      className="flex flex-col items-center justify-center px-4 text-center"
-      style={{ minHeight: EMPTY_STATE_MIN_HEIGHT, width: "100%" }}
+      className="em-state flex flex-col items-center justify-center px-4 text-center"
     >
       <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-4">
         <Icon className="w-7 h-7 text-muted-foreground" />

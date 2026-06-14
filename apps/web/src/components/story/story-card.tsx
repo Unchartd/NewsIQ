@@ -7,7 +7,6 @@ import { MapPin, TrendingUp, Bookmark } from "lucide-react";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { SourceDots } from "@/components/ui/source-dots";
 import type { Story } from "@/types";
-import { CARD_MIN_HEIGHT, CARD_PADDING, CARD_WIDTH } from "@/lib/layout-constants";
 
 interface StoryCardProps {
   story: Story;
@@ -34,19 +33,13 @@ export function StoryCard({ story, summaryType = "short", index = 0 }: StoryCard
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, delay: index * 0.04 }}
+      style={{ width: "100%" }}
     >
       <Link
         href={`/story/${story.id}`}
         className="card"
         tabIndex={0}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          minHeight: CARD_MIN_HEIGHT,
-          width: CARD_WIDTH,
-          padding: CARD_PADDING,
-          textDecoration: "none",
-        }}
+        style={{ textDecoration: "none" }}
       >
         {/* Meta row */}
         <div className="cmeta">
