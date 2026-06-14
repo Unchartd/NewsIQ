@@ -1,0 +1,27 @@
+# ─────────────────────────────────────────────────────────────────
+# Development Dockerfile for the Next.js web app
+# Used by docker compose watch — runs "next dev" with hot-reload
+# Do NOT use this image in production.
+# ─────────────────────────────────────────────────────────────────
+FROM node:20-alpine
+
+# libc6-compat is needed by some native Node add-ons on Alpine
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Install dependencies first (separate layer → cached unless lock file changes)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the source (docker compose watch will keep this in sync)
+COPY . .
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Run the dev server — Next.js HMR handles in-place file changes
+CMD ["npm", "run", "dev"]
