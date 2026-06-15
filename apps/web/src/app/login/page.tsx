@@ -18,11 +18,18 @@ import { setAccessToken } from "@/lib/token-store";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setUser } = useAuthStore();
+  const { setUser, isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated) {
+      router.replace("/home");
+    }
+  }, [isAuthenticated, isAuthLoading, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

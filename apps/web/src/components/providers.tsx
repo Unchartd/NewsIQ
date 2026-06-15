@@ -13,9 +13,14 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function initAuth() {
+      // Skip auth check for public pages to avoid redundant /auth/me calls
+      const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/tos", "/privacy"];
+      if (publicPaths.includes(window.location.pathname)) {
+        setLoading(false);
+        return;
+      }
+
       try {
-        // This call will trigger the refresh interceptor if the access token is missing/expired
-        // but the refresh cookie is still valid.
         const res = await apiClient.get("/auth/me");
         setUser(res.data);
       } catch (err) {
