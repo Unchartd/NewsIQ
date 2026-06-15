@@ -51,3 +51,10 @@ class PasswordValidationError(AuthException):
     """Raised when password validation fails."""
     status_code: int = 400
     detail: str = "Password does not meet requirements."
+
+
+class EmailAlreadyVerifiedException(AuthException):
+    """Raised when trying to verify or resend verification to an already verified email."""
+    status_code: int = 400
+    detail: str = "Email is already verified."
+

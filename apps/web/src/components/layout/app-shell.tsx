@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { useState } from "react";
 import { useIsFetching, useIsMutating } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -41,8 +42,9 @@ export function AppShell({
     try {
       await apiClient.post("/auth/resend-verification", { email: user.email });
       setSentVerification(true);
-    } catch {
-      // Ignored for UI simplicity
+      toast.success("Verification email sent!");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Failed to resend verification link.");
     }
   };
 

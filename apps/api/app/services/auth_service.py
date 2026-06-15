@@ -1,5 +1,4 @@
-"""Authentication service — business logic for register, login, sessions, verification, resets."""
-
+import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -15,16 +14,19 @@ from app.core.security import (
     verify_password,
 )
 from app.exceptions.auth import (
+    AuthException,
     AccountLockedException,
     EmailNotVerifiedException,
     InvalidCredentialsException,
     InvalidRefreshTokenException,
     SessionExpiredException,
     UserAlreadyExistsException,
+    EmailAlreadyVerifiedException,
 )
 from app.models.models import UserPreference
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.services.cache_service import cache_service
 from app.services.email_service import EmailService
 from app.services.session_service import SessionService
 
@@ -72,6 +74,9 @@ class AuthService:
 
         now = datetime.now(UTC).replace(tzinfo=None)
 
+        raw_verification_token = secrets.token_urlsafe(32)
+        hashed_verification_token = hashlib.sha256(raw_verification_token.encode()).hexdigest()
+
         # 4. Create user
         user = User(
             id=uuid.uuid4(),
@@ -79,7 +84,7 @@ class AuthService:
             name=name,
             password_hash=password_hash,
             email_verified=False,
-            email_verification_token=secrets.token_urlsafe(32),
+            email_verification_token=hashed_verification_token,
             email_verification_expiry=now + timedelta(hours=24),
             role="user",
             subscription_plan="free",
@@ -129,7 +134,7 @@ class AuthService:
             raise
 
         # Send verification email asynchronously / mock log
-        await self.email_service.send_verification_email(user, user.email_verification_token)
+        await self.email_service.send_verification_email(user, raw_verification_token)
 
         # 9. Return tokens
         return user, access_token, refresh_token
@@ -319,14 +324,34 @@ class AuthService:
             await self.db.rollback()
             raise
 
-    async def request_email_verification(self, email: str) -> None:
+    async def request_email_verification(self, email: str, ip_address: str | None = None) -> None:
         """Generate email verification token and send email."""
         user = await self.user_repo.get_by_email(email)
-        if not user or user.email_verified:
+        if not user:
+            # Silent return to prevent user enumeration
             return
 
+        if user.email_verified:
+            raise EmailAlreadyVerifiedException()
+
+        # Redis rate-limiting (fail open if Redis is down)
+        redis_client = cache_service._redis
+        if redis_client:
+            email_key = f"rate_limit:resend:{email}"
+            if await redis_client.get(email_key):
+                raise AuthException("Please wait at least 60 seconds before requesting another verification email.")
+            
+            if ip_address:
+                ip_key = f"rate_limit:resend:ip:{ip_address}"
+                ip_count_str = await redis_client.get(ip_key)
+                if ip_count_str and int(ip_count_str) >= 5:
+                    raise AuthException("Too many verification requests from this IP. Please try again later.")
+
         now = datetime.now(UTC).replace(tzinfo=None)
-        user.email_verification_token = secrets.token_urlsafe(32)
+        raw_token = secrets.token_urlsafe(32)
+        hashed_token = hashlib.sha256(raw_token.encode()).hexdigest()
+
+        user.email_verification_token = hashed_token
         user.email_verification_expiry = now + timedelta(hours=24)
         user.updated_at = now
 
@@ -336,7 +361,15 @@ class AuthService:
             await self.db.rollback()
             raise
 
-        await self.email_service.send_verification_email(user, user.email_verification_token)
+        # Save rate limits in Redis
+        if redis_client:
+            await redis_client.set(email_key, "1", ex=60)
+            if ip_address:
+                ip_key = f"rate_limit:resend:ip:{ip_address}"
+                await redis_client.incr(ip_key)
+                await redis_client.expire(ip_key, 3600)  # 1 hour window
+
+        await self.email_service.send_verification_email(user, raw_token)
 
     async def verify_email(self, token: str) -> User:
         """Verify email using verification token."""
@@ -368,7 +401,10 @@ class AuthService:
             return
 
         now = datetime.now(UTC).replace(tzinfo=None)
-        user.password_reset_token = secrets.token_urlsafe(32)
+        raw_token = secrets.token_urlsafe(32)
+        hashed_token = hashlib.sha256(raw_token.encode()).hexdigest()
+
+        user.password_reset_token = hashed_token
         user.password_reset_expiry = now + timedelta(hours=1)
         user.updated_at = now
 
@@ -378,7 +414,7 @@ class AuthService:
             await self.db.rollback()
             raise
 
-        await self.email_service.send_password_reset_email(user, user.password_reset_token)
+        await self.email_service.send_password_reset_email(user, raw_token)
 
     async def verify_password_reset_token(self, token: str) -> User:
         """Verify password reset token and return User if valid."""

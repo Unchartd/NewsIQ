@@ -3,26 +3,56 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle2, XCircle, AlertCircle, Mail, ArrowLeft, Zap } from "lucide-react";
+import { motion } from "framer-motion";
+import { CheckCircle2, XCircle, AlertCircle, Mail, ArrowLeft, Zap, RefreshCw } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/auth-store";
 
 export default function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get("token");
   
+  const { user, isAuthenticated, setUser } = useAuthStore();
   const [status, setStatus] = useState<"loading" | "success" | "error" | "no_token">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   
   const [email, setEmail] = useState("");
   const [isResending, setIsResending] = useState(false);
-  const [resendSuccess, setResendSuccess] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
   const verificationAttempted = useRef(false);
+
+  // Load resend cooldown from localStorage
+  useEffect(() => {
+    const savedCooldown = localStorage.getItem("resend_cooldown");
+    if (savedCooldown) {
+      const remaining = Math.round((parseInt(savedCooldown) - Date.now()) / 1000);
+      if (remaining > 0) {
+        setCooldown(remaining);
+      }
+    }
+  }, []);
+
+  // Cooldown interval timer
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCooldown((prev) => {
+        const next = prev - 1;
+        if (next <= 0) {
+          localStorage.removeItem("resend_cooldown");
+          return 0;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown]);
 
   useEffect(() => {
     if (verificationAttempted.current) return;
@@ -37,6 +67,7 @@ export default function VerifyEmailContent() {
       try {
         await apiClient.post(`/auth/verify-email?token=${token}`);
         setStatus("success");
+        toast.success("Email verified successfully!");
       } catch (err: any) {
         setStatus("error");
         setErrorMsg(
@@ -48,17 +79,28 @@ export default function VerifyEmailContent() {
     verify();
   }, [token]);
 
+  // Sync state to local Zustand store once user hydrates and verification succeeds
+  useEffect(() => {
+    if (status === "success" && user && !user.email_verified) {
+      setUser({ ...user, email_verified: true });
+    }
+  }, [status, user, setUser]);
+
   const handleResend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
+    if (cooldown > 0) return;
 
     setIsResending(true);
-    setResendSuccess(false);
 
     try {
       await apiClient.post("/auth/resend-verification", { email });
-      setResendSuccess(true);
       toast.success("Verification email sent!");
+      
+      // Set 60 seconds cooldown
+      const expiry = Date.now() + 60 * 1000;
+      localStorage.setItem("resend_cooldown", expiry.toString());
+      setCooldown(60);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Failed to resend verification link.");
     } finally {
@@ -71,11 +113,16 @@ export default function VerifyEmailContent() {
       {/* Decorative background gradient */}
       <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-primary/5 to-transparent opacity-50 pointer-events-none" />
 
-      <div className="w-full max-w-md bg-card border border-border rounded-2xl p-8 shadow-sm relative z-10">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="w-full max-w-md bg-card border border-border rounded-2xl p-8 shadow-sm relative z-10"
+      >
         {/* Logo */}
         <div className="flex justify-center mb-6">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
               <Zap className="w-4.5 h-4.5 text-white" />
             </div>
             <span className="text-xl font-bold tracking-tight">NewsIQ</span>
@@ -93,19 +140,28 @@ export default function VerifyEmailContent() {
 
         {/* Success State */}
         {status === "success" && (
-          <div className="text-center space-y-5">
-            <div className="w-12 h-12 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto">
+          <div className="text-center space-y-6">
+            <div className="w-14 h-14 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">Email Verified!</h2>
+              <h2 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
+                Email Verified!
+              </h2>
               <p className="text-sm text-muted-foreground leading-normal">
                 Your email has been verified successfully. You can now access all features of your NewsIQ account.
               </p>
             </div>
-            <Button className="w-full rounded-xl" onClick={() => router.push("/login")}>
-              Sign In to Your Account
-            </Button>
+
+            {isAuthenticated ? (
+              <Button className="w-full h-11 rounded-xl font-medium" onClick={() => router.push("/home")}>
+                Go to Dashboard
+              </Button>
+            ) : (
+              <Button className="w-full h-11 rounded-xl font-medium" onClick={() => router.push("/login")}>
+                Sign In to Your Account
+              </Button>
+            )}
           </div>
         )}
 
@@ -113,12 +169,12 @@ export default function VerifyEmailContent() {
         {(status === "error" || status === "no_token") && (
           <div className="space-y-6">
             <div className="text-center space-y-4">
-              <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto">
+              <div className="w-14 h-14 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto shadow-sm">
                 {status === "no_token" ? <AlertCircle className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
               </div>
               <div className="space-y-1">
-                <h2 className="text-xl font-semibold">
-                  {status === "no_token" ? "Invalid Verification Link" : "Verification Failed"}
+                <h2 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
+                  {status === "no_token" ? "Invalid Link" : "Verification Failed"}
                 </h2>
                 <p className="text-sm text-muted-foreground leading-normal">
                   {status === "no_token"
@@ -128,46 +184,46 @@ export default function VerifyEmailContent() {
               </div>
             </div>
 
-            {resendSuccess ? (
-              <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 p-4 rounded-xl text-xs flex items-start gap-2.5">
-                <Mail className="w-4 h-4 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold">Check your inbox</p>
-                  <p className="mt-0.5 leading-normal">
-                    We&apos;ve sent a new verification link to <strong>{email}</strong>. Please check your spam folder if you don&apos;t receive it within a few minutes.
-                  </p>
-                </div>
+            <form onSubmit={handleResend} className="space-y-4 pt-4 border-t border-border/60">
+              <p className="text-xs text-muted-foreground leading-normal">
+                Need a new verification link? Enter your email address below to resend it:
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Email Address
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  required
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="rounded-xl h-11 border-border focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary transition-all"
+                  disabled={isResending}
+                />
               </div>
-            ) : (
-              <form onSubmit={handleResend} className="space-y-4 pt-2 border-t border-border/40">
-                <p className="text-xs text-muted-foreground leading-normal">
-                  Need a new verification link? Enter your email address below to resend it:
-                </p>
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Email Address
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    required
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="rounded-xl h-10 border-border"
-                    disabled={isResending}
-                  />
-                </div>
-                <Button type="submit" disabled={isResending || !email} className="w-full rounded-xl">
-                  {isResending ? "Sending..." : "Resend Verification Link"}
-                </Button>
-              </form>
-            )}
+              
+              <Button 
+                type="submit" 
+                disabled={isResending || cooldown > 0 || !email} 
+                className="w-full h-11 rounded-xl font-medium flex items-center justify-center gap-2"
+                variant={cooldown > 0 ? "outline" : "default"}
+              >
+                {isResending ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : cooldown > 0 ? (
+                  <span>Resend in {cooldown}s</span>
+                ) : (
+                  <span>Resend Verification Link</span>
+                )}
+              </Button>
+            </form>
 
             <div className="text-center pt-2">
               <Link
                 href="/login"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Back to Sign In
@@ -175,7 +231,7 @@ export default function VerifyEmailContent() {
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -48,6 +48,7 @@ export default function RootLayout({
       lang="en"
       className="h-full antialiased"
       suppressHydrationWarning
+      data-scroll-behavior="smooth"
     >
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />

@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     NEWSAPI_KEY: str = ""
     GNEWS_API_KEY: str = ""
 
+    # SMTP Settings
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 1025
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM_EMAIL: str = "noreply@newsiq.io"
+    SMTP_FROM_NAME: str = "NewsIQ"
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
