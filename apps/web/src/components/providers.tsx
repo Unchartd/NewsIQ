@@ -57,12 +57,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
-        <AuthInitializer>
-          <TooltipProvider>
-            {children}
-            <Toaster position="bottom-right" richColors closeButton />
-          </TooltipProvider>
-        </AuthInitializer>
+        <TooltipProvider>
+          <AuthInitializer>{children}</AuthInitializer>
+          <Toaster position="bottom-right" richColors closeButton />
+        </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
