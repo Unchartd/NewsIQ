@@ -135,6 +135,17 @@ async def auth_exception_handler(request: Request, exc: AuthException):
         content={"detail": exc.detail},
     )
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global catch-all for unhandled exceptions."""
+    logger.exception("Unhandled exception occurred: %s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "An internal server error occurred."},
+    )
+
+
 # API routes
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 

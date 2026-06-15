@@ -23,6 +23,7 @@ from app.models.models import (
     StoryTag,
     User,
     UserCategory,
+    UserEvent,
     UserLocation,
 )
 from app.schemas.story import (
@@ -424,7 +425,7 @@ async def bookmark_story(
     db: AsyncSession = Depends(get_db),
 ):
     """Add a story to the user's bookmarks."""
-    stmt_story = select(Story).where(Story.id == story_id)
+    stmt_story = select(Story).options(selectinload(Story.metrics)).where(Story.id == story_id)
     res_story = await db.execute(stmt_story)
     story = res_story.scalar_one_or_none()
     if not story:
@@ -449,7 +450,18 @@ async def bookmark_story(
     else:
         story.metrics = StoryMetric(story_id=story.id, views=0, bookmarks=1, shares=0, clicks=0)
 
+    # Record UserEvent
+    event = UserEvent(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        story_id=story_id,
+        event_type="bookmark_story",
+        created_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(event)
+
     await db.commit()
+    await cache_service.invalidate_story(str(story_id))
     return {"message": "Story bookmarked successfully."}
 
 
@@ -470,11 +482,12 @@ async def unbookmark_story(
 
     await db.delete(bookmark)
 
-    stmt_story = select(Story).where(Story.id == story_id)
+    stmt_story = select(Story).options(selectinload(Story.metrics)).where(Story.id == story_id)
     res_story = await db.execute(stmt_story)
     story = res_story.scalar_one_or_none()
     if story and story.metrics and story.metrics.bookmarks > 0:
         story.metrics.bookmarks -= 1
 
     await db.commit()
+    await cache_service.invalidate_story(str(story_id))
     return {"message": "Bookmark removed successfully."}

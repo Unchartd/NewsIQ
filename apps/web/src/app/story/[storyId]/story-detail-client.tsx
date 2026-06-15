@@ -103,6 +103,11 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
     if (typeof window !== "undefined") {
       navigator.clipboard.writeText(window.location.href);
       toast.success("Link copied to clipboard!");
+      if (isAuthenticated) {
+        apiClient
+          .post("/users/events", null, { params: { event_type: "share_story", story_id: storyId } })
+          .catch(() => { /* fire-and-forget */ });
+      }
     }
   };
 

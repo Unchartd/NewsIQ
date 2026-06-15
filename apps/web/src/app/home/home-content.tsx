@@ -27,11 +27,11 @@ const CATEGORIES = [
 
 export function HomeContent() {
   const [category, setCategory] = useState<string>("all");
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
 
   // Serve personalized feed when authenticated + on the "all" tab.
-  // Gracefully falls back to global /stories if the endpoint returns empty or errors.
-  const isPersonalized = isAuthenticated && category === "all";
+  // We wait for auth initialization to be finished before deciding.
+  const isPersonalized = !isAuthLoading && isAuthenticated && category === "all";
 
   const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
     queryKey: isPersonalized ? ["stories", "personalized"] : ["stories", category],
@@ -39,9 +39,13 @@ export function HomeContent() {
       if (isPersonalized) {
         try {
           const res = await apiClient.get("/stories/feed/personalized");
-          if (res.data && res.data.length > 0) return res.data;
-        } catch {
-          // Personalized endpoint unavailable — fall through to global feed
+          return res.data;
+        } catch (err: any) {
+          // If the personalized feed fails with 401 despite our auth state, 
+          // we fall through to the global feed.
+          if (err.response?.status !== 401) {
+             throw err;
+          }
         }
       }
       const params: Record<string, string> = {};
@@ -49,6 +53,8 @@ export function HomeContent() {
       const response = await apiClient.get("/stories", { params });
       return response.data;
     },
+    // Prevent query from running if we are still determining auth state for the personalized feed
+    enabled: !isAuthLoading,
   });
 
   const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({

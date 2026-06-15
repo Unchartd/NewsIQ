@@ -13,7 +13,11 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
 
-export function Navbar() {
+interface NavbarProps {
+  title?: string;
+}
+
+export function Navbar({ title }: NavbarProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -97,6 +101,14 @@ export function Navbar() {
           <div className="nlinks">
             <Link href="/trending" className="nlink">Trending</Link>
             <Link href="/search" className="nlink">Categories</Link>
+          </div>
+        )}
+
+        {/* Title */}
+        {title && (
+          <div style={{ marginLeft: "20px", display: "flex", alignItems: "center", gap: "10px" }}>
+             <span style={{ color: "var(--border)" }}>|</span>
+             <span className="nav-title">{title}</span>
           </div>
         )}
 

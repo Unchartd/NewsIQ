@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { MapPin, TrendingUp, Bookmark } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuthStore } from "@/stores/auth-store";
+import apiClient from "@/lib/api-client";
+import { toast } from "sonner";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { SourceDots } from "@/components/ui/source-dots";
 import type { Story } from "@/types";
@@ -15,7 +18,36 @@ interface StoryCardProps {
 }
 
 export function StoryCard({ story, summaryType = "short", index = 0 }: StoryCardProps) {
-  const [isSaved, setIsSaved] = useState(false);
+  const { isAuthenticated } = useAuthStore();
+  const queryClient = useQueryClient();
+
+  const { data: bookmarkedStories } = useQuery<Story[]>({
+    queryKey: ["bookmarked-stories"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories/bookmarks");
+      return response.data;
+    },
+    enabled: isAuthenticated,
+  });
+
+  const isSaved = bookmarkedStories?.some((s) => s.id === story.id) || false;
+
+  const bookmarkMutation = useMutation({
+    mutationFn: async () => {
+      if (isSaved) {
+        await apiClient.delete(`/stories/${story.id}/bookmark`);
+      } else {
+        await apiClient.post(`/stories/${story.id}/bookmark`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bookmarked-stories"] });
+      toast.success(isSaved ? "Bookmark removed." : "Story saved.");
+    },
+    onError: () => {
+      toast.error("Failed to update bookmark.");
+    },
+  });
 
   const summary =
     summaryType === "one_line"
@@ -80,10 +112,14 @@ export function StoryCard({ story, summaryType = "short", index = 0 }: StoryCard
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              setIsSaved(!isSaved);
-              // TODO: toggle bookmark via API
+              if (!isAuthenticated) {
+                toast.error("Please sign in to bookmark.");
+                return;
+              }
+              bookmarkMutation.mutate();
             }}
             title="Bookmark story"
+            disabled={bookmarkMutation.isPending}
           >
             <Bookmark size={16} fill={isSaved ? "currentColor" : "none"} />
           </button>

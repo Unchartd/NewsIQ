@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { useTheme } from "next-themes";
+import { Navbar } from "@/components/layout/navbar";
 
 // Toast Notification type
 interface Toast {
@@ -1040,7 +1041,7 @@ function SettingsContent() {
 
       case "notif":
         return (
-          <div className="page-wide">
+          <div className="page">
             <div className="page-hdr">
               <div className="page-hdr-title">Notifications</div>
               <div className="page-hdr-sub">Alerts, digest updates, and breaking news</div>
@@ -2008,53 +2009,36 @@ function SettingsContent() {
     <div className="min-h-screen bg-[var(--surface)] text-[var(--ink)] font-sans relative" style={{ transition: "background .2s, color .2s" }}>
       {/* SVG SPRITE */}
       <svg style={{ display: "none" }} xmlns="http://www.w3.org/2000/svg">
-        <symbol id="i-back" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5L7 10l5 5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="3.5" /><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" strokeLinecap="round" /></symbol>
-        <symbol id="i-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 11.5A7 7 0 0 1 8.5 3a7 7 0 1 0 8.5 8.5z" strokeLinejoin="round" /></symbol>
-        <symbol id="i-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-dash" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 10h8" strokeLinecap="round" /></symbol>
-        <symbol id="i-x" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 5l10 10M15 5 5 15" strokeLinecap="round" /></symbol>
+        <symbol id="i-back" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 5L7 10l5 5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="10" cy="10" r="3.5" /><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" strokeLinecap="round" /></symbol>
+        <symbol id="i-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17 11.5A7 7 0 0 1 8.5 3a7 7 0 1 0 8.5 8.5z" strokeLinejoin="round" /></symbol>
+        <symbol id="i-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-dash" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 10h8" strokeLinecap="round" /></symbol>
+        <symbol id="i-x" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 5l10 10M15 5 5 15" strokeLinecap="round" /></symbol>
         <symbol id="i-crown" viewBox="0 0 20 20" fill="currentColor"><path d="M3 15h14l2-9-5 4-4-7-4 7-5-4 2 9z" /></symbol>
-        <symbol id="i-bell" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 2a6 6 0 0 0-6 6v2l-1.5 3h15L16 10V8a6 6 0 0 0-6-6zM8.5 16a1.5 1.5 0 0 0 3 0" strokeLinejoin="round" /></symbol>
+        <symbol id="i-bell" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 2a6 6 0 0 0-6 6v2l-1.5 3h15L16 10V8a6 6 0 0 0-6-6zM8.5 16a1.5 1.5 0 0 0 3 0" strokeLinejoin="round" /></symbol>
         <symbol id="i-zap" viewBox="0 0 20 20" fill="currentColor"><path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z" /></symbol>
-        <symbol id="i-trend" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 14l5-5 4 3 5-6" strokeLinecap="round" strokeLinejoin="round" /><path d="M14 6h3v3" strokeLinecap="round" /></symbol>
-        <symbol id="i-mail" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="16" height="12" rx="1.5" /><path d="M2 7l8 5 8-5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-map" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="7.5" r="2.5" /><path d="M10 18s-6-5.686-6-9.5a6 6 0 0 1 12 0c0 3.814-6 9.5-6 9.5z" /></symbol>
-        <symbol id="i-plus" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4v12M4 10h12" strokeLinecap="round" /></symbol>
-        <symbol id="i-trash" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h12M8 6V4h4v2M7 9v6M13 9v6M5 6l1 10h8l1-10" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-cam" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="16" height="11" rx="1.5" /><circle cx="10" cy="11.5" r="2.5" /><path d="M7 6l1-2h4l1 2" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-card" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="16" height="12" rx="1.5" /><path d="M2 9h16" strokeLinecap="round" /></symbol>
-        <symbol id="i-lock" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="9" width="12" height="9" rx="1.5" /><path d="M7 9V7a3 3 0 0 1 6 0v2" strokeLinecap="round" /></symbol>
-        <symbol id="i-alert" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3 2 17h16L10 3z" strokeLinejoin="round" /><path d="M10 8v4M10 14.5v.5" strokeLinecap="round" /></symbol>
-        <symbol id="i-download" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3v9M6 8l4 4 4-4M4 14v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-ext" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-4" strokeLinejoin="round" /><path d="M12 3h5v5M16 4l-7 7" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-search" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="5.5" /><path d="m14.5 14.5 3 3" strokeLinecap="round" /></symbol>
-        <symbol id="i-clock" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7.5" /><path d="M10 6v4.5l3 1.5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
-        <symbol id="i-user" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="6.5" r="3" /><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round" /></symbol>
-        <symbol id="i-news" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="16" height="13" rx="1.5" /><path d="M6 8h8M6 11h5M6 14h3" strokeLinecap="round" /></symbol>
-        <symbol id="i-shield" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" strokeLinejoin="round" /></symbol>
+        <symbol id="i-trend" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 14l5-5 4 3 5-6" strokeLinecap="round" strokeLinejoin="round" /><path d="M14 6h3v3" strokeLinecap="round" /></symbol>
+        <symbol id="i-mail" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="5" width="16" height="12" rx="1.5" /><path d="M2 7l8 5 8-5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-map" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="10" cy="7.5" r="2.5" /><path d="M10 18s-6-5.686-6-9.5a6 6 0 0 1 12 0c0 3.814-6 9.5-6 9.5z" /></symbol>
+        <symbol id="i-plus" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 4v12M4 10h12" strokeLinecap="round" /></symbol>
+        <symbol id="i-trash" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 6h12M8 6V4h4v2M7 9v6M13 9v6M5 6l1 10h8l1-10" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-cam" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="6" width="16" height="11" rx="1.5" /><circle cx="10" cy="11.5" r="2.5" /><path d="M7 6l1-2h4l1 2" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-card" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="5" width="16" height="12" rx="1.5" /><path d="M2 9h16" strokeLinecap="round" /></symbol>
+        <symbol id="i-lock" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="9" width="12" height="9" rx="1.5" /><path d="M7 9V7a3 3 0 0 1 6 0v2" strokeLinecap="round" /></symbol>
+        <symbol id="i-alert" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 3 2 17h16L10 3z" strokeLinejoin="round" /><path d="M10 8v4M10 14.5v.5" strokeLinecap="round" /></symbol>
+        <symbol id="i-download" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 3v9M6 8l4 4 4-4M4 14v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-ext" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 5H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-4" strokeLinejoin="round" /><path d="M12 3h5v5M16 4l-7 7" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-search" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="9" cy="9" r="5.5" /><path d="m14.5 14.5 3 3" strokeLinecap="round" /></symbol>
+        <symbol id="i-clock" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="10" cy="10" r="7.5" /><path d="M10 6v4.5l3 1.5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
+        <symbol id="i-user" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="10" cy="6.5" r="3" /><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round" /></symbol>
+        <symbol id="i-news" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="4" width="16" height="13" rx="1.5" /><path d="M6 8h8M6 11h5M6 14h3" strokeLinecap="round" /></symbol>
+        <symbol id="i-shield" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" strokeLinejoin="round" /></symbol>
       </svg>
 
       {/* Main Settings Nav & Signal Bar */}
       <div className="scr on">
-        <nav className="nav">
-          <div className="logo" onClick={() => router.push("/")}><b>News</b><i>IQ</i></div>
-          <span style={{ color: "var(--border)", margin: "0 4px" }}>|</span>
-          <button className="back-btn" onClick={() => router.push("/profile")}>
-            <svg width="14" height="14"><use href="#i-back" /></svg>Profile
-          </button>
-          <span className="nav-title">{tabLabel}</span>
-          <div style={{ marginLeft: "auto" }}>
-            <button className="nibn" onClick={toggleTheme}>
-              <svg width="16" height="16" className="ti">
-                <use href={theme === "dark" ? "#i-moon" : "#i-sun"} />
-              </svg>
-            </button>
-          </div>
-        </nav>
-        <div className="sig"></div>
-
-        {/* Dynamic subscreen rendering */}
+        <Navbar/>
         {renderActiveScreen()}
       </div>
 

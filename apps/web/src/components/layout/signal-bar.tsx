@@ -6,11 +6,7 @@ interface SignalBarProps {
   active?: boolean;
 }
 
-export function SignalBar({ variant = "pulse", progress = 65, active = false }: SignalBarProps) {
-  return (
-    <div
-      className={`signal-bar ${variant === "progress" ? "progress" : ""} ${active ? "active" : ""}`}
-      style={variant === "progress" ? { "--progress": `${progress}%` } as React.CSSProperties : undefined}
-    />
-  );
+export function SignalBar({ active = false }: SignalBarProps) {
+  if (!active) return <div className="sig" style={{ opacity: 0 }} />;
+  return <div className="sig" />;
 }

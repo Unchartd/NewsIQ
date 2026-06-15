@@ -9,6 +9,7 @@ import { Sparkles, Calendar, BookOpen, Clock, ArrowRight, BookMarked } from "luc
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { motion } from "framer-motion";
+import Link from "next/link";
 
 interface DigestItem {
   story_id: string;
@@ -47,7 +48,7 @@ export default function DigestPage() {
           <p className="text-muted-foreground text-sm mt-1 mb-6">
             Sign in to access your morning, evening, and weekly personalized news digests.
           </p>
-          <Button render={<a href="/login" />} className="rounded-xl">
+          <Button render={<Link href="/login" />} nativeButton={false} className="rounded-xl">
             Sign In
           </Button>
         </div>
@@ -97,7 +98,7 @@ export default function DigestPage() {
             <p className="text-xs text-muted-foreground max-w-sm mx-auto">
               We couldn&apos;t compile a briefing right now. Ensure you have selected preferred categories in settings and check back in a few minutes.
             </p>
-            <Button render={<a href="/settings" />} variant="outline" className="rounded-xl">
+            <Button render={<Link href="/settings" />} nativeButton={false} variant="outline" className="rounded-xl">
               Manage Settings
             </Button>
           </div>
@@ -119,7 +120,7 @@ export default function DigestPage() {
                       </span>
                     </div>
                     <CardTitle className="text-lg font-bold leading-tight text-foreground hover:text-primary transition-colors">
-                      <a href={`/story/${item.story_id}`}>{item.headline}</a>
+                      <Link href={`/story/${item.story_id}`}>{item.headline}</Link>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4 pb-6">
@@ -133,7 +134,8 @@ export default function DigestPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        render={<a href={`/story/${item.story_id}`} />}
+                        render={<Link href={`/story/${item.story_id}`} />}
+                        nativeButton={false}
                         className="rounded-xl text-xs flex items-center gap-1.5 h-8 text-primary hover:bg-primary/10"
                       >
                         Explore Full Coverage <ArrowRight className="w-3.5 h-3.5" />

@@ -63,7 +63,7 @@ export function DigestWidget() {
       <div className="dwidget">
         <div className="dw-t">Morning Digest</div>
         <div className="dw-s">Top 10 stories. 3-minute read. Every day at 7 AM.</div>
-        <Link href="/digest">
+        <Link href="/digest/setup">
           <button className="btnp">
             <Bell size={14} />
             Subscribe free
