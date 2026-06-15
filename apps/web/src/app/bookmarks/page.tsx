@@ -12,6 +12,7 @@ import type { Story } from "@/types";
 import { useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
 
 export default function BookmarksPage() {
   const { isAuthenticated } = useAuthStore();
@@ -25,6 +26,19 @@ export default function BookmarksPage() {
       return response.data;
     },
     enabled: isAuthenticated,
+  });
+
+  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
+    queryKey: ["stories", "trending-sidebar"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories", {
+        params: {
+          trending: "true",
+          limit: 4,
+        },
+      });
+      return response.data;
+    },
   });
 
   const removeBookmarkMutation = useMutation({
@@ -50,11 +64,23 @@ export default function BookmarksPage() {
         text: story.one_line_summary,
         url: `${window.location.origin}/story/${story.id}`,
       })
-      .then(() => toast.success("Shared successfully"))
+      .then(() => {
+        toast.success("Shared successfully");
+        if (isAuthenticated) {
+          apiClient
+            .post("/users/events", null, { params: { event_type: "share_story", story_id: story.id } })
+            .catch(() => { /* fire-and-forget */ });
+        }
+      })
       .catch(() => {});
     } else {
       navigator.clipboard.writeText(`${window.location.origin}/story/${story.id}`);
       toast.success("Link copied to clipboard!");
+      if (isAuthenticated) {
+        apiClient
+          .post("/users/events", null, { params: { event_type: "share_story", story_id: story.id } })
+          .catch(() => { /* fire-and-forget */ });
+      }
     }
   };
 
@@ -72,8 +98,8 @@ export default function BookmarksPage() {
   }) || [];
 
   return (
-    <AppShell>
-      <div style={{ maxWidth: 660, margin: "0 auto", padding: "0 24px" }}>
+    <AppShell sidebar={<SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />}>
+      <div>
         {/* Bookmarks Header */}
         <div style={{ padding: "28px 0 20px" }}>
           <h1 style={{ fontFamily: "var(--fd)", fontSize: 26, fontWeight: 600, marginBottom: 4 }}>

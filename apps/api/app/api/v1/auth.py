@@ -55,9 +55,27 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     )
 
 
+def _set_access_cookie(response: Response, access_token: str) -> None:
+    """Set the access token as an HTTP-only cookie for robust initial page loads."""
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+
+
 def _clear_refresh_cookie(response: Response) -> None:
     """Clear the refresh token cookie."""
     response.delete_cookie(key="refresh_token", path="/")
+
+
+def _clear_access_cookie(response: Response) -> None:
+    """Clear the access token cookie."""
+    response.delete_cookie(key="access_token", path="/")
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -84,6 +102,7 @@ async def register(
     )
 
     _set_refresh_cookie(response, refresh_token)
+    _set_access_cookie(response, access_token)
 
     return AuthResponse(
         access_token=access_token,
@@ -108,6 +127,7 @@ async def login(
     )
 
     _set_refresh_cookie(response, refresh_token)
+    _set_access_cookie(response, access_token)
 
     return AuthResponse(
         access_token=access_token,
@@ -138,12 +158,14 @@ async def refresh_token(
         )
     except AuthException as e:
         _clear_refresh_cookie(response)
+        _clear_access_cookie(response)
         raise HTTPException(
             status_code=e.status_code,
             detail=e.detail,
         )
 
     _set_refresh_cookie(response, new_refresh_token)
+    _set_access_cookie(response, access_token)
 
     return RefreshResponse(access_token=access_token)
 
@@ -161,6 +183,7 @@ async def logout(
         await auth_service.logout(refresh_token_cookie)
 
     _clear_refresh_cookie(response)
+    _clear_access_cookie(response)
     return MessageResponse(message="Logged out successfully.")
 
 
@@ -174,6 +197,7 @@ async def logout_all(
     auth_service = AuthService(db)
     await auth_service.logout_all(user.id)
     _clear_refresh_cookie(response)
+    _clear_access_cookie(response)
     return MessageResponse(message="Logged out from all devices.")
 
 
