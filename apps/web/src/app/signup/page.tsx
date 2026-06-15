@@ -249,7 +249,7 @@ export default function SignupPage() {
 
         <div className="relative z-10 flex items-center gap-4 text-xs text-muted-foreground">
           <span>&copy; {new Date().getFullYear()} NewsIQ.</span>
-          <Link href="/terms" className="hover:text-foreground transition-colors">Terms of Service</Link>
+          <Link href="/tos" className="hover:text-foreground transition-colors">Terms of Service</Link>
           <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
         </div>
       </div>
