@@ -166,7 +166,7 @@ class AuthService:
 
         if not user:
             # Timing attack mitigation: run password verification on dummy hash
-            verify_password(password, "$argon2id$v=19$m=65536,t=3,p=4$dummyhashdummyhash")
+            verify_password(password, "$argon2id$v=19$m=65536,t=3,p=4$7f0fI8Q4p/R+b80ZQ8jZew$KdrOSa66x7LTcC5eNU02LBNKB5iNDk+tHxYsrNPM0JI")
             raise InvalidCredentialsException()
 
         # 3. Verify account not locked
