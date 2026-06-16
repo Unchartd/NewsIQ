@@ -903,7 +903,7 @@ function SettingsContent() {
           </div>
         );
 
-      case "sub":
+      case "sub": {
         const isPro = user?.subscription_plan === "pro";
         return (
           <div className="page">
@@ -1098,170 +1098,120 @@ function SettingsContent() {
             )}
           </div>
         );
+      }
 
       case "notif":
         return (
           <div className="page">
             <div className="page-hdr">
               <div className="page-hdr-title">Notifications</div>
-              <div className="page-hdr-sub">Alerts, digest updates, and breaking news</div>
+              <div className="page-hdr-sub">Manage digest editions, alerts, and delivery preferences</div>
             </div>
 
-            {/* Notification preferences */}
-            <div className="slbl" style={{ marginBottom: 16 }}>Notification Preferences</div>
-            <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Breaking news alerts</div>
-                  <div className="tog-sub">Instant push for top-tier breaking stories (max 3/day)</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={breakingNewsAlerts}
-                    onChange={(e) => saveNotifLocal("notif-breaking", e.target.checked, setBreakingNewsAlerts)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Trending story alerts</div>
-                  <div className="tog-sub">When a story you might care about spikes in coverage</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={trendingStoryAlerts}
-                    onChange={(e) => saveNotifLocal("notif-trending", e.target.checked, setTrendingStoryAlerts)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Morning digest</div>
-                  <div className="tog-sub">Daily at 7:00 AM — top 10 stories delivered to email</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("morning", "email")}
-                    disabled={isLoadingDigests || updateDigestMutation.isPending}
-                    onChange={(e) =>
-                      updateDigestMutation.mutate({
-                        frequency: "morning",
-                        delivery_channel: "email",
-                        enabled: e.target.checked,
-                      })
-                    }
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Evening digest</div>
-                  <div className="tog-sub">Daily at 6:00 PM — what you missed today</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("evening", "email")}
-                    disabled={isLoadingDigests || updateDigestMutation.isPending}
-                    onChange={(e) =>
-                      updateDigestMutation.mutate({
-                        frequency: "evening",
-                        delivery_channel: "email",
-                        enabled: e.target.checked,
-                      })
-                    }
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Weekly summary</div>
-                  <div className="tog-sub">Every Sunday — biggest stories of the week</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("weekly", "email")}
-                    disabled={isLoadingDigests || updateDigestMutation.isPending}
-                    onChange={(e) =>
-                      updateDigestMutation.mutate({
-                        frequency: "weekly",
-                        delivery_channel: "email",
-                        enabled: e.target.checked,
-                      })
-                    }
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Product updates</div>
-                  <div className="tog-sub">New features, improvements, and announcements</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={productUpdates}
-                    onChange={(e) => saveNotifLocal("notif-products", e.target.checked, setProductUpdates)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              {/* Digest management link */}
-              <div
-                style={{
-                  marginTop: 4,
-                  paddingTop: 14,
-                  borderTop: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
+            {/* ── DIGEST EDITIONS ── */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div className="slbl" style={{ marginBottom: 0 }}>Digest Editions</div>
+              <button
+                className="btno btnsm"
+                onClick={() => router.push("/digest/setup")}
+                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}
               >
-                <div style={{ fontSize: 13, color: "var(--ink3)" }}>
-                  Configure schedule, topics, and delivery channels
-                </div>
-                <button
-                  className="btno btnsm"
-                  onClick={() => router.push("/digest/setup")}
-                  style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}
-                >
-                  Manage digest
-                  <svg width="11" height="11"><use href="#i-ext" /></svg>
-                </button>
-              </div>
+                <svg width="12" height="12"><use href="#i-news" /></svg>
+                Full setup
+              </button>
             </div>
 
-            {/* Delivery channels */}
-            <div className="slbl">Delivery Channels</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 28 }}>
+              {([
+                { key: "morning", label: "Morning Digest", desc: "Top 10 stories. 3-minute read.", time: "Every day at 7 AM", icon: "🌅", accent: "var(--amber)", accentBg: "rgba(217,119,6,.06)" },
+                { key: "midday",  label: "Midday Brief",   desc: "Quick catch-up on what's moving.", time: "Every day at 1 PM", icon: "☀️", accent: "var(--blue)", accentBg: "rgba(59,130,246,.06)" },
+                { key: "evening", label: "Evening Wrap",   desc: "What you missed today.",          time: "Every day at 6 PM", icon: "🌆", accent: "var(--primary)", accentBg: "rgba(196,30,58,.05)" },
+                { key: "weekly",  label: "Weekly Summary", desc: "Biggest stories of the week.",    time: "Every Sunday",     icon: "📋", accent: "var(--green)", accentBg: "rgba(22,163,74,.06)" },
+              ] as const).map((ed) => {
+                const isSubscribed = digestSubscriptions.some(
+                  (s: { frequency: string }) => s.frequency === ed.key
+                );
+                const isEnabled = isDigestEnabled(ed.key, "email");
+                const isBusy = isLoadingDigests || updateDigestMutation.isPending;
+                return (
+                  <div
+                    key={ed.key}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      padding: "16px 16px 14px",
+                      borderRadius: "var(--r8)",
+                      border: isSubscribed && isEnabled ? `1.5px solid color-mix(in srgb, ${ed.accent} 35%, transparent)` : "1.5px solid var(--border)",
+                      background: isSubscribed && isEnabled ? ed.accentBg : "var(--card)",
+                      transition: "border-color .2s, background .2s",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{ed.icon}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", lineHeight: 1.25 }}>{ed.label}</div>
+                          <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{ed.time}</div>
+                        </div>
+                      </div>
+                      {isSubscribed && (
+                        <label className="toggle" style={{ flexShrink: 0, marginTop: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            disabled={isBusy}
+                            onChange={(e) => updateDigestMutation.mutate({ frequency: ed.key, delivery_channel: "email", enabled: e.target.checked })}
+                          />
+                          <div className="tog-track"></div>
+                          <div className="tog-thumb"></div>
+                        </label>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "var(--ink3)", lineHeight: 1.5 }}>{ed.desc}</div>
+
+                    {isSubscribed ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 99,
+                          background: isEnabled ? "rgba(22,163,74,.12)" : "rgba(107,107,107,.1)",
+                          color: isEnabled ? "var(--green)" : "var(--ink3)",
+                        }}>
+                          <svg width="6" height="6" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4" /></svg>
+                          {isEnabled ? "Active" : "Paused"}
+                        </span>
+                        <span style={{ fontSize: 11, color: "var(--ink3)" }}>· via email</span>
+                      </div>
+                    ) : (
+                      <button
+                        className="btnp btnsm"
+                        disabled={isBusy}
+                        onClick={() => updateDigestMutation.mutate({ frequency: ed.key, delivery_channel: "email", enabled: true })}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 13px", width: "fit-content", opacity: isBusy ? 0.6 : 1 }}
+                      >
+                        <svg width="12" height="12"><use href="#i-bell" /></svg>
+                        Subscribe free
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── ALERT PREFERENCES ── */}
+            <div className="slbl" style={{ marginBottom: 12 }}>Alert Preferences</div>
             <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
               <div className="tog-row">
                 <div className="tog-info">
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-bell" /></svg>Push notifications
+                    <span style={{ fontSize: 13 }}>⚡</span>Breaking news
                   </div>
-                  <div className="tog-sub">In-browser alerts — requires permission</div>
+                  <div className="tog-sub">Instant alert for top-tier stories (max 3/day)</div>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={pushNotifications}
-                    onChange={(e) => saveNotifLocal("notif-push", e.target.checked, setPushNotifications)}
-                  />
+                  <input type="checkbox" checked={breakingNewsAlerts} onChange={(e) => saveNotifLocal("notif-breaking", e.target.checked, setBreakingNewsAlerts)} />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
@@ -1269,25 +1219,70 @@ function SettingsContent() {
               <div className="tog-row">
                 <div className="tog-info">
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-mail" /></svg>Email
+                    <span style={{ fontSize: 13 }}>📈</span>Trending story alerts
                   </div>
-                  <div className="tog-sub">{user?.email || "aarav.mehta@gmail.com"}</div>
+                  <div className="tog-sub">When a story you follow spikes in coverage</div>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("morning", "email") || isDigestEnabled("evening", "email")}
-                    disabled
-                  />
-                  <div className="tog-track" style={{ cursor: "not-allowed" }}></div>
+                  <input type="checkbox" checked={trendingStoryAlerts} onChange={(e) => saveNotifLocal("notif-trending", e.target.checked, setTrendingStoryAlerts)} />
+                  <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
               </div>
               <div className="tog-row" style={{ borderBottom: "none" }}>
                 <div className="tog-info">
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 14 }}>📱</span>Telegram
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 99, background: "rgba(107,107,107,.1)", color: "var(--ink3)", marginLeft: 6 }}>
+                    <span style={{ fontSize: 13 }}>🔔</span>Product updates
+                  </div>
+                  <div className="tog-sub">New features, improvements, and announcements</div>
+                </div>
+                <label className="toggle">
+                  <input type="checkbox" checked={productUpdates} onChange={(e) => saveNotifLocal("notif-products", e.target.checked, setProductUpdates)} />
+                  <div className="tog-track"></div>
+                  <div className="tog-thumb"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* ── DELIVERY CHANNELS ── */}
+            <div className="slbl" style={{ marginBottom: 12 }}>Delivery Channels</div>
+            <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
+              <div className="tog-row">
+                <div className="tog-info">
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-bell" /></svg>
+                    Push notifications
+                  </div>
+                  <div className="tog-sub">In-browser alerts — requires permission</div>
+                </div>
+                <label className="toggle">
+                  <input type="checkbox" checked={pushNotifications} onChange={(e) => saveNotifLocal("notif-push", e.target.checked, setPushNotifications)} />
+                  <div className="tog-track"></div>
+                  <div className="tog-thumb"></div>
+                </label>
+              </div>
+              <div className="tog-row">
+                <div className="tog-info">
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-mail" /></svg>
+                    Email
+                  </div>
+                  <div className="tog-sub">{user?.email || "—"}</div>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 99,
+                  background: digestSubscriptions.some((s: { enabled: boolean }) => s.enabled) ? "rgba(22,163,74,.12)" : "rgba(107,107,107,.1)",
+                  color: digestSubscriptions.some((s: { enabled: boolean }) => s.enabled) ? "var(--green)" : "var(--ink3)",
+                }}>
+                  {digestSubscriptions.some((s: { enabled: boolean }) => s.enabled) ? "Active" : "Inactive"}
+                </span>
+              </div>
+              <div className="tog-row" style={{ borderBottom: "none" }}>
+                <div className="tog-info">
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ fontSize: 14 }}>📱</span>
+                    Telegram
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 99, background: "rgba(107,107,107,.1)", color: "var(--ink3)" }}>
                       Not connected
                     </span>
                   </div>
@@ -1297,35 +1292,25 @@ function SettingsContent() {
               </div>
             </div>
 
-            {/* Recent notifications */}
+            {/* ── RECENT NOTIFICATIONS ── */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <div className="slbl" style={{ marginBottom: 0, flex: 1 }}>Recent Notifications</div>
-              <button className="btno btnsm" onClick={markAllNotifsRead} style={{ fontSize: 11, padding: "3px 8px" }}>Mark all read</button>
+              <div className="slbl" style={{ marginBottom: 0 }}>Recent Notifications</div>
+              <button className="btno btnsm" onClick={markAllNotifsRead} style={{ fontSize: 11, padding: "3px 8px" }}>
+                Mark all read
+              </button>
             </div>
             <div className="pcrd" style={{ marginBottom: 28 }}>
               {notificationList.map((notif) => {
-                const getIconClass = () => {
-                  if (notif.type === "break") return "ni-break";
-                  if (notif.type === "trend") return "ni-trend";
-                  if (notif.type === "digest") return "ni-digest";
-                  return "ni-sys";
-                };
-
-                const getIconUse = () => {
-                  if (notif.type === "break") return "#i-zap";
-                  if (notif.type === "trend") return "#i-trend";
-                  if (notif.type === "digest") return "#i-news";
-                  return "#i-bell";
-                };
-
+                const iconClass = notif.type === "break" ? "ni-break" : notif.type === "trend" ? "ni-trend" : notif.type === "digest" ? "ni-digest" : "ni-sys";
+                const iconHref = notif.type === "break" ? "#i-zap" : notif.type === "trend" ? "#i-trend" : notif.type === "digest" ? "#i-news" : "#i-bell";
                 return (
                   <div
                     key={notif.id}
                     className={`notif-item ${notif.unread ? "unread" : ""}`}
                     onClick={() => toggleNotifItemUnread(notif.id)}
                   >
-                    <div className={`notif-icon ${getIconClass()}`}>
-                      <svg width="14" height="14"><use href={getIconUse()} /></svg>
+                    <div className={`notif-icon ${iconClass}`}>
+                      <svg width="14" height="14"><use href={iconHref} /></svg>
                     </div>
                     <div className="notif-body">
                       <div className="notif-title">{notif.title}</div>
@@ -1337,12 +1322,15 @@ function SettingsContent() {
               })}
             </div>
             <div style={{ textAlign: "center", fontSize: 13, color: "var(--ink3)" }}>
-              You're all caught up · <a href="#" onClick={(e) => { e.preventDefault(); triggerToast("Older notifications loaded", "s"); }} style={{ color: "var(--blue)" }}>Load older</a>
+              You're all caught up ·{" "}
+              <a href="#" onClick={(e) => { e.preventDefault(); triggerToast("Older notifications loaded", "s"); }} style={{ color: "var(--blue)" }}>
+                Load older
+              </a>
             </div>
           </div>
         );
 
-      case "topics":
+      case "topics": {
         const availableCategories = [
           { slug: "politics", name: "Politics", icon: "🏛️" },
           { slug: "technology", name: "Technology", icon: "💻" },
@@ -1422,6 +1410,7 @@ function SettingsContent() {
             </div>
           </div>
         );
+      }
 
       case "locs":
         return (
