@@ -192,6 +192,11 @@ function SettingsContent() {
   const [activeTab, setActiveTab] = useState<string>("edit");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [openModal, setOpenModal] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Sync tab state with URL parameter
   useEffect(() => {
@@ -699,6 +704,15 @@ function SettingsContent() {
   const clearPersonalisation = () => {
     triggerToast("Personalisation data cleared", "w");
   };
+
+  // Wait for client-side hydration to restore auth store state
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[var(--surface)] text-[var(--ink)] flex items-center justify-center font-sans">
+        <div style={{ fontSize: 14, color: "var(--ink3)" }}>Loading...</div>
+      </div>
+    );
+  }
 
   // Handle redirect to login if unauthenticated
   if (!isAuthenticated) {

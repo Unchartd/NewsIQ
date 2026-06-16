@@ -114,7 +114,9 @@ export function Navbar({ title }: NavbarProps = {}) {
 
         {/* Right actions */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
-          {isAuthenticated ? (
+          {!mounted ? (
+            <div style={{ width: 140, height: 34 }} />
+          ) : isAuthenticated ? (
             <>
               <Link href="/bookmarks">
                 <button className="nibn" title="Bookmarks">
