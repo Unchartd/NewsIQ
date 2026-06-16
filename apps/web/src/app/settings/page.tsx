@@ -241,7 +241,7 @@ function SettingsContent() {
     },
   });
 
-  const { data: digestSubscriptions = [] } = useQuery({
+  const { data: digestSubscriptions = [], isLoading: isLoadingDigests } = useQuery({
     queryKey: ["digest-subscriptions"],
     queryFn: async () => {
       const response = await apiClient.get("/users/digests");
@@ -302,7 +302,9 @@ function SettingsContent() {
       return response.data;
     },
     onSuccess: () => {
+      // Invalidate both so the notifications tab toggles AND the digest setup page stay in sync
       queryClient.invalidateQueries({ queryKey: ["digest-subscriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["user-preferences"] });
       triggerToast("Digest subscription updated", "s");
     },
     onError: () => {
@@ -1147,6 +1149,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={isDigestEnabled("morning", "email")}
+                    disabled={isLoadingDigests || updateDigestMutation.isPending}
                     onChange={(e) =>
                       updateDigestMutation.mutate({
                         frequency: "morning",
@@ -1168,6 +1171,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={isDigestEnabled("evening", "email")}
+                    disabled={isLoadingDigests || updateDigestMutation.isPending}
                     onChange={(e) =>
                       updateDigestMutation.mutate({
                         frequency: "evening",
@@ -1189,6 +1193,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={isDigestEnabled("weekly", "email")}
+                    disabled={isLoadingDigests || updateDigestMutation.isPending}
                     onChange={(e) =>
                       updateDigestMutation.mutate({
                         frequency: "weekly",
@@ -1215,6 +1220,29 @@ function SettingsContent() {
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
+              </div>
+              {/* Digest management link */}
+              <div
+                style={{
+                  marginTop: 4,
+                  paddingTop: 14,
+                  borderTop: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div style={{ fontSize: 13, color: "var(--ink3)" }}>
+                  Configure schedule, topics, and delivery channels
+                </div>
+                <button
+                  className="btno btnsm"
+                  onClick={() => router.push("/digest/setup")}
+                  style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}
+                >
+                  Manage digest
+                  <svg width="11" height="11"><use href="#i-ext" /></svg>
+                </button>
               </div>
             </div>
 

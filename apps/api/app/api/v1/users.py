@@ -310,7 +310,7 @@ async def update_digest_subscriptions(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update or create digest subscriptions."""
+    """Update or create digest subscriptions and sync digest_settings in preferences."""
     from app.models.models import DigestSubscription
 
     result = await db.execute(
@@ -330,6 +330,41 @@ async def update_digest_subscriptions(
         )
         db.add(sub)
     sub.enabled = body.enabled
+    await db.flush()
+
+    # --- Sync digest_settings in UserPreference so setup page stays consistent ---
+    # Re-fetch all subscriptions for this user to rebuild the editions map
+    all_subs_result = await db.execute(
+        select(DigestSubscription).where(DigestSubscription.user_id == user.id)
+    )
+    all_subs = all_subs_result.scalars().all()
+
+    prefs_result = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
+    prefs = prefs_result.scalar_one_or_none()
+    if prefs is None:
+        prefs = UserPreference(id=uuid.uuid4(), user_id=user.id)
+        db.add(prefs)
+
+    # Merge into existing digest_settings (preserve all other keys)
+    existing = dict(prefs.digest_settings) if prefs.digest_settings else {}
+
+    # Rebuild editions from live subscriptions (union across all channels)
+    editions: dict[str, bool] = existing.get("editions", {})
+    # Update the specific edition being toggled (any channel for this edition)
+    edition_key = body.frequency  # morning | midday | evening | weekly
+    # An edition is "active" if any enabled subscription exists for it
+    edition_enabled_anywhere = any(
+        s.enabled for s in all_subs if s.frequency == edition_key
+    )
+    editions[edition_key] = edition_enabled_anywhere
+    existing["editions"] = editions
+
+    # Use flag-based assignment to trigger SQLAlchemy dirty tracking on JSONB
+    prefs.digest_settings = existing
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(prefs, "digest_settings")
+
+    prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
     await db.flush()
     return MessageResponse(message="Digest subscription updated.")
 
