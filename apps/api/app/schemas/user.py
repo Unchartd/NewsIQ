@@ -12,6 +12,7 @@ class UserPreferencesUpdate(BaseModel):
     categories: list[str] | None = None  # list of category slugs
     countries: list[str] | None = None
     cities: list[str] | None = None
+    digest_settings: dict | None = None
 
 
 class UserPreferencesResponse(BaseModel):
@@ -23,6 +24,7 @@ class UserPreferencesResponse(BaseModel):
     categories: list[str]
     countries: list[str]
     cities: list[str]
+    digest_settings: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -63,8 +65,8 @@ class NotificationResponse(BaseModel):
 class DigestSubscriptionUpdate(BaseModel):
     """Schema for updating digest subscriptions."""
 
-    frequency: str = Field(..., pattern="^(morning|evening|weekly)$")
-    delivery_channel: str = Field(..., pattern="^(in_app|email)$")
+    frequency: str = Field(..., pattern="^(morning|midday|evening|weekly)$")
+    delivery_channel: str = Field(..., pattern="^(in_app|email|telegram|push)$")
     enabled: bool
 
 
@@ -77,3 +79,19 @@ class DigestSubscriptionResponse(BaseModel):
     enabled: bool
 
     model_config = {"from_attributes": True}
+
+
+class DigestSetupRequest(BaseModel):
+    """Payload for full digest configuration setup."""
+
+    categories: list[str]
+    story_count: int
+    prioritize_local: bool
+    include_world: bool
+    editions: dict[str, bool]
+    delivery_times: dict[str, str]
+    frequency: str  # daily, weekdays, custom
+    custom_days: list[str]
+    weekly_wrap: bool
+    channels: dict[str, bool]
+    email_format: str  # html, text

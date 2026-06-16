@@ -18,6 +18,7 @@ from app.models.models import (
 )
 from app.schemas.auth import MessageResponse, UserResponse
 from app.schemas.user import (
+    DigestSetupRequest,
     DigestSubscriptionResponse,
     DigestSubscriptionUpdate,
     NotificationResponse,
@@ -104,6 +105,7 @@ async def get_preferences(
         categories=categories,
         countries=countries,
         cities=cities,
+        digest_settings=prefs.digest_settings if prefs else None,
     )
 
 
@@ -128,6 +130,8 @@ async def update_preferences(
         prefs.theme = body.theme
     if body.language is not None:
         prefs.language = body.language
+    if body.digest_settings is not None:
+        prefs.digest_settings = body.digest_settings
     prefs.updated_at = datetime.now(UTC)
 
     # Update categories if provided
@@ -328,6 +332,131 @@ async def update_digest_subscriptions(
     sub.enabled = body.enabled
     await db.flush()
     return MessageResponse(message="Digest subscription updated.")
+
+
+@router.post("/digests/setup", response_model=MessageResponse)
+async def setup_digest(
+    body: DigestSetupRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save all digest onboarding configuration and sync categories, locations, and subscriptions."""
+    from app.models.models import DigestSubscription
+
+    # 1. Update or create user preferences and save digest settings
+    result = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
+    prefs = result.scalar_one_or_none()
+
+    if not prefs:
+        prefs = UserPreference(id=uuid.uuid4(), user_id=user.id)
+        db.add(prefs)
+
+    prefs.digest_settings = {
+        "story_count": body.story_count,
+        "prioritize_local": body.prioritize_local,
+        "include_world": body.include_world,
+        "editions": body.editions,
+        "delivery_times": body.delivery_times,
+        "frequency": body.frequency,
+        "custom_days": body.custom_days,
+        "weekly_wrap": body.weekly_wrap,
+        "channels": body.channels,
+        "email_format": body.email_format,
+    }
+    # Also set default summary type based on preferred settings or default to short
+    if not prefs.preferred_summary_type:
+        prefs.preferred_summary_type = "short"
+    prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    # 2. Sync user categories
+    await db.execute(delete(UserCategory).where(UserCategory.user_id == user.id))
+    for slug in body.categories:
+        result = await db.execute(select(Category).where(Category.slug == slug))
+        cat = result.scalar_one_or_none()
+        if cat:
+            db.add(UserCategory(user_id=user.id, category_id=cat.id))
+
+    # 3. Sync user locations (if prioritize_local is true, ensure India and Bengaluru exist)
+    await db.execute(delete(UserLocation).where(UserLocation.user_id == user.id))
+    if body.prioritize_local:
+        db.add(
+            UserLocation(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                country_code="IN",
+            )
+        )
+        db.add(
+            UserLocation(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                city_name="Bengaluru",
+            )
+        )
+
+    # 4. Sync digest subscriptions (delete old and insert new ones based on active editions + channels)
+    await db.execute(delete(DigestSubscription).where(DigestSubscription.user_id == user.id))
+
+    # We map app -> in_app in DB
+    db_channels = []
+    for chan_key, chan_enabled in body.channels.items():
+        if chan_enabled:
+            if chan_key == "app":
+                db_channels.append("in_app")
+            else:
+                db_channels.append(chan_key)
+
+    # Recreate subscriptions for each enabled edition/channel combination
+    for edition, edition_enabled in body.editions.items():
+        if edition_enabled:
+            for channel in db_channels:
+                db.add(
+                    DigestSubscription(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        frequency=edition,
+                        delivery_channel=channel,
+                        enabled=True,
+                    )
+                )
+
+    # Also handle weekly_wrap subscription if enabled
+    if body.weekly_wrap:
+        for channel in db_channels:
+            db.add(
+                DigestSubscription(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    frequency="weekly",
+                    delivery_channel=channel,
+                    enabled=True,
+                )
+            )
+
+    await db.flush()
+    return MessageResponse(message="Digest subscription set up successfully.")
+
+
+@router.delete("/digests/unsubscribe", response_model=MessageResponse)
+async def unsubscribe_digest(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel all digest subscriptions and clear digest preferences."""
+    from app.models.models import DigestSubscription
+
+    # 1. Clear digest settings in preferences
+    result = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
+    prefs = result.scalar_one_or_none()
+    if prefs:
+        prefs.digest_settings = None
+        prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    # 2. Delete all digest subscriptions
+    await db.execute(delete(DigestSubscription).where(DigestSubscription.user_id == user.id))
+    await db.flush()
+
+    return MessageResponse(message="Successfully unsubscribed from all digests.")
 
 
 @router.get("/digests/latest")
