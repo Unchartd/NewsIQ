@@ -6,7 +6,21 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { useTheme } from "next-themes";
-import { Navbar } from "@/components/layout/navbar";
+import { AppShell } from "@/components/layout/app-shell";
+import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
+import type { Story } from "@/types";
+import {
+  User,
+  Crown,
+  Bell,
+  Grid,
+  MapPin,
+  BookOpen,
+  Sun,
+  History,
+  Lock,
+  Shield,
+} from "lucide-react";
 
 // Toast Notification type
 interface Toast {
@@ -154,6 +168,19 @@ const DEFAULT_HISTORY: MockHistoryItem[] = [
   },
 ];
 
+const TAB_ICONS: Record<string, React.ComponentType<any>> = {
+  edit: User,
+  sub: Crown,
+  notif: Bell,
+  topics: Grid,
+  locs: MapPin,
+  summary: BookOpen,
+  theme: Sun,
+  history: History,
+  security: Lock,
+  privacy: Shield,
+};
+
 function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -190,6 +217,20 @@ function SettingsContent() {
       return response.data;
     },
     enabled: isAuthenticated,
+  });
+
+  // Query trending stories for the sidebar
+  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
+    queryKey: ["stories", "trending-sidebar"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories", {
+        params: {
+          trending: "true",
+          limit: 4,
+        },
+      });
+      return response.data;
+    },
   });
 
   const { data: digestSubscriptions = [] } = useQuery({
@@ -2005,8 +2046,10 @@ function SettingsContent() {
     }
   };
 
+  const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
+
   return (
-    <div className="min-h-screen bg-[var(--surface)] text-[var(--ink)] font-sans relative" style={{ transition: "background .2s, color .2s" }}>
+    <AppShell sidebar={sidebar}>
       {/* SVG SPRITE */}
       <svg style={{ display: "none" }} xmlns="http://www.w3.org/2000/svg">
         <symbol id="i-back" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 5L7 10l5 5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
@@ -2036,10 +2079,28 @@ function SettingsContent() {
         <symbol id="i-shield" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" strokeLinejoin="round" /></symbol>
       </svg>
 
-      {/* Main Settings Nav & Signal Bar */}
-      <div className="scr on">
-        <Navbar/>
-        {renderActiveScreen()}
+      <div className="settings-container">
+        {/* Left Settings Navigation */}
+        <div className="settings-nav">
+          {Object.entries(tabLabelMap).map(([key, label]) => {
+            const IconComponent = TAB_ICONS[key];
+            return (
+              <button
+                key={key}
+                onClick={() => go(key)}
+                className={`settings-nav-btn ${activeTab === key ? "active" : ""}`}
+              >
+                {IconComponent && <IconComponent size={15} />}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Settings Body */}
+        <div className="settings-body">
+          {renderActiveScreen()}
+        </div>
       </div>
 
       {/* TOAST STACK */}
@@ -2129,7 +2190,7 @@ function SettingsContent() {
           </div>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
 

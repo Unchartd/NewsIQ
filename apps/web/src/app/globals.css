@@ -3171,3 +3171,73 @@ textarea.field-input{height:90px;padding:10px 12px;resize:vertical;line-height:1
 .back-btn:hover{background:var(--surface);color:var(--ink)}
 .back-btn svg{flex-shrink:0}
 .nav-title{font-size:15px;font-weight:600;color:var(--ink)}
+
+/* ── SETTINGS PAGE LAYOUT ── */
+.settings-container {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  margin-top: 16px;
+}
+.settings-nav {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-nav-btn {
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: var(--r6);
+  font-size: 14px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--ink2);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.settings-nav-btn:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.settings-nav-btn.active {
+  background: var(--surface);
+  color: var(--primary);
+  font-weight: 600;
+}
+.settings-body {
+  flex: 1;
+  min-width: 0;
+}
+.settings-body .page,
+.settings-body .page-wide {
+  margin: 0;
+  max-width: 100%;
+  padding: 0 0 64px 0;
+}
+
+@media (max-width: 768px) {
+  .settings-container {
+    flex-direction: column;
+    gap: 24px;
+  }
+  .settings-nav {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    -webkit-overflow-scrolling: touch;
+  }
+  .settings-nav-btn {
+    white-space: nowrap;
+    padding: 8px 12px;
+  }
+}
+
