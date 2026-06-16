@@ -136,3 +136,71 @@ async def test_update_digest_subscriptions(mock_db_session):
     response = await update_digest_subscriptions(body=body, user=user, db=mock_db_session)
     assert response.message == "Digest subscription updated."
     assert existing_sub.enabled is True
+
+
+@pytest.mark.asyncio
+async def test_setup_digest(mock_db_session):
+    """Verify setup_digest correctly saves preferences and creates subscriptions."""
+    user = User(id=uuid.uuid4())
+
+    from app.api.v1.users import setup_digest
+    from app.models.models import Category, UserPreference
+    from app.schemas.user import DigestSetupRequest
+
+    body = DigestSetupRequest(
+        categories=["politics", "technology"],
+        story_count=5,
+        prioritize_local=True,
+        include_world=True,
+        editions={"morning": True, "midday": False, "evening": True},
+        delivery_times={"morning": "7:00", "midday": "12:00", "evening": "18:00"},
+        frequency="daily",
+        custom_days=[],
+        weekly_wrap=True,
+        channels={"email": True, "app": True, "telegram": False, "push": False},
+        email_format="html",
+    )
+
+    mock_pref = None
+    mock_cat_politics = Category(id=uuid.uuid4(), slug="politics", name="Politics")
+    mock_cat_tech = Category(id=uuid.uuid4(), slug="technology", name="Technology")
+
+    mock_result_pref = MagicMock()
+    mock_result_pref.scalar_one_or_none.side_effect = [
+        mock_pref,             # for UserPreference lookup
+        mock_cat_politics,     # for politics Category lookup
+        mock_cat_tech,         # for technology Category lookup
+    ]
+    mock_db_session.execute.return_value = mock_result_pref
+
+    response = await setup_digest(body=body, user=user, db=mock_db_session)
+    assert response.message == "Digest subscription set up successfully."
+
+    # Check that db.add was called for UserPreference and the subscriptions
+    added_items = [args[0] for args, _ in mock_db_session.add.call_args_list]
+
+    pref_added = next(x for x in added_items if isinstance(x, UserPreference))
+    assert pref_added.digest_settings["story_count"] == 5
+    assert pref_added.digest_settings["prioritize_local"] is True
+    assert pref_added.digest_settings["email_format"] == "html"
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_digest(mock_db_session):
+    """Verify unsubscribe_digest correctly clears preferences and deletes subscriptions."""
+    user = User(id=uuid.uuid4())
+
+    from app.api.v1.users import unsubscribe_digest
+    from app.models.models import UserPreference
+
+    mock_pref = UserPreference(id=uuid.uuid4(), user_id=user.id, digest_settings={"story_count": 5})
+
+    mock_result_pref = MagicMock()
+    mock_result_pref.scalar_one_or_none.return_value = mock_pref
+    mock_db_session.execute.return_value = mock_result_pref
+
+    response = await unsubscribe_digest(user=user, db=mock_db_session)
+    assert response.message == "Successfully unsubscribed from all digests."
+    assert mock_pref.digest_settings is None
+
+
