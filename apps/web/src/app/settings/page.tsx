@@ -181,6 +181,8 @@ const TAB_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   privacy: Shield,
 };
 
+let hasHydratedSettings = false;
+
 function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -192,9 +194,10 @@ function SettingsContent() {
   const [activeTab, setActiveTab] = useState<string>("edit");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [openModal, setOpenModal] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(hasHydratedSettings);
 
   useEffect(() => {
+    hasHydratedSettings = true;
     setMounted(true);
   }, []);
 

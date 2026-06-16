@@ -17,18 +17,19 @@ interface NavbarProps {
   title?: string;
 }
 
+let hasHydrated = false;
+
 export function Navbar({ title }: NavbarProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { user, isAuthenticated } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState("");
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(hasHydrated);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const t = setTimeout(() => setMounted(true), 0);
-    return () => clearTimeout(t);
+    hasHydrated = true;
+    setMounted(true);
   }, []);
 
   const initials = user?.name
