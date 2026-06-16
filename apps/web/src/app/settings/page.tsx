@@ -168,7 +168,7 @@ const DEFAULT_HISTORY: MockHistoryItem[] = [
   },
 ];
 
-const TAB_ICONS: Record<string, React.ComponentType<any>> = {
+const TAB_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   edit: User,
   sub: Crown,
   notif: Bell,
