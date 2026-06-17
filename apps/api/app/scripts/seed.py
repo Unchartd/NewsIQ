@@ -239,6 +239,13 @@ SOURCES = [
         "rss_url": "https://zeenews.india.com/rss/india-national-news.xml",
         "country_code": "IN",
     },
+    {
+        "name": "ANI News",
+        "slug": "ani-news",
+        "website_url": "https://www.aninews.in",
+        "rss_url": "https://www.aninews.in/rss/feed/",
+        "country_code": "IN",
+    },
 ]
 
 
