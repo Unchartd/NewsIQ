@@ -90,11 +90,15 @@ async def list_stories(
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve news stories with filtering, pagination, and sorting."""
-    stmt = select(Story).options(
-        selectinload(Story.category),
-        selectinload(Story.articles)
-        .selectinload(StoryArticle.article)
-        .selectinload(Article.source),
+    stmt = (
+        select(Story)
+        .options(
+            selectinload(Story.category),
+            selectinload(Story.articles)
+            .selectinload(StoryArticle.article)
+            .selectinload(Article.source),
+        )
+        .where(Story.headline.not_like("[Mock]%"))
     )
 
     if category:
@@ -158,7 +162,11 @@ async def search_stories(
         if not matched_ids:
             return []
         uuid_ids = [uuid.UUID(i) for i in matched_ids]
-        stmt = select(Story).options(*base_options).where(Story.id.in_(uuid_ids))
+        stmt = (
+            select(Story)
+            .options(*base_options)
+            .where(Story.id.in_(uuid_ids), Story.headline.not_like("[Mock]%"))
+        )
         result = await db.execute(stmt)
         stories_by_id = {s.id: s for s in result.scalars().all()}
         # Preserve Meilisearch ranking order
@@ -170,10 +178,13 @@ async def search_stories(
             select(Story)
             .options(*base_options)
             .where(
-                Story.headline.ilike(f"%{safe_q}%")
-                | Story.one_line_summary.ilike(f"%{safe_q}%")
-                | Story.short_summary.ilike(f"%{safe_q}%")
-                | Story.detailed_summary.ilike(f"%{safe_q}%")
+                (
+                    Story.headline.ilike(f"%{safe_q}%")
+                    | Story.one_line_summary.ilike(f"%{safe_q}%")
+                    | Story.short_summary.ilike(f"%{safe_q}%")
+                    | Story.detailed_summary.ilike(f"%{safe_q}%")
+                ),
+                Story.headline.not_like("[Mock]%"),
             )
         )
         if category:
@@ -229,11 +240,15 @@ async def personalized_feed(
     )
     countries = [row[0] for row in loc_res.all()]
 
-    stmt = select(Story).options(
-        selectinload(Story.category),
-        selectinload(Story.articles)
-        .selectinload(StoryArticle.article)
-        .selectinload(Article.source),
+    stmt = (
+        select(Story)
+        .options(
+            selectinload(Story.category),
+            selectinload(Story.articles)
+            .selectinload(StoryArticle.article)
+            .selectinload(Article.source),
+        )
+        .where(Story.headline.not_like("[Mock]%"))
     )
 
     if category_ids:
@@ -523,12 +538,16 @@ async def get_trending_stories(
         if cached is not None:
             return [StoryListResponse(**s) for s in cached]
 
-    stmt = select(Story).options(
-        selectinload(Story.category),
-        selectinload(Story.articles)
-        .selectinload(StoryArticle.article)
-        .selectinload(Article.source),
-    ).where(Story.story_status == "active")
+    stmt = (
+        select(Story)
+        .options(
+            selectinload(Story.category),
+            selectinload(Story.articles)
+            .selectinload(StoryArticle.article)
+            .selectinload(Article.source),
+        )
+        .where(Story.story_status == "active", Story.headline.not_like("[Mock]%"))
+    )
 
     if category:
         stmt = stmt.join(Category, Story.category_id == Category.id).where(
