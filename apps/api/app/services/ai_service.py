@@ -75,6 +75,7 @@ CATEGORY_SLUGS = [
     "technology",
     "sports",
     "entertainment",
+    "lifestyle",
     "health",
     "science",
     "weather",
@@ -186,7 +187,7 @@ class AIService:
             '  "short_summary": "<1-paragraph 3-4 sentence summary>",\n'
             '  "detailed_summary": "<multi-paragraph detailed summary>",\n'
             '  "key_facts": ["fact1", "fact2", "fact3"],\n'
-            '  "category": "<one of: politics, world, business, technology, sports, entertainment, health, science, weather>",\n'
+            '  "category": "<one of: politics, world, business, technology, sports, entertainment, lifestyle, health, science, weather>",\n'
             '  "timeline": [{"date": "YYYY-MM-DD", "description": "<event>"}],\n'
             '  "differences": [{"source_name": "<source>", "unique_information": "<text>", "missing_information": "<text>", "contradictions": "<text>"}]\n'
             '}'

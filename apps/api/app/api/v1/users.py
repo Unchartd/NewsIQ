@@ -668,6 +668,7 @@ async def get_reading_history(
         "world": "bwl",
         "weather": "bw",
         "entertainment": "be",
+        "lifestyle": "bl",
     }
     
     history_items = []

@@ -21,6 +21,8 @@ const CATEGORIES = [
   { slug: "technology", name: "Technology" },
   { slug: "business", name: "Business" },
   { slug: "sports", name: "Sports" },
+  { slug: "entertainment", name: "Entertainment" },
+  { slug: "lifestyle", name: "Lifestyle" },
   { slug: "health", name: "Health" },
   { slug: "science", name: "Science" },
   { slug: "weather", name: "Weather" },
