@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.users import (
+    update_profile,
     update_preferences,
     mark_all_notifications_read,
     get_reading_history,
@@ -20,7 +21,7 @@ from app.api.v1.users import (
 )
 from app.api.v1.auth import change_password
 from app.models.models import User, UserPreference, Notification, UserEvent, Story, Category
-from app.schemas.user import UserPreferencesUpdate, ChangePasswordRequest
+from app.schemas.user import UserPreferencesUpdate, ChangePasswordRequest, ProfileUpdateRequest
 
 
 @pytest.mark.asyncio
@@ -206,3 +207,25 @@ async def test_change_password(mock_logout_all, mock_hash_password, mock_verify_
     assert response.message == "Password changed successfully."
     assert user.password_hash == "new_hash"
     mock_logout_all.assert_called_once_with(user.id)
+
+
+@pytest.mark.asyncio
+async def test_update_profile(mock_db_session):
+    """Verify that update_profile updates user name and image correctly and sets a naive updated_at timestamp."""
+    user = User(
+        id=uuid.uuid4(),
+        email="test@example.com",
+        name="Old Name",
+        image_url="old_url",
+        role="user",
+        subscription_plan="free",
+        status="active",
+        email_verified=True,
+    )
+    body = ProfileUpdateRequest(name="New Name", image_url="new_url")
+    response = await update_profile(body=body, user=user, db=mock_db_session)
+
+    assert response.name == "New Name"
+    assert response.image_url == "new_url"
+    assert user.updated_at is not None
+    assert user.updated_at.tzinfo is None  # Check that it is naive

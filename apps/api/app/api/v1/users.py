@@ -60,7 +60,7 @@ async def update_profile(
         user.image_url = body.image_url
     # NOTE: subscription_plan and role are intentionally NOT updatable here.
     # Use the admin endpoint PATCH /admin/users/{user_id}/role instead.
-    user.updated_at = datetime.now(UTC)
+    user.updated_at = datetime.now(UTC).replace(tzinfo=None)
     await db.flush()
 
     return UserResponse(
@@ -71,6 +71,7 @@ async def update_profile(
         role=user.role,
         subscription_plan=user.subscription_plan,
         status=user.status,
+        email_verified=user.email_verified,
         created_at=user.created_at.isoformat() if user.created_at else "",
     )
 
@@ -193,7 +194,7 @@ async def complete_onboarding(
         db.add(prefs)
 
     prefs.preferred_summary_type = body.preferred_summary_type
-    prefs.updated_at = datetime.now(UTC)
+    prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
     # Save categories
     await db.execute(delete(UserCategory).where(UserCategory.user_id == user.id))
