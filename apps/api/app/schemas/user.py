@@ -14,6 +14,7 @@ class UserPreferencesUpdate(BaseModel):
     countries: list[str] | None = None
     cities: list[str] | None = None
     digest_settings: dict | None = None
+    ui_settings: dict | None = None
 
 
 class UserPreferencesResponse(BaseModel):
@@ -26,8 +27,17 @@ class UserPreferencesResponse(BaseModel):
     countries: list[str]
     cities: list[str]
     digest_settings: dict | None = None
+    ui_settings: dict | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ChangePasswordRequest(BaseModel):
+    """Payload for updating user password."""
+
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
 
 
 class ProfileUpdateRequest(BaseModel):

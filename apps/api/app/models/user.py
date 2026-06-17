@@ -119,6 +119,7 @@ class UserPreference(Base):
     theme: Mapped[str | None] = mapped_column(String(20))
     language: Mapped[str | None] = mapped_column(String(20))
     digest_settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ui_settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
 

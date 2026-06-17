@@ -23,6 +23,7 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.auth_service import AuthService
+from app.schemas.user import ChangePasswordRequest
 
 router = APIRouter()
 
@@ -312,3 +313,40 @@ async def revoke_session(
     await auth_service.session_service.revoke_session(session_id)
     await db.commit()
     return MessageResponse(message="Session revoked successfully.")
+
+
+@router.post("/change-password", response_model=MessageResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the user's password."""
+    from datetime import UTC, datetime
+    from app.core.security import verify_password, hash_password, validate_password
+    
+    # 1. Verify current password
+    if not user.password_hash or not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect current password."
+        )
+        
+    # 2. Validate and hash new password
+    try:
+        validate_password(body.new_password)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+        
+    user.password_hash = hash_password(body.new_password)
+    user.updated_at = datetime.now(UTC).replace(tzinfo=None)
+    
+    # 3. Log out of all other devices/sessions for safety
+    auth_service = AuthService(db)
+    await auth_service.logout_all(user.id)
+    
+    await db.commit()
+    return MessageResponse(message="Password changed successfully.")

@@ -93,12 +93,12 @@ export function DigestWidget({ hasActiveDigest }: DigestWidgetProps) {
     weekly: "Weekly Summary",
   };
 
-  const activeNames = Array.from(new Set(activeSubs.map((s: any) => EDITIONS_MAP[s.frequency] || s.frequency)));
+  const activeNames = Array.from(new Set(activeSubs.map((s: any) => (EDITIONS_MAP[s.frequency] || s.frequency) as string)));
   let title = "Morning Digest";
   let desc = "Top 10 stories. 3-minute read. Every day at 7 AM.";
 
   if (activeNames.length === 1) {
-    title = activeNames[0];
+    title = activeNames[0] as string;
     const freq = activeSubs[0].frequency;
     if (freq === "evening") {
       desc = "What you missed today. 3-minute read. Every day at 6 PM.";

@@ -107,6 +107,7 @@ async def get_preferences(
         countries=countries,
         cities=cities,
         digest_settings=prefs.digest_settings if prefs else None,
+        ui_settings=prefs.ui_settings if prefs else None,
     )
 
 
@@ -133,7 +134,13 @@ async def update_preferences(
         prefs.language = body.language
     if body.digest_settings is not None:
         prefs.digest_settings = body.digest_settings
-    prefs.updated_at = datetime.now(UTC)
+    if body.ui_settings is not None:
+        from sqlalchemy.orm.attributes import flag_modified
+        existing = dict(prefs.ui_settings) if prefs.ui_settings else {}
+        existing.update(body.ui_settings)
+        prefs.ui_settings = existing
+        flag_modified(prefs, "ui_settings")
+    prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
     # Update categories if provided
     if body.categories is not None:
@@ -214,7 +221,7 @@ async def delete_account(
 ):
     """Permanently delete the user's account (danger zone)."""
     user.status = "deleted"
-    user.updated_at = datetime.now(UTC)
+    user.updated_at = datetime.now(UTC).replace(tzinfo=None)
     await db.flush()
     return MessageResponse(message="Account deleted.")
 
@@ -610,3 +617,287 @@ async def trigger_digest_delivery(
     
     trigger_digest_delivery_now_task.delay(body.frequency)
     return MessageResponse(message=f"Digest delivery task triggered for frequency '{body.frequency}'.")
+
+
+@router.patch("/notifications/read-all", response_model=MessageResponse)
+async def mark_all_notifications_read(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark all notifications of the user as read."""
+    from app.models.models import Notification
+    from sqlalchemy import update
+
+    await db.execute(
+        update(Notification)
+        .where(Notification.user_id == user.id)
+        .values(is_read=True)
+    )
+    await db.flush()
+    return MessageResponse(message="All notifications marked as read.")
+
+
+@router.get("/history")
+async def get_reading_history(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get user's recent reading history (view_story events)."""
+    from app.models.models import UserEvent, Story, Category
+    from sqlalchemy.orm import selectinload
+    
+    # Query user events of type 'view_story'
+    stmt = (
+        select(UserEvent)
+        .where(UserEvent.user_id == user.id, UserEvent.event_type == "view_story")
+        .order_by(UserEvent.created_at.desc())
+        .limit(100)
+    )
+    res = await db.execute(stmt)
+    events = res.scalars().all()
+    
+    # Map category slugs to css classes
+    cat_class_map = {
+        "politics": "bp",
+        "technology": "bt",
+        "business": "bb",
+        "sports": "bs",
+        "health": "bh",
+        "science": "bsc",
+        "world": "bwl",
+        "weather": "bw",
+        "entertainment": "be",
+    }
+    
+    history_items = []
+    for idx, event in enumerate(events):
+        if not event.story_id:
+            continue
+        # Fetch story details
+        story_res = await db.execute(
+            select(Story)
+            .options(
+                selectinload(Story.category),
+                selectinload(Story.articles)
+            )
+            .where(Story.id == event.story_id)
+        )
+        story = story_res.scalar_one_or_none()
+        if not story:
+            continue
+            
+        cat_name = story.category.name if story.category else "General"
+        cat_slug = story.category.slug if story.category else "general"
+        cat_class = cat_class_map.get(cat_slug, "bg")
+        
+        # Check if today
+        now = datetime.now(UTC).replace(tzinfo=None)
+        is_today = event.created_at.date() == now.date()
+        
+        history_items.append({
+            "id": str(event.id),
+            "num": idx + 1,
+            "title": story.headline,
+            "category": cat_name,
+            "catClass": cat_class,
+            "sources": f"{len(story.articles)} sources",
+            "time": event.created_at.isoformat(),
+            "isToday": is_today,
+        })
+        
+    return history_items
+
+
+@router.delete("/history/{event_id}", response_model=MessageResponse)
+async def delete_history_item(
+    event_id: uuid.UUID,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a specific history event."""
+    from app.models.models import UserEvent
+    
+    stmt = select(UserEvent).where(UserEvent.id == event_id, UserEvent.user_id == user.id)
+    res = await db.execute(stmt)
+    event = res.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="History item not found")
+        
+    await db.delete(event)
+    await db.flush()
+    return MessageResponse(message="History item removed.")
+
+
+@router.delete("/history", response_model=MessageResponse)
+async def clear_all_history(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear all reading history events."""
+    from app.models.models import UserEvent
+    
+    await db.execute(
+        delete(UserEvent)
+        .where(UserEvent.user_id == user.id, UserEvent.event_type == "view_story")
+    )
+    await db.flush()
+    return MessageResponse(message="Reading history cleared.")
+
+
+@router.post("/subscription/upgrade", response_model=UserResponse)
+async def upgrade_subscription(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Simulate upgrading the user's subscription to Pro."""
+    user.subscription_plan = "pro"
+    user.updated_at = datetime.now(UTC).replace(tzinfo=None)
+    await db.flush()
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        name=user.name,
+        image_url=user.image_url,
+        role=user.role,
+        subscription_plan=user.subscription_plan,
+        status=user.status,
+        email_verified=user.email_verified,
+        created_at=user.created_at.isoformat() if user.created_at else "",
+    )
+
+
+@router.post("/subscription/cancel", response_model=UserResponse)
+async def cancel_subscription(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Downgrade the user's subscription to Free."""
+    user.subscription_plan = "free"
+    user.updated_at = datetime.now(UTC).replace(tzinfo=None)
+    await db.flush()
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        name=user.name,
+        image_url=user.image_url,
+        role=user.role,
+        subscription_plan=user.subscription_plan,
+        status=user.status,
+        email_verified=user.email_verified,
+        created_at=user.created_at.isoformat() if user.created_at else "",
+    )
+
+
+@router.get("/export-data")
+async def export_user_data(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export all user data as a JSON file."""
+    from app.models.models import Bookmark, Notification, UserEvent, SearchHistory
+    
+    # 1. Fetch preferences
+    pref_res = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
+    pref = pref_res.scalar_one_or_none()
+    
+    # 2. Fetch bookmarks
+    bookmarks_res = await db.execute(select(Bookmark).where(Bookmark.user_id == user.id))
+    bookmarks = bookmarks_res.scalars().all()
+    
+    # 3. Fetch notifications
+    notifications_res = await db.execute(select(Notification).where(Notification.user_id == user.id))
+    notifications = notifications_res.scalars().all()
+    
+    # 4. Fetch events
+    events_res = await db.execute(select(UserEvent).where(UserEvent.user_id == user.id))
+    events = events_res.scalars().all()
+    
+    # 5. Fetch search history
+    search_res = await db.execute(select(SearchHistory).where(SearchHistory.user_id == user.id))
+    searches = search_res.scalars().all()
+    
+    export = {
+        "profile": {
+            "id": str(user.id),
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "subscription_plan": user.subscription_plan,
+            "status": user.status,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+        },
+        "preferences": {
+            "preferred_summary_type": pref.preferred_summary_type if pref else None,
+            "theme": pref.theme if pref else None,
+            "language": pref.language if pref else None,
+            "digest_settings": pref.digest_settings if pref else None,
+            "ui_settings": pref.ui_settings if pref else None,
+        },
+        "bookmarks": [str(b.story_id) for b in bookmarks],
+        "notifications": [
+            {
+                "id": str(n.id),
+                "title": n.title,
+                "body": n.body,
+                "type": n.notification_type,
+                "is_read": n.is_read,
+                "created_at": n.created_at.isoformat() if n.created_at else None,
+            }
+            for n in notifications
+        ],
+        "reading_history": [
+            {
+                "id": str(e.id),
+                "story_id": str(e.story_id) if e.story_id else None,
+                "event_type": e.event_type,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in events
+        ],
+        "search_history": [
+            {
+                "id": str(s.id),
+                "query": s.query,
+                "searched_at": s.searched_at.isoformat() if s.searched_at else None,
+            }
+            for s in searches
+        ]
+    }
+    
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=export,
+        headers={"Content-Disposition": f"attachment; filename=newsiq_data_export_{user.id}.json"}
+    )
+
+
+@router.post("/clear-personalisation", response_model=MessageResponse)
+async def clear_personalisation_data(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Wipe reading history and search history, and clear personalization settings."""
+    from app.models.models import UserEvent, SearchHistory
+    
+    # Delete all user events and search history
+    await db.execute(delete(UserEvent).where(UserEvent.user_id == user.id))
+    await db.execute(delete(SearchHistory).where(SearchHistory.user_id == user.id))
+    
+    # Reset personalization settings in preferences
+    result = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
+    prefs = result.scalar_one_or_none()
+    if prefs:
+        if prefs.ui_settings:
+            ui = dict(prefs.ui_settings)
+            ui["personaliseHistory"] = True
+            ui["personaliseDigest"] = True
+            ui["trackClick"] = True
+            ui["shareUsage"] = True
+            ui["uxResearch"] = False
+            prefs.ui_settings = ui
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(prefs, "ui_settings")
+        prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
+        
+    await db.flush()
+    return MessageResponse(message="Personalisation data successfully cleared.")
