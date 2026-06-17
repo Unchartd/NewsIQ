@@ -642,7 +642,6 @@ function SettingsContent() {
         dateTimeFormat,
       }
     });
-    triggerToast("Profile saved", "s");
   };
 
   const discardProfileChanges = () => {
