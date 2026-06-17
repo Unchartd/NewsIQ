@@ -297,7 +297,7 @@ function SettingsContent() {
 
   // Digest subscription update mutation
   const updateDigestMutation = useMutation({
-    mutationFn: async (payload: { frequency: string; delivery_channel: string; enabled: boolean }) => {
+    mutationFn: async (payload: { frequency: string; delivery_channel?: string; enabled: boolean }) => {
       const response = await apiClient.patch("/users/digests", payload);
       return response.data;
     },
@@ -1131,8 +1131,19 @@ function SettingsContent() {
                 const isSubscribed = digestSubscriptions.some(
                   (s: { frequency: string }) => s.frequency === ed.key
                 );
-                const isEnabled = isDigestEnabled(ed.key, "email");
+                const isEnabled = digestSubscriptions.some(
+                  (s: { frequency: string; enabled: boolean }) =>
+                    s.frequency === ed.key && s.enabled
+                );
                 const isBusy = isLoadingDigests || updateDigestMutation.isPending;
+                const channels = digestSubscriptions
+                  .filter((s: { frequency: string }) => s.frequency === ed.key)
+                  .map((s: { delivery_channel: string }) => {
+                    if (s.delivery_channel === "in_app") return "in-app";
+                    return s.delivery_channel;
+                  });
+                const channelsText = channels.length > 0 ? `· via ${channels.join(" & ")}` : "· via email";
+
                 return (
                   <div
                     key={ed.key}
@@ -1161,7 +1172,7 @@ function SettingsContent() {
                             type="checkbox"
                             checked={isEnabled}
                             disabled={isBusy}
-                            onChange={(e) => updateDigestMutation.mutate({ frequency: ed.key, delivery_channel: "email", enabled: e.target.checked })}
+                            onChange={(e) => updateDigestMutation.mutate({ frequency: ed.key, enabled: e.target.checked })}
                           />
                           <div className="tog-track"></div>
                           <div className="tog-thumb"></div>
@@ -1182,13 +1193,13 @@ function SettingsContent() {
                           <svg width="6" height="6" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4" /></svg>
                           {isEnabled ? "Active" : "Paused"}
                         </span>
-                        <span style={{ fontSize: 11, color: "var(--ink3)" }}>· via email</span>
+                        <span style={{ fontSize: 11, color: "var(--ink3)" }}>{channelsText}</span>
                       </div>
                     ) : (
                       <button
                         className="btnp btnsm"
                         disabled={isBusy}
-                        onClick={() => updateDigestMutation.mutate({ frequency: ed.key, delivery_channel: "email", enabled: true })}
+                        onClick={() => updateDigestMutation.mutate({ frequency: ed.key, enabled: true })}
                         style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 13px", width: "fit-content", opacity: isBusy ? 0.6 : 1 }}
                       >
                         <svg width="12" height="12"><use href="#i-bell" /></svg>

@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { Bell, Crown } from "lucide-react";
 import type { Story } from "@/types";
+import { useQuery } from "@tanstack/react-query";
+import { useAuthStore } from "@/stores/auth-store";
+import apiClient from "@/lib/api-client";
 
 /* ─── Trending Widget ──────────────────────────── */
 interface TrendingWidgetProps {
@@ -57,18 +60,62 @@ export function TopSourcesWidget() {
 }
 
 /* ─── Digest CTA Widget ──────────────────────── */
-export function DigestWidget() {
+interface DigestWidgetProps {
+  hasActiveDigest?: boolean;
+}
+
+export function DigestWidget({ hasActiveDigest }: DigestWidgetProps) {
+  const { isAuthenticated } = useAuthStore();
+
+  const { data: digestSubscriptions = [] } = useQuery({
+    queryKey: ["digest-subscriptions"],
+    queryFn: async () => {
+      const response = await apiClient.get("/users/digests");
+      return response.data;
+    },
+    enabled: isAuthenticated && hasActiveDigest === undefined,
+  });
+
+  const isSetup = hasActiveDigest !== undefined
+    ? hasActiveDigest
+    : digestSubscriptions.length > 0;
+
+  const isActive = hasActiveDigest !== undefined
+    ? hasActiveDigest
+    : digestSubscriptions.some((s: any) => s.enabled);
+
   return (
     <div className="widget">
       <div className="dwidget">
-        <div className="dw-t">Morning Digest</div>
+        <div className="dw-t">
+          Morning Digest
+          {isActive && (
+            <span style={{
+              marginLeft: 8, fontSize: 10, fontWeight: 700,
+              padding: "2px 7px", borderRadius: 99,
+              background: "rgba(22,163,74,.15)", color: "var(--green)",
+              verticalAlign: "middle",
+            }}>
+              Active
+            </span>
+          )}
+        </div>
         <div className="dw-s">Top 10 stories. 3-minute read. Every day at 7 AM.</div>
-        <Link href="/digest/setup">
-          <button className="btnp">
-            <Bell size={14} />
-            Subscribe free
-          </button>
-        </Link>
+        {isSetup ? (
+          <Link href="/digest/manage">
+            <button className="btno" style={{ width: "100%", justifyContent: "center", marginTop: 4 }}>
+              <Bell size={13} />
+              Manage digest
+            </button>
+          </Link>
+        ) : (
+          <Link href="/digest/setup">
+            <button className="btnp">
+              <Bell size={14} />
+              Subscribe free
+            </button>
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -128,9 +175,10 @@ export function TrendingWidgetSkeleton() {
 interface SidebarWidgetsProps {
   trendingStories?: Story[];
   isLoading?: boolean;
+  hasActiveDigest?: boolean;
 }
 
-export function SidebarWidgets({ trendingStories = [], isLoading = false }: SidebarWidgetsProps) {
+export function SidebarWidgets({ trendingStories = [], isLoading = false, hasActiveDigest }: SidebarWidgetsProps) {
   return (
     <div className="sticky-p">
       {isLoading ? (
@@ -139,7 +187,7 @@ export function SidebarWidgets({ trendingStories = [], isLoading = false }: Side
         trendingStories.length > 0 && <TrendingWidget stories={trendingStories} />
       )}
       <TopSourcesWidget />
-      <DigestWidget />
+      <DigestWidget hasActiveDigest={hasActiveDigest} />
       <PremiumUpsellWidget />
     </div>
   );

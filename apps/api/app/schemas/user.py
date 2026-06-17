@@ -66,7 +66,7 @@ class DigestSubscriptionUpdate(BaseModel):
     """Schema for updating digest subscriptions."""
 
     frequency: str = Field(..., pattern="^(morning|midday|evening|weekly)$")
-    delivery_channel: str = Field(..., pattern="^(in_app|email|telegram|push)$")
+    delivery_channel: str | None = Field(default=None, pattern="^(in_app|email|telegram|push)$")
     enabled: bool
 
 

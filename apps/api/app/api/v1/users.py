@@ -313,23 +313,48 @@ async def update_digest_subscriptions(
     """Update or create digest subscriptions and sync digest_settings in preferences."""
     from app.models.models import DigestSubscription
 
-    result = await db.execute(
-        select(DigestSubscription).where(
-            DigestSubscription.user_id == user.id,
-            DigestSubscription.frequency == body.frequency,
-            DigestSubscription.delivery_channel == body.delivery_channel,
+    if body.delivery_channel:
+        result = await db.execute(
+            select(DigestSubscription).where(
+                DigestSubscription.user_id == user.id,
+                DigestSubscription.frequency == body.frequency,
+                DigestSubscription.delivery_channel == body.delivery_channel,
+            )
         )
-    )
-    sub = result.scalar_one_or_none()
-    if not sub:
-        sub = DigestSubscription(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            frequency=body.frequency,
-            delivery_channel=body.delivery_channel,
+        sub = result.scalar_one_or_none()
+        if not sub:
+            sub = DigestSubscription(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                frequency=body.frequency,
+                delivery_channel=body.delivery_channel,
+            )
+            db.add(sub)
+        sub.enabled = body.enabled
+    else:
+        # Channel-agnostic update: update all channels for this frequency
+        result = await db.execute(
+            select(DigestSubscription).where(
+                DigestSubscription.user_id == user.id,
+                DigestSubscription.frequency == body.frequency,
+            )
         )
-        db.add(sub)
-    sub.enabled = body.enabled
+        subs = result.scalars().all()
+        if not subs:
+            # If no subscription exists for this frequency and enabling, create defaults
+            if body.enabled:
+                for channel in ["email", "in_app"]:
+                    new_sub = DigestSubscription(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        frequency=body.frequency,
+                        delivery_channel=channel,
+                        enabled=True,
+                    )
+                    db.add(new_sub)
+        else:
+            for sub in subs:
+                sub.enabled = body.enabled
     await db.flush()
 
     # --- Sync digest_settings in UserPreference so setup page stays consistent ---
