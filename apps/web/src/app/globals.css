@@ -129,6 +129,8 @@
   --cat-world: #374151;
   --cat-entertainment: #C026D3;
   --cat-lifestyle: #EC4899;
+  --cat-travel: #F97316;
+  --cat-education: #10B981;
 
   /* Shadows */
   --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
@@ -178,6 +180,8 @@
   --cat-wld: #374151;
   --cat-ent: #c026d3;
   --cat-lif: #ec4899;
+  --cat-tvl: #f97316;
+  --cat-edu: #10b981;
   --fd: "Newsreader", Georgia, serif;
   --fb: "Inter", -apple-system, sans-serif;
   --r4: 4px;
@@ -1230,6 +1234,14 @@
 .bl {
   background: rgba(236, 72, 153, 0.1);
   color: var(--cat-lif);
+}
+.btv {
+  background: rgba(249, 115, 22, 0.1);
+  color: var(--cat-tvl);
+}
+.bed {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--cat-edu);
 }
 
 /* ── BUTTONS EXTENDED ── */
@@ -3116,6 +3128,8 @@ textarea.field-input{height:90px;padding:10px 12px;resize:vertical;line-height:1
 .bwl{background:rgba(55,65,81,.1);color:var(--cat-wld)}
 .be{background:rgba(192,38,211,.1);color:var(--cat-ent)}
 .bl{background:rgba(236,72,153,.1);color:var(--cat-lif)}
+.btv{background:rgba(249,115,22,.1);color:var(--cat-tvl)}
+.bed{background:rgba(16,185,129,.1);color:var(--cat-edu)}
 .bh{background:rgba(3,105,161,.1);color:var(--cat-hlt)}
 .bw{background:rgba(14,116,144,.1);color:var(--cat-wea)}
 

@@ -21,6 +21,10 @@ const CATEGORY_CLASS_MAP: Record<string, string> = {
   ent: "be",
   lifestyle: "bl",
   lif: "bl",
+  travel: "btv",
+  tvl: "btv",
+  education: "bed",
+  edu: "bed",
 };
 
 interface CategoryBadgeProps {

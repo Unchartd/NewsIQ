@@ -22,6 +22,8 @@ CATEGORIES = [
     {"slug": "science", "name": "Science", "icon": "flask-conical"},
     {"slug": "entertainment", "name": "Entertainment", "icon": "clapperboard"},
     {"slug": "lifestyle", "name": "Lifestyle", "icon": "sparkles"},
+    {"slug": "travel", "name": "Travel", "icon": "plane"},
+    {"slug": "education", "name": "Education", "icon": "graduation-cap"},
     {"slug": "weather", "name": "Weather", "icon": "cloud-sun"},
     {"slug": "world", "name": "World", "icon": "globe"},
 ]
