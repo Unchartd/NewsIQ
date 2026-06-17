@@ -80,15 +80,43 @@ export function DigestWidget({ hasActiveDigest }: DigestWidgetProps) {
     ? hasActiveDigest
     : digestSubscriptions.length > 0;
 
+  const activeSubs = digestSubscriptions.filter((s: any) => s.enabled);
   const isActive = hasActiveDigest !== undefined
     ? hasActiveDigest
-    : digestSubscriptions.some((s: any) => s.enabled);
+    : activeSubs.length > 0;
+
+  // Make title & description dynamic based on active subscriptions
+  const EDITIONS_MAP: Record<string, string> = {
+    morning: "Morning Digest",
+    midday: "Midday Brief",
+    evening: "Evening Wrap",
+    weekly: "Weekly Summary",
+  };
+
+  const activeNames = Array.from(new Set(activeSubs.map((s: any) => EDITIONS_MAP[s.frequency] || s.frequency)));
+  let title = "Morning Digest";
+  let desc = "Top 10 stories. 3-minute read. Every day at 7 AM.";
+
+  if (activeNames.length === 1) {
+    title = activeNames[0];
+    const freq = activeSubs[0].frequency;
+    if (freq === "evening") {
+      desc = "What you missed today. 3-minute read. Every day at 6 PM.";
+    } else if (freq === "midday") {
+      desc = "Quick catch-up on what's moving. Every day at 1 PM.";
+    } else if (freq === "weekly") {
+      desc = "Biggest stories of the week. Every Sunday.";
+    }
+  } else if (activeNames.length > 1) {
+    title = "Your Digests";
+    desc = `${activeNames.length} active editions configured.`;
+  }
 
   return (
     <div className="widget">
       <div className="dwidget">
         <div className="dw-t">
-          Morning Digest
+          {title}
           {isActive && (
             <span style={{
               marginLeft: 8, fontSize: 10, fontWeight: 700,
@@ -100,9 +128,9 @@ export function DigestWidget({ hasActiveDigest }: DigestWidgetProps) {
             </span>
           )}
         </div>
-        <div className="dw-s">Top 10 stories. 3-minute read. Every day at 7 AM.</div>
+        <div className="dw-s">{desc}</div>
         {isSetup ? (
-          <Link href="/digest/manage">
+          <Link href="/settings?tab=notif">
             <button className="btno" style={{ width: "100%", justifyContent: "center", marginTop: 4 }}>
               <Bell size={13} />
               Manage digest

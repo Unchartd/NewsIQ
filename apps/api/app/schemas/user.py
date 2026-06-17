@@ -1,5 +1,6 @@
 """Pydantic schemas for user profile and preferences."""
 
+import uuid
 from pydantic import BaseModel, Field
 
 
@@ -52,7 +53,7 @@ class OnboardingRequest(BaseModel):
 class NotificationResponse(BaseModel):
     """Schema for notification response."""
 
-    id: str
+    id: uuid.UUID
     title: str | None
     body: str | None
     notification_type: str | None
@@ -73,7 +74,7 @@ class DigestSubscriptionUpdate(BaseModel):
 class DigestSubscriptionResponse(BaseModel):
     """Schema for digest subscription response."""
 
-    id: str
+    id: uuid.UUID
     frequency: str | None
     delivery_channel: str | None
     enabled: bool
