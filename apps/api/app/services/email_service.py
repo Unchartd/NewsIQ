@@ -370,7 +370,228 @@ class EmailService:
         html_content = self._get_password_reset_html(name, reset_link)
         text_content = f"Hello {name},\n\nPlease reset your password by opening the following link in your browser:\n{reset_link}\n\nThis link will expire in 1 hour."
 
-        await self._send(user.email, subject, html_content, text_content, "password reset", token)
+    def _get_digest_html(self, name: str, title: str, stories: list[dict]) -> str:
+        """Generate a modern, beautiful responsive HTML template for a news digest."""
+        current_year = datetime.now().year
+        story_cards_html = ""
+        
+        for index, story in enumerate(stories):
+            headline = story.get("headline", "")
+            one_line = story.get("one_line_summary", "")
+            short_sum = story.get("short_summary", "")
+            story_id = story.get("story_id", "")
+            link = f"{settings.FRONTEND_URL}/story/{story_id}"
+            
+            story_cards_html += f"""
+            <div class="story-card">
+              <div class="story-tag">Story #{index + 1}</div>
+              <h2 class="story-title"><a href="{link}" target="_blank">{headline}</a></h2>
+              <div class="story-one-line">&ldquo;{one_line}&rdquo;</div>
+              <p class="story-desc">{short_sum}</p>
+              <div class="story-footer">
+                <a href="{link}" class="story-link" target="_blank">Explore Full Coverage &rarr;</a>
+              </div>
+            </div>
+            """
+
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f7f7f5;
+      color: #0d0d0d;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }}
+    .wrapper {{
+      width: 100%;
+      background-color: #f7f7f5;
+      padding: 40px 20px;
+      box-sizing: border-box;
+    }}
+    .container {{
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border: 1px solid #e8e8e8;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+    }}
+    .header {{
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 1px solid #f1f1f0;
+      padding-bottom: 20px;
+    }}
+    .logo-container {{
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }}
+    .logo-icon {{
+      width: 38px;
+      height: 38px;
+      background-color: #C41E3A;
+      border-radius: 10px;
+      display: inline-block;
+      vertical-align: middle;
+      text-align: center;
+      line-height: 38px;
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: bold;
+    }}
+    .logo-text {{
+      font-size: 22px;
+      font-weight: 700;
+      color: #0d0d0d;
+      vertical-align: middle;
+      margin-left: 10px;
+      letter-spacing: -0.02em;
+    }}
+    .digest-meta {{
+      font-size: 12px;
+      color: #71717a;
+      margin-top: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }}
+    h1 {{
+      font-size: 26px;
+      font-weight: 800;
+      color: #0d0d0d;
+      margin-top: 10px;
+      margin-bottom: 5px;
+      letter-spacing: -0.03em;
+    }}
+    .story-card {{
+      margin-bottom: 30px;
+      padding: 24px;
+      background-color: #fafafa;
+      border: 1px solid #f1f1f0;
+      border-radius: 12px;
+    }}
+    .story-tag {{
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #7c3aed;
+      background-color: rgba(124, 58, 237, 0.05);
+      padding: 3px 8px;
+      border-radius: 99px;
+      margin-bottom: 12px;
+    }}
+    .story-title {{
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.35;
+      margin-top: 0;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }}
+    .story-title a {{
+      color: #0d0d0d;
+      text-decoration: none;
+    }}
+    .story-title a:hover {{
+      color: #C41E3A;
+    }}
+    .story-one-line {{
+      font-size: 13px;
+      font-weight: 500;
+      font-style: italic;
+      color: #4b5563;
+      background-color: rgba(124, 58, 237, 0.02);
+      border-left: 3px solid #7c3aed;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      border-radius: 0 8px 8px 0;
+    }}
+    .story-desc {{
+      font-size: 14px;
+      line-height: 1.5;
+      color: #52525b;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }}
+    .story-footer {{
+      text-align: right;
+    }}
+    .story-link {{
+      font-size: 13px;
+      font-weight: 600;
+      color: #C41E3A;
+      text-decoration: none;
+    }}
+    .footer {{
+      margin-top: 40px;
+      border-top: 1px solid #e8e8e8;
+      padding-top: 24px;
+      font-size: 12px;
+      color: #71717a;
+      line-height: 1.6;
+      text-align: center;
+    }}
+    .footer a {{
+      color: #C41E3A;
+      text-decoration: none;
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <a href="{settings.FRONTEND_URL}" class="logo-container">
+          <span class="logo-icon">⚡</span>
+          <span class="logo-text">NewsIQ</span>
+        </a>
+        <h1>{title}</h1>
+        <p class="digest-meta">Personalized Briefing for {name}</p>
+      </div>
+      
+      <div class="content">
+        {story_cards_html}
+      </div>
+      
+      <div class="footer">
+        <p>You received this email because you are subscribed to the {title}.</p>
+        <p><a href="{settings.FRONTEND_URL}/settings?tab=notif">Manage Subscription Settings</a> | <a href="{settings.FRONTEND_URL}/settings?tab=notif">Unsubscribe</a></p>
+        <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+    async def send_digest_email(self, user: User, edition_title: str, stories: list[dict]) -> None:
+        """Send a beautiful news digest HTML email to the user."""
+        name = user.name or "Subscriber"
+        subject = f"Your NewsIQ {edition_title}"
+        
+        html_content = self._get_digest_html(name, edition_title, stories)
+        
+        # Simple plain text version
+        story_texts = []
+        for index, story in enumerate(stories):
+            headline = story.get("headline", "")
+            one_line = story.get("one_line_summary", "")
+            story_id = story.get("story_id", "")
+            link = f"{settings.FRONTEND_URL}/story/{story_id}"
+            story_texts.append(f"{index + 1}. {headline}\n   \"{one_line}\"\n   Link: {link}")
+        text_content = f"Hello {name},\n\nHere is your NewsIQ {edition_title}:\n\n" + "\n\n".join(story_texts) + f"\n\nManage your settings here: {settings.FRONTEND_URL}/settings?tab=notif"
+
+        await self._send(user.email, subject, html_content, text_content, "digest", "")
 
     async def _send(
         self,

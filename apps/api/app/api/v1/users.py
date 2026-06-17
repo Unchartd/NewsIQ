@@ -21,6 +21,7 @@ from app.schemas.user import (
     DigestSetupRequest,
     DigestSubscriptionResponse,
     DigestSubscriptionUpdate,
+    DigestTriggerRequest,
     NotificationResponse,
     OnboardingRequest,
     ProfileUpdateRequest,
@@ -597,3 +598,15 @@ async def track_user_event(
         # Non-critical — swallow errors so client is never blocked
         await db.rollback()
     return MessageResponse(message="Event recorded.")
+
+
+@router.post("/digests/trigger-delivery", response_model=MessageResponse)
+async def trigger_digest_delivery(
+    body: DigestTriggerRequest,
+    user: User = Depends(require_user),
+):
+    """Manually trigger Celery background tasks to generate and deliver news digests."""
+    from app.workers.digest_tasks import trigger_digest_delivery_now_task
+    
+    trigger_digest_delivery_now_task.delay(body.frequency)
+    return MessageResponse(message=f"Digest delivery task triggered for frequency '{body.frequency}'.")

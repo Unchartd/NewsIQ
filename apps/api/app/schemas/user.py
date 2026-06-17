@@ -96,3 +96,9 @@ class DigestSetupRequest(BaseModel):
     weekly_wrap: bool
     channels: dict[str, bool]
     email_format: str  # html, text
+
+
+class DigestTriggerRequest(BaseModel):
+    """Payload for manually triggering digest generation and delivery."""
+
+    frequency: str = Field(..., pattern="^(morning|midday|evening|weekly)$")
