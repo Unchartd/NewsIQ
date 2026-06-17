@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { CategoryTabs } from "@/components/layout/category-tabs";
@@ -15,6 +16,7 @@ import type { Story } from "@/types";
 
 const CATEGORIES = [
   { slug: "all", name: "All" },
+  { slug: "personalized", name: "For You" },
   { slug: "politics", name: "Politics" },
   { slug: "technology", name: "Technology" },
   { slug: "business", name: "Business" },
@@ -26,26 +28,31 @@ const CATEGORIES = [
 ];
 
 export function HomeContent() {
+  const router = useRouter();
   const [category, setCategory] = useState<string>("all");
   const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
 
-  // Serve personalized feed when authenticated + on the "all" tab.
+  // Serve personalized feed when authenticated + on the "personalized" tab.
   // We wait for auth initialization to be finished before deciding.
-  const isPersonalized = !isAuthLoading && isAuthenticated && category === "all";
+  const isPersonalized = !isAuthLoading && isAuthenticated && category === "personalized";
 
   const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
     queryKey: isPersonalized ? ["stories", "personalized"] : ["stories", category],
     queryFn: async () => {
-      if (isPersonalized) {
+      if (category === "personalized") {
+        if (!isAuthenticated) {
+          return [];
+        }
         try {
           const res = await apiClient.get("/stories/feed/personalized");
           return res.data;
         } catch (err: any) {
           // If the personalized feed fails with 401 despite our auth state, 
-          // we fall through to the global feed.
+          // we return empty array.
           if (err.response?.status !== 401) {
              throw err;
           }
+          return [];
         }
       }
       const params: Record<string, string> = {};
@@ -85,7 +92,7 @@ export function HomeContent() {
     >
       {/* Section label — fixed height, never changes */}
       <div className="slbl" style={{ marginTop: 24 }}>
-        {isPersonalized ? "Your Personalized Feed" : "Top Stories"}
+        {category === "personalized" ? "Your Personalized Feed" : "Top Stories"}
       </div>
 
       {/* Feed Content — all states use .feed-list so dimensions are stable */}
@@ -105,15 +112,29 @@ export function HomeContent() {
       ) : !stories || stories.length === 0 ? (
         <EmptyState
           icon={Newspaper}
-          title="No stories found"
+          title={
+            category === "personalized" && !isAuthenticated
+              ? "Personalized Feed"
+              : "No stories found"
+          }
           description={
-            category !== "all"
+            category === "personalized" && !isAuthenticated
+              ? "Please sign in to customize your feed by category and country preferences."
+              : category !== "all" && category !== "personalized"
               ? "No stories matched the selected filters. Try changing filters."
               : "No news stories have been clustered yet. Trigger ingestion to populate the feed."
           }
-          actionLabel={category !== "all" ? "Clear Filters" : "Trigger News Ingestion"}
+          actionLabel={
+            category === "personalized" && !isAuthenticated
+              ? "Sign In"
+              : category !== "all"
+              ? "Clear Filters"
+              : "Trigger News Ingestion"
+          }
           onAction={
-            category !== "all"
+            category === "personalized" && !isAuthenticated
+              ? () => router.push("/login")
+              : category !== "all"
               ? () => setCategory("all")
               : async () => {
                   try {
