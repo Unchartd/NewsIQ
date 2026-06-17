@@ -298,10 +298,36 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
         </div>
 
         {/* Key Facts */}
-        {story.entities && story.entities.length > 0 && (
+        {story.key_facts && story.key_facts.length > 0 && (
           <>
             <div className="slbl">Key Facts</div>
-            <div className="fgrid">
+            <ul className="kf-list" style={{ listStyleType: "none", padding: 0, margin: "0 0 28px 0" }}>
+              {story.key_facts.map((fact, i) => (
+                <li
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    marginBottom: 10,
+                    fontSize: 14.5,
+                    color: "var(--ink2)",
+                    lineHeight: 1.55,
+                  }}
+                >
+                  <span style={{ color: "var(--primary)", fontWeight: "bold", fontSize: 16, lineHeight: 1.2 }}>•</span>
+                  <span>{fact}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {/* Key Entities */}
+        {story.entities && story.entities.length > 0 && (
+          <>
+            <div className="slbl">Key Entities</div>
+            <div className="fgrid" style={{ marginBottom: 28 }}>
               {story.entities.slice(0, 4).map((fact, i) => (
                 <div key={fact.id || i} className="fchip">
                   <div className="flbl">{fact.entity_type}</div>

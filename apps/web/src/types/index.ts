@@ -82,6 +82,7 @@ export interface Story {
   one_line_summary: string;
   short_summary: string;
   detailed_summary: string;
+  key_facts: string[];
   category: Category | null;
   location_country: string | null;
   location_state: string | null;

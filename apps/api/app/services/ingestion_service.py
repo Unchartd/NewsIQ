@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import canonicalize_url
 from app.models.models import Article, Source
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,10 @@ class IngestionService:
         new_articles_count = 0
 
         for entry in parsed_feed.entries:
-            url = getattr(entry, "link", None)
-            if not url:
+            raw_url = getattr(entry, "link", None)
+            if not raw_url:
                 continue
+            url = canonicalize_url(raw_url)
 
             # Deduplication: Check if article with this URL already exists
             stmt = select(Article).where(Article.url == url)
