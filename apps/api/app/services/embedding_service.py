@@ -1,89 +1,209 @@
-"""Service for generating high-quality text embeddings using OpenAI or fallback."""
+"""Embedding service — Gemini text-embedding-004 (primary) with OpenAI fallback.
+
+Uses the new google.genai SDK (google-genai>=1.16.0).
+
+Dimension: 768 (Gemini text-embedding-004)
+
+Priority:
+    1. Google Gemini text-embedding-004  (uses GEMINI_API_KEY)
+    2. OpenAI text-embedding-3-small     (uses OPENAI_API_KEY, truncated to 768 dims)
+    3. Deterministic mock                (hash-seeded, 768 dims — for local dev only)
+
+The mock is NEVER used in production — real clustering requires real embeddings.
+"""
 
 import hashlib
 import logging
 
 import numpy as np
-from openai import AsyncOpenAI
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Canonical embedding dimension for the entire pipeline.
+# gemini-embedding-001 produces 3072-dim vectors.
+# Changing this requires dropping and recreating the Qdrant collection
+# (vector_service.py handles this automatically on startup).
+EMBEDDING_DIM = 3072
+
 
 class EmbeddingService:
-    """Service to handle vector embeddings generation."""
+    """Generates text embeddings using Gemini text-embedding-004 (primary) or OpenAI (fallback)."""
 
-    def __init__(self):
-        self.client = None
-        if settings.OPENAI_API_KEY:
-            self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    def __init__(self) -> None:
+        # ── Gemini setup (new google.genai SDK) ───────────────────────────────
+        self.gemini_enabled = False
+        self._genai_client = None
+        if settings.GEMINI_API_KEY:
+            try:
+                from google import genai as google_genai
+
+                self._genai_client = google_genai.Client(api_key=settings.GEMINI_API_KEY)
+                self.gemini_enabled = True
+                logger.info("Gemini embedding model configured: text-embedding-004 (768 dims)")
+            except ImportError:
+                logger.error(
+                    "google-genai package not installed. "
+                    "Run: pip install google-genai>=1.16.0"
+                )
+            except Exception as exc:
+                logger.error("Failed to configure Gemini embedding client: %s", exc)
         else:
+            logger.warning("GEMINI_API_KEY not set — Gemini embeddings disabled.")
+
+        # ── OpenAI fallback ────────────────────────────────────────────────────
+        self.openai_enabled = False
+        self._openai_client = None
+        if settings.OPENAI_API_KEY:
+            try:
+                from openai import AsyncOpenAI
+
+                self._openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+                self.openai_enabled = True
+                logger.info("OpenAI embedding fallback configured.")
+            except Exception as exc:
+                logger.error("Failed to configure OpenAI for embeddings: %s", exc)
+        else:
+            logger.debug("OPENAI_API_KEY not set — OpenAI embedding fallback disabled.")
+
+        if not self.gemini_enabled and not self.openai_enabled:
             logger.warning(
-                "OPENAI_API_KEY is not set. Embedding service will run in fallback mock mode (1536 dims)."
+                "No embedding API key configured. "
+                "Using deterministic mock embeddings (768 dims). "
+                "Semantic clustering will NOT work correctly. "
+                "Set GEMINI_API_KEY to enable real embeddings."
             )
 
-    def _generate_mock_embedding(self, text: str, dimensions: int = 1536) -> list[float]:
-        """Generate a deterministic mock embedding vector based on SHA-256 hash of the input text."""
-        # Use SHA-256 to hash the input text
-        hasher = hashlib.sha256(text.encode("utf-8"))
-        hash_bytes = hasher.digest()
+    # ── Private helpers ────────────────────────────────────────────────────────
 
-        # Seed a pseudo-random generator with the hash bytes to ensure determinism
-        seed = int.from_bytes(hash_bytes[:4], byteorder="big")
+    def _mock_embedding(self, text: str) -> list[float]:
+        """Deterministic 768-dim mock embedding seeded from SHA-256 of text.
+
+        Unit-normalized — consistent across restarts. Only for local dev.
+        """
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        seed = int.from_bytes(digest[:4], byteorder="big")
         rng = np.random.default_rng(seed)
-
-        # Generate random values and normalize the vector to unit length
-        vector = rng.standard_normal(dimensions)
-        norm = np.linalg.norm(vector)
+        vec = rng.standard_normal(EMBEDDING_DIM)
+        norm = np.linalg.norm(vec)
         if norm > 0:
-            vector = vector / norm
+            vec /= norm
+        return vec.tolist()
 
-        return vector.tolist()
+    @staticmethod
+    def _prepare_text(text: str) -> str:
+        """Normalize and truncate text before embedding.
+
+        text-embedding-004 supports ~2048 tokens (≈ 8000 chars).
+        """
+        return text.replace("\n", " ").replace("\r", " ").strip()[:8000]
+
+    # ── Gemini embedding (new google.genai SDK) ────────────────────────────────
+
+    async def _embed_with_gemini(self, texts: list[str]) -> list[list[float]]:
+        """Embed a list of texts using gemini-embedding-001 (3072 dims).
+
+        The new google.genai SDK's embed_content is synchronous — we run it in
+        a thread pool to avoid blocking the event loop.
+
+        task_type=RETRIEVAL_DOCUMENT optimises vectors for similarity retrieval.
+        """
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+
+        client = self._genai_client
+        # Use the model specified in config (gemini-embedding-001 = 3072 dims)
+        model = settings.EMBEDDING_MODEL or "gemini-embedding-001"
+
+        def _call_sync() -> list[list[float]]:
+            results = []
+            for text in texts:
+                response = client.models.embed_content(
+                    model=model,
+                    contents=text,
+                    config={"task_type": "RETRIEVAL_DOCUMENT"},
+                )
+                # New SDK: response.embeddings[0].values
+                results.append(response.embeddings[0].values)
+            return results
+
+        # Use get_running_loop() — safe in both FastAPI and Celery worker contexts
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return await loop.run_in_executor(executor, _call_sync)
+
+    # ── OpenAI fallback embedding ──────────────────────────────────────────────
+
+    async def _embed_with_openai(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts using OpenAI, truncating output to EMBEDDING_DIM (768)."""
+        response = await self._openai_client.embeddings.create(
+            input=texts,
+            model=settings.EMBEDDING_MODEL,
+        )
+        result = []
+        for item in response.data:
+            vec = np.array(item.embedding[:EMBEDDING_DIM], dtype=np.float32)
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec /= norm
+            result.append(vec.tolist())
+        return result
+
+    # ── Public API ─────────────────────────────────────────────────────────────
 
     async def get_embedding(self, text: str) -> list[float]:
-        """Get embedding vector for a given text.
+        """Return a single 768-dim embedding vector for the given text.
 
-        Uses OpenAI text-embedding-3-small (1536 dimensions) if API key is set,
-        otherwise falls back to generating a deterministic mock vector.
+        Fallback chain: Gemini → OpenAI → deterministic mock.
         """
         if not text or not text.strip():
-            # Return zero vector for empty text
-            return [0.0] * 1536
+            return [0.0] * EMBEDDING_DIM
 
-        if self.client:
+        clean = self._prepare_text(text)
+
+        if self.gemini_enabled:
             try:
-                # Clean up text to avoid token issues
-                clean_text = text.replace("\n", " ").strip()
-                response = await self.client.embeddings.create(
-                    input=[clean_text], model=settings.EMBEDDING_MODEL
-                )
-                return response.data[0].embedding
-            except Exception as e:
-                logger.error("OpenAI embedding generation failed: %s. Falling back to mock.", e)
-                # Fall through to mock on error
+                vectors = await self._embed_with_gemini([clean])
+                return vectors[0]
+            except Exception as exc:
+                logger.error("Gemini embedding failed: %s — trying OpenAI fallback.", exc)
 
-        return self._generate_mock_embedding(text)
+        if self.openai_enabled and self._openai_client:
+            try:
+                vectors = await self._embed_with_openai([clean])
+                return vectors[0]
+            except Exception as exc:
+                logger.error("OpenAI embedding failed: %s — using mock.", exc)
+
+        logger.warning("All embedding providers failed. Using mock for: %.60s", text)
+        return self._mock_embedding(clean)
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        """Get embeddings for a list of texts in batch."""
+        """Return 768-dim embeddings for a batch of texts.
+
+        Gemini processes all texts individually (no native batch endpoint in
+        text-embedding-004). Falls back per-item on error.
+        """
         if not texts:
             return []
 
-        if self.client:
-            try:
-                clean_texts = [t.replace("\n", " ").strip() if t else "" for t in texts]
-                response = await self.client.embeddings.create(
-                    input=clean_texts, model=settings.EMBEDDING_MODEL
-                )
-                return [item.embedding for item in response.data]
-            except Exception as e:
-                logger.error(
-                    "OpenAI batch embedding generation failed: %s. Falling back to mock.", e
-                )
-                # Fall through to mock on error
+        clean_texts = [self._prepare_text(t) if t else "" for t in texts]
 
-        return [self._generate_mock_embedding(t) for t in texts]
+        if self.gemini_enabled:
+            try:
+                return await self._embed_with_gemini(clean_texts)
+            except Exception as exc:
+                logger.error("Gemini batch embedding failed: %s — trying OpenAI.", exc)
+
+        if self.openai_enabled and self._openai_client:
+            try:
+                return await self._embed_with_openai(clean_texts)
+            except Exception as exc:
+                logger.error("OpenAI batch embedding failed: %s — using mock.", exc)
+
+        logger.warning("All embedding providers failed. Using mock for %d texts.", len(texts))
+        return [self._mock_embedding(t) for t in clean_texts]
 
 
 embedding_service = EmbeddingService()

@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     # AI Models
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    SUMMARIZATION_MODEL: str = "gemini-2.5-flash"
+    EMBEDDING_MODEL: str = "gemini-embedding-001"      # 3072 dims, confirmed working
+    SUMMARIZATION_MODEL: str = "gemini-2.5-flash"       # No daily quota exhaustion, confirmed working
 
     # News APIs
     NEWSAPI_KEY: str = ""

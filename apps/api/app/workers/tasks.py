@@ -1,4 +1,16 @@
-"""Celery background tasks for ingestion, embedding, and clustering."""
+"""Celery background tasks for ingestion, embedding, and clustering.
+
+Architecture note — Celery prefork + asyncpg + Python 3.12:
+  Celery uses the prefork pool (fork-based). Each worker child inherits the
+  parent's SQLAlchemy async engine whose asyncpg connections are bound to the
+  parent's event loop. Reusing them in a forked child raises:
+      RuntimeError: Future attached to a different loop
+
+Fix: dispose the inherited engine pool inside run_async() before creating a new
+event loop. This forces SQLAlchemy to create fresh asyncpg connections on the
+new loop. The dispose() call is cheap — it doesn't close existing connections
+in other processes, just resets the pool in this process.
+"""
 
 import asyncio
 import logging
@@ -7,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.core.database import async_session_factory
+from app.core.database import async_session_factory, engine
 from app.models.models import Article
 from app.services.embedding_service import embedding_service
 from app.services.ingestion_service import ingestion_service
@@ -18,27 +30,76 @@ logger = logging.getLogger(__name__)
 
 
 def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
-    """Helper to run async coroutines in synchronous Celery tasks."""
+    """Run an async coroutine from a synchronous Celery prefork worker.
+
+    CRITICAL: Disposes the inherited SQLAlchemy connection pool so that the
+    new event loop gets fresh asyncpg connections instead of ones bound to
+    the parent's loop. Without this, every task raises:
+        RuntimeError: Task got Future attached to a different loop
+    """
+    # 1. Dispose the inherited engine pool — resets pool state in this fork.
+    #    New connections will be created on the new event loop below.
     try:
-        return asyncio.run(coro)
-    except RuntimeError:
-        # Event loop is already running in this thread
-        loop = asyncio.get_event_loop()
+        # engine.sync_engine is the underlying synchronous Engine
+        engine.sync_engine.dispose(close=False)
+    except Exception:
+        pass  # Best-effort
+
+    # 2. Create a clean event loop for this task invocation
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
         return loop.run_until_complete(coro)
+    finally:
+        # 3. Cancel any lingering tasks and close the loop
+        try:
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:
+            pass
+        loop.close()
+        asyncio.set_event_loop(None)
 
 
 @celery_app.task(name="app.workers.tasks.ingest_news_task")
 def ingest_news_task() -> dict[str, int]:
-    """Ingest articles from all active news sources."""
-    logger.info("Celery task: Starting news ingestion.")
+    """Ingest articles from all active RSS news sources."""
+    logger.info("Celery task: Starting RSS news ingestion.")
 
     async def _run():
         async with async_session_factory() as session:
             results = await ingestion_service.ingest_all_active_sources(session)
-            # Trigger embedding generation for newly ingested articles
             total_new = sum(results.values())
             if total_new > 0:
-                logger.info("Ingested %d new articles. Triggering embedding generation.", total_new)
+                logger.info("RSS: ingested %d new articles. Triggering embedding.", total_new)
+                process_pending_embeddings_task.delay()
+            return results
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.ingest_gnews_task")
+def ingest_gnews_task() -> dict[str, int]:
+    """Ingest articles from the GNews API across configured categories and countries.
+
+    Rate-limit guard is handled inside GNewsService via Redis TTL locks.
+    Runs every 30 minutes (48 requests/day, well within free-tier 100 req/day limit).
+    """
+    logger.info("Celery task: Starting GNews API ingestion.")
+
+    async def _run():
+        from app.services.gnews_service import gnews_service
+
+        async with async_session_factory() as session:
+            results = await gnews_service.ingest_all(session)
+            total_new = sum(results.values())
+            if total_new > 0:
+                logger.info(
+                    "GNews: ingested %d new articles. Triggering embedding pipeline.", total_new
+                )
                 process_pending_embeddings_task.delay()
             return results
 

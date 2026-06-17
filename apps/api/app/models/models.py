@@ -169,6 +169,9 @@ class Story(Base):
     one_line_summary: Mapped[str | None] = mapped_column(Text)
     short_summary: Mapped[str | None] = mapped_column(Text)
     detailed_summary: Mapped[str | None] = mapped_column(Text)
+    # key_facts: ordered list of bullet-point facts extracted by Gemini
+    # Stored as JSONB array of strings, e.g. ["Fact 1.", "Fact 2.", ...]
+    key_facts: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("categories.id"), index=True
     )

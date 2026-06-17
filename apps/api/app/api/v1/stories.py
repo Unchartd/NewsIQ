@@ -3,8 +3,8 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,19 +28,25 @@ from app.models.models import (
 )
 from app.schemas.story import (
     CategoryResponse,
+    FetchNewsRequest,
+    FetchNewsResponse,
     PopularSourceWidget,
+    ProcessStoryResponse,
     SearchResultResponse,
+    SourceComparisonItem,
     SourceInStory,
     StoryArticleResponse,
+    StoryComparisonResponse,
     StoryDetailResponse,
     StoryListResponse,
     TrendingTopicWidget,
     TrendingWidgetsResponse,
 )
-from app.services.cache_service import TTL_STORY, cache_service
+from app.services.cache_service import TTL_STORY, TTL_TRENDING, cache_service
 from app.services.search_service import search_service
 
 router = APIRouter()
+
 
 
 def _build_story_list_response(story: Story) -> StoryListResponse:
@@ -395,6 +401,7 @@ async def get_story_detail(
         one_line_summary=story.one_line_summary,
         short_summary=story.short_summary,
         detailed_summary=story.detailed_summary,
+        key_facts=story.key_facts or [],
         location_country=story.location_country,
         location_state=story.location_state,
         location_city=story.location_city,
@@ -491,3 +498,211 @@ async def unbookmark_story(
     await db.commit()
     await cache_service.invalidate_story(str(story_id))
     return {"message": "Bookmark removed successfully."}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GET /trending — dedicated trending endpoint with Redis caching
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.get("/trending", response_model=list[StoryListResponse])
+async def get_trending_stories(
+    category: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return stories ranked by trending score (multi-signal: source diversity + recency + engagement).
+
+    Results are cached in Redis for 5 minutes. Cache is scoped per category.
+    """
+    scope = category or "global"
+    cache_key = cache_service.trending_key(scope)
+    if offset == 0:  # Only cache first page
+        cached = await cache_service.get(cache_key)
+        if cached is not None:
+            return [StoryListResponse(**s) for s in cached]
+
+    stmt = select(Story).options(
+        selectinload(Story.category),
+        selectinload(Story.articles)
+        .selectinload(StoryArticle.article)
+        .selectinload(Article.source),
+    ).where(Story.story_status == "active")
+
+    if category:
+        stmt = stmt.join(Category, Story.category_id == Category.id).where(
+            Category.slug == category
+        )
+
+    stmt = stmt.order_by(Story.trend_score.desc()).limit(limit).offset(offset)
+    result = await db.execute(stmt)
+    stories = result.scalars().all()
+    response = [_build_story_list_response(s) for s in stories]
+
+    if offset == 0:
+        await cache_service.set(
+            cache_key,
+            [r.model_dump(mode="json") for r in response],
+            ttl=5 * 60,
+        )
+
+    return response
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GET /{id}/comparison — source comparison view
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.get("/{story_id}/comparison", response_model=StoryComparisonResponse)
+async def get_story_comparison(
+    story_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return per-source difference analysis for a story.
+
+    Combines StoryDifference (unique/missing/contradictions) with
+    StorySourceCoverage (focus area) into a unified comparison view.
+    """
+    stmt = (
+        select(Story)
+        .options(
+            selectinload(Story.differences).selectinload(StoryDifference.source),
+            selectinload(Story.source_coverage).selectinload(StorySourceCoverage.source),
+        )
+        .where(Story.id == story_id)
+    )
+    res = await db.execute(stmt)
+    story = res.scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found.")
+
+    # Build a lookup of focus_area by source_id from source_coverage
+    focus_by_source: dict[uuid.UUID, str] = {
+        sc.source_id: sc.focus_area or "General coverage"
+        for sc in story.source_coverage
+        if sc.source_id
+    }
+
+    # Count unique sources from differences
+    source_ids = {d.source_id for d in story.differences if d.source_id}
+
+    comparison_items = []
+    for diff in story.differences:
+        if not diff.source:
+            continue
+        src = diff.source
+        comparison_items.append(
+            SourceComparisonItem(
+                source=SourceInStory(
+                    id=src.id,
+                    name=src.name,
+                    slug=src.slug,
+                    website_url=src.website_url,
+                    logo_url=src.logo_url,
+                    country_code=src.country_code,
+                ),
+                focus_area=focus_by_source.get(src.id, "General coverage"),
+                unique_information=diff.unique_information,
+                missing_information=diff.missing_information,
+                contradictions=diff.contradictions,
+            )
+        )
+
+    return StoryComparisonResponse(
+        story_id=story.id,
+        headline=story.headline,
+        source_count=len(source_ids),
+        sources=comparison_items,
+        source_coverage=story.source_coverage,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Internal admin trigger endpoints
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/internal/fetch-news", response_model=FetchNewsResponse)
+async def trigger_fetch_news(
+    request: FetchNewsRequest = Body(default_factory=FetchNewsRequest),
+    current_user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually trigger news ingestion (admin only).
+
+    Runs GNews API and/or RSS fetching immediately, outside the Celery schedule.
+    Use this for testing, seeding data, or immediate refresh after an event.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required for internal endpoints.",
+        )
+
+    gnews_count = 0
+    rss_count = 0
+
+    if request.gnews:
+        try:
+            from app.services.gnews_service import gnews_service
+            results = await gnews_service.ingest_all(db)
+            gnews_count = sum(results.values())
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Manual GNews fetch failed: %s", exc)
+
+    if request.rss:
+        try:
+            from app.services.ingestion_service import ingestion_service
+            results = await ingestion_service.ingest_all_active_sources(db)
+            rss_count = sum(results.values())
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Manual RSS fetch failed: %s", exc)
+
+    total = gnews_count + rss_count
+    triggered = False
+    if total > 0:
+        from app.workers.tasks import process_pending_embeddings_task
+        process_pending_embeddings_task.delay()
+        triggered = True
+
+    return FetchNewsResponse(
+        gnews_articles=gnews_count,
+        rss_articles=rss_count,
+        total_articles=total,
+        embedding_triggered=triggered,
+    )
+
+
+@router.post("/internal/process-story", response_model=ProcessStoryResponse)
+async def trigger_process_story(
+    current_user: User = Depends(require_user),
+):
+    """Manually trigger the embedding + clustering pipeline (admin only).
+
+    Queues the embedding task and clustering task via Celery.
+    Results appear asynchronously — poll GET /stories to see new stories.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required for internal endpoints.",
+        )
+
+    from app.workers.tasks import cluster_news_task, process_pending_embeddings_task
+
+    embed_result = process_pending_embeddings_task.delay()
+    cluster_result = cluster_news_task.delay()
+
+    return ProcessStoryResponse(
+        stories_created=0,  # Async — actual count available via Celery result
+        articles_clustered=0,
+        message=(
+            f"Embedding task queued: {embed_result.id}. "
+            f"Clustering task queued: {cluster_result.id}. "
+            "Check GET /stories in ~30s for new stories."
+        ),
+    )
