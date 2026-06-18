@@ -25,18 +25,19 @@ def test_clean_html_none():
 
 
 def test_generate_mock_embedding():
-    """Verify that deterministic mock embeddings generate vectors of length 1536."""
+    """Verify that deterministic mock embeddings generate vectors of correct length."""
+    from app.services.embedding_service import EMBEDDING_DIM
     text1 = "Breaking news about AI developments."
     text2 = "Breaking news about AI developments."
     text3 = "Different news story headline."
 
-    vec1 = embedding_service._generate_mock_embedding(text1)
-    vec2 = embedding_service._generate_mock_embedding(text2)
-    vec3 = embedding_service._generate_mock_embedding(text3)
+    vec1 = embedding_service._mock_embedding(text1)
+    vec2 = embedding_service._mock_embedding(text2)
+    vec3 = embedding_service._mock_embedding(text3)
 
-    assert len(vec1) == 1536
-    assert len(vec2) == 1536
-    assert len(vec3) == 1536
+    assert len(vec1) == EMBEDDING_DIM
+    assert len(vec2) == EMBEDDING_DIM
+    assert len(vec3) == EMBEDDING_DIM
 
     # Check determinism: same input must yield same vector
     assert vec1 == vec2

@@ -136,11 +136,12 @@ class AIService:
         # ── Gemini (new google.genai SDK) ──────────────────────────────────────
         self.gemini_enabled = False
         self._gemini_client = None
-        if settings.GEMINI_API_KEY:
+        api_key = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY
+        if api_key:
             try:
                 from google import genai as google_genai
 
-                self._gemini_client = google_genai.Client(api_key=settings.GEMINI_API_KEY)
+                self._gemini_client = google_genai.Client(api_key=api_key)
                 self.gemini_enabled = True
                 logger.info(
                     "Google Gemini AI configured: model=%s", settings.SUMMARIZATION_MODEL
@@ -153,7 +154,7 @@ class AIService:
             except Exception as exc:
                 logger.error("Failed to configure Google Gemini AI client: %s", exc)
         else:
-            logger.warning("GEMINI_API_KEY is not set. Gemini AI is disabled.")
+            logger.warning("GEMINI_API_KEY_SYNTH or GEMINI_API_KEY is not set. Gemini AI is disabled.")
 
         # ── OpenAI fallback ────────────────────────────────────────────────────
         self.openai_enabled = False

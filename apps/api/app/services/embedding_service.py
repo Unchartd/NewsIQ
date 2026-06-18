@@ -22,10 +22,10 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # Canonical embedding dimension for the entire pipeline.
-# gemini-embedding-001 produces 3072-dim vectors.
+# text-embedding-004 produces 768-dim vectors.
 # Changing this requires dropping and recreating the Qdrant collection
 # (vector_service.py handles this automatically on startup).
-EMBEDDING_DIM = 3072
+EMBEDDING_DIM = 768
 
 
 class EmbeddingService:
@@ -35,13 +35,14 @@ class EmbeddingService:
         # ── Gemini setup (new google.genai SDK) ───────────────────────────────
         self.gemini_enabled = False
         self._genai_client = None
-        if settings.GEMINI_API_KEY:
+        api_key = settings.GEMINI_API_KEY_EMBEDDING or settings.GEMINI_API_KEY
+        if api_key:
             try:
                 from google import genai as google_genai
 
-                self._genai_client = google_genai.Client(api_key=settings.GEMINI_API_KEY)
+                self._genai_client = google_genai.Client(api_key=api_key)
                 self.gemini_enabled = True
-                logger.info("Gemini embedding model configured: text-embedding-004 (768 dims)")
+                logger.info("Gemini embedding model configured: %s (%d dims)", settings.EMBEDDING_MODEL, EMBEDDING_DIM)
             except ImportError:
                 logger.error(
                     "google-genai package not installed. "
@@ -50,7 +51,7 @@ class EmbeddingService:
             except Exception as exc:
                 logger.error("Failed to configure Gemini embedding client: %s", exc)
         else:
-            logger.warning("GEMINI_API_KEY not set — Gemini embeddings disabled.")
+            logger.warning("GEMINI_API_KEY_EMBEDDING or GEMINI_API_KEY not set — Gemini embeddings disabled.")
 
         # ── OpenAI fallback ────────────────────────────────────────────────────
         self.openai_enabled = False

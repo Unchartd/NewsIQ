@@ -46,13 +46,16 @@ async def test_run_batch_clustering(
 
     # Mock DB queries
     # Mocking first query (fetch unclustered articles)
+    from app.services.embedding_service import EMBEDDING_DIM
     mock_execute_result = MagicMock()
     mock_execute_result.scalars.return_value.all.return_value = [art1, art2]
+    mock_execute_result.scalar_one.return_value = 2
+    mock_execute_result.scalar_one_or_none.return_value = None
     mock_db_session.execute.return_value = mock_execute_result
 
     # Mock Qdrant retrieve returning vectors for our two articles
-    mock_point_1 = MagicMock(id=str(article_id_1), vector=[0.1] * 1536)
-    mock_point_2 = MagicMock(id=str(article_id_2), vector=[0.11] * 1536)
+    mock_point_1 = MagicMock(id=str(article_id_1), vector=[0.1] * EMBEDDING_DIM)
+    mock_point_2 = MagicMock(id=str(article_id_2), vector=[0.11] * EMBEDDING_DIM)
     mock_qdrant_client.retrieve = AsyncMock(return_value=[mock_point_1, mock_point_2])
 
     # Mock HDBSCAN return labels

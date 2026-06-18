@@ -117,6 +117,7 @@ async def test_get_digest_subscriptions(mock_db_session):
 async def test_update_digest_subscriptions(mock_db_session):
     """Verify updating digest subscription handles existing and new entries."""
     user = User(id=uuid.uuid4())
+    from app.models.models import UserPreference
 
     # 1. Update existing subscription
     existing_sub = DigestSubscription(
@@ -127,9 +128,21 @@ async def test_update_digest_subscriptions(mock_db_session):
         enabled=False,
     )
 
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = existing_sub
-    mock_db_session.execute.return_value = mock_result
+    async def mock_execute(query, *args, **kwargs):
+        query_str = str(query)
+        res = MagicMock()
+        if "digest_subscription" in query_str:
+            res.scalar_one_or_none.return_value = existing_sub
+            res.scalars.return_value.all.return_value = [existing_sub]
+        elif "user_preference" in query_str:
+            res.scalar_one_or_none.return_value = UserPreference(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                digest_settings={"editions": {}}
+            )
+        return res
+
+    mock_db_session.execute.side_effect = mock_execute
 
     body = DigestSubscriptionUpdate(frequency="morning", delivery_channel="email", enabled=True)
 
