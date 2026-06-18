@@ -10,6 +10,7 @@ import { StoryCardSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/empty-states";
 import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
 import { Newspaper } from "lucide-react";
+import { BreakingBanner } from "@/components/ui/breaking-banner";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Story } from "@/types";
@@ -83,6 +84,8 @@ export function HomeContent() {
 
   const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
 
+  const hasStories = !isLoading && !error && stories && stories.length > 0;
+
   return (
     <AppShell
       sidebar={sidebar}
@@ -94,8 +97,17 @@ export function HomeContent() {
         />
       }
     >
+      {/* Breaking News Banner */}
+      {hasStories && (
+        <BreakingBanner
+          text={`${stories[0].headline} — ${stories[0].source_count} sources covering`}
+          time="Just now"
+          onClick={() => router.push(`/story/${stories[0].id}`)}
+        />
+      )}
+
       {/* Section label — fixed height, never changes */}
-      <div className="slbl" style={{ marginTop: 24 }}>
+      <div className="slbl" style={{ marginTop: hasStories ? 12 : 24 }}>
         {category === "personalized" ? "Your Personalized Feed" : "Top Stories"}
       </div>
 
