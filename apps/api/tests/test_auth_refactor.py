@@ -80,13 +80,22 @@ async def test_register_success(mock_db_session, mock_request, mock_response):
 
         assert res.access_token == "accesstoken"
         assert res.user.email == "john@example.com"
-        mock_response.set_cookie.assert_called_once_with(
+        mock_response.set_cookie.assert_any_call(
             key="refresh_token",
             value="refreshtoken",
             httponly=True,
-            secure=True,
+            secure=False,
             samesite="lax",
             max_age=30 * 24 * 60 * 60,
+            path="/",
+        )
+        mock_response.set_cookie.assert_any_call(
+            key="access_token",
+            value="accesstoken",
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=15 * 60,
             path="/",
         )
 
@@ -267,13 +276,22 @@ async def test_refresh_token_rotation(mock_db_session, mock_request, mock_respon
         assert res.access_token == "accesstokenB"
         mock_delete.assert_called_once()
         mock_create.assert_called_once()
-        mock_response.set_cookie.assert_called_once_with(
+        mock_response.set_cookie.assert_any_call(
             key="refresh_token",
             value="tokenB",
             httponly=True,
-            secure=True,
+            secure=False,
             samesite="lax",
             max_age=30 * 24 * 60 * 60,
+            path="/",
+        )
+        mock_response.set_cookie.assert_any_call(
+            key="access_token",
+            value="accesstokenB",
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=15 * 60,
             path="/",
         )
 
@@ -309,7 +327,8 @@ async def test_logout_current_device(mock_db_session, mock_request, mock_respons
         res = await logout(mock_request, mock_response, mock_db_session)
         assert res.message == "Logged out successfully."
         mock_delete.assert_called_once_with("hashA")
-        mock_response.delete_cookie.assert_called_once_with(key="refresh_token", path="/")
+        mock_response.delete_cookie.assert_any_call(key="refresh_token", path="/")
+        mock_response.delete_cookie.assert_any_call(key="access_token", path="/")
 
 
 @pytest.mark.asyncio
@@ -321,7 +340,8 @@ async def test_logout_all_devices(mock_db_session, mock_response):
         res = await logout_all(mock_response, user, mock_db_session)
         assert res.message == "Logged out from all devices."
         mock_delete_all.assert_called_once_with(user.id)
-        mock_response.delete_cookie.assert_called_once_with(key="refresh_token", path="/")
+        mock_response.delete_cookie.assert_any_call(key="refresh_token", path="/")
+        mock_response.delete_cookie.assert_any_call(key="access_token", path="/")
 
 
 @pytest.mark.asyncio
