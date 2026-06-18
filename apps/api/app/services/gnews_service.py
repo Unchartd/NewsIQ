@@ -11,9 +11,11 @@ Deduplication:
     to resolve the correct source_id without manual mapping.
 """
 
+import asyncio
 import logging
 import re
 from datetime import UTC, datetime
+from typing import Any
 
 import redis.asyncio as aioredis
 from sqlalchemy import select
@@ -23,6 +25,7 @@ from app.core.config import settings
 from app.core.utils import canonicalize_url
 from app.ingestion.gnews_client import DEFAULT_CATEGORIES, DEFAULT_COUNTRIES, gnews_client
 from app.models.models import Article, Source
+from app.services.crawler_service import crawler_service
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +170,8 @@ class GNewsService:
         if not articles_data:
             return 0
 
-        new_count = 0
+        # Filter new articles and resolve sources first
+        new_articles_to_crawl = []
         for art_dict in articles_data:
             raw_url = art_dict.get("url", "").strip()
             if not raw_url:
@@ -189,16 +193,62 @@ class GNewsService:
                 logger.debug("GNews: skipping article with no resolvable source: %s", url)
                 continue
 
+            new_articles_to_crawl.append((art_dict, url, source))
+
+        if not new_articles_to_crawl:
+            return 0
+
+        # Crawl concurrently with a semaphore
+        sem = asyncio.Semaphore(5)
+
+        async def crawl_with_semaphore(
+            a: dict, u: str, s: Source
+        ) -> tuple[dict, str, Source, dict[str, Any] | None]:
+            async with sem:
+                try:
+                    crawled = await crawler_service.crawl_article(u)
+                    return a, u, s, crawled
+                except Exception as ex:
+                    logger.error("Error crawling GNews article %s: %s", u, ex)
+                    return a, u, s, None
+
+        tasks = [
+            crawl_with_semaphore(art_dict, url, source)
+            for art_dict, url, source in new_articles_to_crawl
+        ]
+        crawled_results = await asyncio.gather(*tasks)
+
+        new_count = 0
+        for art_dict, url, source, crawled in crawled_results:
+            title = art_dict["title"]
+            description = art_dict["description"]
+            fallback_content = art_dict["content"]
+            author = art_dict.get("author")
+            image_url = art_dict.get("image_url")
+            published_at = art_dict["published_at"]
+
+            # Integrate crawled data
+            if crawled and crawled.get("content"):
+                content = crawled["content"]
+                if crawled.get("author") and not author:
+                    author = crawled["author"]
+                if crawled.get("image_url") and not image_url:
+                    image_url = crawled["image_url"]
+                if not title and crawled.get("title"):
+                    title = crawled["title"]
+            else:
+                content = fallback_content
+
             article = Article(
                 source_id=source.id,
-                title=art_dict["title"],
-                description=art_dict["description"],
-                content=art_dict["content"],
+                title=title,
+                description=description,
+                content=content,
                 url=url,
-                author=art_dict.get("author"),
+                author=author,
                 language=art_dict.get("language", "en"),
-                image_url=art_dict.get("image_url"),
-                published_at=art_dict["published_at"],
+                image_url=image_url,
+                published_at=published_at,
                 crawled_at=datetime.now(UTC).replace(tzinfo=None),
                 embedding_status="pending",
                 created_at=datetime.now(UTC).replace(tzinfo=None),

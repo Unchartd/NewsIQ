@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.utils import canonicalize_url
 from app.models.models import Article, Source
+from app.services.crawler_service import crawler_service
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ class IngestionService:
         parsed_feed = feedparser.parse(feed_data)
         new_articles_count = 0
 
+        # Identify new entries to process
+        new_entries = []
         for entry in parsed_feed.entries:
             raw_url = getattr(entry, "link", None)
             if not raw_url:
@@ -76,15 +79,38 @@ class IngestionService:
             res = await session.execute(stmt)
             if res.scalar_one_or_none():
                 continue
+            new_entries.append((entry, url))
 
+        if not new_entries:
+            logger.info("No new articles found for '%s'", source.name)
+            return 0
+
+        # Crawl concurrently with a semaphore
+        sem = asyncio.Semaphore(5)
+
+        async def crawl_with_semaphore(
+            e: Any, u: str
+        ) -> tuple[Any, str, dict[str, Any] | None]:
+            async with sem:
+                try:
+                    crawled = await crawler_service.crawl_article(u)
+                    return e, u, crawled
+                except Exception as ex:
+                    logger.error("Error crawling article %s: %s", u, ex)
+                    return e, u, None
+
+        tasks = [crawl_with_semaphore(entry, url) for entry, url in new_entries]
+        crawled_results = await asyncio.gather(*tasks)
+
+        for entry, url, crawled in crawled_results:
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
-            content = self.clean_html(
+            
+            content_value = self.clean_html(
                 getattr(entry, "content", [{"value": ""}])[0].get("value", "")
             )
-            if not content:
-                content = description  # Fallback
-
+            fallback_content = content_value if content_value else description
+            
             author = getattr(entry, "author", None)
             published_at = self.parse_pub_date(entry)
 
@@ -100,6 +126,18 @@ class IngestionService:
                     if media.get("medium") == "image" or "image" in media.get("type", ""):
                         image_url = media.get("url")
                         break
+
+            # Integrate crawled data
+            if crawled and crawled.get("content"):
+                content = crawled["content"]
+                if crawled.get("author") and not author:
+                    author = crawled["author"]
+                if crawled.get("image_url") and not image_url:
+                    image_url = crawled["image_url"]
+                if (not title or title == "Untitled Article") and crawled.get("title"):
+                    title = crawled["title"]
+            else:
+                content = fallback_content
 
             article = Article(
                 source_id=source.id,
