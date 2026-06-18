@@ -1581,7 +1581,7 @@ export default function LandingPage() {
               },
               {
                 q: "Is NewsIQ free?",
-                a: "Yes. The free tier gives you 10 stories per day, 1-line summaries, trending feed, Source Comparison, and the Difference Engine. Pro (₹399/month) unlocks unlimited stories, all three summary depths, personalised feed, Daily Digest email, and ad-free reading. Students and educators can apply for 50% off at edu@newsiq.in.",
+                a: "Yes. The free tier gives you 10 stories per day, 1-line summaries, trending feed, Source Comparison, and the Difference Engine. Upgrading to Pro unlocks unlimited stories, all three summary depths, personalised feed, Daily Digest email, and ad-free reading.",
               },
             ].map((faq, index) => {
               const isOpen = openFaqIndex === index;
