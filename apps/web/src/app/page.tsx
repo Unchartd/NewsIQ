@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import "./landing.css";
 
 export default function LandingPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
@@ -30,9 +30,11 @@ export default function LandingPage() {
           }
         });
       },
-      { threshold: 0.08 }
+      { threshold: 0.08 },
     );
-    document.querySelectorAll(".reveal").forEach((el) => revealObserver.observe(el));
+    document
+      .querySelectorAll(".reveal")
+      .forEach((el) => revealObserver.observe(el));
     return () => revealObserver.disconnect();
   }, []);
 
@@ -59,19 +61,19 @@ export default function LandingPage() {
       (entries) => {
         entries.forEach((e) => {
           if (e.isIntersecting) {
-            e.target.querySelectorAll(".counter").forEach((el) =>
-              animateCounter(el as HTMLElement)
-            );
+            e.target
+              .querySelectorAll(".counter")
+              .forEach((el) => animateCounter(el as HTMLElement));
             counterObserver.unobserve(e.target);
           }
         });
       },
-      { threshold: 0.3 }
+      { threshold: 0.3 },
     );
 
-    document.querySelectorAll(".stats-grid").forEach((el) =>
-      counterObserver.observe(el)
-    );
+    document
+      .querySelectorAll(".stats-grid")
+      .forEach((el) => counterObserver.observe(el));
 
     return () => counterObserver.disconnect();
   }, []);
@@ -203,11 +205,23 @@ export default function LandingPage() {
                 </svg>
               )}
             </button>
-            <Link href="/login">
-              <button className="nav-sign-in">Sign in</button>
-            </Link>
+            {isAuthenticated ? (
+              <Link href="/profile" title="Go to profile">
+                <button className="nav-profile-btn" aria-label="Profile">
+                  {user?.name?.[0]?.toUpperCase() ||
+                    user?.email?.[0]?.toUpperCase() ||
+                    "U"}
+                </button>
+              </Link>
+            ) : (
+              <Link href="/login">
+                <button className="nav-sign-in">Sign in</button>
+              </Link>
+            )}
             <Link href={isAuthenticated ? "/home" : "/signup"}>
-              <button className="nav-cta">Start reading free</button>
+              <button className="nav-cta">
+                {isAuthenticated ? "Go to feed" : "Start reading free"}
+              </button>
             </Link>
           </div>
         </div>
@@ -230,7 +244,9 @@ export default function LandingPage() {
           </h1>
 
           <p className="hero-sub reveal reveal-delay-2">
-            NewsIQ transforms dozens of articles into one clear story — with AI summaries, source comparisons, timelines, and transparent publisher links.
+            NewsIQ transforms dozens of articles into one clear story — with AI
+            summaries, source comparisons, timelines, and transparent publisher
+            links.
           </p>
 
           <div className="hero-btns reveal reveal-delay-3">
@@ -256,7 +272,9 @@ export default function LandingPage() {
             <button
               className="btn-secondary"
               onClick={() =>
-                document.getElementById("demo")?.scrollIntoView({ behavior: "smooth" })
+                document
+                  .getElementById("demo")
+                  ?.scrollIntoView({ behavior: "smooth" })
               }
             >
               Explore demo
@@ -285,10 +303,21 @@ export default function LandingPage() {
           <div className="hero-mockup reveal">
             {/* Browser chrome */}
             <div className="mockup-chrome">
-              <div className="chrome-dot" style={{ background: "#FF5F57" }}></div>
-              <div className="chrome-dot" style={{ background: "#FFBD2E" }}></div>
-              <div className="chrome-dot" style={{ background: "#28C840" }}></div>
-              <div className="chrome-bar">newsiq.in/story/bengaluru-floods-2026</div>
+              <div
+                className="chrome-dot"
+                style={{ background: "#FF5F57" }}
+              ></div>
+              <div
+                className="chrome-dot"
+                style={{ background: "#FFBD2E" }}
+              ></div>
+              <div
+                className="chrome-dot"
+                style={{ background: "#28C840" }}
+              ></div>
+              <div className="chrome-bar">
+                newsiq.in/story/bengaluru-floods-2026
+              </div>
               <div style={{ width: "24px" }}></div>
             </div>
             {/* Content */}
@@ -296,10 +325,17 @@ export default function LandingPage() {
               <div className="mockup-main">
                 <div className="mk-category">🌦️ Weather · Bengaluru</div>
                 <div className="mk-headline">
-                  Heavy monsoon rains flood Outer Ring Road and Marathahalli; all city schools ordered closed
+                  Heavy monsoon rains flood Outer Ring Road and Marathahalli;
+                  all city schools ordered closed
                 </div>
                 <div className="mk-meta">
-                  <span style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "3px",
+                    }}
+                  >
                     <span
                       style={{
                         width: "6px",
@@ -329,20 +365,33 @@ export default function LandingPage() {
                         marginLeft: "2px",
                       }}
                     ></span>
-                    <b style={{ marginLeft: "5px", color: "var(--landing-ink)" }}>6 sources</b>
+                    <b
+                      style={{ marginLeft: "5px", color: "var(--landing-ink)" }}
+                    >
+                      6 sources
+                    </b>
                   </span>
                   <span className="mk-meta-dot"></span>
                   <span>3 hours ago</span>
                   <span className="mk-meta-dot"></span>
-                  <span style={{ color: "var(--landing-amber)", fontWeight: 600 }}>↑ Trending</span>
+                  <span
+                    style={{ color: "var(--landing-amber)", fontWeight: 600 }}
+                  >
+                    ↑ Trending
+                  </span>
                 </div>
 
                 {/* AI Summary */}
                 <div className="mk-summary-label">
-                  <span style={{ color: "var(--landing-ink3)" }}>✦</span> AI Summary
+                  <span style={{ color: "var(--landing-ink3)" }}>✦</span> AI
+                  Summary
                 </div>
                 <div className="mk-summary-block">
-                  IMD recorded 142mm rainfall in 6 hours — the highest in a decade. BBMP deployed 40 pumping units across waterlogged areas. BMTC suspended 12 routes serving Whitefield and Electronic City. All city schools ordered closed for Friday by the state government.
+                  IMD recorded 142mm rainfall in 6 hours — the highest in a
+                  decade. BBMP deployed 40 pumping units across waterlogged
+                  areas. BMTC suspended 12 routes serving Whitefield and
+                  Electronic City. All city schools ordered closed for Friday by
+                  the state government.
                 </div>
 
                 {/* Key facts */}
@@ -357,7 +406,10 @@ export default function LandingPage() {
                   </div>
                   <div className="mk-fact">
                     <div className="mk-fact-lbl">Status</div>
-                    <div className="mk-fact-val" style={{ color: "var(--landing-primary)" }}>
+                    <div
+                      className="mk-fact-val"
+                      style={{ color: "var(--landing-primary)" }}
+                    >
                       Developing
                     </div>
                   </div>
@@ -372,7 +424,9 @@ export default function LandingPage() {
                       <div className="mk-tl-dot active"></div>
                       <div className="mk-tl-line"></div>
                     </div>
-                    <div className="mk-tl-text">Heavy rain begins across outer regions</div>
+                    <div className="mk-tl-text">
+                      Heavy rain begins across outer regions
+                    </div>
                   </div>
                   <div className="mk-tl-item">
                     <div className="mk-tl-time">10:00 AM</div>
@@ -380,7 +434,9 @@ export default function LandingPage() {
                       <div className="mk-tl-dot"></div>
                       <div className="mk-tl-line"></div>
                     </div>
-                    <div className="mk-tl-text">Outer Ring Road and Marathahalli flood</div>
+                    <div className="mk-tl-text">
+                      Outer Ring Road and Marathahalli flood
+                    </div>
                   </div>
                   <div className="mk-tl-item">
                     <div className="mk-tl-time">11:15 AM</div>
@@ -388,14 +444,18 @@ export default function LandingPage() {
                       <div className="mk-tl-dot"></div>
                       <div className="mk-tl-line"></div>
                     </div>
-                    <div className="mk-tl-text">BBMP issues citywide flood warning</div>
+                    <div className="mk-tl-text">
+                      BBMP issues citywide flood warning
+                    </div>
                   </div>
                   <div className="mk-tl-item">
                     <div className="mk-tl-time">1:00 PM</div>
                     <div className="mk-tl-rail">
                       <div className="mk-tl-dot"></div>
                     </div>
-                    <div className="mk-tl-text">Schools ordered closed for Friday</div>
+                    <div className="mk-tl-text">
+                      Schools ordered closed for Friday
+                    </div>
                   </div>
                 </div>
               </div>
@@ -404,37 +464,55 @@ export default function LandingPage() {
               <div className="mockup-side">
                 <div className="mk-sources-label">Source Coverage</div>
                 <div className="mk-source-row">
-                  <div className="mk-src-dot" style={{ background: "#DC2626" }}></div>
+                  <div
+                    className="mk-src-dot"
+                    style={{ background: "#DC2626" }}
+                  ></div>
                   <span className="mk-src-name">NDTV</span>
                   <span className="mk-src-focus">School closures</span>
                   <span className="mk-src-link">→</span>
                 </div>
                 <div className="mk-source-row">
-                  <div className="mk-src-dot" style={{ background: "#D97706" }}></div>
+                  <div
+                    className="mk-src-dot"
+                    style={{ background: "#D97706" }}
+                  ></div>
                   <span className="mk-src-name">TOI</span>
                   <span className="mk-src-focus">Traffic disruption</span>
                   <span className="mk-src-link">→</span>
                 </div>
                 <div className="mk-source-row">
-                  <div className="mk-src-dot" style={{ background: "#374151" }}></div>
+                  <div
+                    className="mk-src-dot"
+                    style={{ background: "#374151" }}
+                  ></div>
                   <span className="mk-src-name">The Hindu</span>
                   <span className="mk-src-focus">Rainfall data</span>
                   <span className="mk-src-link">→</span>
                 </div>
                 <div className="mk-source-row">
-                  <div className="mk-src-dot" style={{ background: "#065F46" }}></div>
+                  <div
+                    className="mk-src-dot"
+                    style={{ background: "#065F46" }}
+                  ></div>
                   <span className="mk-src-name">HT</span>
                   <span className="mk-src-focus">Govt response</span>
                   <span className="mk-src-link">→</span>
                 </div>
                 <div className="mk-source-row">
-                  <div className="mk-src-dot" style={{ background: "#1D4ED8" }}></div>
+                  <div
+                    className="mk-src-dot"
+                    style={{ background: "#1D4ED8" }}
+                  ></div>
                   <span className="mk-src-name">IE</span>
                   <span className="mk-src-focus">IMD forecast</span>
                   <span className="mk-src-link">→</span>
                 </div>
                 <div className="mk-source-row">
-                  <div className="mk-src-dot" style={{ background: "#7C3AED" }}></div>
+                  <div
+                    className="mk-src-dot"
+                    style={{ background: "#7C3AED" }}
+                  ></div>
                   <span className="mk-src-name">Deccan</span>
                   <span className="mk-src-focus">Rescue ops</span>
                   <span className="mk-src-link">→</span>
@@ -447,13 +525,19 @@ export default function LandingPage() {
                     <div className="mk-cov-lbl">Sources</div>
                   </div>
                   <div className="mk-cov-stat">
-                    <div className="mk-cov-num" style={{ color: "var(--landing-amber)" }}>
+                    <div
+                      className="mk-cov-num"
+                      style={{ color: "var(--landing-amber)" }}
+                    >
                       2
                     </div>
                     <div className="mk-cov-lbl">Conflicts</div>
                   </div>
                   <div className="mk-cov-stat">
-                    <div className="mk-cov-num" style={{ color: "var(--landing-ink4)" }}>
+                    <div
+                      className="mk-cov-num"
+                      style={{ color: "var(--landing-ink4)" }}
+                    >
                       1
                     </div>
                     <div className="mk-cov-lbl">Missing</div>
@@ -470,7 +554,9 @@ export default function LandingPage() {
            TRUSTED SOURCES MARQUEE
            ════════════════════════════════════════ */}
       <section className="sources-section">
-        <div className="sources-label">Powered by trusted news sources worldwide</div>
+        <div className="sources-label">
+          Powered by trusted news sources worldwide
+        </div>
         <div style={{ position: "relative" }}>
           <div
             style={{
@@ -479,7 +565,8 @@ export default function LandingPage() {
               left: 0,
               bottom: 0,
               width: "80px",
-              background: "linear-gradient(to right,var(--landing-surface),transparent)",
+              background:
+                "linear-gradient(to right,var(--landing-surface),transparent)",
               zIndex: 2,
               pointerEvents: "none",
             }}
@@ -491,7 +578,8 @@ export default function LandingPage() {
               right: 0,
               bottom: 0,
               width: "80px",
-              background: "linear-gradient(to left,var(--landing-surface),transparent)",
+              background:
+                "linear-gradient(to left,var(--landing-surface),transparent)",
               zIndex: 2,
               pointerEvents: "none",
             }}
@@ -500,89 +588,201 @@ export default function LandingPage() {
             <div className="marquee-track">
               {/* Set 1 */}
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>Reuters
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                Reuters
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#1D4ED8" }}></div>Associated Press
+                <div
+                  className="src-color"
+                  style={{ background: "#1D4ED8" }}
+                ></div>
+                Associated Press
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>BBC
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                BBC
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>CNN
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                CNN
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#374151" }}></div>Bloomberg
+                <div
+                  className="src-color"
+                  style={{ background: "#374151" }}
+                ></div>
+                Bloomberg
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#065F46" }}></div>The Guardian
+                <div
+                  className="src-color"
+                  style={{ background: "#065F46" }}
+                ></div>
+                The Guardian
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#1D4ED8" }}></div>CNBC
+                <div
+                  className="src-color"
+                  style={{ background: "#1D4ED8" }}
+                ></div>
+                CNBC
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>NDTV
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                NDTV
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#D97706" }}></div>Times of India
+                <div
+                  className="src-color"
+                  style={{ background: "#D97706" }}
+                ></div>
+                Times of India
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#374151" }}></div>Indian Express
+                <div
+                  className="src-color"
+                  style={{ background: "#374151" }}
+                ></div>
+                Indian Express
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>Hindustan Times
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                Hindustan Times
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#374151" }}></div>Al Jazeera
+                <div
+                  className="src-color"
+                  style={{ background: "#374151" }}
+                ></div>
+                Al Jazeera
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#7C3AED" }}></div>Financial Times
+                <div
+                  className="src-color"
+                  style={{ background: "#7C3AED" }}
+                ></div>
+                Financial Times
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#065F46" }}></div>The Hindu
+                <div
+                  className="src-color"
+                  style={{ background: "#065F46" }}
+                ></div>
+                The Hindu
               </div>
               {/* Set 2 (duplicate for seamless loop) */}
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>Reuters
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                Reuters
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#1D4ED8" }}></div>Associated Press
+                <div
+                  className="src-color"
+                  style={{ background: "#1D4ED8" }}
+                ></div>
+                Associated Press
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>BBC
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                BBC
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>CNN
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                CNN
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#374151" }}></div>Bloomberg
+                <div
+                  className="src-color"
+                  style={{ background: "#374151" }}
+                ></div>
+                Bloomberg
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#065F46" }}></div>The Guardian
+                <div
+                  className="src-color"
+                  style={{ background: "#065F46" }}
+                ></div>
+                The Guardian
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#1D4ED8" }}></div>CNBC
+                <div
+                  className="src-color"
+                  style={{ background: "#1D4ED8" }}
+                ></div>
+                CNBC
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>NDTV
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                NDTV
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#D97706" }}></div>Times of India
+                <div
+                  className="src-color"
+                  style={{ background: "#D97706" }}
+                ></div>
+                Times of India
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#374151" }}></div>Indian Express
+                <div
+                  className="src-color"
+                  style={{ background: "#374151" }}
+                ></div>
+                Indian Express
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#DC2626" }}></div>Hindustan Times
+                <div
+                  className="src-color"
+                  style={{ background: "#DC2626" }}
+                ></div>
+                Hindustan Times
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#374151" }}></div>Al Jazeera
+                <div
+                  className="src-color"
+                  style={{ background: "#374151" }}
+                ></div>
+                Al Jazeera
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#7C3AED" }}></div>Financial Times
+                <div
+                  className="src-color"
+                  style={{ background: "#7C3AED" }}
+                ></div>
+                Financial Times
               </div>
               <div className="source-chip">
-                <div className="src-color" style={{ background: "#065F46" }}></div>The Hindu
+                <div
+                  className="src-color"
+                  style={{ background: "#065F46" }}
+                ></div>
+                The Hindu
               </div>
             </div>
           </div>
@@ -598,7 +798,8 @@ export default function LandingPage() {
             <div className="eyebrow">The problem</div>
             <h2 className="section-title">Information overload is broken</h2>
             <p className="section-sub">
-              The modern news cycle forces you to read the same story ten times from ten different angles. There's a better way.
+              The modern news cycle forces you to read the same story ten times
+              from ten different angles. There's a better way.
             </p>
           </div>
           <div className="problem-grid reveal">
@@ -613,7 +814,9 @@ export default function LandingPage() {
                   <div className="prob-arrow">↓</div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-step-text">10 different perspectives</div>
+                  <div className="prob-step-text">
+                    10 different perspectives
+                  </div>
                 </div>
                 <div className="prob-step">
                   <div className="prob-arrow">↓</div>
@@ -625,7 +828,9 @@ export default function LandingPage() {
                   <div className="prob-arrow">↓</div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-step-text dim">45 minutes of your day gone</div>
+                  <div className="prob-step-text dim">
+                    45 minutes of your day gone
+                  </div>
                 </div>
                 <div className="prob-step">
                   <div className="prob-arrow">↓</div>
@@ -644,7 +849,10 @@ export default function LandingPage() {
                   <div className="prob-step-text">10 articles ingested</div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-arrow" style={{ color: "var(--landing-primary)" }}>
+                  <div
+                    className="prob-arrow"
+                    style={{ color: "var(--landing-primary)" }}
+                  >
                     ↓
                   </div>
                 </div>
@@ -652,7 +860,10 @@ export default function LandingPage() {
                   <div className="prob-step-text">AI clusters the event</div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-arrow" style={{ color: "var(--landing-primary)" }}>
+                  <div
+                    className="prob-arrow"
+                    style={{ color: "var(--landing-primary)" }}
+                  >
                     ↓
                   </div>
                 </div>
@@ -660,20 +871,30 @@ export default function LandingPage() {
                   <div className="prob-step-text">One structured story</div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-arrow" style={{ color: "var(--landing-primary)" }}>
+                  <div
+                    className="prob-arrow"
+                    style={{ color: "var(--landing-primary)" }}
+                  >
                     ↓
                   </div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-step-text highlight">Under 30 seconds</div>
+                  <div className="prob-step-text highlight">
+                    Under 30 seconds
+                  </div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-arrow" style={{ color: "var(--landing-primary)" }}>
+                  <div
+                    className="prob-arrow"
+                    style={{ color: "var(--landing-primary)" }}
+                  >
                     ↓
                   </div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-step-text highlight">Complete understanding</div>
+                  <div className="prob-step-text highlight">
+                    Complete understanding
+                  </div>
                 </div>
               </div>
             </div>
@@ -698,44 +919,57 @@ export default function LandingPage() {
             <div className="eyebrow">How it works</div>
             <h2 className="section-title">From headlines to understanding</h2>
             <p className="section-sub">
-              Seven steps from raw articles to clear, structured intelligence — happening automatically, in under 5 minutes.
+              Seven steps from raw articles to clear, structured intelligence —
+              happening automatically, in under 5 minutes.
             </p>
           </div>
           <div className="flow-grid reveal">
             <div className="flow-node">
               <div className="flow-icon-wrap">📡</div>
               <div className="flow-name">News Sources</div>
-              <div className="flow-desc">RSS, APIs & crawlers from 10,000+ publishers</div>
+              <div className="flow-desc">
+                RSS, APIs & crawlers from 10,000+ publishers
+              </div>
             </div>
             <div className="flow-arrow">→</div>
             <div className="flow-node">
               <div className="flow-icon-wrap">📥</div>
               <div className="flow-name">Ingestion</div>
-              <div className="flow-desc">Articles collected and deduplicated in real time</div>
+              <div className="flow-desc">
+                Articles collected and deduplicated in real time
+              </div>
             </div>
             <div className="flow-arrow">→</div>
             <div className="flow-node">
               <div className="flow-icon-wrap">🧠</div>
               <div className="flow-name">AI Processing</div>
-              <div className="flow-desc">Embeddings & semantic similarity via Gemini</div>
+              <div className="flow-desc">
+                Embeddings & semantic similarity via Gemini
+              </div>
             </div>
             <div className="flow-arrow">→</div>
             <div className="flow-node">
               <div className="flow-icon-wrap">🔗</div>
               <div className="flow-name">Clustering</div>
-              <div className="flow-desc">Related articles grouped into story objects</div>
+              <div className="flow-desc">
+                Related articles grouped into story objects
+              </div>
             </div>
             <div className="flow-arrow">→</div>
             <div className="flow-node">
               <div className="flow-icon-wrap">✦</div>
               <div className="flow-name">Summaries</div>
-              <div className="flow-desc">1-line, Short & Detailed AI summaries generated</div>
+              <div className="flow-desc">
+                1-line, Short & Detailed AI summaries generated
+              </div>
             </div>
             <div className="flow-arrow">→</div>
             <div className="flow-node">
               <div className="flow-icon-wrap">⚖️</div>
               <div className="flow-name">Difference Engine</div>
-              <div className="flow-desc">Contradictions & gaps surfaced across sources</div>
+              <div className="flow-desc">
+                Contradictions & gaps surfaced across sources
+              </div>
             </div>
             <div className="flow-arrow">→</div>
             <div className="flow-node" style={{ position: "relative" }}>
@@ -748,7 +982,10 @@ export default function LandingPage() {
               >
                 📰
               </div>
-              <div className="flow-name" style={{ color: "var(--landing-primary)" }}>
+              <div
+                className="flow-name"
+                style={{ color: "var(--landing-primary)" }}
+              >
                 NewsIQ Story
               </div>
               <div className="flow-desc">Ready to read in under 30 seconds</div>
@@ -770,7 +1007,8 @@ export default function LandingPage() {
               understand the news
             </h2>
             <p className="section-sub">
-              Built for people who care about what's happening — but can't spend hours finding out.
+              Built for people who care about what's happening — but can't spend
+              hours finding out.
             </p>
           </div>
           <div className="features-grid reveal">
@@ -788,7 +1026,9 @@ export default function LandingPage() {
                 <div className="feat-icon">🎯</div>
                 <div className="feat-title">AI Story Aggregation</div>
                 <div className="feat-desc">
-                  Dozens of articles about the same event become one structured story. No duplicates. No noise. Just the complete picture — with every source intact and visible.
+                  Dozens of articles about the same event become one structured
+                  story. No duplicates. No noise. Just the complete picture —
+                  with every source intact and visible.
                 </div>
               </div>
               <div
@@ -918,7 +1158,13 @@ export default function LandingPage() {
                   ></div>
                 </div>
                 <style>{`@keyframes loadBar{from{width:40%}to{width:95%}}`}</style>
-                <div style={{ fontSize: "11px", color: "var(--landing-ink4)", marginTop: "6px" }}>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--landing-ink4)",
+                    marginTop: "6px",
+                  }}
+                >
                   Clustering confidence: 98.2%
                 </div>
               </div>
@@ -928,7 +1174,8 @@ export default function LandingPage() {
               <div className="feat-icon">📝</div>
               <div className="feat-title">Neutral Headlines</div>
               <div className="feat-desc">
-                AI rewrites sensationalised headlines into factual, clear statements. You know what happened before you click.
+                AI rewrites sensationalised headlines into factual, clear
+                statements. You know what happened before you click.
               </div>
               <div
                 style={{
@@ -939,11 +1186,26 @@ export default function LandingPage() {
                   fontSize: "12px",
                 }}
               >
-                <div style={{ color: "var(--landing-ink4)", textDecoration: "line-through", marginBottom: "6px" }}>
+                <div
+                  style={{
+                    color: "var(--landing-ink4)",
+                    textDecoration: "line-through",
+                    marginBottom: "6px",
+                  }}
+                >
                   "You Won't Believe What Happened In Bengaluru!"
                 </div>
-                <div style={{ color: "var(--landing-green)", fontWeight: 600, display: "flex", alignItems: "center", gap: "5px" }}>
-                  <span>✓</span>"Heavy monsoon rains flood Outer Ring Road; schools closed"
+                <div
+                  style={{
+                    color: "var(--landing-green)",
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <span>✓</span>"Heavy monsoon rains flood Outer Ring Road;
+                  schools closed"
                 </div>
               </div>
             </div>
@@ -953,7 +1215,8 @@ export default function LandingPage() {
               <div className="feat-icon">📊</div>
               <div className="feat-title">Source Comparison</div>
               <div className="feat-desc">
-                See exactly what each publisher emphasised, what they missed, and where they contradict each other.
+                See exactly what each publisher emphasised, what they missed,
+                and where they contradict each other.
               </div>
             </div>
 
@@ -961,7 +1224,8 @@ export default function LandingPage() {
               <div className="feat-icon">⏱️</div>
               <div className="feat-title">Multi-Level Summaries</div>
               <div className="feat-desc">
-                Switch between 1-line, Short, and Detailed summaries to match your available time. From 8 words to 150.
+                Switch between 1-line, Short, and Detailed summaries to match
+                your available time. From 8 words to 150.
               </div>
               <div style={{ marginTop: "14px", display: "flex", gap: "6px" }}>
                 <div
@@ -1009,7 +1273,9 @@ export default function LandingPage() {
               <div className="feat-icon">📅</div>
               <div className="feat-title">Story Timeline</div>
               <div className="feat-desc">
-                Understand how events evolved chronologically — from first report to latest update — with source attribution on every event.
+                Understand how events evolved chronologically — from first
+                report to latest update — with source attribution on every
+                event.
               </div>
             </div>
 
@@ -1018,7 +1284,8 @@ export default function LandingPage() {
               <div className="feat-icon">📍</div>
               <div className="feat-title">Location-Based Feed</div>
               <div className="feat-desc">
-                Drill from World → Country → State → City. Your Bengaluru news stays separate from global headlines.
+                Drill from World → Country → State → City. Your Bengaluru news
+                stays separate from global headlines.
               </div>
             </div>
 
@@ -1026,7 +1293,8 @@ export default function LandingPage() {
               <div className="feat-icon">🔥</div>
               <div className="feat-title">Trending Intelligence</div>
               <div className="feat-desc">
-                Stories are scored by source count, recency, and velocity. See what's gaining coverage right now — not just what's newest.
+                Stories are scored by source count, recency, and velocity. See
+                what's gaining coverage right now — not just what's newest.
               </div>
             </div>
 
@@ -1043,7 +1311,10 @@ export default function LandingPage() {
                 <div className="feat-icon">⚖️</div>
                 <div className="feat-title">The Difference Engine</div>
                 <div className="feat-desc">
-                  Our most distinctive feature: a table that shows every factual discrepancy between publishers covering the same story. Contradictions are flagged. Missing facts are surfaced. Hidden gaps become visible.
+                  Our most distinctive feature: a table that shows every factual
+                  discrepancy between publishers covering the same story.
+                  Contradictions are flagged. Missing facts are surfaced. Hidden
+                  gaps become visible.
                 </div>
               </div>
               <div
@@ -1076,11 +1347,24 @@ export default function LandingPage() {
                     gap: "8px",
                   }}
                 >
-                  <span style={{ minWidth: "80px", color: "var(--landing-ink)", fontWeight: 600 }}>
+                  <span
+                    style={{
+                      minWidth: "80px",
+                      color: "var(--landing-ink)",
+                      fontWeight: 600,
+                    }}
+                  >
                     Benchmark
                   </span>
                   <span>+40%</span>
-                  <span style={{ color: "var(--landing-amber)", display: "flex", alignItems: "center", gap: "3px" }}>
+                  <span
+                    style={{
+                      color: "var(--landing-amber)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "3px",
+                    }}
+                  >
                     ⚠ ~32%
                   </span>
                 </div>
@@ -1094,18 +1378,53 @@ export default function LandingPage() {
                     background: "rgba(217,119,6,.04)",
                   }}
                 >
-                  <span style={{ minWidth: "80px", color: "var(--landing-ink)", fontWeight: 600 }}>
+                  <span
+                    style={{
+                      minWidth: "80px",
+                      color: "var(--landing-ink)",
+                      fontWeight: 600,
+                    }}
+                  >
                     Rollout date
                   </span>
                   <span>2 weeks</span>
-                  <span style={{ color: "var(--landing-amber)" }}>⚠ "No date"</span>
+                  <span style={{ color: "var(--landing-amber)" }}>
+                    ⚠ "No date"
+                  </span>
                 </div>
-                <div style={{ padding: "8px 12px", fontSize: "11px", display: "flex", gap: "8px" }}>
-                  <span style={{ minWidth: "80px", color: "var(--landing-ink)", fontWeight: 600 }}>
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    fontSize: "11px",
+                    display: "flex",
+                    gap: "8px",
+                  }}
+                >
+                  <span
+                    style={{
+                      minWidth: "80px",
+                      color: "var(--landing-ink)",
+                      fontWeight: 600,
+                    }}
+                  >
                     India price
                   </span>
-                  <span style={{ color: "var(--landing-ink4)", fontStyle: "italic" }}>—</span>
-                  <span style={{ color: "var(--landing-ink4)", fontStyle: "italic" }}>—</span>
+                  <span
+                    style={{
+                      color: "var(--landing-ink4)",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    —
+                  </span>
+                  <span
+                    style={{
+                      color: "var(--landing-ink4)",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    —
+                  </span>
                 </div>
               </div>
             </div>
@@ -1130,7 +1449,8 @@ export default function LandingPage() {
             <div className="eyebrow">Live example</div>
             <h2 className="section-title">See NewsIQ in action</h2>
             <p className="section-sub">
-              This is a real NewsIQ story — the same layout you'll see every day in the app.
+              This is a real NewsIQ story — the same layout you'll see every day
+              in the app.
             </p>
           </div>
           <div className="demo-card reveal">
@@ -1138,7 +1458,8 @@ export default function LandingPage() {
             <div className="demo-header">
               <div className="demo-header-cat">🌦️ Weather · Bengaluru</div>
               <div className="demo-header-title">
-                Heavy monsoon rains cause widespread flooding across Bengaluru, disrupting transport and forcing school closures
+                Heavy monsoon rains cause widespread flooding across Bengaluru,
+                disrupting transport and forcing school closures
               </div>
               <div className="demo-header-meta">
                 <span>6 sources</span>
@@ -1153,14 +1474,22 @@ export default function LandingPage() {
               <div className="demo-col">
                 <div className="demo-label">✦ AI Summary</div>
                 <p className="demo-summary-text">
-                  Continuous heavy rainfall since Tuesday night has caused severe waterlogging across several key areas of Bengaluru. The IMD recorded 142mm in just 6 hours — the highest single-day rainfall in a decade. BBMP deployed 40 pumping units. The state government ordered all city schools closed for Friday. BMTC suspended 12 routes covering Whitefield and Electronic City.
+                  Continuous heavy rainfall since Tuesday night has caused
+                  severe waterlogging across several key areas of Bengaluru. The
+                  IMD recorded 142mm in just 6 hours — the highest single-day
+                  rainfall in a decade. BBMP deployed 40 pumping units. The
+                  state government ordered all city schools closed for Friday.
+                  BMTC suspended 12 routes covering Whitefield and Electronic
+                  City.
                 </p>
                 <div style={{ marginTop: "20px" }}>
                   <div className="demo-label">Key Facts</div>
                   <div className="demo-facts">
                     <div className="demo-fact-row">
                       <span className="demo-fact-key">Location</span>
-                      <span className="demo-fact-val">Bengaluru, Karnataka</span>
+                      <span className="demo-fact-val">
+                        Bengaluru, Karnataka
+                      </span>
                     </div>
                     <div className="demo-fact-row">
                       <span className="demo-fact-key">Category</span>
@@ -1176,7 +1505,10 @@ export default function LandingPage() {
                     </div>
                     <div className="demo-fact-row">
                       <span className="demo-fact-key">Status</span>
-                      <span className="demo-fact-val" style={{ color: "var(--landing-primary)" }}>
+                      <span
+                        className="demo-fact-val"
+                        style={{ color: "var(--landing-primary)" }}
+                      >
                         Developing
                       </span>
                     </div>
@@ -1214,38 +1546,82 @@ export default function LandingPage() {
                 <div style={{ marginTop: "20px" }}>
                   <div className="demo-label">📰 Source Coverage</div>
                   <div className="demo-src-row">
-                    <div className="demo-src-dot" style={{ background: "#DC2626" }}></div>
-                    <span style={{ fontWeight: 600, minWidth: "62px", fontSize: "13px" }}>
+                    <div
+                      className="demo-src-dot"
+                      style={{ background: "#DC2626" }}
+                    ></div>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        minWidth: "62px",
+                        fontSize: "13px",
+                      }}
+                    >
                       NDTV
                     </span>
-                    <span style={{ color: "var(--landing-ink3)", fontSize: "12px" }}>
+                    <span
+                      style={{ color: "var(--landing-ink3)", fontSize: "12px" }}
+                    >
                       School closures and parent panic
                     </span>
                   </div>
                   <div className="demo-src-row">
-                    <div className="demo-src-dot" style={{ background: "#D97706" }}></div>
-                    <span style={{ fontWeight: 600, minWidth: "62px", fontSize: "13px" }}>
+                    <div
+                      className="demo-src-dot"
+                      style={{ background: "#D97706" }}
+                    ></div>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        minWidth: "62px",
+                        fontSize: "13px",
+                      }}
+                    >
                       TOI
                     </span>
-                    <span style={{ color: "var(--landing-ink3)", fontSize: "12px" }}>
+                    <span
+                      style={{ color: "var(--landing-ink3)", fontSize: "12px" }}
+                    >
                       Traffic congestion and commute chaos
                     </span>
                   </div>
                   <div className="demo-src-row">
-                    <div className="demo-src-dot" style={{ background: "#374151" }}></div>
-                    <span style={{ fontWeight: 600, minWidth: "62px", fontSize: "13px" }}>
+                    <div
+                      className="demo-src-dot"
+                      style={{ background: "#374151" }}
+                    ></div>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        minWidth: "62px",
+                        fontSize: "13px",
+                      }}
+                    >
                       Indian Express
                     </span>
-                    <span style={{ color: "var(--landing-ink3)", fontSize: "12px" }}>
+                    <span
+                      style={{ color: "var(--landing-ink3)", fontSize: "12px" }}
+                    >
                       IMD rainfall data and forecast
                     </span>
                   </div>
                   <div className="demo-src-row">
-                    <div className="demo-src-dot" style={{ background: "#065F46" }}></div>
-                    <span style={{ fontWeight: 600, minWidth: "62px", fontSize: "13px" }}>
+                    <div
+                      className="demo-src-dot"
+                      style={{ background: "#065F46" }}
+                    ></div>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        minWidth: "62px",
+                        fontSize: "13px",
+                      }}
+                    >
                       HT
                     </span>
-                    <span style={{ color: "var(--landing-ink3)", fontSize: "12px" }}>
+                    <span
+                      style={{ color: "var(--landing-ink3)", fontSize: "12px" }}
+                    >
                       Government response and relief ops
                     </span>
                   </div>
@@ -1309,7 +1685,9 @@ export default function LandingPage() {
         <div className="container">
           <div className="section-header center reveal">
             <div className="eyebrow">Why NewsIQ</div>
-            <h2 className="section-title">Built for understanding, not clicks</h2>
+            <h2 className="section-title">
+              Built for understanding, not clicks
+            </h2>
             <p className="section-sub">
               Other aggregators surface articles. NewsIQ explains stories.
             </p>
@@ -1319,7 +1697,8 @@ export default function LandingPage() {
               <div className="cmp-logo">🔍</div>
               <div className="cmp-name">Google News</div>
               <div className="cmp-desc">
-                Lists article links from publishers. You click, you read, you repeat.
+                Lists article links from publishers. You click, you read, you
+                repeat.
               </div>
               <ul className="cmp-list">
                 <li className="cmp-row yes">Broad coverage</li>
@@ -1334,7 +1713,8 @@ export default function LandingPage() {
               <div className="cmp-logo">📰</div>
               <div className="cmp-name">NewsIQ</div>
               <div className="cmp-desc">
-                Understands stories. Surfaces contradictions. Gives you the full picture in 30 seconds.
+                Understands stories. Surfaces contradictions. Gives you the full
+                picture in 30 seconds.
               </div>
               <ul className="cmp-list">
                 <li className="cmp-row yes">10,000+ sources</li>
@@ -1349,7 +1729,8 @@ export default function LandingPage() {
               <div className="cmp-logo">📋</div>
               <div className="cmp-name">Traditional Aggregators</div>
               <div className="cmp-desc">
-                Curated headline lists. Human editors. Limited AI. Still requires you to read.
+                Curated headline lists. Human editors. Limited AI. Still
+                requires you to read.
               </div>
               <ul className="cmp-list">
                 <li className="cmp-row yes">Curated selection</li>
@@ -1384,12 +1765,17 @@ export default function LandingPage() {
             <div className="testi-card">
               <div className="testi-stars">★★★★★</div>
               <p className="testi-quote">
-                "I used to spend 40 minutes every morning reading the same Bengaluru flood story from 6 different papers. Now I get the full picture in under 2 minutes. The source comparison is genuinely brilliant."
+                "I used to spend 40 minutes every morning reading the same
+                Bengaluru flood story from 6 different papers. Now I get the
+                full picture in under 2 minutes. The source comparison is
+                genuinely brilliant."
               </p>
               <div className="testi-person">
                 <div
                   className="testi-avatar"
-                  style={{ background: "linear-gradient(135deg,#6B21A8,#4C1D95)" }}
+                  style={{
+                    background: "linear-gradient(135deg,#6B21A8,#4C1D95)",
+                  }}
                 >
                   A
                 </div>
@@ -1402,30 +1788,42 @@ export default function LandingPage() {
             <div className="testi-card">
               <div className="testi-stars">★★★★★</div>
               <p className="testi-quote">
-                "As a journalist, the Difference Engine is something I've always wanted. Seeing NDTV report 5 deaths and TOI report 7 from the same event — flagged automatically — saves me hours of cross-checking."
+                "As a journalist, the Difference Engine is something I've always
+                wanted. Seeing NDTV report 5 deaths and TOI report 7 from the
+                same event — flagged automatically — saves me hours of
+                cross-checking."
               </p>
               <div className="testi-person">
                 <div
                   className="testi-avatar"
-                  style={{ background: "linear-gradient(135deg,#065F46,#047857)" }}
+                  style={{
+                    background: "linear-gradient(135deg,#065F46,#047857)",
+                  }}
                 >
                   P
                 </div>
                 <div>
                   <div className="testi-name">Priya Venkataraman</div>
-                  <div className="testi-role">Senior Reporter, National Daily</div>
+                  <div className="testi-role">
+                    Senior Reporter, National Daily
+                  </div>
                 </div>
               </div>
             </div>
             <div className="testi-card">
               <div className="testi-stars">★★★★★</div>
               <p className="testi-quote">
-                "My investment research workflow changed completely. I can track how the RBI policy story evolved across Bloomberg, ET, and Mint — all on one page, with contradictions highlighted. This is the future of news."
+                "My investment research workflow changed completely. I can track
+                how the RBI policy story evolved across Bloomberg, ET, and Mint
+                — all on one page, with contradictions highlighted. This is the
+                future of news."
               </p>
               <div className="testi-person">
                 <div
                   className="testi-avatar"
-                  style={{ background: "linear-gradient(135deg,#1D4ED8,#1e40af)" }}
+                  style={{
+                    background: "linear-gradient(135deg,#1D4ED8,#1e40af)",
+                  }}
                 >
                   R
                 </div>
@@ -1438,12 +1836,17 @@ export default function LandingPage() {
             <div className="testi-card">
               <div className="testi-stars">★★★★★</div>
               <p className="testi-quote">
-                "I'm a student trying to understand complex geopolitical events. The timeline feature alone is worth it — watching a story develop hour by hour, with different sources' takes, is something no textbook can do."
+                "I'm a student trying to understand complex geopolitical events.
+                The timeline feature alone is worth it — watching a story
+                develop hour by hour, with different sources' takes, is
+                something no textbook can do."
               </p>
               <div className="testi-person">
                 <div
                   className="testi-avatar"
-                  style={{ background: "linear-gradient(135deg,#D97706,#b45309)" }}
+                  style={{
+                    background: "linear-gradient(135deg,#D97706,#b45309)",
+                  }}
                 >
                   S
                 </div>
@@ -1456,12 +1859,17 @@ export default function LandingPage() {
             <div className="testi-card">
               <div className="testi-stars">★★★★★</div>
               <p className="testi-quote">
-                "The daily digest is genuinely the first email I open every morning. 5 stories, 3 minutes, and I know everything important that happened overnight. The neutral AI headlines are a revelation after years of clickbait."
+                "The daily digest is genuinely the first email I open every
+                morning. 5 stories, 3 minutes, and I know everything important
+                that happened overnight. The neutral AI headlines are a
+                revelation after years of clickbait."
               </p>
               <div className="testi-person">
                 <div
                   className="testi-avatar"
-                  style={{ background: "linear-gradient(135deg,#0E7490,#155e75)" }}
+                  style={{
+                    background: "linear-gradient(135deg,#0E7490,#155e75)",
+                  }}
                 >
                   K
                 </div>
@@ -1474,18 +1882,25 @@ export default function LandingPage() {
             <div className="testi-card">
               <div className="testi-stars">★★★★★</div>
               <p className="testi-quote">
-                "I track the US-India trade relationship for work. NewsIQ clusters all the relevant articles automatically, shows me who said what, and flags when Reuters and ET contradict each other. Indispensable."
+                "I track the US-India trade relationship for work. NewsIQ
+                clusters all the relevant articles automatically, shows me who
+                said what, and flags when Reuters and ET contradict each other.
+                Indispensable."
               </p>
               <div className="testi-person">
                 <div
                   className="testi-avatar"
-                  style={{ background: "linear-gradient(135deg,#C41E3A,#8B1429)" }}
+                  style={{
+                    background: "linear-gradient(135deg,#C41E3A,#8B1429)",
+                  }}
                 >
                   V
                 </div>
                 <div>
                   <div className="testi-name">Vikram Agarwal</div>
-                  <div className="testi-role">Trade Policy Analyst · New Delhi</div>
+                  <div className="testi-role">
+                    Trade Policy Analyst · New Delhi
+                  </div>
                 </div>
               </div>
             </div>
@@ -1581,7 +1996,7 @@ export default function LandingPage() {
               },
               {
                 q: "Is NewsIQ free?",
-                a: "Yes — and right now, everything is free for a limited time during our early access. The free tier gives you 10 stories per day, 1-line summaries, trending feed, Source Comparison, and the Difference Engine. Upgrading to Pro will unlock unlimited stories, all three summary depths, personalised feed, Daily Digest email, and ad-free reading.",
+                a: "Absolutely. During early access, every NewsIQ feature is available for free with no limits. When paid plans are introduced, the free tier will include 10 stories per day, 1-line summaries, a trending feed, Source Comparison, and the Difference Engine, while Pro subscribers will enjoy unlimited stories, all summary depths, personalised feeds, Daily Digest emails, and an ad-free experience.",
               },
             ].map((faq, index) => {
               const isOpen = openFaqIndex === index;
@@ -1606,9 +2021,7 @@ export default function LandingPage() {
                   </div>
                   <div className="faq-a-wrapper">
                     <div className="faq-a-inner">
-                      <div className="faq-a">
-                        {faq.a}
-                      </div>
+                      <div className="faq-a">{faq.a}</div>
                     </div>
                   </div>
                 </div>
@@ -1623,9 +2036,15 @@ export default function LandingPage() {
            ════════════════════════════════════════ */}
       <section className="final-cta">
         <div className="container" style={{ position: "relative", zIndex: 1 }}>
-
           <div className="reveal">
-            <div className="eyebrow" style={{ color: "rgba(196,30,58,.85)", justifyContent: "center", display: "flex" }}>
+            <div
+              className="eyebrow"
+              style={{
+                color: "rgba(196,30,58,.85)",
+                justifyContent: "center",
+                display: "flex",
+              }}
+            >
               NewsIQ
             </div>
             <h2 className="final-cta-title">
@@ -1634,7 +2053,8 @@ export default function LandingPage() {
               <em>Start understanding the story.</em>
             </h2>
             <p className="final-cta-sub">
-              AI-powered news intelligence with summaries, timelines, source comparisons, and transparent references. Free to start.
+              AI-powered news intelligence with summaries, timelines, source
+              comparisons, and transparent references. Free to start.
             </p>
             <div className="final-cta-btns">
               <Link href={isAuthenticated ? "/home" : "/signup"}>
@@ -1656,12 +2076,22 @@ export default function LandingPage() {
                   Start reading free
                 </button>
               </Link>
-              <button className="btn-ghost-white" onClick={() => showToast("Loading demo…")}>
+              <button
+                className="btn-ghost-white"
+                onClick={() => showToast("Loading demo…")}
+              >
                 Explore NewsIQ
               </button>
             </div>
-            <div style={{ marginTop: "24px", fontSize: "13px", color: "rgba(255,255,255,.35)" }}>
-              No credit card required · Free tier always available · Cancel Pro anytime
+            <div
+              style={{
+                marginTop: "24px",
+                fontSize: "13px",
+                color: "rgba(255,255,255,.35)",
+              }}
+            >
+              No credit card required · Free tier always available · Cancel Pro
+              anytime
             </div>
           </div>
         </div>
@@ -1680,17 +2110,32 @@ export default function LandingPage() {
                 <i>IQ</i>
               </div>
               <p className="footer-tagline">
-                AI-powered news intelligence. Understand the world's events in under 30 seconds.
+                AI-powered news intelligence. Understand the world's events in
+                under 30 seconds.
               </p>
               <div className="footer-social">
-                <div className="footer-social-btn" onClick={() => showToast("Opening X…")}>
+                <div
+                  className="footer-social-btn"
+                  onClick={() => showToast("Opening X…")}
+                >
                   𝕏
                 </div>
-                <div className="footer-social-btn" onClick={() => showToast("Opening LinkedIn…")}>
+                <div
+                  className="footer-social-btn"
+                  onClick={() => showToast("Opening LinkedIn…")}
+                >
                   in
                 </div>
-                <div className="footer-social-btn" onClick={() => showToast("Opening GitHub…")}>
-                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                <div
+                  className="footer-social-btn"
+                  onClick={() => showToast("Opening GitHub…")}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
                     <path d="M10 2a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.88-1.17-.88-1.17-.72-.49.05-.48.05-.48.8.06 1.22.82 1.22.82.71 1.21 1.86.86 2.31.66.07-.52.28-.86.51-1.06-1.77-.2-3.63-.89-3.63-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 10 2z" />
                   </svg>
                 </div>
@@ -1718,32 +2163,56 @@ export default function LandingPage() {
             {/* Resources */}
             <div>
               <div className="footer-col-title">Resources</div>
-              <a className="footer-link" onClick={() => showToast("Opening Blog…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Blog…")}
+              >
                 Blog
               </a>
-              <a className="footer-link" onClick={() => showToast("Opening Documentation…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Documentation…")}
+              >
                 Documentation
               </a>
-              <a className="footer-link" onClick={() => showToast("Opening API…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening API…")}
+              >
                 API
               </a>
-              <a className="footer-link" onClick={() => showToast("Opening Status…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Status…")}
+              >
                 Status
               </a>
             </div>
             {/* Company */}
             <div>
               <div className="footer-col-title">Company</div>
-              <a className="footer-link" onClick={() => showToast("Opening About…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening About…")}
+              >
                 About
               </a>
-              <a className="footer-link" onClick={() => showToast("Opening Careers…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Careers…")}
+              >
                 Careers
               </a>
-              <a className="footer-link" onClick={() => showToast("Opening Press…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Press…")}
+              >
                 Press
               </a>
-              <a className="footer-link" onClick={() => showToast("Opening Contact…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Contact…")}
+              >
                 Contact
               </a>
             </div>
@@ -1756,24 +2225,40 @@ export default function LandingPage() {
               <Link href="/tos" className="footer-link">
                 Terms of Service
               </Link>
-              <a className="footer-link" onClick={() => showToast("Opening Cookie Settings…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Cookie Settings…")}
+              >
                 Cookie Settings
               </a>
-              <a className="footer-link" onClick={() => showToast("Opening Grievance Officer…")}>
+              <a
+                className="footer-link"
+                onClick={() => showToast("Opening Grievance Officer…")}
+              >
                 Grievance Officer
               </a>
             </div>
           </div>
           <div className="footer-bottom">
-            <span>© 2026 NewsIQ Technologies Private Limited. All rights reserved.</span>
+            <span>
+              © 2026 NewsIQ Technologies Private Limited. All rights reserved.
+            </span>
             <div className="footer-bottom-links">
-              <Link href="/privacy" className="footer-link" style={{ margin: 0 }}>
+              <Link
+                href="/privacy"
+                className="footer-link"
+                style={{ margin: 0 }}
+              >
                 Privacy
               </Link>
               <Link href="/tos" className="footer-link" style={{ margin: 0 }}>
                 Terms
               </Link>
-              <a className="footer-link" style={{ margin: 0 }} onClick={() => showToast("Opening Sitemap…")}>
+              <a
+                className="footer-link"
+                style={{ margin: 0 }}
+                onClick={() => showToast("Opening Sitemap…")}
+              >
                 Sitemap
               </a>
             </div>

@@ -114,6 +114,19 @@
   box-shadow: var(--landing-sh-primary);
 }
 .landing-body .nav-cta:hover { background: var(--landing-primary-d); }
+.landing-body .nav-profile-btn {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--landing-primary); color: #fff;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, box-shadow .15s;
+  box-shadow: 0 2px 8px rgba(196,30,58,.3);
+  border: 2px solid rgba(255,255,255,.15);
+}
+.landing-body .nav-profile-btn:hover {
+  background: var(--landing-primary-d);
+  box-shadow: 0 4px 14px rgba(196,30,58,.4);
+}
 .landing-body .theme-btn {
   width: 34px; height: 34px; border-radius: 50%; display: flex;
   align-items: center; justify-content: center;
