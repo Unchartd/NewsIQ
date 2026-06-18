@@ -149,9 +149,16 @@ export default function LandingPage() {
             <a className="nav-link" href="#demo">
               See it live
             </a>
-            <Link className="nav-link" href="/premium">
+            <a
+              className="nav-link"
+              href="#pricing"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
               Pricing
-            </Link>
+            </a>
           </div>
           <div className="nav-right">
             <button
@@ -1517,11 +1524,11 @@ export default function LandingPage() {
               },
               {
                 q: "Can I compare coverage between publishers?",
-                a: "Yes — this is one of NewsIQ's most distinctive features. Every story includes two comparison tools: the Source Coverage Table (showing what angle each publisher took) and the Difference Engine (a structured comparison of specific facts, flagging contradictions with a ⚠ symbol and missing facts with a — marker). Available on Pro.",
+                a: "Yes — and this is free for every user. Every story includes two comparison tools: the Source Coverage Table (showing what angle each publisher took) and the Difference Engine (a structured comparison of specific facts, flagging contradictions with a ⚠ symbol and missing facts with a — marker). We believe media transparency should be a right, not a premium feature.",
               },
               {
                 q: "Is NewsIQ free?",
-                a: "Yes, there's a free tier with 10 stories per day, 1-line summaries, and the trending feed. Pro (₹399/month) unlocks unlimited stories, all three summary depths, the Difference Engine, source comparison tables, personalised feeds, and the Daily Digest email delivery. Students and educators can apply for 50% off at edu@newsiq.in.",
+                a: "Yes. The free tier gives you 10 stories per day, 1-line summaries, trending feed, Source Comparison, and the Difference Engine. Pro (₹399/month) unlocks unlimited stories, all three summary depths, personalised feed, Daily Digest email, and ad-free reading. Students and educators can apply for 50% off at edu@newsiq.in.",
               },
             ].map((faq, index) => {
               const isOpen = openFaqIndex === index;
@@ -1559,10 +1566,149 @@ export default function LandingPage() {
       </section>
 
       {/* ════════════════════════════════════════
+           PRICING
+           ════════════════════════════════════════ */}
+      <section id="pricing" className="pricing-section reveal">
+        <div className="container">
+          <div className="pricing-eyebrow">
+            <div className="eyebrow">Pricing</div>
+          </div>
+          <h2 className="pricing-title">
+            Simple, transparent<br />
+            <em>pricing that scales with you</em>
+          </h2>
+          <p className="pricing-sub">
+            Source comparison &amp; Difference Engine are free for everyone. Upgrade to unlock more stories and personalisation.
+          </p>
+
+          <div className="pricing-grid">
+            {/* FREE */}
+            <div className="pricing-card">
+              <div className="pricing-plan-name">Free</div>
+              <div className="pricing-price">₹0<span>/month</span></div>
+              <div className="pricing-desc">For occasional readers who want to stay informed.</div>
+              <div className="pricing-divider" />
+              <ul className="pricing-features">
+                {[
+                  { text: "10 stories / day", yes: true },
+                  { text: "1-line AI summaries", yes: true },
+                  { text: "Trending feed", yes: true },
+                  { text: "Source comparison", yes: true, tag: "Free" },
+                  { text: "Difference Engine", yes: true, tag: "Free" },
+                  { text: "Personalised feed", yes: false },
+                  { text: "AI chat", yes: false },
+                  { text: "Ad-free", yes: false },
+                ].map((f, i) => (
+                  <li key={i} className={`pricing-feat-item ${!f.yes ? "dimmed" : ""}`}>
+                    <span className={`pricing-feat-icon ${f.yes ? "yes" : "no"}`}>
+                      {f.yes ? (
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5"/></svg>
+                      ) : (
+                        <svg width="10" height="2" viewBox="0 0 10 2" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M1 1h8"/></svg>
+                      )}
+                    </span>
+                    <span>
+                      {f.text}
+                      {f.tag && <span className="pricing-feat-tag free-tag">{f.tag}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <Link href={isAuthenticated ? "/home" : "/signup"}>
+                <button className="pricing-cta pricing-cta-outline">Continue free</button>
+              </Link>
+            </div>
+
+            {/* PRO */}
+            <div className="pricing-card featured">
+              <div className="pricing-badge">Most popular</div>
+              <div className="pricing-plan-name">Pro</div>
+              <div className="pricing-price">₹399<span>/month</span></div>
+              <div className="pricing-desc">For professionals and power readers who need depth.</div>
+              <div className="pricing-divider" />
+              <ul className="pricing-features">
+                {[
+                  { text: "Unlimited stories", yes: true },
+                  { text: "All 3 summary depths", yes: true },
+                  { text: "Source comparison table", yes: true },
+                  { text: "Difference Engine", yes: true },
+                  { text: "Personalised feed", yes: true },
+                  { text: "Daily digest email", yes: true },
+                  { text: "Ad-free reading", yes: true },
+                  { text: "AI chat (beta)", yes: true },
+                ].map((f, i) => (
+                  <li key={i} className="pricing-feat-item">
+                    <span className="pricing-feat-icon yes">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5"/></svg>
+                    </span>
+                    <span>{f.text}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link href={isAuthenticated ? "/premium" : "/signup"}>
+                <button className="pricing-cta pricing-cta-primary">Upgrade to Pro</button>
+              </Link>
+            </div>
+
+            {/* ENTERPRISE */}
+            <div className="pricing-card">
+              <div className="pricing-plan-name">Enterprise</div>
+              <div className="pricing-price" style={{ fontSize: "28px" }}>Custom</div>
+              <div className="pricing-desc">For newsrooms, organisations, and teams needing scale.</div>
+              <div className="pricing-divider" />
+              <ul className="pricing-features">
+                {[
+                  { text: "Everything in Pro", yes: true },
+                  { text: "REST API access", yes: true },
+                  { text: "Bulk story exports", yes: true },
+                  { text: "Advanced analytics", yes: true },
+                  { text: "Dedicated support", yes: true },
+                  { text: "SLA guarantees", yes: true },
+                  { text: "Custom integrations", yes: true },
+                ].map((f, i) => (
+                  <li key={i} className="pricing-feat-item">
+                    <span className="pricing-feat-icon yes">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5"/></svg>
+                    </span>
+                    <span>{f.text}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                className="pricing-cta pricing-cta-outline"
+                onClick={() => showToast("Sales team notified! We'll contact you soon.")}
+              >
+                Contact sales
+              </button>
+            </div>
+          </div>
+
+          {/* Free features callout */}
+          <div className="pricing-callout">
+            <div className="pricing-callout-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 12l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="3"/>
+              </svg>
+            </div>
+            <div className="pricing-callout-body">
+              <h4>Source Comparison &amp; Difference Engine are free for everyone</h4>
+              <p>We believe media transparency should be a right, not a premium feature. Every NewsIQ reader — free or paid — can see how different publishers covered the same story and where they contradict each other.</p>
+            </div>
+          </div>
+
+          <div className="pricing-note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            No credit card required · Free tier always available · Cancel Pro anytime · Students get 50% off at edu@newsiq.in
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════
            FINAL CTA
            ════════════════════════════════════════ */}
       <section className="final-cta">
         <div className="container" style={{ position: "relative", zIndex: 1 }}>
+
           <div className="reveal">
             <div className="eyebrow" style={{ color: "rgba(196,30,58,.85)", justifyContent: "center", display: "flex" }}>
               NewsIQ
