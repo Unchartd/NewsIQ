@@ -1529,10 +1529,27 @@ export default function LandingPage() {
                 <div className={`faq-item ${isOpen ? "open" : ""}`} key={index}>
                   <div className="faq-q" onClick={() => toggleFaq(index)}>
                     {faq.q}
-                    <span className="faq-chevron">▾</span>
+                    <span className="faq-chevron">
+                      <svg
+                        width="8"
+                        height="6"
+                        viewBox="0 0 10 6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M1 1l4 4 4-4" />
+                      </svg>
+                    </span>
                   </div>
-                  <div className="faq-a" style={{ display: isOpen ? "block" : "none" }}>
-                    {faq.a}
+                  <div className="faq-a-wrapper">
+                    <div className="faq-a-inner">
+                      <div className="faq-a">
+                        {faq.a}
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

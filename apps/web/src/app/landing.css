@@ -537,14 +537,32 @@
   user-select: none;
 }
 .faq-chevron {
-  width: 22px; height: 22px; border-radius: 50%; background: var(--landing-surface);
+  width: 24px; height: 24px; border-radius: 50%; background: var(--landing-surface);
   border: 1px solid var(--landing-border); display: flex; align-items: center; justify-content: center;
-  font-size: 12px; color: var(--landing-ink3); flex-shrink: 0;
-  transition: transform .22s ease, background .15s;
+  color: var(--landing-ink3); flex-shrink: 0;
+  transition: transform .22s cubic-bezier(0.4, 0, 0.2, 1), background .15s, border-color .15s, color .15s;
 }
-.faq-item.open .faq-chevron { transform: rotate(180deg); background: var(--landing-primary); border-color: var(--landing-primary); color: #fff; }
-.faq-a { display: none; padding: 0 22px 18px; font-size: 14px; color: var(--landing-ink3); line-height: 1.75; }
-.faq-item.open .faq-a { display: block; }
+.faq-chevron svg {
+  display: block;
+}
+.faq-item.open .faq-chevron {
+  transform: rotate(180deg);
+  background: var(--landing-primary);
+  border-color: var(--landing-primary);
+  color: #fff;
+}
+.faq-a-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.faq-item.open .faq-a-wrapper {
+  grid-template-rows: 1fr;
+}
+.faq-a-inner {
+  overflow: hidden;
+}
+.faq-a { padding: 0 22px 18px; font-size: 14px; color: var(--landing-ink3); line-height: 1.75; }
 
 /* ═══════════════════════════════════════════
    FINAL CTA
