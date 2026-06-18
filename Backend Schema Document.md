@@ -357,6 +357,8 @@ CREATE TABLE stories (
 
     detailed_summary TEXT,
 
+    key_facts JSONB,
+
     category_id UUID REFERENCES categories(id),
 
     location_country VARCHAR(100),

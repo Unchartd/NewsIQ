@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { Bell, Crown } from "lucide-react";
 import type { Story } from "@/types";
+import { useQuery } from "@tanstack/react-query";
+import { useAuthStore } from "@/stores/auth-store";
+import apiClient from "@/lib/api-client";
 
 /* ─── Trending Widget ──────────────────────────── */
 interface TrendingWidgetProps {
@@ -57,18 +60,90 @@ export function TopSourcesWidget() {
 }
 
 /* ─── Digest CTA Widget ──────────────────────── */
-export function DigestWidget() {
+interface DigestWidgetProps {
+  hasActiveDigest?: boolean;
+}
+
+export function DigestWidget({ hasActiveDigest }: DigestWidgetProps) {
+  const { isAuthenticated } = useAuthStore();
+
+  const { data: digestSubscriptions = [] } = useQuery({
+    queryKey: ["digest-subscriptions"],
+    queryFn: async () => {
+      const response = await apiClient.get("/users/digests");
+      return response.data;
+    },
+    enabled: isAuthenticated && hasActiveDigest === undefined,
+  });
+
+  const isSetup = hasActiveDigest !== undefined
+    ? hasActiveDigest
+    : digestSubscriptions.length > 0;
+
+  const activeSubs = digestSubscriptions.filter((s: any) => s.enabled);
+  const isActive = hasActiveDigest !== undefined
+    ? hasActiveDigest
+    : activeSubs.length > 0;
+
+  // Make title & description dynamic based on active subscriptions
+  const EDITIONS_MAP: Record<string, string> = {
+    morning: "Morning Digest",
+    midday: "Midday Brief",
+    evening: "Evening Wrap",
+    weekly: "Weekly Summary",
+  };
+
+  const activeNames = Array.from(new Set(activeSubs.map((s: any) => (EDITIONS_MAP[s.frequency] || s.frequency) as string)));
+  let title = "Morning Digest";
+  let desc = "Top 10 stories. 3-minute read. Every day at 7 AM.";
+
+  if (activeNames.length === 1) {
+    title = activeNames[0] as string;
+    const freq = activeSubs[0].frequency;
+    if (freq === "evening") {
+      desc = "What you missed today. 3-minute read. Every day at 6 PM.";
+    } else if (freq === "midday") {
+      desc = "Quick catch-up on what's moving. Every day at 1 PM.";
+    } else if (freq === "weekly") {
+      desc = "Biggest stories of the week. Every Sunday.";
+    }
+  } else if (activeNames.length > 1) {
+    title = "Your Digests";
+    desc = `${activeNames.length} active editions configured.`;
+  }
+
   return (
     <div className="widget">
       <div className="dwidget">
-        <div className="dw-t">Morning Digest</div>
-        <div className="dw-s">Top 10 stories. 3-minute read. Every day at 7 AM.</div>
-        <Link href="/digest/setup">
-          <button className="btnp">
-            <Bell size={14} />
-            Subscribe free
-          </button>
-        </Link>
+        <div className="dw-t">
+          {title}
+          {isActive && (
+            <span style={{
+              marginLeft: 8, fontSize: 10, fontWeight: 700,
+              padding: "2px 7px", borderRadius: 99,
+              background: "rgba(22,163,74,.15)", color: "var(--green)",
+              verticalAlign: "middle",
+            }}>
+              Active
+            </span>
+          )}
+        </div>
+        <div className="dw-s">{desc}</div>
+        {isSetup ? (
+          <Link href="/settings?tab=notif">
+            <button className="btno" style={{ width: "100%", justifyContent: "center", marginTop: 4 }}>
+              <Bell size={13} />
+              Manage digest
+            </button>
+          </Link>
+        ) : (
+          <Link href="/digest/setup">
+            <button className="btnp">
+              <Bell size={14} />
+              Subscribe free
+            </button>
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -128,9 +203,10 @@ export function TrendingWidgetSkeleton() {
 interface SidebarWidgetsProps {
   trendingStories?: Story[];
   isLoading?: boolean;
+  hasActiveDigest?: boolean;
 }
 
-export function SidebarWidgets({ trendingStories = [], isLoading = false }: SidebarWidgetsProps) {
+export function SidebarWidgets({ trendingStories = [], isLoading = false, hasActiveDigest }: SidebarWidgetsProps) {
   return (
     <div className="sticky-p">
       {isLoading ? (
@@ -139,7 +215,7 @@ export function SidebarWidgets({ trendingStories = [], isLoading = false }: Side
         trendingStories.length > 0 && <TrendingWidget stories={trendingStories} />
       )}
       <TopSourcesWidget />
-      <DigestWidget />
+      <DigestWidget hasActiveDigest={hasActiveDigest} />
       <PremiumUpsellWidget />
     </div>
   );

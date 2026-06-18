@@ -1,9 +1,17 @@
 """Pydantic schemas for story endpoints."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
+
+def _ensure_utc(v: Any) -> Any:
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=UTC)
+    return v
+
+UTCDateTime = Annotated[datetime, BeforeValidator(_ensure_utc)]
 
 # ──────────────────────────────────────────────
 # Story Sub-schemas
@@ -39,7 +47,7 @@ class StoryArticleResponse(BaseModel):
     url: str
     author: str | None = None
     image_url: str | None = None
-    published_at: datetime | None = None
+    published_at: UTCDateTime | None = None
     source: SourceInStory
 
     class Config:
@@ -48,7 +56,7 @@ class StoryArticleResponse(BaseModel):
 
 class StoryTimelineEventResponse(BaseModel):
     id: uuid.UUID
-    event_time: datetime | None = None
+    event_time: UTCDateTime | None = None
     event_time_raw: str | None = None  # Raw AI string (e.g. "08:00 AM UTC") for display fallback
     description: str | None = None
 
@@ -60,7 +68,7 @@ class StorySourceCoverageResponse(BaseModel):
     id: uuid.UUID
     source: SourceInStory
     focus_area: str | None = None
-    published_at: datetime | None = None
+    published_at: UTCDateTime | None = None
 
     class Config:
         from_attributes = True
@@ -120,8 +128,8 @@ class StoryListResponse(BaseModel):
     location_state: str | None = None
     location_city: str | None = None
     trend_score: float | None = None
-    first_seen_at: datetime | None = None
-    updated_at: datetime | None = None
+    first_seen_at: UTCDateTime | None = None
+    updated_at: UTCDateTime | None = None
     category: CategoryInStory | None = None
     article_count: int = Field(0, description="Total count of articles covering this story")
     source_count: int = Field(0, description="Number of unique sources covering this story")
@@ -141,12 +149,14 @@ class StoryDetailResponse(BaseModel):
     one_line_summary: str | None = None
     short_summary: str | None = None
     detailed_summary: str | None = None
+    # key_facts: ordered bullet points extracted by Gemini
+    key_facts: list[str] = Field(default_factory=list, description="Key factual bullet points")
     location_country: str | None = None
     location_state: str | None = None
     location_city: str | None = None
     trend_score: float | None = None
-    first_seen_at: datetime | None = None
-    updated_at: datetime | None = None
+    first_seen_at: UTCDateTime | None = None
+    updated_at: UTCDateTime | None = None
     category: CategoryInStory | None = None
     source_count: int = Field(0, description="Number of unique sources covering this story")
 
@@ -195,7 +205,7 @@ class SearchResultResponse(BaseModel):
     one_line_summary: str | None = None
     category: CategoryInStory | None = None
     trend_score: float | None = None
-    updated_at: datetime | None = None
+    updated_at: UTCDateTime | None = None
     article_count: int = 0
     source_count: int = 0
 
@@ -213,3 +223,63 @@ class CategoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ──────────────────────────────────────────────
+# Source Comparison Schema
+# ──────────────────────────────────────────────
+
+
+class SourceComparisonItem(BaseModel):
+    """Per-source analysis for the comparison view."""
+
+    source: SourceInStory
+    focus_area: str | None = None          # Short label: what this source focused on
+    unique_information: str | None = None  # Details only this source reported
+    missing_information: str | None = None # Key facts this source omitted
+    contradictions: str | None = None      # Claims that conflict with other sources
+
+    class Config:
+        from_attributes = True
+
+
+class StoryComparisonResponse(BaseModel):
+    """Response schema for GET /stories/{id}/comparison."""
+
+    story_id: uuid.UUID
+    headline: str | None = None
+    source_count: int = 0
+    sources: list[SourceComparisonItem] = []
+    source_coverage: list[StorySourceCoverageResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+# ──────────────────────────────────────────────
+# Internal Admin Trigger Schemas
+# ──────────────────────────────────────────────
+
+
+class FetchNewsRequest(BaseModel):
+    """Body for POST /internal/fetch-news."""
+
+    gnews: bool = Field(True, description="Include GNews API fetch")
+    rss: bool = Field(True, description="Include RSS feed fetch")
+
+
+class FetchNewsResponse(BaseModel):
+    """Response for POST /internal/fetch-news."""
+
+    gnews_articles: int = 0
+    rss_articles: int = 0
+    total_articles: int = 0
+    embedding_triggered: bool = False
+
+
+class ProcessStoryResponse(BaseModel):
+    """Response for POST /internal/process-story."""
+
+    stories_created: int = 0
+    articles_clustered: int = 0
+    message: str = ""

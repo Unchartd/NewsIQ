@@ -121,8 +121,39 @@ export default function DigestSetupPage() {
   });
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    const fetchSettings = async () => {
+      if (!isAuthenticated) {
+        setMounted(true);
+        return;
+      }
+      try {
+        const response = await apiClient.get("/users/preferences");
+        if (response.data && response.data.digest_settings) {
+          const ds = response.data.digest_settings;
+          if (response.data.categories) {
+            setSelectedCats(new Set(response.data.categories));
+          }
+          if (ds.story_count !== undefined) setStoryCount(ds.story_count);
+          if (ds.prioritize_local !== undefined) setPrioritizeLocal(ds.prioritize_local);
+          if (ds.include_world !== undefined) setIncludeWorld(ds.include_world);
+          if (ds.editions !== undefined) setEditions(ds.editions);
+          if (ds.delivery_times !== undefined) setDeliveryTimes(ds.delivery_times);
+          if (ds.frequency !== undefined) setFrequency(ds.frequency);
+          if (ds.custom_days !== undefined) setCustomDays(new Set(ds.custom_days));
+          if (ds.weekly_wrap !== undefined) setWeeklyWrap(ds.weekly_wrap);
+          if (ds.channels !== undefined) setChannels(ds.channels);
+          if (ds.email_format !== undefined) setEmailFormat(ds.email_format);
+          
+          setStep("manage");
+        }
+      } catch (err) {
+        console.error("Failed to fetch digest settings", err);
+      } finally {
+        setMounted(true);
+      }
+    };
+    fetchSettings();
+  }, [isAuthenticated]);
 
   if (!mounted) return null;
 
@@ -141,12 +172,59 @@ export default function DigestSetupPage() {
   };
 
   const handleSubscribe = async () => {
+    if (!isAuthenticated) {
+      toast.error("Please sign in to subscribe to the digest.");
+      return;
+    }
     setIsSubscribing(true);
-    setTimeout(() => {
-      setIsSubscribing(false);
+    try {
+      const payload = {
+        categories: Array.from(selectedCats),
+        story_count: storyCount,
+        prioritize_local: prioritizeLocal,
+        include_world: includeWorld,
+        editions,
+        delivery_times: deliveryTimes,
+        frequency,
+        custom_days: Array.from(customDays),
+        weekly_wrap: weeklyWrap,
+        channels,
+        email_format: emailFormat,
+      };
+      await apiClient.post("/users/digests/setup", payload);
       go("success");
       toast.success("Subscribed! First digest arrives tomorrow 🎉");
-    }, 1400);
+    } catch (err: any) {
+      console.error("Failed to subscribe to digest", err);
+      toast.error(err.response?.data?.detail || "Failed to set up digest subscription. Please try again.");
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
+  const handleUnsubscribe = async () => {
+    try {
+      await apiClient.delete("/users/digests/unsubscribe");
+      toast.success("Successfully unsubscribed from digest");
+      
+      // Reset settings states to default
+      setSelectedCats(new Set(["politics", "technology", "sports"]));
+      setStoryCount(5);
+      setPrioritizeLocal(true);
+      setIncludeWorld(true);
+      setEditions({ morning: true, midday: false, evening: false });
+      setDeliveryTimes({ morning: "7:00", midday: "1:00", evening: "6:00" });
+      setFrequency("daily");
+      setCustomDays(new Set(["Mon", "Tue", "Wed", "Thu", "Fri"]));
+      setWeeklyWrap(true);
+      setChannels({ email: true, app: true, telegram: false, push: false });
+      setEmailFormat("html");
+
+      go("intro");
+    } catch (err: any) {
+      console.error("Failed to unsubscribe", err);
+      toast.error("Failed to unsubscribe. Please try again.");
+    }
   };
 
   const handleBack = () => {
@@ -806,16 +884,69 @@ export default function DigestSetupPage() {
                   </div>
                   <div className="slbl">Active editions</div>
                   <div className="crd" style={{ marginBottom: 20, overflow: "hidden" }}>
-                    <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>🌅</span><div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>Morning Digest</div><div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>Daily · 7:00 AM · 5 stories · Email + In-app</div></div><div style={{ display: "flex", gap: 8, alignItems: "center" }}><button className="btno-onb btnsm" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => go("schedule")}>Edit</button><label className="toggle"><input type="checkbox" defaultChecked /><div className="tog-track"></div><div className="tog-thumb"></div></label></div></div>
-                    <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => go("schedule")}><span style={{ fontSize: 20, filter: "grayscale(1)", opacity: 0.5 }}>🌆</span><div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink3)" }}>Evening Wrap-Up</div><div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>Not active · Tap to set up</div></div><ArrowRight size={14} color="var(--ink3)" /></div>
+                    {editions.morning && (
+                      <div style={{ padding: "16px 20px", borderBottom: (editions.midday || editions.evening) ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 20 }}>🌅</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>Morning Digest</div>
+                          <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>
+                            {frequency.charAt(0).toUpperCase() + frequency.slice(1)} · {deliveryTimes.morning} · {storyCount} stories · {Object.keys(channels).filter(c => channels[c as keyof typeof channels]).map(c => c === "app" ? "In-app" : c.charAt(0).toUpperCase() + c.slice(1)).join(" + ")}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <button className="btno-onb btnsm" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => go("schedule")}>Edit</button>
+                        </div>
+                      </div>
+                    )}
+                    {editions.midday && (
+                      <div style={{ padding: "16px 20px", borderBottom: editions.evening ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 20 }}>☀️</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>Midday Briefing</div>
+                          <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>
+                            {frequency.charAt(0).toUpperCase() + frequency.slice(1)} · {deliveryTimes.midday} · {storyCount} stories · {Object.keys(channels).filter(c => channels[c as keyof typeof channels]).map(c => c === "app" ? "In-app" : c.charAt(0).toUpperCase() + c.slice(1)).join(" + ")}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <button className="btno-onb btnsm" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => go("schedule")}>Edit</button>
+                        </div>
+                      </div>
+                    )}
+                    {editions.evening && (
+                      <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 20 }}>🌆</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>Evening Wrap-Up</div>
+                          <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>
+                            {frequency.charAt(0).toUpperCase() + frequency.slice(1)} · {deliveryTimes.evening} · {storyCount} stories · {Object.keys(channels).filter(c => channels[c as keyof typeof channels]).map(c => c === "app" ? "In-app" : c.charAt(0).toUpperCase() + c.slice(1)).join(" + ")}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <button className="btno-onb btnsm" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => go("schedule")}>Edit</button>
+                        </div>
+                      </div>
+                    )}
+                    {!editions.morning && !editions.midday && !editions.evening && (
+                      <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => go("schedule")}>
+                        <span style={{ fontSize: 20, filter: "grayscale(1)", opacity: 0.5 }}>📰</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink3)" }}>No active editions</div>
+                          <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>Tap to set up editions</div>
+                        </div>
+                        <ArrowRight size={14} color="var(--ink3)" />
+                      </div>
+                    )}
                   </div>
                   <div className="slbl">Current settings</div>
                   <div className="crd" style={{ marginBottom: 20 }}>
                     <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Topics</div><div style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 4 }}>{Array.from(selectedCats).map(c => (<span key={c} className="topic-tag">{CATEGORIES.find(cat => cat.id === c)?.icon} {CATEGORIES.find(cat => cat.id === c)?.name}</span>))}</div><button style={{ fontSize: 12, color: "var(--blue)", fontWeight: 500, cursor: "pointer", background: "none", border: "none" }} onClick={() => go("topics")}>Edit</button></div>
-                    <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Schedule</div><div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>7:00 AM · Daily</div><button style={{ fontSize: 12, color: "var(--blue)", fontWeight: 500, cursor: "pointer", background: "none", border: "none" }} onClick={() => go("schedule")}>Edit</button></div>
+                    <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Schedule</div><div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>{editions.morning && "Morning"} {editions.midday && "Midday"} {editions.evening && "Evening"} · {frequency.charAt(0).toUpperCase() + frequency.slice(1)}</div><button style={{ fontSize: 12, color: "var(--blue)", fontWeight: 500, cursor: "pointer", background: "none", border: "none" }} onClick={() => go("schedule")}>Edit</button></div>
                     <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Length</div><div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>{storyCount} stories · ~{Math.ceil(storyCount * 0.6)} min read</div><button style={{ fontSize: 12, color: "var(--blue)", fontWeight: 500, cursor: "pointer", background: "none", border: "none" }} onClick={() => go("topics")}>Edit</button></div>
-                    <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Channels</div><div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>Email · In-app</div><button style={{ fontSize: 12, color: "var(--blue)", fontWeight: 500, cursor: "pointer", background: "none", border: "none" }} onClick={() => go("channels")}>Edit</button></div>
-                    <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Weekly</div><div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>Weekly wrap-up · Sunday</div><label className="toggle"><input type="checkbox" defaultChecked /><div className="tog-track"></div><div className="tog-thumb"></div></label></div>
+                    <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Channels</div><div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>{Object.keys(channels).filter(c => channels[c as keyof typeof channels]).map(c => c === "app" ? "In-app" : c.charAt(0).toUpperCase() + c.slice(1)).join(" · ")}</div><button style={{ fontSize: 12, color: "var(--blue)", fontWeight: 500, cursor: "pointer", background: "none", border: "none" }} onClick={() => go("channels")}>Edit</button></div>
+                    <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 13, color: "var(--ink3)", minWidth: 90 }}>Weekly</div><div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>{weeklyWrap ? "Weekly wrap-up · Sunday" : "Disabled"}</div><label className="toggle"><input type="checkbox" checked={weeklyWrap} onChange={(e) => {
+                      setWeeklyWrap(e.target.checked);
+                      toast.success(e.target.checked ? "Weekly wrap enabled" : "Weekly wrap disabled");
+                    }} /><div className="tog-track"></div><div className="tog-thumb"></div></label></div>
                   </div>
                   <div className="slbl">Past digests</div>
                   <div className="crd" style={{ marginBottom: 28 }}>
@@ -827,7 +958,7 @@ export default function DigestSetupPage() {
                       <div key={idx} style={{ padding: "13px 20px", borderBottom: idx < 2 ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}><div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>{item.d}</div><div style={{ fontSize: 12, color: "var(--ink3)" }}>{item.t}</div></div><span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "rgba(22,163,74,0.1)", color: "var(--green)" }}>Sent</span><ArrowRight size={13} color="var(--ink3)" /></div>
                     ))}
                   </div>
-                  <div style={{ display: "flex", gap: 10, paddingTop: 4 }}><button className="btno-onb" style={{ flex: 1 }} onClick={() => toast.info("Digest paused for 7 days")}>Pause for 7 days</button><button style={{ flex: 1, background: "transparent", color: "var(--err)", border: "1.5px solid rgba(220,38,38,0.2)", borderRadius: "var(--r6)", padding: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => toast.error("Unsubscribed from digest")}>Unsubscribe</button></div>
+                  <div style={{ display: "flex", gap: 10, paddingTop: 4 }}><button className="btno-onb" style={{ flex: 1 }} onClick={() => toast.info("Digest paused for 7 days")}>Pause for 7 days</button><button style={{ flex: 1, background: "transparent", color: "var(--err)", border: "1.5px solid rgba(220,38,38,0.2)", borderRadius: "var(--r6)", padding: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={handleUnsubscribe}>Unsubscribe</button></div>
                 </div>
               </motion.div>
             )}

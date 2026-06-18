@@ -2,6 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
+import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
+import type { Story } from "@/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -90,10 +92,26 @@ export default function NotificationsPage() {
     }
   };
 
+  // Query trending stories for the sidebar
+  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
+    queryKey: ["stories", "trending-sidebar"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories", {
+        params: {
+          trending: "true",
+          limit: 4,
+        },
+      });
+      return response.data;
+    },
+  });
+
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
+  const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
+
   return (
-    <AppShell>
+    <AppShell sidebar={sidebar}>
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 pb-24">
         {/* Title */}
         <div className="flex items-center justify-between">

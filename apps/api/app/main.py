@@ -80,7 +80,15 @@ if settings.SENTRY_DSN:
     )
 
 
+# Rate limiting
+app.add_middleware(RateLimitMiddleware, limit=100, window=60)
+
+# Security headers
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CORS
+# Register CORSMiddleware last so it wraps all other middlewares.
+# This ensures preflight OPTIONS requests are intercepted immediately and CORS headers are not stripped.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -88,12 +96,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Rate limiting
-app.add_middleware(RateLimitMiddleware, limit=100, window=60)
-
-# Security headers
-app.add_middleware(SecurityHeadersMiddleware)
 
 # Request ID middleware
 @app.middleware("http")

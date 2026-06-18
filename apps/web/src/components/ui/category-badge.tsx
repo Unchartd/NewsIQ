@@ -17,6 +17,14 @@ const CATEGORY_CLASS_MAP: Record<string, string> = {
   wea: "bw",
   world: "bwl",
   wld: "bwl",
+  entertainment: "be",
+  ent: "be",
+  lifestyle: "bl",
+  lif: "bl",
+  travel: "btv",
+  tvl: "btv",
+  education: "bed",
+  edu: "bed",
 };
 
 interface CategoryBadgeProps {

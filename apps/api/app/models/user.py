@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -118,6 +118,8 @@ class UserPreference(Base):
     preferred_summary_type: Mapped[str | None] = mapped_column(String(20))
     theme: Mapped[str | None] = mapped_column(String(20))
     language: Mapped[str | None] = mapped_column(String(20))
+    digest_settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ui_settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
 

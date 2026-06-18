@@ -65,12 +65,15 @@ class ClusteringService:
         # 1. Prepare article details for Gemini prompt
         article_data = []
         full_text_corpus = ""
+        source_countries = []
         for art in articles:
             # Fetch source name
             stmt = select(Source).where(Source.id == art.source_id)
             res = await session.execute(stmt)
             source = res.scalar_one_or_none()
             src_name = source.name if source else "Unknown Source"
+            if source and source.country_code:
+                source_countries.append(source.country_code)
 
             article_data.append(
                 {
@@ -92,6 +95,15 @@ class ClusteringService:
         story.one_line_summary = ai_res.one_line_summary
         story.short_summary = ai_res.short_summary
         story.detailed_summary = ai_res.detailed_summary
+        # Persist key_facts to JSONB column (previously discarded)
+        story.key_facts = [f for f in ai_res.key_facts if f] if ai_res.key_facts else []
+
+        # Resolve and assign location_country from article sources
+        if source_countries:
+            from collections import Counter
+            story.location_country = Counter(source_countries).most_common(1)[0][0]
+        else:
+            story.location_country = None
 
         # 3. Resolve and assign category from AI response
         cat_slug = ai_res.category if ai_res.category in CATEGORY_SLUGS else "world"
@@ -148,12 +160,17 @@ class ClusteringService:
                 continue
             seen_sources.add(source.id)
 
+            # Distill focus_area to a clean short label (max 100 chars, first sentence)
+            raw_focus = diff.unique_information or "General coverage"
+            first_sentence = raw_focus.split(".")[0].strip()
+            focus_area = (first_sentence[:100] + ".") if first_sentence else "General coverage"
+
             session.add(
                 StorySourceCoverage(
                     id=uuid.uuid4(),
                     story_id=story.id,
                     source_id=source.id,
-                    focus_area=diff.unique_information or "General coverage",
+                    focus_area=focus_area,
                     published_at=_now(),
                 )
             )
@@ -190,12 +207,8 @@ class ClusteringService:
                 if len(tags_added) >= 5:
                     break
 
-        # 9. Persist key_facts as tags (prefixed) so they are not lost
-        for fact in ai_res.key_facts[:6]:
-            fact_tag = f"fact:{fact[:80]}"
-            if fact_tag not in tags_added:
-                tags_added.add(fact_tag)
-                session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=fact_tag))
+        # 9. key_facts are now stored in story.key_facts JSONB — no longer need fact: tags
+        # (The prefixed-tag approach was a workaround; keep tags clean for display)
 
         await session.commit()
 
@@ -410,25 +423,53 @@ class ClusteringService:
         return stories_created
 
     async def compute_trending_score(self, story: Story, session: AsyncSession) -> float:
-        """Compute the trending score for a story based on coverage count and recency."""
-        # Use COUNT aggregate instead of fetching all rows
-        stmt = select(func.count()).select_from(StoryArticle).where(
-            StoryArticle.story_id == story.id
+        """Compute a multi-signal trending score for a story.
+
+        Formula:
+            score = (0.40 × source_score) + (0.35 × recency_score) + (0.25 × engagement_score)
+
+        source_score:      Unique source count / 5, capped at 1.0
+        recency_score:     Exponential decay with 6-hour half-life
+        engagement_score:  Weighted (views×1 + bookmarks×3 + shares×5) / 500, capped at 1.0
+        """
+        import math
+
+        # ── Source diversity score ────────────────────────────────────────────
+        # Count distinct sources contributing articles to this story
+        stmt_sources = (
+            select(func.count(func.distinct(Article.source_id)))
+            .join(StoryArticle, Article.id == StoryArticle.article_id)
+            .where(StoryArticle.story_id == story.id)
         )
-        res = await session.execute(stmt)
-        article_count: int = res.scalar_one() or 0
+        res = await session.execute(stmt_sources)
+        unique_source_count: int = res.scalar_one() or 0
+        source_score = min(unique_source_count / 5.0, 1.0)
 
-        # Recency calculation: hours since first seen
+        # ── Recency score (exponential decay, half-life = 6 hours) ────────────
         first_seen = story.first_seen_at or _now()
-        hours_elapsed = (_now() - first_seen).total_seconds() / 3600.0
+        hours_elapsed = max((_now() - first_seen).total_seconds() / 3600.0, 0)
+        recency_score = math.exp(-0.1155 * hours_elapsed)  # ln(2)/6 ≈ 0.1155
 
-        # Exponential gravity decay (Hacker News / Reddit style)
-        # Score = article_count / (hours_elapsed + 2)^1.5
-        score = article_count / ((hours_elapsed + 2.0) ** 1.5)
+        # ── Engagement score ──────────────────────────────────────────────────
+        engagement_score = 0.0
+        if story.metrics:
+            m = story.metrics
+            raw = (m.views or 0) * 1 + (m.bookmarks or 0) * 3 + (m.shares or 0) * 5
+            engagement_score = min(raw / 500.0, 1.0)
+
+        # ── Weighted composite ────────────────────────────────────────────────
+        score = (0.40 * source_score) + (0.35 * recency_score) + (0.25 * engagement_score)
 
         story.trend_score = score
         await session.commit()
+
+        logger.debug(
+            "Trending score for story %s: %.4f "
+            "(source=%.2f, recency=%.2f, engagement=%.2f, hours=%.1f)",
+            story.id, score, source_score, recency_score, engagement_score, hours_elapsed,
+        )
         return score
 
 
 clustering_service = ClusteringService()
+

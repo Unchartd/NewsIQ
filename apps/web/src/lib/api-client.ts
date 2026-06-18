@@ -88,8 +88,15 @@ apiClient.interceptors.response.use(
         processQueue(refreshError, null);
         isRefreshing = false;
         clearAccessToken();
+        
+        // Prevent redirect loops if already on a public/auth page
         if (typeof window !== "undefined") {
-          window.location.href = "/login";
+          const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/tos", "/privacy", "/"];
+          const currentPath = window.location.pathname;
+          
+          if (!publicPaths.includes(currentPath)) {
+            window.location.href = "/login";
+          }
         }
         return Promise.reject(refreshError);
       }

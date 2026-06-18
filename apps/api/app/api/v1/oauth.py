@@ -119,8 +119,8 @@ async def google_callback(
                 role="user",
                 subscription_plan="free",
                 status="active",
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
+                created_at=datetime.now(UTC).replace(tzinfo=None),
+                updated_at=datetime.now(UTC).replace(tzinfo=None),
             )
             db.add(user)
 

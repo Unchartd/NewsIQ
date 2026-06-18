@@ -6,7 +6,21 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { useTheme } from "next-themes";
-import { Navbar } from "@/components/layout/navbar";
+import { AppShell } from "@/components/layout/app-shell";
+import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
+import type { Story } from "@/types";
+import {
+  User,
+  Crown,
+  Bell,
+  Grid,
+  MapPin,
+  BookOpen,
+  Sun,
+  History,
+  Lock,
+  Shield,
+} from "lucide-react";
 
 // Toast Notification type
 interface Toast {
@@ -154,6 +168,21 @@ const DEFAULT_HISTORY: MockHistoryItem[] = [
   },
 ];
 
+const TAB_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
+  edit: User,
+  sub: Crown,
+  notif: Bell,
+  topics: Grid,
+  locs: MapPin,
+  summary: BookOpen,
+  theme: Sun,
+  history: History,
+  security: Lock,
+  privacy: Shield,
+};
+
+let hasHydratedSettings = false;
+
 function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -165,6 +194,12 @@ function SettingsContent() {
   const [activeTab, setActiveTab] = useState<string>("edit");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [openModal, setOpenModal] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(hasHydratedSettings);
+
+  useEffect(() => {
+    hasHydratedSettings = true;
+    setMounted(true);
+  }, []);
 
   // Sync tab state with URL parameter
   useEffect(() => {
@@ -192,7 +227,21 @@ function SettingsContent() {
     enabled: isAuthenticated,
   });
 
-  const { data: digestSubscriptions = [] } = useQuery({
+  // Query trending stories for the sidebar
+  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
+    queryKey: ["stories", "trending-sidebar"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories", {
+        params: {
+          trending: "true",
+          limit: 4,
+        },
+      });
+      return response.data;
+    },
+  });
+
+  const { data: digestSubscriptions = [], isLoading: isLoadingDigests } = useQuery({
     queryKey: ["digest-subscriptions"],
     queryFn: async () => {
       const response = await apiClient.get("/users/digests");
@@ -205,6 +254,26 @@ function SettingsContent() {
     queryKey: ["active-sessions"],
     queryFn: async () => {
       const response = await apiClient.get("/auth/sessions");
+      return response.data;
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Fetch recent notifications
+  const { data: notifications = [], refetch: refetchNotifs } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: async () => {
+      const response = await apiClient.get("/users/notifications");
+      return response.data;
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Fetch reading history
+  const { data: historyItems = [], refetch: refetchHistory } = useQuery({
+    queryKey: ["reading-history"],
+    queryFn: async () => {
+      const response = await apiClient.get("/users/history");
       return response.data;
     },
     enabled: isAuthenticated,
@@ -234,6 +303,7 @@ function SettingsContent() {
       categories?: string[];
       countries?: string[];
       cities?: string[];
+      ui_settings?: any;
     }) => {
       const response = await apiClient.patch("/users/preferences", payload);
       return response.data;
@@ -248,12 +318,14 @@ function SettingsContent() {
 
   // Digest subscription update mutation
   const updateDigestMutation = useMutation({
-    mutationFn: async (payload: { frequency: string; delivery_channel: string; enabled: boolean }) => {
+    mutationFn: async (payload: { frequency: string; delivery_channel?: string; enabled: boolean }) => {
       const response = await apiClient.patch("/users/digests", payload);
       return response.data;
     },
     onSuccess: () => {
+      // Invalidate both so the notifications tab toggles AND the digest setup page stay in sync
       queryClient.invalidateQueries({ queryKey: ["digest-subscriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["user-preferences"] });
       triggerToast("Digest subscription updated", "s");
     },
     onError: () => {
@@ -305,6 +377,105 @@ function SettingsContent() {
     },
   });
 
+  // Mark notification as read mutation
+  const markReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.patch(`/users/notifications/${id}/read`);
+    },
+    onSuccess: () => {
+      refetchNotifs();
+    },
+  });
+
+  // Mark all notifications as read mutation
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.patch("/users/notifications/read-all");
+    },
+    onSuccess: () => {
+      refetchNotifs();
+      triggerToast("All notifications marked as read", "s");
+    },
+  });
+
+  // Remove history item mutation
+  const removeHistoryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/users/history/${id}`);
+    },
+    onSuccess: () => {
+      refetchHistory();
+      triggerToast("Removed from history", "w");
+    },
+  });
+
+  // Clear all history mutation
+  const clearHistoryMutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.delete("/users/history");
+    },
+    onSuccess: () => {
+      refetchHistory();
+      triggerToast("History cleared", "w");
+    },
+  });
+
+  // Change password mutation
+  const changePasswordMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const response = await apiClient.post("/auth/change-password", payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      triggerToast("Password updated successfully", "s");
+      setNewPassword("");
+      setCurrentPassword("");
+      setConfirmPassword("");
+      setPwdStrengthScore(0);
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.detail || "Failed to update password";
+      triggerToast(msg, "e");
+    },
+  });
+
+  // Upgrade/Cancel plan mutations
+  const upgradeSubMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiClient.post("/users/subscription/upgrade");
+      return response.data;
+    },
+    onSuccess: (data) => {
+      setUser(data);
+      queryClient.invalidateQueries({ queryKey: ["user-preferences"] });
+      triggerToast("Upgraded to NewsIQ Pro!", "s");
+    },
+  });
+
+  const cancelSubMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiClient.post("/users/subscription/cancel");
+      return response.data;
+    },
+    onSuccess: (data) => {
+      setUser(data);
+      queryClient.invalidateQueries({ queryKey: ["user-preferences"] });
+      triggerToast("Subscription cancelled", "w");
+    },
+  });
+
+  // Clear personalization
+  const clearPersonalisationMutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.post("/users/clear-personalisation");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-preferences"] });
+      queryClient.invalidateQueries({ queryKey: ["reading-history"] });
+      triggerToast("Personalisation data cleared", "w");
+    },
+  });
+
   // Screen Nav switcher
   const go = (tabName: string) => {
     setActiveTab(tabName);
@@ -344,6 +515,53 @@ function SettingsContent() {
   const [lang, setLang] = useState("English");
   const [dateTimeFormat, setDateTimeFormat] = useState("DD/MM/YYYY · 24-hour");
 
+  // Tab 3: Notifications Preferences
+  const [breakingNewsAlerts, setBreakingNewsAlerts] = useState(true);
+  const [trendingStoryAlerts, setTrendingStoryAlerts] = useState(true);
+  const [productUpdates, setProductUpdates] = useState(false);
+  const [pushNotifications, setPushNotifications] = useState(true);
+
+  // Tab 4: Topics
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [boostSelected, setBoostSelected] = useState(true);
+  const [showAllTrending, setShowAllTrending] = useState(true);
+
+  // Tab 5: Locations
+  const [countries, setCountries] = useState<string[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [prioritiseLocal, setPrioritiseLocal] = useState(true);
+  const [includeStateNews, setIncludeStateNews] = useState(true);
+  const [locSearchQuery, setLocSearchQuery] = useState("");
+
+  // Tab 6: Default Summary
+  const [summaryLevel, setSummaryLevel] = useState<"one_line" | "short" | "detailed">("short");
+  const [showSummaryOnCards, setShowSummaryOnCards] = useState(true);
+  const [showAiLabel, setShowAiLabel] = useState(true);
+
+  // Tab 7: Theme & Appearance
+  const [fontSize, setFontSize] = useState("default");
+  const [compactLayout, setCompactLayout] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  // Tab 8: Reading History
+  const [historySearch, setHistorySearch] = useState("");
+
+  // Tab 9: Security
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [pwdStrengthScore, setPwdStrengthScore] = useState(0);
+  const [totp2Fa, setTotp2Fa] = useState(true);
+  const [email2Fa, setEmail2Fa] = useState(false);
+
+  // Tab 10: Privacy
+  const [personaliseHistory, setPersonaliseHistory] = useState(true);
+  const [personaliseDigest, setPersonaliseDigest] = useState(true);
+  const [trackClick, setTrackClick] = useState(true);
+  const [shareUsage, setShareUsage] = useState(true);
+  const [uxResearch, setUxResearch] = useState(false);
+
+  // Hydration Effect from Backend Preferences
   useEffect(() => {
     if (user?.name) {
       const parts = user.name.split(" ");
@@ -351,12 +569,62 @@ function SettingsContent() {
       setLastName(parts.slice(1).join(" ") || "");
       setDisplayName(user.name);
     }
-    // Load local storage states
-    setBio(localStorage.getItem("profile-bio") || "Founder, tech enthusiast, based in Bengaluru.");
-    setPhone(localStorage.getItem("profile-phone") || "");
-    setLang(localStorage.getItem("profile-lang") || "English");
-    setDateTimeFormat(localStorage.getItem("profile-date-format") || "DD/MM/YYYY · 24-hour");
-  }, [user]);
+    if (preferences) {
+      const ui = preferences.ui_settings || {};
+      setBio(ui.bio ?? "Founder, tech enthusiast, based in Bengaluru.");
+      setPhone(ui.phone ?? "");
+      setLang(ui.lang ?? "English");
+      setDateTimeFormat(ui.dateTimeFormat ?? "DD/MM/YYYY · 24-hour");
+
+      setBreakingNewsAlerts(ui.breakingNewsAlerts ?? true);
+      setTrendingStoryAlerts(ui.trendingStoryAlerts ?? true);
+      setProductUpdates(ui.productUpdates ?? false);
+      setPushNotifications(ui.pushNotifications ?? true);
+
+      setBoostSelected(ui.boostSelected ?? true);
+      setShowAllTrending(ui.showAllTrending ?? true);
+
+      setPrioritiseLocal(ui.prioritiseLocal ?? true);
+      setIncludeStateNews(ui.includeStateNews ?? true);
+
+      setShowSummaryOnCards(ui.showSummaryOnCards ?? true);
+      setShowAiLabel(ui.showAiLabel ?? true);
+
+      setFontSize(ui.fontSize ?? "default");
+      setCompactLayout(ui.compactLayout ?? false);
+      setReduceMotion(ui.reduceMotion ?? false);
+
+      setTotp2Fa(ui.totp2Fa ?? true);
+      setEmail2Fa(ui.email2Fa ?? false);
+
+      setPersonaliseHistory(ui.personaliseHistory ?? true);
+      setPersonaliseDigest(ui.personaliseDigest ?? true);
+      setTrackClick(ui.trackClick ?? true);
+      setShareUsage(ui.shareUsage ?? true);
+      setUxResearch(ui.uxResearch ?? false);
+    }
+    if (preferences?.categories) {
+      setSelectedTopics(preferences.categories);
+    }
+    if (preferences?.countries) setCountries(preferences.countries);
+    if (preferences?.cities) setCities(preferences.cities);
+    if (preferences?.preferred_summary_type) {
+      setSummaryLevel(preferences.preferred_summary_type as any);
+    }
+  }, [preferences, user]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove("text-sz-small", "text-sz-large");
+    if (fontSize === "small") root.classList.add("text-sz-small");
+    if (fontSize === "large") root.classList.add("text-sz-large");
+
+    if (reduceMotion) {
+      root.classList.add("reduce-motion");
+    } else {
+      root.classList.remove("reduce-motion");
+    }
+  }, [fontSize, reduceMotion]);
 
   const saveProfile = () => {
     if (!firstName.trim() || !lastName.trim()) {
@@ -365,10 +633,15 @@ function SettingsContent() {
     }
     const combinedName = `${firstName.trim()} ${lastName.trim()}`;
     updateProfileMutation.mutate(combinedName);
-    localStorage.setItem("profile-bio", bio);
-    localStorage.setItem("profile-phone", phone);
-    localStorage.setItem("profile-lang", lang);
-    localStorage.setItem("profile-date-format", dateTimeFormat);
+    
+    updatePrefsMutation.mutate({
+      ui_settings: {
+        bio,
+        phone,
+        lang,
+        dateTimeFormat,
+      }
+    });
   };
 
   const discardProfileChanges = () => {
@@ -378,64 +651,25 @@ function SettingsContent() {
       setLastName(parts.slice(1).join(" ") || "");
       setDisplayName(user.name);
     }
-    setBio(localStorage.getItem("profile-bio") || "Founder, tech enthusiast, based in Bengaluru.");
-    setPhone(localStorage.getItem("profile-phone") || "");
-    setLang(localStorage.getItem("profile-lang") || "English");
-    setDateTimeFormat(localStorage.getItem("profile-date-format") || "DD/MM/YYYY · 24-hour");
+    if (preferences?.ui_settings) {
+      const ui = preferences.ui_settings;
+      setBio(ui.bio ?? "Founder, tech enthusiast, based in Bengaluru.");
+      setPhone(ui.phone ?? "");
+      setLang(ui.lang ?? "English");
+      setDateTimeFormat(ui.dateTimeFormat ?? "DD/MM/YYYY · 24-hour");
+    }
     triggerToast("Changes discarded", "w");
   };
 
-  // Tab 3: Notifications Preferences
-  const [breakingNewsAlerts, setBreakingNewsAlerts] = useState(true);
-  const [trendingStoryAlerts, setTrendingStoryAlerts] = useState(true);
-  const [productUpdates, setProductUpdates] = useState(false);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [notificationList, setNotificationList] = useState<MockNotification[]>([]);
-
-  useEffect(() => {
-    setBreakingNewsAlerts(localStorage.getItem("notif-breaking") !== "false");
-    setTrendingStoryAlerts(localStorage.getItem("notif-trending") !== "false");
-    setProductUpdates(localStorage.getItem("notif-products") === "true");
-    setPushNotifications(localStorage.getItem("notif-push") !== "false");
-
-    const savedNotifs = localStorage.getItem("notif-list");
-    if (savedNotifs) {
-      setNotificationList(JSON.parse(savedNotifs));
-    } else {
-      setNotificationList(DEFAULT_NOTIFICATIONS);
-    }
-  }, []);
-
-  const saveNotifLocal = (key: string, val: boolean, setter: (v: boolean) => void) => {
+  // Helper to save a single UI toggle state directly
+  const handleUiToggleChange = (key: string, val: boolean, setter: (v: boolean) => void) => {
     setter(val);
-    localStorage.setItem(key, String(val));
+    updatePrefsMutation.mutate({
+      ui_settings: {
+        [key]: val
+      }
+    });
   };
-
-  const toggleNotifItemUnread = (notifId: string) => {
-    const updated = notificationList.map((n) => (n.id === notifId ? { ...n, unread: !n.unread } : n));
-    setNotificationList(updated);
-    localStorage.setItem("notif-list", JSON.stringify(updated));
-  };
-
-  const markAllNotifsRead = () => {
-    const updated = notificationList.map((n) => ({ ...n, unread: false }));
-    setNotificationList(updated);
-    localStorage.setItem("notif-list", JSON.stringify(updated));
-    triggerToast("All marked as read", "s");
-  };
-
-  // Tab 4: Topics
-  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
-  const [boostSelected, setBoostSelected] = useState(true);
-  const [showAllTrending, setShowAllTrending] = useState(true);
-
-  useEffect(() => {
-    if (preferences?.categories) {
-      setSelectedTopics(preferences.categories);
-    }
-    setBoostSelected(localStorage.getItem("topics-boost") !== "false");
-    setShowAllTrending(localStorage.getItem("topics-all-trending") !== "false");
-  }, [preferences]);
 
   const toggleTopic = (slug: string) => {
     setSelectedTopics((prev) =>
@@ -444,9 +678,13 @@ function SettingsContent() {
   };
 
   const saveTopics = () => {
-    updatePrefsMutation.mutate({ categories: selectedTopics });
-    localStorage.setItem("topics-boost", String(boostSelected));
-    localStorage.setItem("topics-all-trending", String(showAllTrending));
+    updatePrefsMutation.mutate({
+      categories: selectedTopics,
+      ui_settings: {
+        boostSelected,
+        showAllTrending,
+      }
+    });
     triggerToast("Topics saved", "s");
   };
 
@@ -454,20 +692,6 @@ function SettingsContent() {
     setSelectedTopics(["politics", "technology"]);
     triggerToast("Reset to defaults", "w");
   };
-
-  // Tab 5: Locations
-  const [countries, setCountries] = useState<string[]>([]);
-  const [cities, setCities] = useState<string[]>([]);
-  const [prioritiseLocal, setPrioritiseLocal] = useState(true);
-  const [includeStateNews, setIncludeStateNews] = useState(true);
-  const [locSearchQuery, setLocSearchQuery] = useState("");
-
-  useEffect(() => {
-    if (preferences?.countries) setCountries(preferences.countries);
-    if (preferences?.cities) setCities(preferences.cities);
-    setPrioritiseLocal(localStorage.getItem("loc-prioritise") !== "false");
-    setIncludeStateNews(localStorage.getItem("loc-state-news") !== "false");
-  }, [preferences]);
 
   const removeCountry = (code: string) => {
     const updated = countries.filter((c) => c !== code);
@@ -503,28 +727,23 @@ function SettingsContent() {
   };
 
   const saveLocationSettings = () => {
-    localStorage.setItem("loc-prioritise", String(prioritiseLocal));
-    localStorage.setItem("loc-state-news", String(includeStateNews));
+    updatePrefsMutation.mutate({
+      ui_settings: {
+        prioritiseLocal,
+        includeStateNews,
+      }
+    });
     triggerToast("Locations saved", "s");
   };
 
-  // Tab 6: Default Summary
-  const [summaryLevel, setSummaryLevel] = useState<"one_line" | "short" | "detailed">("short");
-  const [showSummaryOnCards, setShowSummaryOnCards] = useState(true);
-  const [showAiLabel, setShowAiLabel] = useState(true);
-
-  useEffect(() => {
-    if (preferences?.preferred_summary_type) {
-      setSummaryLevel(preferences.preferred_summary_type as any);
-    }
-    setShowSummaryOnCards(localStorage.getItem("sum-show-cards") !== "false");
-    setShowAiLabel(localStorage.getItem("sum-show-ai-lbl") !== "false");
-  }, [preferences]);
-
   const saveSummaryPreference = () => {
-    updatePrefsMutation.mutate({ preferred_summary_type: summaryLevel });
-    localStorage.setItem("sum-show-cards", String(showSummaryOnCards));
-    localStorage.setItem("sum-show-ai-lbl", String(showAiLabel));
+    updatePrefsMutation.mutate({
+      preferred_summary_type: summaryLevel,
+      ui_settings: {
+        showSummaryOnCards,
+        showAiLabel,
+      }
+    });
     triggerToast("Summary preference saved", "s");
   };
 
@@ -538,79 +757,20 @@ function SettingsContent() {
     }
   };
 
-  // Tab 7: Theme & Appearance
-  const [fontSize, setFontSize] = useState("default");
-  const [compactLayout, setCompactLayout] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    setFontSize(localStorage.getItem("appearance-font-size") || "default");
-    setCompactLayout(localStorage.getItem("appearance-compact") === "true");
-    setReduceMotion(localStorage.getItem("appearance-reduce-motion") === "true");
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    // Apply font-size override
-    root.classList.remove("text-sz-small", "text-sz-large");
-    if (fontSize === "small") root.classList.add("text-sz-small");
-    if (fontSize === "large") root.classList.add("text-sz-large");
-
-    // Apply reduce motion class override
-    if (reduceMotion) {
-      root.classList.add("reduce-motion");
-    } else {
-      root.classList.remove("reduce-motion");
-    }
-  }, [fontSize, reduceMotion]);
-
   const saveAppearance = () => {
-    localStorage.setItem("appearance-font-size", fontSize);
-    localStorage.setItem("appearance-compact", String(compactLayout));
-    localStorage.setItem("appearance-reduce-motion", String(reduceMotion));
+    updatePrefsMutation.mutate({
+      ui_settings: {
+        fontSize,
+        compactLayout,
+        reduceMotion,
+      }
+    });
     triggerToast("Appearance saved", "s");
   };
 
-  // Tab 8: Reading History
-  const [historySearch, setHistorySearch] = useState("");
-  const [historyItems, setHistoryItems] = useState<MockHistoryItem[]>([]);
-
-  useEffect(() => {
-    const savedHist = localStorage.getItem("reading-history-list");
-    if (savedHist) {
-      setHistoryItems(JSON.parse(savedHist));
-    } else {
-      setHistoryItems(DEFAULT_HISTORY);
-    }
-  }, []);
-
-  const removeHistoryItem = (id: string) => {
-    const updated = historyItems.filter((item) => item.id !== id);
-    setHistoryItems(updated);
-    localStorage.setItem("reading-history-list", JSON.stringify(updated));
-    triggerToast("Removed from history", "w");
-  };
-
-  const clearAllHistory = () => {
-    setHistoryItems([]);
-    localStorage.setItem("reading-history-list", JSON.stringify([]));
-    triggerToast("History cleared", "w");
-  };
-
-  const filteredHistory = historyItems.filter((item) =>
+  const filteredHistory = historyItems.filter((item: any) =>
     item.title.toLowerCase().includes(historySearch.toLowerCase())
   );
-
-  // Tab 9: Security
-  const [newPassword, setNewPassword] = useState("");
-  const [pwdStrengthScore, setPwdStrengthScore] = useState(0);
-  const [totp2Fa, setTotp2Fa] = useState(true);
-  const [email2Fa, setEmail2Fa] = useState(false);
-
-  useEffect(() => {
-    setTotp2Fa(localStorage.getItem("security-totp") !== "false");
-    setEmail2Fa(localStorage.getItem("security-email2fa") === "true");
-  }, []);
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -631,33 +791,63 @@ function SettingsContent() {
     return idx <= pwdStrengthScore ? colors[pwdStrengthScore] : "var(--border)";
   };
 
-  // Tab 10: Privacy
-  const [personaliseHistory, setPersonaliseHistory] = useState(true);
-  const [personaliseDigest, setPersonaliseDigest] = useState(true);
-  const [trackClick, setTrackClick] = useState(true);
-  const [shareUsage, setShareUsage] = useState(true);
-  const [uxResearch, setUxResearch] = useState(false);
-
-  useEffect(() => {
-    setPersonaliseHistory(localStorage.getItem("priv-pers-history") !== "false");
-    setPersonaliseDigest(localStorage.getItem("priv-pers-digest") !== "false");
-    setTrackClick(localStorage.getItem("priv-track-click") !== "false");
-    setShareUsage(localStorage.getItem("priv-share-usage") !== "false");
-    setUxResearch(localStorage.getItem("priv-ux-res") === "true");
-  }, []);
+  const handleUpdatePassword = () => {
+    if (!currentPassword) {
+      triggerToast("Please enter your current password", "e");
+      return;
+    }
+    if (newPassword.length < 8) {
+      triggerToast("New password must be at least 8 characters", "e");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      triggerToast("New passwords do not match", "e");
+      return;
+    }
+    changePasswordMutation.mutate({
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  };
 
   const savePrivacySettings = () => {
-    localStorage.setItem("priv-pers-history", String(personaliseHistory));
-    localStorage.setItem("priv-pers-digest", String(personaliseDigest));
-    localStorage.setItem("priv-track-click", String(trackClick));
-    localStorage.setItem("priv-share-usage", String(shareUsage));
-    localStorage.setItem("priv-ux-res", String(uxResearch));
+    updatePrefsMutation.mutate({
+      ui_settings: {
+        personaliseHistory,
+        personaliseDigest,
+        trackClick,
+        shareUsage,
+        uxResearch,
+      }
+    });
     triggerToast("Privacy settings saved", "s");
   };
 
-  const clearPersonalisation = () => {
-    triggerToast("Personalisation data cleared", "w");
+  const handleExportData = async () => {
+    try {
+      triggerToast("Preparing export...", "s");
+      const response = await apiClient.get("/users/export-data");
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(response.data, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `newsiq-user-data.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      triggerToast("Data exported successfully", "s");
+    } catch (err) {
+      triggerToast("Failed to export data", "e");
+    }
   };
+
+  // Wait for client-side hydration to restore auth store state
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[var(--surface)] text-[var(--ink)] flex items-center justify-center font-sans">
+        <div style={{ fontSize: 14, color: "var(--ink3)" }}>Loading...</div>
+      </div>
+    );
+  }
 
   // Handle redirect to login if unauthenticated
   if (!isAuthenticated) {
@@ -843,7 +1033,7 @@ function SettingsContent() {
           </div>
         );
 
-      case "sub":
+      case "sub": {
         const isPro = user?.subscription_plan === "pro";
         return (
           <div className="page">
@@ -933,6 +1123,26 @@ function SettingsContent() {
                 <span className="feat-pro-tag">Coming in Phase 2</span>
               </div>
             </div>
+
+            {!isPro && (
+              <div className="pcrd pcrd-p" style={{ marginTop: 20, border: "1.5px solid var(--primary)", background: "rgba(196,30,58,.03)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>Upgrade to NewsIQ Pro</div>
+                    <div style={{ fontSize: 13, color: "var(--ink3)", marginTop: 4 }}>Get access to Difference Engine, Contradictions, daily digests, and more for ₹399/mo.</div>
+                  </div>
+                  <button
+                    className="btnp"
+                    disabled={upgradeSubMutation.isPending}
+                    onClick={() => upgradeSubMutation.mutate()}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                  >
+                    <svg width="14" height="14"><use href="#i-crown" /></svg>
+                    {upgradeSubMutation.isPending ? "Upgrading..." : "Upgrade to Pro"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {isPro && (
               <>
@@ -1038,144 +1248,131 @@ function SettingsContent() {
             )}
           </div>
         );
+      }
 
       case "notif":
         return (
           <div className="page">
             <div className="page-hdr">
               <div className="page-hdr-title">Notifications</div>
-              <div className="page-hdr-sub">Alerts, digest updates, and breaking news</div>
+              <div className="page-hdr-sub">Manage digest editions, alerts, and delivery preferences</div>
             </div>
 
-            {/* Notification preferences */}
-            <div className="slbl" style={{ marginBottom: 16 }}>Notification Preferences</div>
-            <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Breaking news alerts</div>
-                  <div className="tog-sub">Instant push for top-tier breaking stories (max 3/day)</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={breakingNewsAlerts}
-                    onChange={(e) => saveNotifLocal("notif-breaking", e.target.checked, setBreakingNewsAlerts)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Trending story alerts</div>
-                  <div className="tog-sub">When a story you might care about spikes in coverage</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={trendingStoryAlerts}
-                    onChange={(e) => saveNotifLocal("notif-trending", e.target.checked, setTrendingStoryAlerts)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Morning digest</div>
-                  <div className="tog-sub">Daily at 7:00 AM — top 10 stories delivered to email</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("morning", "email")}
-                    onChange={(e) =>
-                      updateDigestMutation.mutate({
-                        frequency: "morning",
-                        delivery_channel: "email",
-                        enabled: e.target.checked,
-                      })
-                    }
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Evening digest</div>
-                  <div className="tog-sub">Daily at 6:00 PM — what you missed today</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("evening", "email")}
-                    onChange={(e) =>
-                      updateDigestMutation.mutate({
-                        frequency: "evening",
-                        delivery_channel: "email",
-                        enabled: e.target.checked,
-                      })
-                    }
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Weekly summary</div>
-                  <div className="tog-sub">Every Sunday — biggest stories of the week</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("weekly", "email")}
-                    onChange={(e) =>
-                      updateDigestMutation.mutate({
-                        frequency: "weekly",
-                        delivery_channel: "email",
-                        enabled: e.target.checked,
-                      })
-                    }
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Product updates</div>
-                  <div className="tog-sub">New features, improvements, and announcements</div>
-                </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={productUpdates}
-                    onChange={(e) => saveNotifLocal("notif-products", e.target.checked, setProductUpdates)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
-              </div>
+            {/* ── DIGEST EDITIONS ── */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div className="slbl" style={{ marginBottom: 0 }}>Digest Editions</div>
+              <button
+                className="btno btnsm"
+                onClick={() => router.push("/digest/setup")}
+                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}
+              >
+                <svg width="12" height="12"><use href="#i-news" /></svg>
+                Full setup
+              </button>
             </div>
 
-            {/* Delivery channels */}
-            <div className="slbl">Delivery Channels</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 28 }}>
+              {([
+                { key: "morning", label: "Morning Digest", desc: "Top 10 stories. 3-minute read.", time: "Every day at 7 AM", icon: "🌅", accent: "var(--amber)", accentBg: "rgba(217,119,6,.06)" },
+                { key: "midday",  label: "Midday Brief",   desc: "Quick catch-up on what's moving.", time: "Every day at 1 PM", icon: "☀️", accent: "var(--blue)", accentBg: "rgba(59,130,246,.06)" },
+                { key: "evening", label: "Evening Wrap",   desc: "What you missed today.",          time: "Every day at 6 PM", icon: "🌆", accent: "var(--primary)", accentBg: "rgba(196,30,58,.05)" },
+                { key: "weekly",  label: "Weekly Summary", desc: "Biggest stories of the week.",    time: "Every Sunday",     icon: "📋", accent: "var(--green)", accentBg: "rgba(22,163,74,.06)" },
+              ] as const).map((ed) => {
+                const isSubscribed = digestSubscriptions.some(
+                  (s: { frequency: string }) => s.frequency === ed.key
+                );
+                const isEnabled = digestSubscriptions.some(
+                  (s: { frequency: string; enabled: boolean }) =>
+                    s.frequency === ed.key && s.enabled
+                );
+                const isBusy = isLoadingDigests || updateDigestMutation.isPending;
+                const channels = digestSubscriptions
+                  .filter((s: { frequency: string }) => s.frequency === ed.key)
+                  .map((s: { delivery_channel: string }) => {
+                    if (s.delivery_channel === "in_app") return "in-app";
+                    return s.delivery_channel;
+                  });
+                const channelsText = channels.length > 0 ? `· via ${channels.join(" & ")}` : "· via email";
+
+                return (
+                  <div
+                    key={ed.key}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      padding: "16px 16px 14px",
+                      borderRadius: "var(--r8)",
+                      border: isSubscribed && isEnabled ? `1.5px solid color-mix(in srgb, ${ed.accent} 35%, transparent)` : "1.5px solid var(--border)",
+                      background: isSubscribed && isEnabled ? ed.accentBg : "var(--card)",
+                      transition: "border-color .2s, background .2s",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{ed.icon}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", lineHeight: 1.25 }}>{ed.label}</div>
+                          <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{ed.time}</div>
+                        </div>
+                      </div>
+                      {isSubscribed && (
+                        <label className="toggle" style={{ flexShrink: 0, marginTop: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            disabled={isBusy}
+                            onChange={(e) => updateDigestMutation.mutate({ frequency: ed.key, enabled: e.target.checked })}
+                          />
+                          <div className="tog-track"></div>
+                          <div className="tog-thumb"></div>
+                        </label>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "var(--ink3)", lineHeight: 1.5 }}>{ed.desc}</div>
+
+                    {isSubscribed ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 99,
+                          background: isEnabled ? "rgba(22,163,74,.12)" : "rgba(107,107,107,.1)",
+                          color: isEnabled ? "var(--green)" : "var(--ink3)",
+                        }}>
+                          <svg width="6" height="6" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4" /></svg>
+                          {isEnabled ? "Active" : "Paused"}
+                        </span>
+                        <span style={{ fontSize: 11, color: "var(--ink3)" }}>{channelsText}</span>
+                      </div>
+                    ) : (
+                      <button
+                        className="btnp btnsm"
+                        disabled={isBusy}
+                        onClick={() => updateDigestMutation.mutate({ frequency: ed.key, enabled: true })}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 13px", width: "fit-content", opacity: isBusy ? 0.6 : 1 }}
+                      >
+                        <svg width="12" height="12"><use href="#i-bell" /></svg>
+                        Subscribe free
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── ALERT PREFERENCES ── */}
+            <div className="slbl" style={{ marginBottom: 12 }}>Alert Preferences</div>
             <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
               <div className="tog-row">
                 <div className="tog-info">
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-bell" /></svg>Push notifications
+                    <span style={{ fontSize: 13 }}>⚡</span>Breaking news
                   </div>
-                  <div className="tog-sub">In-browser alerts — requires permission</div>
+                  <div className="tog-sub">Instant alert for top-tier stories (max 3/day)</div>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={pushNotifications}
-                    onChange={(e) => saveNotifLocal("notif-push", e.target.checked, setPushNotifications)}
-                  />
+                  <input type="checkbox" checked={breakingNewsAlerts} onChange={(e) => handleUiToggleChange("breakingNewsAlerts", e.target.checked, setBreakingNewsAlerts)} />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
@@ -1183,25 +1380,70 @@ function SettingsContent() {
               <div className="tog-row">
                 <div className="tog-info">
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-mail" /></svg>Email
+                    <span style={{ fontSize: 13 }}>📈</span>Trending story alerts
                   </div>
-                  <div className="tog-sub">{user?.email || "aarav.mehta@gmail.com"}</div>
+                  <div className="tog-sub">When a story you follow spikes in coverage</div>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={isDigestEnabled("morning", "email") || isDigestEnabled("evening", "email")}
-                    disabled
-                  />
-                  <div className="tog-track" style={{ cursor: "not-allowed" }}></div>
+                  <input type="checkbox" checked={trendingStoryAlerts} onChange={(e) => handleUiToggleChange("trendingStoryAlerts", e.target.checked, setTrendingStoryAlerts)} />
+                  <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
               </div>
               <div className="tog-row" style={{ borderBottom: "none" }}>
                 <div className="tog-info">
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 14 }}>📱</span>Telegram
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 99, background: "rgba(107,107,107,.1)", color: "var(--ink3)", marginLeft: 6 }}>
+                    <span style={{ fontSize: 13 }}>🔔</span>Product updates
+                  </div>
+                  <div className="tog-sub">New features, improvements, and announcements</div>
+                </div>
+                <label className="toggle">
+                  <input type="checkbox" checked={productUpdates} onChange={(e) => handleUiToggleChange("productUpdates", e.target.checked, setProductUpdates)} />
+                  <div className="tog-track"></div>
+                  <div className="tog-thumb"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* ── DELIVERY CHANNELS ── */}
+            <div className="slbl" style={{ marginBottom: 12 }}>Delivery Channels</div>
+            <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
+              <div className="tog-row">
+                <div className="tog-info">
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-bell" /></svg>
+                    Push notifications
+                  </div>
+                  <div className="tog-sub">In-browser alerts — requires permission</div>
+                </div>
+                <label className="toggle">
+                  <input type="checkbox" checked={pushNotifications} onChange={(e) => handleUiToggleChange("pushNotifications", e.target.checked, setPushNotifications)} />
+                  <div className="tog-track"></div>
+                  <div className="tog-thumb"></div>
+                </label>
+              </div>
+              <div className="tog-row">
+                <div className="tog-info">
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-mail" /></svg>
+                    Email
+                  </div>
+                  <div className="tog-sub">{user?.email || "—"}</div>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 99,
+                  background: digestSubscriptions.some((s: { enabled: boolean }) => s.enabled) ? "rgba(22,163,74,.12)" : "rgba(107,107,107,.1)",
+                  color: digestSubscriptions.some((s: { enabled: boolean }) => s.enabled) ? "var(--green)" : "var(--ink3)",
+                }}>
+                  {digestSubscriptions.some((s: { enabled: boolean }) => s.enabled) ? "Active" : "Inactive"}
+                </span>
+              </div>
+              <div className="tog-row" style={{ borderBottom: "none" }}>
+                <div className="tog-info">
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ fontSize: 14 }}>📱</span>
+                    Telegram
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 99, background: "rgba(107,107,107,.1)", color: "var(--ink3)" }}>
                       Not connected
                     </span>
                   </div>
@@ -1211,52 +1453,51 @@ function SettingsContent() {
               </div>
             </div>
 
-            {/* Recent notifications */}
+            {/* ── RECENT NOTIFICATIONS ── */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <div className="slbl" style={{ marginBottom: 0, flex: 1 }}>Recent Notifications</div>
-              <button className="btno btnsm" onClick={markAllNotifsRead} style={{ fontSize: 11, padding: "3px 8px" }}>Mark all read</button>
+              <div className="slbl" style={{ marginBottom: 0 }}>Recent Notifications</div>
+              <button className="btno btnsm" onClick={() => markAllReadMutation.mutate()} style={{ fontSize: 11, padding: "3px 8px" }}>
+                Mark all read
+              </button>
             </div>
             <div className="pcrd" style={{ marginBottom: 28 }}>
-              {notificationList.map((notif) => {
-                const getIconClass = () => {
-                  if (notif.type === "break") return "ni-break";
-                  if (notif.type === "trend") return "ni-trend";
-                  if (notif.type === "digest") return "ni-digest";
-                  return "ni-sys";
-                };
-
-                const getIconUse = () => {
-                  if (notif.type === "break") return "#i-zap";
-                  if (notif.type === "trend") return "#i-trend";
-                  if (notif.type === "digest") return "#i-news";
-                  return "#i-bell";
-                };
-
+              {notifications.map((notif: any) => {
+                const type = notif.notification_type || "sys";
+                const iconClass = type === "break" ? "ni-break" : type === "trend" ? "ni-trend" : type === "digest" ? "ni-digest" : "ni-sys";
+                const iconHref = type === "break" ? "#i-zap" : type === "trend" ? "#i-trend" : type === "digest" ? "#i-news" : "#i-bell";
+                const formattedTime = new Date(notif.created_at).toLocaleString();
                 return (
                   <div
                     key={notif.id}
-                    className={`notif-item ${notif.unread ? "unread" : ""}`}
-                    onClick={() => toggleNotifItemUnread(notif.id)}
+                    className={`notif-item ${!notif.is_read ? "unread" : ""}`}
+                    onClick={() => {
+                      if (!notif.is_read) {
+                        markReadMutation.mutate(notif.id);
+                      }
+                    }}
                   >
-                    <div className={`notif-icon ${getIconClass()}`}>
-                      <svg width="14" height="14"><use href={getIconUse()} /></svg>
+                    <div className={`notif-icon ${iconClass}`}>
+                      <svg width="14" height="14"><use href={iconHref} /></svg>
                     </div>
                     <div className="notif-body">
                       <div className="notif-title">{notif.title}</div>
-                      <div className="notif-meta">{notif.meta}</div>
+                      <div className="notif-meta">{notif.body} · {formattedTime}</div>
                     </div>
-                    {notif.unread && <div className="notif-unread-dot"></div>}
+                    {!notif.is_read && <div className="notif-unread-dot"></div>}
                   </div>
                 );
               })}
             </div>
             <div style={{ textAlign: "center", fontSize: 13, color: "var(--ink3)" }}>
-              You're all caught up · <a href="#" onClick={(e) => { e.preventDefault(); triggerToast("Older notifications loaded", "s"); }} style={{ color: "var(--blue)" }}>Load older</a>
+              You're all caught up ·{" "}
+              <a href="#" onClick={(e) => { e.preventDefault(); triggerToast("Older notifications loaded", "s"); }} style={{ color: "var(--blue)" }}>
+                Load older
+              </a>
             </div>
           </div>
         );
 
-      case "topics":
+      case "topics": {
         const availableCategories = [
           { slug: "politics", name: "Politics", icon: "🏛️" },
           { slug: "technology", name: "Technology", icon: "💻" },
@@ -1336,6 +1577,7 @@ function SettingsContent() {
             </div>
           </div>
         );
+      }
 
       case "locs":
         return (
@@ -1652,7 +1894,7 @@ function SettingsContent() {
               </div>
               <button
                 className="btno btnsm"
-                onClick={clearAllHistory}
+                onClick={() => clearHistoryMutation.mutate()}
                 style={{ color: "var(--err)", borderColor: "rgba(220,38,38,.25)" }}
               >
                 Clear all
@@ -1660,13 +1902,13 @@ function SettingsContent() {
             </div>
 
             {/* Today */}
-            {filteredHistory.some((h) => h.isToday) && (
+            {filteredHistory.some((h: any) => h.isToday) && (
               <>
                 <div className="slbl">Today</div>
                 <div className="pcrd" style={{ marginBottom: 16 }}>
                   {filteredHistory
-                    .filter((h) => h.isToday)
-                    .map((item) => (
+                    .filter((h: any) => h.isToday)
+                    .map((item: any) => (
                       <div className="hist-item" key={item.id}>
                         <div className="hist-num">{item.num}</div>
                         <div className="hist-body">
@@ -1674,10 +1916,10 @@ function SettingsContent() {
                           <div className="hist-meta">
                             <span className={`cbadge ${item.catClass}`}>{item.category}</span>
                             <span>{item.sources}</span>
-                            <span>{item.time}</span>
+                            <span>{new Date(item.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
                         </div>
-                        <button className="hist-remove" onClick={() => removeHistoryItem(item.id)}>
+                        <button className="hist-remove" onClick={() => removeHistoryMutation.mutate(item.id)}>
                           <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-x" /></svg>
                         </button>
                       </div>
@@ -1687,13 +1929,13 @@ function SettingsContent() {
             )}
 
             {/* Yesterday */}
-            {filteredHistory.some((h) => !h.isToday) && (
+            {filteredHistory.some((h: any) => !h.isToday) && (
               <>
-                <div className="slbl">Yesterday</div>
+                <div className="slbl">Older</div>
                 <div className="pcrd" style={{ marginBottom: 16 }}>
                   {filteredHistory
-                    .filter((h) => !h.isToday)
-                    .map((item) => (
+                    .filter((h: any) => !h.isToday)
+                    .map((item: any) => (
                       <div className="hist-item" key={item.id}>
                         <div className="hist-num">{item.num}</div>
                         <div className="hist-body">
@@ -1701,10 +1943,10 @@ function SettingsContent() {
                           <div className="hist-meta">
                             <span className={`cbadge ${item.catClass}`}>{item.category}</span>
                             <span>{item.sources}</span>
-                            <span>{item.time}</span>
+                            <span>{new Date(item.time).toLocaleDateString()}</span>
                           </div>
                         </div>
-                        <button className="hist-remove" onClick={() => removeHistoryItem(item.id)}>
+                        <button className="hist-remove" onClick={() => removeHistoryMutation.mutate(item.id)}>
                           <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-x" /></svg>
                         </button>
                       </div>
@@ -1717,7 +1959,7 @@ function SettingsContent() {
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r6)", padding: "14px 16px", display: "flex", gap: 10, marginBottom: 28 }}>
               <svg width="16" height="16" style={{ color: "var(--ink3)", flexShrink: 0, marginTop: 2 }}><use href="#i-lock" /></svg>
               <div style={{ fontSize: 13, color: "var(--ink3)", lineHeight: 1.6 }}>
-                Your reading history is stored locally and privately. It's used only to personalise your feed — it is never sold, shared, or used for advertising.
+                Your reading history is stored privately in the database. It's used only to personalise your feed — it is never sold, shared, or used for advertising.
               </div>
             </div>
           </div>
@@ -1735,7 +1977,13 @@ function SettingsContent() {
             <div className="pcrd pcrd-p" style={{ marginBottom: 20 }}>
               <div className="field">
                 <label className="field-label">Current password</label>
-                <input className="field-input" type="password" placeholder="Enter current password" />
+                <input
+                  className="field-input"
+                  type="password"
+                  placeholder="Enter current password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
               </div>
               <div className="field">
                 <label className="field-label">New password</label>
@@ -1755,10 +2003,17 @@ function SettingsContent() {
               </div>
               <div className="field" style={{ marginBottom: 16 }}>
                 <label className="field-label">Confirm new password</label>
-                <input className="field-input" type="password" placeholder="Repeat new password" />
+                <input
+                  className="field-input"
+                  type="password"
+                  placeholder="Repeat new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
               </div>
-              <button className="btnp btnsm" onClick={() => { triggerToast("Password updated", "s"); setNewPassword(""); setPwdStrengthScore(0); }}>
-                <svg width="13" height="13"><use href="#i-lock" /></svg>Update password
+              <button className="btnp btnsm" onClick={handleUpdatePassword} disabled={changePasswordMutation.isPending}>
+                <svg width="13" height="13"><use href="#i-lock" /></svg>
+                {changePasswordMutation.isPending ? "Updating..." : "Update password"}
               </button>
             </div>
 
@@ -1772,7 +2027,7 @@ function SettingsContent() {
                   <div className="tog-sub">Use Google Authenticator, Authy, or any TOTP app</div>
                 </div>
                 <label className="toggle">
-                  <input type="checkbox" checked={totp2Fa} onChange={(e) => saveNotifLocal("security-totp", e.target.checked, setTotp2Fa)} />
+                  <input type="checkbox" checked={totp2Fa} onChange={(e) => handleUiToggleChange("totp2Fa", e.target.checked, setTotp2Fa)} />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
@@ -1785,7 +2040,7 @@ function SettingsContent() {
                   <div className="tog-sub">Send a code to {user?.email || "aarav.mehta@gmail.com"} on new logins</div>
                 </div>
                 <label className="toggle">
-                  <input type="checkbox" checked={email2Fa} onChange={(e) => saveNotifLocal("security-email2fa", e.target.checked, setEmail2Fa)} />
+                  <input type="checkbox" checked={email2Fa} onChange={(e) => handleUiToggleChange("email2Fa", e.target.checked, setEmail2Fa)} />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
@@ -1889,7 +2144,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={personaliseHistory}
-                    onChange={(e) => saveNotifLocal("priv-pers-history", e.target.checked, setPersonaliseHistory)}
+                    onChange={(e) => handleUiToggleChange("personaliseHistory", e.target.checked, setPersonaliseHistory)}
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
@@ -1904,7 +2159,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={personaliseDigest}
-                    onChange={(e) => saveNotifLocal("priv-pers-digest", e.target.checked, setPersonaliseDigest)}
+                    onChange={(e) => handleUiToggleChange("personaliseDigest", e.target.checked, setPersonaliseDigest)}
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
@@ -1919,7 +2174,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={trackClick}
-                    onChange={(e) => saveNotifLocal("priv-track-click", e.target.checked, setTrackClick)}
+                    onChange={(e) => handleUiToggleChange("trackClick", e.target.checked, setTrackClick)}
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
@@ -1938,7 +2193,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={shareUsage}
-                    onChange={(e) => saveNotifLocal("priv-share-usage", e.target.checked, setShareUsage)}
+                    onChange={(e) => handleUiToggleChange("shareUsage", e.target.checked, setShareUsage)}
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
@@ -1953,7 +2208,7 @@ function SettingsContent() {
                   <input
                     type="checkbox"
                     checked={uxResearch}
-                    onChange={(e) => saveNotifLocal("priv-ux-res", e.target.checked, setUxResearch)}
+                    onChange={(e) => handleUiToggleChange("uxResearch", e.target.checked, setUxResearch)}
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
@@ -1968,7 +2223,7 @@ function SettingsContent() {
                   <div className="dz-item-title">Download your data</div>
                   <div className="dz-item-sub">Export your bookmarks, preferences, and reading history as JSON</div>
                 </div>
-                <button className="btno btnsm" onClick={() => triggerToast("Export preparing… check email in 5 min", "s")}>
+                <button className="btno btnsm" onClick={handleExportData}>
                   <svg width="13" height="13"><use href="#i-download" /></svg>Export
                 </button>
               </div>
@@ -1980,9 +2235,10 @@ function SettingsContent() {
                 <button
                   className="btno btnsm"
                   style={{ color: "var(--err)", borderColor: "rgba(220,38,38,.25)" }}
-                  onClick={clearPersonalisation}
+                  onClick={() => clearPersonalisationMutation.mutate()}
+                  disabled={clearPersonalisationMutation.isPending}
                 >
-                  Clear
+                  {clearPersonalisationMutation.isPending ? "Clearing..." : "Clear"}
                 </button>
               </div>
             </div>
@@ -2005,8 +2261,10 @@ function SettingsContent() {
     }
   };
 
+  const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
+
   return (
-    <div className="min-h-screen bg-[var(--surface)] text-[var(--ink)] font-sans relative" style={{ transition: "background .2s, color .2s" }}>
+    <AppShell sidebar={sidebar}>
       {/* SVG SPRITE */}
       <svg style={{ display: "none" }} xmlns="http://www.w3.org/2000/svg">
         <symbol id="i-back" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 5L7 10l5 5" strokeLinecap="round" strokeLinejoin="round" /></symbol>
@@ -2036,10 +2294,28 @@ function SettingsContent() {
         <symbol id="i-shield" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" strokeLinejoin="round" /></symbol>
       </svg>
 
-      {/* Main Settings Nav & Signal Bar */}
-      <div className="scr on">
-        <Navbar/>
-        {renderActiveScreen()}
+      <div className="settings-container">
+        {/* Left Settings Navigation */}
+        <div className="settings-nav">
+          {Object.entries(tabLabelMap).map(([key, label]) => {
+            const IconComponent = TAB_ICONS[key];
+            return (
+              <button
+                key={key}
+                onClick={() => go(key)}
+                className={`settings-nav-btn ${activeTab === key ? "active" : ""}`}
+              >
+                {IconComponent && <IconComponent size={15} />}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Settings Body */}
+        <div className="settings-body">
+          {renderActiveScreen()}
+        </div>
       </div>
 
       {/* TOAST STACK */}
@@ -2076,7 +2352,7 @@ function SettingsContent() {
           <div className="modal-body">You'll keep Pro access until <strong>July 14, 2026</strong>. After that, your account reverts to Free — summaries, source comparison, and AI chat will be unavailable.</div>
           <div className="modal-btns">
             <button className="btno btnsm" onClick={() => setOpenModal(null)}>Keep Pro</button>
-            <button className="btn-danger btnsm" onClick={() => { triggerToast("Subscription cancelled.", "w"); setOpenModal(null); }}>Cancel subscription</button>
+            <button className="btn-danger btnsm" onClick={() => { cancelSubMutation.mutate(); setOpenModal(null); }}>Cancel subscription</button>
           </div>
         </div>
       </div>
@@ -2129,7 +2405,7 @@ function SettingsContent() {
           </div>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
 

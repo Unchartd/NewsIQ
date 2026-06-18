@@ -1,5 +1,6 @@
 """Pydantic schemas for user profile and preferences."""
 
+import uuid
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +13,8 @@ class UserPreferencesUpdate(BaseModel):
     categories: list[str] | None = None  # list of category slugs
     countries: list[str] | None = None
     cities: list[str] | None = None
+    digest_settings: dict | None = None
+    ui_settings: dict | None = None
 
 
 class UserPreferencesResponse(BaseModel):
@@ -23,8 +26,18 @@ class UserPreferencesResponse(BaseModel):
     categories: list[str]
     countries: list[str]
     cities: list[str]
+    digest_settings: dict | None = None
+    ui_settings: dict | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ChangePasswordRequest(BaseModel):
+    """Payload for updating user password."""
+
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -50,7 +63,7 @@ class OnboardingRequest(BaseModel):
 class NotificationResponse(BaseModel):
     """Schema for notification response."""
 
-    id: str
+    id: uuid.UUID
     title: str | None
     body: str | None
     notification_type: str | None
@@ -63,17 +76,39 @@ class NotificationResponse(BaseModel):
 class DigestSubscriptionUpdate(BaseModel):
     """Schema for updating digest subscriptions."""
 
-    frequency: str = Field(..., pattern="^(morning|evening|weekly)$")
-    delivery_channel: str = Field(..., pattern="^(in_app|email)$")
+    frequency: str = Field(..., pattern="^(morning|midday|evening|weekly)$")
+    delivery_channel: str | None = Field(default=None, pattern="^(in_app|email|telegram|push)$")
     enabled: bool
 
 
 class DigestSubscriptionResponse(BaseModel):
     """Schema for digest subscription response."""
 
-    id: str
+    id: uuid.UUID
     frequency: str | None
     delivery_channel: str | None
     enabled: bool
 
     model_config = {"from_attributes": True}
+
+
+class DigestSetupRequest(BaseModel):
+    """Payload for full digest configuration setup."""
+
+    categories: list[str]
+    story_count: int
+    prioritize_local: bool
+    include_world: bool
+    editions: dict[str, bool]
+    delivery_times: dict[str, str]
+    frequency: str  # daily, weekdays, custom
+    custom_days: list[str]
+    weekly_wrap: bool
+    channels: dict[str, bool]
+    email_format: str  # html, text
+
+
+class DigestTriggerRequest(BaseModel):
+    """Payload for manually triggering digest generation and delivery."""
+
+    frequency: str = Field(..., pattern="^(morning|midday|evening|weekly)$")
