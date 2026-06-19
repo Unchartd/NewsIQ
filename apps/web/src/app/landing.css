@@ -601,11 +601,12 @@
 .final-cta-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .landing-body .btn-white {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 13px 28px; background: #fff; color: var(--landing-ink);
+  padding: 13px 28px; background: #fff; color: #0D0D0D;
   border-radius: var(--landing-r10); font-size: 15px; font-weight: 700;
-  cursor: pointer; border: none; transition: background .15s;
+  cursor: pointer; border: none; transition: background .15s, transform .15s;
 }
-.landing-body .btn-white:hover { background: rgba(255,255,255,.9); }
+.landing-body .btn-white:hover { background: rgba(255,255,255,.9); transform: translateY(-1px); }
+.dark .landing-body .btn-white { color: #0D0D0D; }
 .landing-body .btn-ghost-white {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 13px 28px; background: transparent; color: rgba(255,255,255,.75);
