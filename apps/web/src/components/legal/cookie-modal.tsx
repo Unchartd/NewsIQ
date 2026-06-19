@@ -1,208 +1,353 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useConsent, ConsentState } from "./consent-provider";
 import { toast } from "sonner";
-
-export interface CookiePreferences {
-  essential: boolean;
-  functional: boolean;
-  analytics: boolean;
-  security: boolean;
-}
 
 interface CookieModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave?: (prefs: CookiePreferences) => void;
 }
 
-export default function CookieModal({ isOpen, onClose, onSave }: CookieModalProps) {
-  const [prefs, setPrefs] = useState<CookiePreferences>({
+export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
+  const { 
+    essentialEnabled, 
+    functionalEnabled, 
+    analyticsEnabled, 
+    marketingEnabled, 
+    region, 
+    consentVersion,
+    updateConsent 
+  } = useConsent();
+
+  // Local state for toggle switches inside the modal
+  const [localPrefs, setLocalPrefs] = useState<ConsentState>({
     essential: true,
-    functional: true,
-    analytics: true,
-    security: true,
+    functional: false,
+    analytics: false,
+    marketing: false,
   });
 
+  // Sync local state when modal opens or active preferences load
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("niq_cookie_consent");
-      if (stored) {
-        try {
-          setPrefs(JSON.parse(stored));
-        } catch (e) {
-          // ignore
-        }
-      }
+    if (isOpen) {
+      setLocalPrefs({
+        essential: true,
+        functional: functionalEnabled,
+        analytics: analyticsEnabled,
+        marketing: marketingEnabled,
+      });
     }
-  }, [isOpen]);
+  }, [isOpen, functionalEnabled, analyticsEnabled, marketingEnabled]);
 
   if (!isOpen) return null;
 
-  const handleToggle = (key: keyof CookiePreferences) => {
-    if (key === "essential") return; // cannot toggle essential
-    setPrefs((prev) => ({
+  const handleToggle = (key: keyof ConsentState) => {
+    if (key === "essential") return; // Essential is locked
+    setLocalPrefs((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
   };
 
-  const handleSave = () => {
-    localStorage.setItem("niq_cookie_consent", JSON.stringify(prefs));
-    if (onSave) onSave(prefs);
+  const handleSave = async () => {
+    await updateConsent(localPrefs);
     toast.success("Cookie preferences saved successfully.");
     onClose();
   };
 
-  const handleAcceptAll = () => {
-    const allOn = { essential: true, functional: true, analytics: true, security: true };
-    localStorage.setItem("niq_cookie_consent", JSON.stringify(allOn));
-    if (onSave) onSave(allOn);
-    toast.success("Accepted all cookies.");
+  const handleAcceptAll = async () => {
+    const allOn = { essential: true, functional: true, analytics: true, marketing: true };
+    setLocalPrefs(allOn);
+    await updateConsent(allOn);
+    toast.success("Accepted all cookies and third-party trackers.");
     onClose();
   };
 
+  const handleRejectAll = async () => {
+    const allOff = { essential: true, functional: false, analytics: false, marketing: false };
+    setLocalPrefs(allOff);
+    await updateConsent(allOff);
+    toast.success("Rejected all non-essential trackers.");
+    onClose();
+  };
+
+  const handleReset = () => {
+    setLocalPrefs({
+      essential: true,
+      functional: functionalEnabled,
+      analytics: analyticsEnabled,
+      marketing: marketingEnabled,
+    });
+    toast.info("Preferences reset to active settings.");
+  };
+
   return (
-    <div style={{
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: "rgba(0, 0, 0, 0.5)",
-      zIndex: 10000,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "16px",
-      backdropFilter: "blur(4px)"
-    }}>
-      <div style={{
-        backgroundColor: "var(--card)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--r12)",
-        maxWidth: "500px",
-        width: "100%",
-        boxShadow: "var(--sh3)",
-        padding: "24px",
-        color: "var(--ink)",
+    <div 
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.6)",
+        zIndex: 10000,
         display: "flex",
-        flexDirection: "column",
-        gap: "16px"
-      }}>
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+        backdropFilter: "blur(6px)",
+        animation: "fadeIn 0.2s ease-out",
+      }}
+    >
+      <div 
+        style={{
+          backgroundColor: "var(--card)",
+          border: "1px solid var(--border)",
+          borderRadius: "16px",
+          maxWidth: "600px",
+          width: "100%",
+          boxShadow: "0 20px 40px -15px rgba(0, 0, 0, 0.3)",
+          padding: "28px",
+          color: "var(--ink)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
+          maxHeight: "90vh",
+          overflowY: "auto",
+        }}
+      >
+        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>Cookie Preference Settings</h2>
+          <div>
+            <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700, letterSpacing: "-0.02em" }}>
+              Privacy Preference Center
+            </h2>
+            <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "2px" }}>
+              Consent Version: {consentVersion} | Region: {region}
+            </div>
+          </div>
           <button 
             onClick={onClose}
             style={{
               background: "none",
               border: "none",
               color: "var(--ink3)",
-              fontSize: "20px",
-              cursor: "pointer"
+              fontSize: "18px",
+              cursor: "pointer",
+              padding: "4px",
             }}
           >
             ✕
           </button>
         </div>
-        
-        <p style={{ fontSize: "13px", color: "var(--ink3)", margin: 0, lineHeight: 1.5 }}>
-          NewsIQ uses cookies to enhance platform stability, remember configuration settings, and measure feature usage. Customize your choices below.
+
+        <p style={{ fontSize: "13px", color: "var(--ink2)", margin: 0, lineHeight: 1.6 }}>
+          We use cookies and equivalent browser storage to keep you securely signed in, remember your layout configurations, and analyze platform performance. Customize your compliance settings below.
         </p>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        {/* Categories List */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          
           {/* Essential */}
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "12px",
-            background: "var(--surface)",
-            borderRadius: "var(--r8)",
-            border: "1px solid var(--border)"
-          }}>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: 600 }}>Essential Cookies</div>
-              <div style={{ fontSize: "12px", color: "var(--ink3)" }}>Required for user login sessions and safety mechanisms.</div>
+          <div 
+            style={{
+              padding: "14px",
+              background: "var(--surface)",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "16px",
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "14px", fontWeight: 600 }}>1. Essential Cookies</span>
+                <span style={{ fontSize: "10px", backgroundColor: "var(--border)", padding: "2px 6px", borderRadius: "4px", fontWeight: 500, color: "var(--ink3)" }}>Required</span>
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
+                Strictly necessary for secure authentication, CSRF defense, and email validation cooldown limits.
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
+                <strong>Cookies:</strong> `access_token`, `refresh_token`, `niq_cookie_consent` | <strong>Retention:</strong> 15 mins to 1 year | <strong>Third-party:</strong> No
+              </div>
             </div>
-            <input type="checkbox" checked disabled style={{ width: "16px", height: "16px" }} />
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <input type="checkbox" checked disabled style={{ width: "18px", height: "18px", accentColor: "var(--blue)" }} />
+            </div>
           </div>
 
           {/* Functional */}
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "12px",
-            background: "var(--surface)",
-            borderRadius: "var(--r8)",
-            border: "1px solid var(--border)"
-          }}>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: 600 }}>Functional Cookies</div>
-              <div style={{ fontSize: "12px", color: "var(--ink3)" }}>Remembers layout details, summary depths, and dark/light themes.</div>
+          <div 
+            style={{
+              padding: "14px",
+              background: "var(--surface)",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "16px",
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "14px", fontWeight: 600 }}>2. Functional Preferences</span>
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
+                Remembers theme selections (dark/light), sidebar layout modes, and preferred AI summary depth configs.
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
+                <strong>Keys:</strong> `newsiq-ui`, `theme`, `next-themes` | <strong>Retention:</strong> Persistent | <strong>Third-party:</strong> No
+              </div>
             </div>
-            <input 
-              type="checkbox" 
-              checked={prefs.functional}
-              onChange={() => handleToggle("functional")}
-              style={{ width: "16px", height: "16px", cursor: "pointer" }} 
-            />
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <input 
+                type="checkbox" 
+                checked={localPrefs.functional}
+                onChange={() => handleToggle("functional")}
+                style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "var(--blue)" }} 
+              />
+            </div>
           </div>
 
           {/* Analytics */}
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "12px",
-            background: "var(--surface)",
-            borderRadius: "var(--r8)",
-            border: "1px solid var(--border)"
-          }}>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: 600 }}>Analytics Cookies</div>
-              <div style={{ fontSize: "12px", color: "var(--ink3)" }}>Anonymously registers click streams, scroll rates, and features used.</div>
+          <div 
+            style={{
+              padding: "14px",
+              background: "var(--surface)",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "16px",
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "14px", fontWeight: 600 }}>3. Performance & Analytics</span>
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
+                Helps us measure site traffic, identify feature usage clickstreams, and optimize response speeds anonymously.
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
+                <strong>Cookies:</strong> `_ga`, `_gid`, `posthog-js` | <strong>Retention:</strong> 24 hrs to 1 year | <strong>Third-party:</strong> Yes (Google, PostHog)
+              </div>
             </div>
-            <input 
-              type="checkbox" 
-              checked={prefs.analytics}
-              onChange={() => handleToggle("analytics")}
-              style={{ width: "16px", height: "16px", cursor: "pointer" }} 
-            />
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <input 
+                type="checkbox" 
+                checked={localPrefs.analytics}
+                onChange={() => handleToggle("analytics")}
+                style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "var(--blue)" }} 
+              />
+            </div>
           </div>
 
-          {/* Security */}
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "12px",
-            background: "var(--surface)",
-            borderRadius: "var(--r8)",
-            border: "1px solid var(--border)"
-          }}>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: 600 }}>Security Cookies</div>
-              <div style={{ fontSize: "12px", color: "var(--ink3)" }}>Monitors access rates to block scraper bots and secure active credentials.</div>
+          {/* Marketing */}
+          <div 
+            style={{
+              padding: "14px",
+              background: "var(--surface)",
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "16px",
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "14px", fontWeight: 600 }}>4. Targeting & Marketing</span>
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
+                Tracks campaign success and measures newsletter signup events to serve relevant context on partner channels.
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
+                <strong>Cookies:</strong> `_fbp`, `LinkedIn Insight` | <strong>Retention:</strong> 30 to 90 days | <strong>Third-party:</strong> Yes (Meta, LinkedIn)
+              </div>
             </div>
-            <input 
-              type="checkbox" 
-              checked={prefs.security}
-              onChange={() => handleToggle("security")}
-              style={{ width: "16px", height: "16px", cursor: "pointer" }} 
-            />
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <input 
+                type="checkbox" 
+                checked={localPrefs.marketing}
+                onChange={() => handleToggle("marketing")}
+                style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "var(--blue)" }} 
+              />
+            </div>
+          </div>
+
+        </div>
+
+        {/* Footer Actions */}
+        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", marginTop: "10px" }}>
+          <div>
+            <button 
+              onClick={handleReset}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--ink2)",
+                fontSize: "13px",
+                fontWeight: 500,
+                cursor: "pointer",
+                padding: "8px 0",
+                textDecoration: "underline",
+              }}
+            >
+              Reset Settings
+            </button>
+          </div>
+          
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button 
+              onClick={handleRejectAll}
+              style={{
+                background: "none",
+                border: "1px solid var(--border)",
+                color: "var(--ink2)",
+                padding: "8px 16px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Reject All
+            </button>
+
+            <button 
+              onClick={handleAcceptAll}
+              style={{
+                background: "none",
+                border: "1px solid var(--border)",
+                color: "var(--ink)",
+                padding: "8px 16px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Accept All
+            </button>
+
+            <button 
+              onClick={handleSave}
+              className="btnp"
+              style={{
+                fontSize: "13px",
+                padding: "9px 18px",
+                borderRadius: "8px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Save Preferences
+            </button>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "8px" }}>
-          <button className="btno" onClick={handleAcceptAll} style={{ fontSize: "13px", padding: "8px 16px" }}>
-            Accept All
-          </button>
-          <button className="btnp" onClick={handleSave} style={{ fontSize: "13px", padding: "8px 16px" }}>
-            Save Preferences
-          </button>
-        </div>
       </div>
     </div>
   );

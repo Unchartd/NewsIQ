@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
 
 import pytest
 from fastapi import HTTPException
@@ -327,8 +327,18 @@ async def test_logout_current_device(mock_db_session, mock_request, mock_respons
         res = await logout(mock_request, mock_response, mock_db_session)
         assert res.message == "Logged out successfully."
         mock_delete.assert_called_once_with("hashA")
-        mock_response.delete_cookie.assert_any_call(key="refresh_token", path="/")
-        mock_response.delete_cookie.assert_any_call(key="access_token", path="/")
+        mock_response.delete_cookie.assert_any_call(
+            key="refresh_token",
+            path="/",
+            secure=ANY,
+            samesite="lax",
+        )
+        mock_response.delete_cookie.assert_any_call(
+            key="access_token",
+            path="/",
+            secure=ANY,
+            samesite="lax",
+        )
 
 
 @pytest.mark.asyncio
@@ -340,8 +350,18 @@ async def test_logout_all_devices(mock_db_session, mock_response):
         res = await logout_all(mock_response, user, mock_db_session)
         assert res.message == "Logged out from all devices."
         mock_delete_all.assert_called_once_with(user.id)
-        mock_response.delete_cookie.assert_any_call(key="refresh_token", path="/")
-        mock_response.delete_cookie.assert_any_call(key="access_token", path="/")
+        mock_response.delete_cookie.assert_any_call(
+            key="refresh_token",
+            path="/",
+            secure=ANY,
+            samesite="lax",
+        )
+        mock_response.delete_cookie.assert_any_call(
+            key="access_token",
+            path="/",
+            secure=ANY,
+            samesite="lax",
+        )
 
 
 @pytest.mark.asyncio

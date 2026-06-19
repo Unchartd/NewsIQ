@@ -234,6 +234,27 @@ async def delete_account(
     # Delete associated OAuth account links (contains provider IDs and tokens)
     await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
     
+    # GDPR/DPDPA: Purge preferences, bookmarks, events, search history, and digest subscriptions
+    from app.models.models import UserPreference, Bookmark, SearchHistory, UserEvent, DigestSubscription
+    from app.models.consent import ConsentPreference, ConsentAuditLog
+    from sqlalchemy import update
+
+    await db.execute(delete(UserPreference).where(UserPreference.user_id == user.id))
+    await db.execute(delete(Bookmark).where(Bookmark.user_id == user.id))
+    await db.execute(delete(SearchHistory).where(SearchHistory.user_id == user.id))
+    await db.execute(delete(UserEvent).where(UserEvent.user_id == user.id))
+    await db.execute(delete(DigestSubscription).where(DigestSubscription.user_id == user.id))
+    
+    # Purge active consent preferences
+    await db.execute(delete(ConsentPreference).where(ConsentPreference.user_id == user.id))
+    
+    # Anonymize consent audit logs (dissociate user_id for GDPR records compliance)
+    await db.execute(
+        update(ConsentAuditLog)
+        .where(ConsentAuditLog.user_id == user.id)
+        .values(user_id=None)
+    )
+    
     await db.flush()
     return MessageResponse(message="Account deleted.")
 

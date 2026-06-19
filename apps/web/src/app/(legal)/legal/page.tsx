@@ -243,6 +243,53 @@ function LegalPageContent() {
                 No sections match your search query.
               </div>
             )}
+
+            {/* Dynamic Cookie Inventory Table for Phase 11 */}
+            {activePolicyKey === "cookies" && (
+              <div className="sec" id="cookie-table" style={{ marginTop: "40px" }}>
+                <h2 className="sec-title" style={{ marginBottom: "16px" }}>Cookie & Browser Storage Inventory</h2>
+                <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: "var(--r8)", background: "var(--surface)", boxShadow: "var(--sh1)" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "2px solid var(--border)", background: "var(--surface)", opacity: 0.85 }}>
+                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Cookie Name / Key</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Purpose</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Category</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Retention</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Third Party</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Consent</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { name: "access_token", purpose: "JWT user authentication session", cat: "Essential", ret: "15 mins", tp: "No", consent: "No" },
+                        { name: "refresh_token", purpose: "Rotating refresh token for new access JWTs", cat: "Essential", ret: "30 days", tp: "No", consent: "No" },
+                        { name: "niq_cookie_consent", purpose: "Stores granular cookie choice preferences", cat: "Essential", ret: "1 year", tp: "No", consent: "No" },
+                        { name: "resend_cooldown", purpose: "Blocks spamming verification link requests", cat: "Essential", ret: "60 secs", tp: "No", consent: "No" },
+                        { name: "newsiq-auth", purpose: "Persists visual profile parameters", cat: "Essential", ret: "Persistent", tp: "No", consent: "No" },
+                        { name: "newsiq-ui", purpose: "UI settings (sidebar, AI summary depth)", cat: "Functional", ret: "Persistent", tp: "No", consent: "Yes" },
+                        { name: "theme / next-themes", purpose: "Remembers dark/light mode configurations", cat: "Functional", ret: "Persistent", tp: "No", consent: "Yes" },
+                        { name: "_ga / _gid", purpose: "Traffic and engagement metrics (Google)", cat: "Analytics", ret: "24h - 2yrs", tp: "Yes", consent: "Yes" },
+                        { name: "ph_*_user", purpose: "Feature clickstream telemetry (PostHog)", cat: "Analytics", ret: "1 year", tp: "Yes", consent: "Yes" },
+                        { name: "_fbp", purpose: "Facebook ad campaign conversion metrics", cat: "Marketing", ret: "90 days", tp: "Yes", consent: "Yes" },
+                        { name: "LinkedIn Insight", purpose: "LinkedIn professional campaign tracking", cat: "Marketing", ret: "30 days", tp: "Yes", consent: "Yes" }
+                      ].map((row, index) => (
+                        <tr key={index} style={{ borderBottom: "1px solid var(--border)", transition: "background .15s" }}>
+                          <td style={{ padding: "12px 14px", fontFamily: "monospace", color: "var(--blue)", fontWeight: 600 }}>{row.name}</td>
+                          <td style={{ padding: "12px 14px", color: "var(--ink)" }}>{row.purpose}</td>
+                          <td style={{ padding: "12px 14px", color: "var(--ink2)" }}>{row.cat}</td>
+                          <td style={{ padding: "12px 14px", color: "var(--ink3)" }}>{row.ret}</td>
+                          <td style={{ padding: "12px 14px", color: "var(--ink3)" }}>{row.tp}</td>
+                          <td style={{ padding: "12px 14px", fontWeight: row.consent === "Yes" ? 600 : 400, color: row.consent === "Yes" ? "var(--amber)" : "var(--ink3)" }}>
+                            {row.consent === "Yes" ? "Consent Required" : "Strictly Necessary"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div style={{ padding: "80px", textAlign: "center", color: "var(--ink3)" }}>

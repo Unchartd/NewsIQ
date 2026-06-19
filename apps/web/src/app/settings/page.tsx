@@ -20,7 +20,11 @@ import {
   History,
   Lock,
   Shield,
+  Download,
+  RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
+import { useConsent } from "@/components/legal/consent-provider";
 
 // Toast Notification type
 interface Toast {
@@ -190,6 +194,17 @@ function SettingsContent() {
   const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const { user, isAuthenticated, setUser, logout: storeLogout } = useAuthStore();
+
+  const {
+    essentialEnabled,
+    functionalEnabled,
+    analyticsEnabled,
+    marketingEnabled,
+    region,
+    consentVersion,
+    updateConsent,
+    withdrawConsent,
+  } = useConsent();
 
   const [activeTab, setActiveTab] = useState<string>("edit");
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -2127,54 +2142,103 @@ function SettingsContent() {
 
       case "privacy":
         return (
-          <div className="page">
+          <div className="page" style={{ fontFamily: "var(--font-sans, sans-serif)" }}>
             <div className="page-hdr">
-              <div className="page-hdr-title">Privacy</div>
-              <div className="page-hdr-sub">Control how your data is used to personalise your experience</div>
+              <div className="page-hdr-title">Privacy & Consent</div>
+              <div className="page-hdr-sub">Manage cookie preferences, withdraw consent, and export your compliance history</div>
             </div>
 
-            <div className="slbl">Personalisation</div>
-            <div className="pcrd pcrd-p" style={{ marginBottom: 20 }}>
+            {/* Jurisdiction & Metadata */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+              <div style={{ padding: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r8)" }}>
+                <div style={{ fontSize: 11, color: "var(--ink3)" }}>Legal Jurisdiction</div>
+                <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4, color: "var(--ink)" }}>{region === "CA" ? "US / California (CCPA)" : region}</div>
+              </div>
+              <div style={{ padding: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r8)" }}>
+                <div style={{ fontSize: 11, color: "var(--ink3)" }}>Active Consent Version</div>
+                <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4, color: "var(--ink)" }}>{consentVersion}</div>
+              </div>
+            </div>
+
+            {/* Cookie Categories Toggles */}
+            <div className="slbl">Cookie Categories</div>
+            <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
+              
+              {/* Essential */}
               <div className="tog-row">
                 <div className="tog-info">
-                  <div className="tog-label">Personalise feed using reading history</div>
-                  <div className="tog-sub">Use stories you've read to weight your recommendations</div>
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                    🛡️ Essential Cookies
+                  </div>
+                  <div className="tog-sub">Required for login sessions, JWT rotating tokens, and anti-CSRF protection.</div>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={personaliseHistory}
-                    onChange={(e) => handleUiToggleChange("personaliseHistory", e.target.checked, setPersonaliseHistory)}
+                  <input type="checkbox" checked disabled />
+                  <div className="tog-track" style={{ opacity: 0.5 }}></div>
+                  <div className="tog-thumb"></div>
+                </label>
+              </div>
+
+              {/* Functional */}
+              <div className="tog-row">
+                <div className="tog-info">
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                    ⚙️ Functional Preferences
+                  </div>
+                  <div className="tog-sub">Persists dark/light themes, sidebar layouts, and AI summary preferences.</div>
+                </div>
+                <label className="toggle">
+                  <input 
+                    type="checkbox" 
+                    checked={functionalEnabled} 
+                    onChange={async (e) => {
+                      await updateConsent({ functional: e.target.checked });
+                      triggerToast(`Functional preferences ${e.target.checked ? "enabled" : "disabled"}.`, "s");
+                    }} 
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
               </div>
+
+              {/* Analytics */}
               <div className="tog-row">
                 <div className="tog-info">
-                  <div className="tog-label">Personalise digest based on engagement</div>
-                  <div className="tog-sub">Use time-spent and scroll depth to improve your digest</div>
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                    📈 Analytics & Performance
+                  </div>
+                  <div className="tog-sub">Allows privacy-focused analytics (Google Analytics, PostHog) to optimize summaries.</div>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={personaliseDigest}
-                    onChange={(e) => handleUiToggleChange("personaliseDigest", e.target.checked, setPersonaliseDigest)}
+                  <input 
+                    type="checkbox" 
+                    checked={analyticsEnabled} 
+                    onChange={async (e) => {
+                      await updateConsent({ analytics: e.target.checked });
+                      triggerToast(`Analytics tracking ${e.target.checked ? "enabled" : "disabled"}.`, "s");
+                    }} 
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
                 </label>
               </div>
+
+              {/* Marketing */}
               <div className="tog-row" style={{ borderBottom: "none" }}>
                 <div className="tog-info">
-                  <div className="tog-label">Track click-through on story cards</div>
-                  <div className="tog-sub">Helps us improve story ranking — no data leaves your account</div>
+                  <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                    📢 Target Marketing Pixels
+                  </div>
+                  <div className="tog-sub">Allows Meta Pixel and LinkedIn tags to measure newsletter and billing conversions.</div>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={trackClick}
-                    onChange={(e) => handleUiToggleChange("trackClick", e.target.checked, setTrackClick)}
+                  <input 
+                    type="checkbox" 
+                    checked={marketingEnabled} 
+                    onChange={async (e) => {
+                      await updateConsent({ marketing: e.target.checked });
+                      triggerToast(`Marketing pixels ${e.target.checked ? "enabled" : "disabled"}.`, "s");
+                    }} 
                   />
                   <div className="tog-track"></div>
                   <div className="tog-thumb"></div>
@@ -2182,41 +2246,83 @@ function SettingsContent() {
               </div>
             </div>
 
-            <div className="slbl">Analytics & Research</div>
-            <div className="pcrd pcrd-p" style={{ marginBottom: 20 }}>
-              <div className="tog-row">
-                <div className="tog-info">
-                  <div className="tog-label">Share anonymous usage data</div>
-                  <div className="tog-sub">Aggregated and de-identified — helps us improve the platform</div>
+            {/* GDPR Evidence Logs & Clear Actions */}
+            <div className="slbl">GDPR Compliance Controls</div>
+            <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
+              
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, borderBottom: "1px solid var(--border)", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>Export consent history logs</div>
+                  <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>Download your signed cookie consent transactions under GDPR Art 7.</div>
                 </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={shareUsage}
-                    onChange={(e) => handleUiToggleChange("shareUsage", e.target.checked, setShareUsage)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
+                <button 
+                  onClick={async () => {
+                    try {
+                      triggerToast("Fetching consent logs...", "s");
+                      const response = await apiClient.get("/consent/logs");
+                      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(response.data, null, 2));
+                      const downloadAnchor = document.createElement("a");
+                      downloadAnchor.setAttribute("href", dataStr);
+                      downloadAnchor.setAttribute("download", `newsiq-consent-audit-log.json`);
+                      document.body.appendChild(downloadAnchor);
+                      downloadAnchor.click();
+                      downloadAnchor.remove();
+                      triggerToast("Consent history logs downloaded.", "s");
+                    } catch (e) {
+                      triggerToast("Failed to retrieve consent history.", "e");
+                    }
+                  }} 
+                  className="btno btnsm" 
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  <Download size={13} /> Export Logs
+                </button>
               </div>
-              <div className="tog-row" style={{ borderBottom: "none" }}>
-                <div className="tog-info">
-                  <div className="tog-label">Participate in UX research</div>
-                  <div className="tog-sub">Occasional surveys or usability tests — always optional</div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, borderBottom: "1px solid var(--border)", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>Reset consent defaults</div>
+                  <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>Revert all cookie consents to your region's default settings.</div>
                 </div>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={uxResearch}
-                    onChange={(e) => handleUiToggleChange("uxResearch", e.target.checked, setUxResearch)}
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
+                <button 
+                  onClick={async () => {
+                    // Fetch region defaults
+                    try {
+                      const res = await apiClient.get("/consent/region");
+                      const { defaults } = res.data;
+                      await updateConsent(defaults);
+                      triggerToast("Preferences reset to regional defaults.", "w");
+                    } catch (e) {
+                      triggerToast("Failed to reset preferences.", "e");
+                    }
+                  }} 
+                  className="btno btnsm" 
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  <RotateCcw size={13} /> Reset Defaults
+                </button>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>Withdraw all consents</div>
+                  <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>Withdraw all non-essential cookies. Will refresh page to clear variables.</div>
+                </div>
+                <button 
+                  onClick={async () => {
+                    triggerToast("Withdrawing consents...", "w");
+                    await withdrawConsent();
+                  }} 
+                  className="btno btnsm" 
+                  style={{ color: "var(--err)", borderColor: "rgba(220,38,38,.25)", display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  <AlertTriangle size={13} /> Withdraw All
+                </button>
               </div>
             </div>
 
-            <div className="slbl">Data & Exports</div>
+            {/* General Data & Portability */}
+            <div className="slbl">Data Portability & Erasure</div>
             <div className="pcrd" style={{ marginBottom: 28 }}>
               <div className="dz-item" style={{ borderBottom: "1px solid var(--border)" }}>
                 <div className="dz-item-info">
@@ -2224,7 +2330,7 @@ function SettingsContent() {
                   <div className="dz-item-sub">Export your bookmarks, preferences, and reading history as JSON</div>
                 </div>
                 <button className="btno btnsm" onClick={handleExportData}>
-                  <svg width="13" height="13"><use href="#i-download" /></svg>Export
+                  <Download size={13} style={{ marginRight: 6 }} /> Export
                 </button>
               </div>
               <div className="dz-item">
@@ -2244,14 +2350,10 @@ function SettingsContent() {
             </div>
 
             <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r6)", padding: "14px 16px", display: "flex", gap: 10, marginBottom: 28 }}>
-              <svg width="16" height="16" style={{ color: "var(--ink3)", flexShrink: 0, marginTop: 2 }}><use href="#i-shield" /></svg>
+              <Shield size={16} style={{ color: "var(--ink3)", flexShrink: 0, marginTop: 2 }} />
               <div style={{ fontSize: 13, color: "var(--ink3)", lineHeight: 1.6 }}>
-                NewsIQ does not sell your data to third parties. We never use your reading history for advertising. <a href="#" onClick={(e) => { e.preventDefault(); triggerToast("Redirecting to Privacy Policy", "s"); }} style={{ color: "var(--blue)" }}>Read our Privacy Policy →</a>
+                NewsIQ does not sell your data to third parties. We never use your reading history for advertising. <a href="/legal?policy=privacy" style={{ color: "var(--blue)", textDecoration: "underline" }}>Read our Privacy Policy →</a>
               </div>
-            </div>
-
-            <div className="btn-row">
-              <button className="btnp" onClick={savePrivacySettings}>Save settings</button>
             </div>
           </div>
         );

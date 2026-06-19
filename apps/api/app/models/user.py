@@ -38,6 +38,8 @@ if TYPE_CHECKING:
         UserLocation,
     )
     from app.models.session import Session
+    from app.models.consent import ConsentPreference
+
 
 
 class User(Base):
@@ -72,6 +74,9 @@ class User(Base):
 
     # Relationships
     preferences: Mapped["UserPreference | None"] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    consent_preference: Mapped["ConsentPreference | None"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     sessions: Mapped[list["Session"]] = relationship(

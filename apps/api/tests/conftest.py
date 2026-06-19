@@ -18,9 +18,14 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 @pytest.fixture
 def mock_db_session():
     """Mock SQLAlchemy AsyncSession."""
+    from unittest.mock import MagicMock
     session = AsyncMock()
     session.execute = AsyncMock()
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
     session.close = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()  # flush is async in AsyncSession
+    session.refresh = AsyncMock() # refresh is async in AsyncSession
     return session
+

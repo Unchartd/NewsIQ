@@ -1,139 +1,146 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import CookieModal, { CookiePreferences } from "./cookie-modal";
+import React, { useState } from "react";
+import CookieModal from "./cookie-modal";
+import { useConsent } from "./consent-provider";
 
 export default function CookieBanner() {
-  const [isVisible, setIsVisible] = useState<boolean>(false);
+  const { showBanner, setShowBanner, updateConsent, loading, region } = useConsent();
   const [modalOpen, setModalOpen] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const consent = localStorage.getItem("niq_cookie_consent");
-      if (!consent) {
-        setIsVisible(true);
-      }
-    }
-  }, []);
-
-  const handleAcceptAll = () => {
-    const prefs: CookiePreferences = {
-      essential: true,
-      functional: true,
-      analytics: true,
-      security: true,
-    };
-    localStorage.setItem("niq_cookie_consent", JSON.stringify(prefs));
-    setIsVisible(false);
-  };
-
-  const handleRejectAll = () => {
-    const prefs: CookiePreferences = {
-      essential: true,
-      functional: false,
-      analytics: false,
-      security: false,
-    };
-    localStorage.setItem("niq_cookie_consent", JSON.stringify(prefs));
-    setIsVisible(false);
-  };
-
-  if (!isVisible) {
+  if (loading || !showBanner) {
     return (
       <>
-        {/* Render modal if manually opened from footer */}
         <CookieModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
-        {/* Global listener to open cookie settings via custom event */}
         <CookieSettingsListener onTrigger={() => setModalOpen(true)} />
       </>
     );
   }
 
+  const handleAcceptAll = async () => {
+    await updateConsent({
+      essential: true,
+      functional: true,
+      analytics: true,
+      marketing: true,
+    });
+  };
+
+  const handleRejectAll = async () => {
+    await updateConsent({
+      essential: true,
+      functional: false,
+      analytics: false,
+      marketing: false,
+    });
+  };
+
   return (
     <>
-      <div style={{
-        position: "fixed",
-        bottom: "24px",
-        left: "24px",
-        right: "24px",
-        backgroundColor: "var(--card)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--r12)",
-        boxShadow: "var(--sh3)",
-        padding: "20px 24px",
-        zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "24px",
-        flexWrap: "wrap"
-      }}>
+      <div 
+        style={{
+          position: "fixed",
+          bottom: "24px",
+          left: "24px",
+          right: "24px",
+          backgroundColor: "rgba(var(--card-rgb, 255, 255, 255), 0.85)",
+          border: "1px solid var(--border)",
+          borderRadius: "16px",
+          boxShadow: "0 10px 30px -10px rgba(0, 0, 0, 0.15)",
+          padding: "24px",
+          zIndex: 9999,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "24px",
+          flexWrap: "wrap",
+          backdropFilter: "blur(12px)",
+          transition: "all 0.3s ease-in-out",
+          maxWidth: "1200px",
+          margin: "0 auto",
+        }}
+      >
         <div style={{ flex: 1, minWidth: "280px" }}>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--ink)", marginBottom: "4px" }}>
-            ✦ Cookie Consent
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+            <span style={{ fontSize: "16px" }}>🔒</span>
+            <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--ink)" }}>
+              Cookie & Privacy Preferences ({region === "CA" ? "US / CA Rights" : region})
+            </div>
           </div>
-          <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
-            We use cookies to verify sessions and measure features. You can accept all, reject non-essential trackers, or customize details in settings. See our{" "}
-            <a href="/legal?policy=cookies" style={{ color: "var(--blue)", textDecoration: "underline" }}>Cookie Policy</a>.
+          <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.6 }}>
+            NewsIQ uses cookies to secure session authentication and maintain layout state. Depending on your region, we may also request permission to run privacy-focused analytics and marketing pixels. Read our{" "}
+            <a href="/legal?policy=cookies" style={{ color: "var(--blue)", textDecoration: "underline", fontWeight: 500 }}>
+              Cookie Policy
+            </a>{" "}
+            to learn more.
           </div>
         </div>
-        
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
           <button 
             onClick={() => setModalOpen(true)}
             style={{
               background: "none",
               border: "1px solid var(--border)",
-              color: "var(--ink2)",
-              padding: "8px 14px",
-              borderRadius: "var(--r6)",
+              color: "var(--ink)",
+              padding: "10px 18px",
+              borderRadius: "8px",
               fontSize: "13px",
               fontWeight: 500,
-              cursor: "pointer"
+              cursor: "pointer",
+              transition: "background 0.2s",
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--surface)")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
           >
-            Cookie Settings
+            Customize
           </button>
+          
           <button 
             onClick={handleRejectAll}
             style={{
               background: "none",
               border: "1px solid var(--border)",
               color: "var(--ink2)",
-              padding: "8px 14px",
-              borderRadius: "var(--r6)",
+              padding: "10px 18px",
+              borderRadius: "8px",
               fontSize: "13px",
               fontWeight: 500,
-              cursor: "pointer"
+              cursor: "pointer",
+              transition: "background 0.2s",
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--surface)")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
           >
             Reject Non-Essential
           </button>
+
           <button 
             onClick={handleAcceptAll}
             className="btnp"
             style={{
               fontSize: "13px",
-              padding: "9px 16px"
+              padding: "11px 20px",
+              borderRadius: "8px",
+              fontWeight: 600,
+              cursor: "pointer",
             }}
           >
             Accept All
           </button>
         </div>
       </div>
-      
+
       <CookieModal 
         isOpen={modalOpen} 
         onClose={() => setModalOpen(false)} 
-        onSave={() => setIsVisible(false)} 
       />
     </>
   );
 }
 
-// Simple helper component to listen to custom window events to trigger the cookie settings modal
 function CookieSettingsListener({ onTrigger }: { onTrigger: () => void }) {
-  useEffect(() => {
+  React.useEffect(() => {
     const handleTrigger = () => onTrigger();
     window.addEventListener("open-cookie-settings", handleTrigger);
     return () => window.removeEventListener("open-cookie-settings", handleTrigger);

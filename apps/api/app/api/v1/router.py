@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, oauth, sources, stories, users
+from app.api.v1 import admin, auth, consent, oauth, sources, stories, users
 
 api_router = APIRouter()
 
@@ -11,6 +11,10 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 # Google OAuth endpoints
 api_router.include_router(oauth.router, prefix="/auth", tags=["oauth"])
+
+# Consent endpoints (CMP)
+api_router.include_router(consent.router, prefix="/consent", tags=["consent"])
+
 
 # User endpoints
 api_router.include_router(users.router, prefix="/users", tags=["users"])

@@ -9,6 +9,8 @@ import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { usePathname, useRouter } from "next/navigation";
 import CookieBanner from "@/components/legal/cookie-banner";
+import { ConsentProvider } from "@/components/legal/consent-provider";
+
 
 
 const PUBLIC_PATHS = [
@@ -135,13 +137,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
-        <TooltipProvider>
-          <AuthInitializer>{children}</AuthInitializer>
-          <Toaster position="bottom-right" richColors closeButton />
-          <CookieBanner />
-        </TooltipProvider>
+        <ConsentProvider>
+          <TooltipProvider>
+            <AuthInitializer>{children}</AuthInitializer>
+            <Toaster position="bottom-right" richColors closeButton />
+            <CookieBanner />
+          </TooltipProvider>
+        </ConsentProvider>
       </ThemeProvider>
     </QueryClientProvider>
-
   );
 }

@@ -25,6 +25,8 @@ from app.models.models import (
     UserLocation,
     UserPreference,
 )
+from app.models.consent import ConsentPreference, ConsentAuditLog
+
 
 __all__ = [
     "ApiKey",
@@ -50,4 +52,6 @@ __all__ = [
     "UserEvent",
     "UserLocation",
     "UserPreference",
+    "ConsentPreference",
+    "ConsentAuditLog",
 ]
