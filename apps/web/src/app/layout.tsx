@@ -1,42 +1,158 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import {
+  buildOrganizationSchema,
+  buildWebSiteSchema,
+  buildSoftwareApplicationSchema,
+  serializeJsonLd,
+} from "@/lib/jsonld";
+import { SITE_URL, SITE_NAME, SITE_DESCRIPTION, DEFAULT_OG_IMAGE } from "@/lib/metadata";
 
+// ─── Fonts via next/font (no render-blocking, automatic font-display:swap) ───
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
+
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  variable: "--font-newsreader",
+  style: ["normal", "italic"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+// ─── Root Metadata ────────────────────────────────────────────────────────────
 export const metadata: Metadata = {
+  // metadataBase is REQUIRED for absolute OG/Twitter image URLs in Next.js
+  metadataBase: new URL(SITE_URL),
+
+  applicationName: SITE_NAME,
+  generator: "Next.js",
+
   title: {
-    default: "NewsIQ — AI News Intelligence Platform",
-    template: "%s | NewsIQ",
+    default: `${SITE_NAME} — AI News Intelligence Platform`,
+    template: `%s | ${SITE_NAME}`,
   },
-  description:
-    "Understand any major story in under 30 seconds. AI-powered news clustering, multi-source comparison, and transparent summaries.",
+  description: SITE_DESCRIPTION,
   keywords: [
-    "news",
-    "AI",
-    "intelligence",
-    "aggregator",
-    "summaries",
+    "AI news",
+    "news intelligence",
+    "news aggregator",
+    "multi-source news",
+    "AI summaries",
     "source comparison",
+    "neutral news",
+    "fact extraction",
+    "news clustering",
+    "NewsIQ",
   ],
-  authors: [{ name: "NewsIQ" }],
+  authors: [{ name: SITE_NAME, url: SITE_URL }],
+
+  // ── Open Graph ──
   openGraph: {
     type: "website",
     locale: "en_US",
-    siteName: "NewsIQ",
-    title: "NewsIQ — AI News Intelligence Platform",
-    description:
-      "Understand any major story in under 30 seconds with AI-powered source transparency.",
+    url: SITE_URL,
+    siteName: SITE_NAME,
+    title: `${SITE_NAME} — AI News Intelligence Platform`,
+    description: SITE_DESCRIPTION,
+    images: [
+      {
+        url: DEFAULT_OG_IMAGE,
+        width: 1200,
+        height: 630,
+        alt: "NewsIQ — Understand the Story, Not Just the Headlines",
+      },
+    ],
   },
+
+  // ── Twitter / X Cards ──
   twitter: {
     card: "summary_large_image",
-    title: "NewsIQ — AI News Intelligence Platform",
-    description:
-      "Understand any major story in under 30 seconds with AI-powered source transparency.",
+    site: "@newsiq_app",
+    creator: "@newsiq_app",
+    title: `${SITE_NAME} — AI News Intelligence Platform`,
+    description: SITE_DESCRIPTION,
+    images: [DEFAULT_OG_IMAGE],
   },
+
+  // ── Icons ──
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+    shortcut: "/favicon.ico",
+  },
+
+  // ── Manifest (PWA / Google Discover) ──
+  manifest: "/manifest.json",
+
+  // ── Canonical ──
+  alternates: {
+    canonical: SITE_URL,
+  },
+
+  // ── Robots ──
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+
+  // ── Verification — add tokens once GSC/Bing are connected ──
+  // verification: {
+  //   google: "YOUR_GOOGLE_SITE_VERIFICATION_TOKEN",
+  //   yandex: "YOUR_YANDEX_TOKEN",
+  //   other: {
+  //     "msvalidate.01": "YOUR_BING_VERIFICATION_TOKEN",
+  //   },
+  // },
+
+  // ── Referrer policy ──
+  referrer: "origin-when-cross-origin",
+
+  // ── Format detection ──
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
   },
 };
+
+// ─── Viewport (themeColor must be here in Next.js 15+) ──────────────────────
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+};
+
+// ─── Global JSON-LD schemas ───────────────────────────────────────────────────
+const orgSchema = buildOrganizationSchema();
+const websiteSchema = buildWebSiteSchema();
+const appSchema = buildSoftwareApplicationSchema();
 
 export default function RootLayout({
   children,
@@ -46,14 +162,24 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className="h-full antialiased"
+      className={`h-full antialiased ${inter.variable} ${jetbrainsMono.variable} ${newsreader.variable}`}
       suppressHydrationWarning
       data-scroll-behavior="smooth"
     >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet" />
+        {/* Global JSON-LD: Organization + WebSite (SearchAction) + SoftwareApplication */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(orgSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(websiteSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(appSchema) }}
+        />
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         <Providers>{children}</Providers>
