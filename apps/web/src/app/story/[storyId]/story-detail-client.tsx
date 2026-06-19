@@ -205,20 +205,22 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
       {story.related_stories && story.related_stories.length > 0 && (
         <div className="pcrd">
           <div className="slbl" style={{ marginBottom: 10 }}>Related</div>
-          {story.related_stories.slice(0, 3).map((relStory) => (
-            <Link key={relStory.id} href={`/story/${relStory.id}`} style={{ textDecoration: "none" }}>
-              <div className="titem" style={{ padding: "8px 0" }}>
-                <div>
-                  <div className="ti-h" style={{ fontSize: 13 }}>
-                    {relStory.headline}
-                  </div>
-                  <div className="ti-m">
-                    {relStory.source_count} sources · {formatTimeAgo(relStory.updated_at)}
+          <nav aria-label="Related stories" style={{ display: "flex", flexDirection: "column" }}>
+            {story.related_stories.slice(0, 3).map((relStory) => (
+              <Link key={relStory.id} href={`/story/${relStory.id}`} style={{ textDecoration: "none" }}>
+                <div className="titem" style={{ padding: "8px 0" }}>
+                  <div>
+                    <div className="ti-h" style={{ fontSize: 13 }}>
+                      {relStory.headline}
+                    </div>
+                    <div className="ti-m">
+                      {relStory.source_count} sources · {formatTimeAgo(relStory.updated_at)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            ))}
+          </nav>
         </div>
       )}
     </div>
@@ -227,15 +229,33 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
   return (
     <AppShell sidebar={sidebar}>
       <div style={{ padding: "0 0 48px 0" }}>
-        {/* Back */}
-        <Link href="/home" style={{ fontSize: 13, color: "var(--ink3)", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 24, textDecoration: "none" }}>
-          <ChevronLeft size={14} /> Back to feed
-        </Link>
+        {/* Breadcrumb List for E-E-A-T and AEO */}
+        <nav aria-label="Breadcrumb" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--ink3)", marginBottom: 24, flexWrap: "wrap" }}>
+          <Link href="/home" style={{ color: "var(--ink3)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <ChevronLeft size={14} /> Home
+          </Link>
+          <span>/</span>
+          {story.category && (
+            <>
+              <Link href={`/category/${story.category.slug}`} style={{ color: "var(--ink3)", textDecoration: "none" }}>
+                {story.category.name}
+              </Link>
+              <span>/</span>
+            </>
+          )}
+          <span style={{ color: "var(--ink2)", maxWidth: "240px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {story.headline}
+          </span>
+        </nav>
 
         {/* Story Header */}
         <div style={{ marginBottom: 28 }}>
           <div className="sd-meta">
-            {story.category && <CategoryBadge category={story.category.name} />}
+            {story.category && (
+              <Link href={`/category/${story.category.slug}`} style={{ textDecoration: "none" }}>
+                <CategoryBadge category={story.category.name} />
+              </Link>
+            )}
             {locationLabel && (
               <>
                 <span className="mdot" />
@@ -347,11 +367,16 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
           <>
             <div className="slbl">Key Entities</div>
             <div className="fgrid" style={{ marginBottom: 28 }}>
-              {story.entities.slice(0, 4).map((fact, i) => (
-                <div key={fact.id || i} className="fchip">
-                  <div className="flbl">{fact.entity_type}</div>
-                  <div className="fval">{fact.entity_value}</div>
-                </div>
+              {story.entities.slice(0, 8).map((entity, i) => (
+                <Link
+                  key={entity.id || i}
+                  href={`/search?q=${encodeURIComponent(entity.entity_value)}`}
+                  className="fchip hover:border-primary/40 hover:bg-card-hover/20 transition-colors"
+                  style={{ textDecoration: "none", display: "block" }}
+                >
+                  <div className="flbl">{entity.entity_type}</div>
+                  <div className="fval" style={{ color: "var(--primary)" }}>{entity.entity_value}</div>
+                </Link>
               ))}
             </div>
           </>
