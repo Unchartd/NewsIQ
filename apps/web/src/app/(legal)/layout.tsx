@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
@@ -15,7 +15,7 @@ export default function LegalLayout({
 }) {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  const pathname = usePathname();
+
   const [mounted, setMounted] = useState(false);
   const { isAuthenticated } = useAuthStore();
 
@@ -23,24 +23,6 @@ export default function LegalLayout({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
-
-  const [currentPolicy, setCurrentPolicy] = useState("tos");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const policy = params.get("policy");
-      if (policy) {
-        setCurrentPolicy(policy);
-      } else if (pathname.includes("/privacy")) {
-        setCurrentPolicy("privacy");
-      } else if (pathname.includes("/tos")) {
-        setCurrentPolicy("tos");
-      } else {
-        setCurrentPolicy("");
-      }
-    }
-  }, [pathname, mounted]);
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
@@ -116,30 +98,7 @@ export default function LegalLayout({
         </symbol>
       </svg>
 
-      {/* DEV/ROUTING NAV */}
-      <nav className="dnav">
-        <span className="dnav-lbl">NewsIQ Legal</span>
-        <button 
-          className={`dbtn ${currentPolicy === "tos" ? "on" : ""}`} 
-          onClick={() => router.push("/legal?policy=tos")}
-        >
-          Terms of Service
-        </button>
-        <button 
-          className={`dbtn ${currentPolicy === "privacy" ? "on" : ""}`} 
-          onClick={() => router.push("/legal?policy=privacy")}
-        >
-          Privacy Policy
-        </button>
-        <button 
-          className={`dbtn ${pathname === "/legal" && currentPolicy !== "tos" && currentPolicy !== "privacy" ? "on" : ""}`} 
-          onClick={() => router.push("/legal")}
-        >
-          Legal Center
-        </button>
-      </nav>
-
-      <div className="scr on" style={{ paddingTop: "36px", minHeight: "100vh" }}>
+      <div className="scr on" style={{ minHeight: "100vh" }}>
         {/* Navbar */}
         <nav className="nav">
           <div className="nav-inner">
