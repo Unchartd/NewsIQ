@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { usePathname, useRouter } from "next/navigation";
+import CookieBanner from "@/components/legal/cookie-banner";
+
 
 const PUBLIC_PATHS = [
   "/",
@@ -20,6 +22,7 @@ const PUBLIC_PATHS = [
   "/verify-email",
   "/tos",
   "/privacy",
+  "/legal",
   "/auth/callback",
 ];
 
@@ -39,7 +42,8 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function initAuth() {
       // Skip auth check for public pages to avoid redundant /auth/me calls
-      const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/tos", "/privacy"];
+      const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/tos", "/privacy", "/legal"];
+
       if (publicPaths.includes(window.location.pathname)) {
         setLoading(false);
         return;
@@ -134,8 +138,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <TooltipProvider>
           <AuthInitializer>{children}</AuthInitializer>
           <Toaster position="bottom-right" richColors closeButton />
+          <CookieBanner />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
+
   );
 }

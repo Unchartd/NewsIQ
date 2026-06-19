@@ -220,11 +220,23 @@ async def delete_account(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Permanently delete the user's account (danger zone)."""
+    """Permanently delete the user's account (danger zone) by scrubbing PII."""
+    from app.models.models import OAuthAccount
+    
+    # Anonymize personal identification details
+    user.email = f"deleted_user_{uuid.uuid4().hex}@deleted.newsiq.ai"
+    user.name = "Deleted User"
+    user.image_url = None
+    user.password_hash = None
     user.status = "deleted"
     user.updated_at = datetime.now(UTC).replace(tzinfo=None)
+    
+    # Delete associated OAuth account links (contains provider IDs and tokens)
+    await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
+    
     await db.flush()
     return MessageResponse(message="Account deleted.")
+
 
 
 @router.get("/notifications", response_model=list[NotificationResponse])
