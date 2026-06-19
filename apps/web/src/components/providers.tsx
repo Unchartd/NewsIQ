@@ -17,6 +17,7 @@ const PUBLIC_PATHS = [
   "/",
   "/home",
   "/category",
+  "/story",
   "/login",
   "/signup",
   "/forgot-password",
@@ -43,10 +44,26 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function initAuth() {
-      // Skip auth check for public pages to avoid redundant /auth/me calls
-      const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/tos", "/privacy", "/legal"];
+      // Skip auth check for authentication pages and basic legal docs to avoid redundant /auth/me calls
+      const publicNoAuthCheckPaths = [
+        "/login",
+        "/signup",
+        "/forgot-password",
+        "/reset-password",
+        "/verify-email",
+        "/tos",
+        "/privacy",
+        "/legal",
+        "/auth/callback",
+      ];
 
-      if (publicPaths.includes(window.location.pathname)) {
+      const shouldSkipAuth = publicNoAuthCheckPaths.some(
+        (path) =>
+          window.location.pathname === path ||
+          window.location.pathname.startsWith(path + "/")
+      );
+
+      if (shouldSkipAuth) {
         setLoading(false);
         return;
       }

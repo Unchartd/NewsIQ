@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/auth-store";
 import "./legal.css";
 
 export default function LegalLayout({
@@ -16,6 +17,7 @@ export default function LegalLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -141,13 +143,13 @@ export default function LegalLayout({
         {/* Navbar */}
         <nav className="nav">
           <div className="nav-inner">
-            <Link href="/home" style={{ textDecoration: "none" }}>
+            <Link href={isAuthenticated ? "/home" : "/"} style={{ textDecoration: "none" }}>
               <div className="logo"><b>News</b><i>IQ</i></div>
             </Link>
             <div className="nav-divider"></div>
             <span className="nav-pill">Legal</span>
             <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
-              <span className="nav-back" onClick={() => { toast.info("Navigating back to home..."); router.push("/home"); }}>
+              <span className="nav-back" onClick={() => { toast.info("Navigating back..."); router.push(isAuthenticated ? "/home" : "/"); }}>
                 <svg width="14" height="14"><use href="#i-back" /></svg>Back to NewsIQ
               </span>
               <div style={{ width: "1px", height: "16px", background: "var(--border)", margin: "0 4px" }}></div>
