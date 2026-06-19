@@ -296,6 +296,25 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
         <div className="sumblock">
           {activeSummary}
         </div>
+        <div style={{
+          marginTop: 8,
+          fontSize: 11,
+          color: "var(--ink3)",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r6)",
+          padding: "8px 12px",
+          marginBottom: 24
+        }}>
+          <AlertTriangle size={12} style={{ color: "var(--amber)", flexShrink: 0 }} />
+          <span>
+            <strong>AI Transparency:</strong> Summaries are AI-generated and probabilistic. AI may omit facts or contain inaccuracies. Verify using the original links below.
+          </span>
+        </div>
+
 
         {/* Key Facts */}
         {story.key_facts && story.key_facts.length > 0 && (
@@ -382,16 +401,25 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                   {story.source_coverage.map((cov, i) => (
                     <tr key={cov.id}>
                       <td>
-                        <div className="sname">
-                          <div
-                            className="sdot"
-                            style={{
-                              background: SOURCE_COLORS[i % SOURCE_COLORS.length],
-                            }}
-                          />
+                        <div className="sname" style={{ display: "flex", alignItems: "center" }}>
+                          {cov.source?.logo_url ? (
+                            <img
+                              src={cov.source.logo_url}
+                              alt={cov.source.name}
+                              style={{ width: "16px", height: "16px", borderRadius: "50%", marginRight: "8px", objectFit: "cover" }}
+                            />
+                          ) : (
+                            <div
+                              className="sdot"
+                              style={{
+                                background: SOURCE_COLORS[i % SOURCE_COLORS.length],
+                              }}
+                            />
+                          )}
                           {cov.source?.name}
                         </div>
                       </td>
+
                       <td className="sfoc">{cov.focus_area}</td>
                       <td className="stim">{cov.published_at ? new Date(cov.published_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}</td>
                       <td>
@@ -426,7 +454,19 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
         {story.differences && story.differences.length > 0 && (
           <>
             <div className="slbl">Where sources differ</div>
+            <div style={{
+              fontSize: 11,
+              color: "var(--ink3)",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--r6)",
+              padding: "8px 12px",
+              marginBottom: 12
+            }}>
+              <strong>AI Comparative Analysis:</strong> Surfaced conflicts and omissions are compiled using AI models. Verify coverage details using original articles.
+            </div>
             <div style={{ overflowX: "auto" }}>
+
               <table className="dtbl">
                 <thead>
                   <tr>
@@ -476,11 +516,19 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                 >
                   <div style={{ flex: 1 }}>
                     <div className="bk-hl">{art.title}</div>
-                    <div className="bk-mt">
+                    <div className="bk-mt" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      {art.source?.logo_url && (
+                        <img
+                          src={art.source.logo_url}
+                          alt={art.source.name}
+                          style={{ width: "14px", height: "14px", borderRadius: "50%", objectFit: "cover" }}
+                        />
+                      )}
                       <span>{art.source?.name}</span>
                       {art.author && <span>By {art.author}</span>}
                       <span>{new Date(art.published_at).toLocaleDateString()}</span>
                     </div>
+
                   </div>
                   <ExternalLink size={14} style={{ color: "var(--ink3)", flexShrink: 0, marginTop: 4 }} aria-hidden="true" />
                 </a>

@@ -662,3 +662,60 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── SEARCH & ANCHOR STYLES ── */
+.legal-search-input:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2px rgba(196, 30, 58, 0.15);
+}
+.toc-anchor-link {
+  transition: color 0.15s, padding-left 0.15s;
+}
+.toc-anchor-link:hover {
+  color: var(--primary) !important;
+  padding-left: 4px;
+}
+.toc-anchor-link.active {
+  border-left: 2px solid var(--primary);
+  padding-left: 8px !important;
+}
+
+/* ── MOBILE OVERLAY DRAWER ── */
+@media (max-width: 720px) {
+  .mobile-toc-toggle {
+    display: block !important;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 12px 16px;
+    border-radius: var(--r8);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin: 16px 0;
+    width: 100%;
+    text-align: center;
+    box-shadow: var(--sh1);
+    transition: background 0.15s;
+    z-index: 1000;
+    position: relative;
+  }
+  .mobile-toc-toggle:hover {
+    background: rgba(196, 30, 58, 0.9);
+  }
+  .toc-col.mobile-open {
+    display: block !important;
+    position: fixed;
+    top: 80px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--card);
+    z-index: 999;
+    padding: 24px;
+    overflow-y: auto;
+    box-shadow: var(--sh2);
+  }
+}
+

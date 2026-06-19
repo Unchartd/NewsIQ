@@ -51,3 +51,5 @@ coverage/
 # Celery Beat
 celerybeat-schedule
 celerybeat-schedule.*
+apps/api/extract_pdfs.py
+extract_pdfs.py

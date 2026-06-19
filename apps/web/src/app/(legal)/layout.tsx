@@ -22,6 +22,24 @@ export default function LegalLayout({
     setMounted(true);
   }, []);
 
+  const [currentPolicy, setCurrentPolicy] = useState("tos");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const policy = params.get("policy");
+      if (policy) {
+        setCurrentPolicy(policy);
+      } else if (pathname.includes("/privacy")) {
+        setCurrentPolicy("privacy");
+      } else if (pathname.includes("/tos")) {
+        setCurrentPolicy("tos");
+      } else {
+        setCurrentPolicy("");
+      }
+    }
+  }, [pathname, mounted]);
+
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
@@ -100,16 +118,22 @@ export default function LegalLayout({
       <nav className="dnav">
         <span className="dnav-lbl">NewsIQ Legal</span>
         <button 
-          className={`dbtn ${pathname === "/tos" ? "on" : ""}`} 
-          onClick={() => router.push("/tos")}
+          className={`dbtn ${currentPolicy === "tos" ? "on" : ""}`} 
+          onClick={() => router.push("/legal?policy=tos")}
         >
           Terms of Service
         </button>
         <button 
-          className={`dbtn ${pathname === "/privacy" ? "on" : ""}`} 
-          onClick={() => router.push("/privacy")}
+          className={`dbtn ${currentPolicy === "privacy" ? "on" : ""}`} 
+          onClick={() => router.push("/legal?policy=privacy")}
         >
           Privacy Policy
+        </button>
+        <button 
+          className={`dbtn ${pathname === "/legal" && currentPolicy !== "tos" && currentPolicy !== "privacy" ? "on" : ""}`} 
+          onClick={() => router.push("/legal")}
+        >
+          Legal Center
         </button>
       </nav>
 

@@ -71,12 +71,23 @@ def _set_access_cookie(response: Response, access_token: str) -> None:
 
 def _clear_refresh_cookie(response: Response) -> None:
     """Clear the refresh token cookie."""
-    response.delete_cookie(key="refresh_token", path="/")
+    response.delete_cookie(
+        key="refresh_token",
+        path="/",
+        secure=not settings.DEBUG,
+        samesite="lax",
+    )
 
 
 def _clear_access_cookie(response: Response) -> None:
     """Clear the access token cookie."""
-    response.delete_cookie(key="access_token", path="/")
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        secure=not settings.DEBUG,
+        samesite="lax",
+    )
+
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
