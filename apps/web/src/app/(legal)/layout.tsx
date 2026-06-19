@@ -120,7 +120,6 @@ export default function LegalLayout({
             </div>
           </div>
         </nav>
-        <div className="sig"></div>
 
         {children}
       </div>

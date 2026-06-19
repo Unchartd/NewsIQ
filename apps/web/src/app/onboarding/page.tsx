@@ -131,11 +131,13 @@ export default function OnboardingPage() {
 
       {/* Dynamic progress bar below navbar */}
       <div
-        className="sig"
         style={{
           position: "sticky",
           top: "var(--nav)",
           zIndex: 100,
+          height: "var(--sig)",
+          background: "var(--border)",
+          overflow: "hidden",
         }}
       >
         <div

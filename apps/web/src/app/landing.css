@@ -56,11 +56,11 @@
 /* ═══════════════════════════════════════════
    SIGNAL BAR (brand signature)
    ═══════════════════════════════════════════ */
-.signal-bar {
+.landing-body .signal-bar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 200;
   height: 3px; background: var(--landing-border); overflow: hidden;
 }
-.signal-bar::after {
+.landing-body .signal-bar::after {
   content: ''; position: absolute; inset: 0;
   background: var(--landing-primary);
   animation: sigPulse 2.6s ease-in-out infinite;

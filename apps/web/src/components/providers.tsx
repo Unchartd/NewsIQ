@@ -134,8 +134,8 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
-    () =>
-      new QueryClient({
+    () => {
+      const client = new QueryClient({
         defaultOptions: {
           queries: {
             staleTime: 60 * 1000, // 1 minute
@@ -143,7 +143,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
             retry: 2,
           },
         },
-      })
+      });
+      if (typeof window !== "undefined") {
+        (window as any).queryClient = client;
+      }
+      return client;
+    }
   );
 
   return (
