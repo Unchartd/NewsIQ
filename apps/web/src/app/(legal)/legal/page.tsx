@@ -89,16 +89,15 @@ function LegalPageContent() {
 
   return (
     <div className="legal-layout">
-      {/* Mobile Drawer Trigger */}
-      <button 
-        className="mobile-toc-toggle"
-        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-      >
-        {mobileMenuOpen ? "✕ Close Navigation" : "☰ Browse Policies & Forms"}
-      </button>
-
       {/* ── LEFT SIDEBAR (Policy Selector) ── */}
       <nav className={`toc-col ${mobileMenuOpen ? "mobile-open" : ""}`}>
+        {/* Mobile Drawer Trigger — inside toc-col so it's not a grid child */}
+        <button
+          className="mobile-toc-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          {mobileMenuOpen ? "✕ Close Navigation" : "☰ Browse Policies & Forms"}
+        </button>
         <div className="toc-header">Legal Policies</div>
         <ul className="toc-list">
           {Object.entries(normalizedPolicies).map(([key, doc]) => (
