@@ -218,7 +218,7 @@ export default function LandingPage() {
                 <button className="nav-sign-in">Sign in</button>
               </Link>
             )}
-            <Link href={isAuthenticated ? "/home" : "/signup"}>
+            <Link href={"/home"}>
               <button className="nav-cta">
                 {isAuthenticated ? "Go to feed" : "Start reading free"}
               </button>
@@ -250,7 +250,7 @@ export default function LandingPage() {
           </p>
 
           <div className="hero-btns reveal reveal-delay-3">
-            <Link href={isAuthenticated ? "/home" : "/signup"}>
+            <Link href={"/home"}>
               <button className="btn-primary">
                 <svg
                   width="16"
@@ -919,76 +919,343 @@ export default function LandingPage() {
             <div className="eyebrow">How it works</div>
             <h2 className="section-title">From headlines to understanding</h2>
             <p className="section-sub">
-              Seven steps from raw articles to clear, structured intelligence —
-              happening automatically, in under 5 minutes.
+              Seven automated steps from raw articles to structured intelligence —
+              happening in under 5 minutes.
             </p>
           </div>
-          <div className="flow-grid reveal">
-            <div className="flow-node">
-              <div className="flow-icon-wrap">📡</div>
-              <div className="flow-name">News Sources</div>
-              <div className="flow-desc">
-                RSS, APIs & crawlers from 10,000+ publishers
+          <div className="how-grid-container reveal">
+            <div className="how-grid">
+              {/* Step 1 */}
+              <div className="how-card">
+                <div className="how-loader-area">
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-loader-icon">📡</div>
+                  <span className="how-step-badge">1</span>
+                </div>
+                <div className="how-wave-loader">
+                  <div className="how-wave-bar"></div>
+                  <div className="how-wave-bar"></div>
+                  <div className="how-wave-bar"></div>
+                  <div className="how-wave-bar"></div>
+                  <div className="how-wave-bar"></div>
+                  <div className="how-wave-bar"></div>
+                  <div className="how-wave-bar"></div>
+                </div>
+                <h3 className="how-card-title">News Sources</h3>
+                <p className="how-card-desc">
+                  RSS, APIs & crawlers from 10,000+ publishers worldwide
+                </p>
+                <div className="how-card-footer">
+                  <span className="how-tag">Ingesting</span>
+                  <span className="how-time">~50K/min</span>
+                </div>
               </div>
-            </div>
-            <div className="flow-arrow">→</div>
-            <div className="flow-node">
-              <div className="flow-icon-wrap">📥</div>
-              <div className="flow-name">Ingestion</div>
-              <div className="flow-desc">
-                Articles collected and deduplicated in real time
+
+              {/* Step 2 */}
+              <div className="how-card">
+                <div className="how-loader-area">
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-loader-icon">📥</div>
+                  <span className="how-step-badge">2</span>
+                </div>
+                <div className="how-wave-loader">
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.1s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.2s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.3s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.4s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.5s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.6s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.7s" }}
+                  ></div>
+                </div>
+                <h3 className="how-card-title">Ingestion</h3>
+                <p className="how-card-desc">
+                  Articles collected and deduplicated in real time at scale
+                </p>
+                <div className="how-card-footer">
+                  <span className="how-tag">Processing</span>
+                  <span className="how-time">Stream OK</span>
+                </div>
               </div>
-            </div>
-            <div className="flow-arrow">→</div>
-            <div className="flow-node">
-              <div className="flow-icon-wrap">🧠</div>
-              <div className="flow-name">AI Processing</div>
-              <div className="flow-desc">
-                Embeddings & semantic similarity via Gemini
+
+              {/* Step 3 */}
+              <div className="how-card">
+                <div className="how-loader-area">
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-loader-icon">🧠</div>
+                  <span className="how-step-badge">3</span>
+                </div>
+                <div className="how-wave-loader">
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.2s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.3s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.4s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.5s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.6s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.7s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.8s" }}
+                  ></div>
+                </div>
+                <h3 className="how-card-title">AI Processing</h3>
+                <p className="how-card-desc">
+                  Embeddings & semantic similarity via Gemini models
+                </p>
+                <div className="how-card-footer">
+                  <span className="how-tag">Vectorizing</span>
+                  <span className="how-time">GPU Active</span>
+                </div>
               </div>
-            </div>
-            <div className="flow-arrow">→</div>
-            <div className="flow-node">
-              <div className="flow-icon-wrap">🔗</div>
-              <div className="flow-name">Clustering</div>
-              <div className="flow-desc">
-                Related articles grouped into story objects
+
+              {/* Step 4 */}
+              <div className="how-card">
+                <div className="how-loader-area">
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-pulse-ring"></div>
+                  <div className="how-loader-icon">🔗</div>
+                  <span className="how-step-badge">4</span>
+                </div>
+                <div className="how-wave-loader">
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.3s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.4s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.5s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.6s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.7s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.8s" }}
+                  ></div>
+                  <div
+                    className="how-wave-bar"
+                    style={{ animationDelay: "0.9s" }}
+                  ></div>
+                </div>
+                <h3 className="how-card-title">Clustering</h3>
+                <p className="how-card-desc">
+                  Related articles grouped into story objects by similarity
+                </p>
+                <div className="how-card-footer">
+                  <span className="how-tag">Grouping</span>
+                  <span className="how-time">1.2K groups</span>
+                </div>
               </div>
-            </div>
-            <div className="flow-arrow">→</div>
-            <div className="flow-node">
-              <div className="flow-icon-wrap">✦</div>
-              <div className="flow-name">Summaries</div>
-              <div className="flow-desc">
-                1-line, Short & Detailed AI summaries generated
+
+              {/* Connector Line */}
+              <div className="how-connector">
+                <div className="how-connector-line">
+                  <div className="how-connector-dot"></div>
+                </div>
               </div>
-            </div>
-            <div className="flow-arrow">→</div>
-            <div className="flow-node">
-              <div className="flow-icon-wrap">⚖️</div>
-              <div className="flow-name">Difference Engine</div>
-              <div className="flow-desc">
-                Contradictions & gaps surfaced across sources
+
+              {/* Bottom Row */}
+              <div className="how-bottom-row">
+                {/* Step 5 */}
+                <div className="how-card">
+                  <div className="how-loader-area">
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-loader-icon">📝</div>
+                    <span className="how-step-badge">5</span>
+                  </div>
+                  <div className="how-wave-loader">
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.4s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.5s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.6s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.7s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.8s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.9s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "1.0s" }}
+                    ></div>
+                  </div>
+                  <h3 className="how-card-title">Summaries</h3>
+                  <p className="how-card-desc">
+                    1-line, short & detailed AI summaries per story cluster
+                  </p>
+                  <div className="how-card-footer">
+                    <span className="how-tag">Generating</span>
+                    <span className="how-time">3 Tiers</span>
+                  </div>
+                </div>
+
+                {/* Step 6 */}
+                <div className="how-card">
+                  <div className="how-loader-area">
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-loader-icon">⚖️</div>
+                    <span className="how-step-badge">6</span>
+                  </div>
+                  <div className="how-wave-loader">
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.5s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.6s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.7s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.8s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.9s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "1.0s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "1.1s" }}
+                    ></div>
+                  </div>
+                  <h3 className="how-card-title">Difference Engine</h3>
+                  <p className="how-card-desc">
+                    Contradictions & gaps surfaced across all sources
+                  </p>
+                  <div className="how-card-footer">
+                    <span className="how-tag">Analyzing</span>
+                    <span className="how-time">Bias Check</span>
+                  </div>
+                </div>
+
+                {/* Step 7 (Final) */}
+                <div className="how-card final">
+                  <div className="how-loader-area">
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-pulse-ring"></div>
+                    <div className="how-loader-icon">📰</div>
+                    <span className="how-step-badge">7</span>
+                  </div>
+                  <div className="how-wave-loader">
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.6s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.7s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.8s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "0.9s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "1.0s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "1.1s" }}
+                    ></div>
+                    <div
+                      className="how-wave-bar"
+                      style={{ animationDelay: "1.2s" }}
+                    ></div>
+                  </div>
+                  <h3 className="how-card-title">NewsIQ Story</h3>
+                  <p className="how-card-desc">
+                    Ready to read in under 30 seconds with full context
+                  </p>
+                  <div className="how-card-footer">
+                    <span className="how-tag">Publishing</span>
+                    <span className="how-time">&lt;30s</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flow-arrow">→</div>
-            <div className="flow-node" style={{ position: "relative" }}>
-              <div
-                className="flow-icon-wrap"
-                style={{
-                  borderColor: "var(--landing-primary)",
-                  boxShadow: "0 0 0 3px rgba(196,30,58,.12)",
-                }}
-              >
-                📰
-              </div>
-              <div
-                className="flow-name"
-                style={{ color: "var(--landing-primary)" }}
-              >
-                NewsIQ Story
-              </div>
-              <div className="flow-desc">Ready to read in under 30 seconds</div>
             </div>
           </div>
         </div>
@@ -1748,7 +2015,7 @@ export default function LandingPage() {
       {/* ════════════════════════════════════════
            TESTIMONIALS
            ════════════════════════════════════════ */}
-      <section
+     {/*  <section
         className="section"
         style={{
           background: "var(--landing-card)",
@@ -1906,7 +2173,7 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* ════════════════════════════════════════
            PRICING — MVP: commented out, enable when ready to launch pricing
