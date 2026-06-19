@@ -350,7 +350,8 @@ function LegalPageContent() {
                       display: "block",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
-                      textOverflow: "ellipsis"
+                      textOverflow: "ellipsis",
+                      flexShrink: 0
                     }}
                   >
                     <span style={{ marginRight: "6px", fontSize: "10px", opacity: 0.7 }}>
