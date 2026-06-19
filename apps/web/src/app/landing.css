@@ -890,7 +890,7 @@
   background: var(--landing-card);
   border: 1px solid var(--landing-border);
   border-radius: var(--landing-r16);
-  padding: 16px 12px;
+  padding: 28px 20px;
   position: relative;
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;

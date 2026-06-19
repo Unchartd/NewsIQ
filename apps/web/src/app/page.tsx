@@ -985,15 +985,7 @@ export default function LandingPage() {
                   <div className="how-loader-icon">📡</div>
                   <span className="how-step-badge">1</span>
                 </div>
-                <div className="how-wave-loader">
-                  <div className="how-wave-bar"></div>
-                  <div className="how-wave-bar"></div>
-                  <div className="how-wave-bar"></div>
-                  <div className="how-wave-bar"></div>
-                  <div className="how-wave-bar"></div>
-                  <div className="how-wave-bar"></div>
-                  <div className="how-wave-bar"></div>
-                </div>
+               
                 <h3 className="how-card-title">News Sources</h3>
                 <p className="how-card-desc">
                   RSS, APIs & crawlers from 10,000+ publishers worldwide
@@ -1012,36 +1004,6 @@ export default function LandingPage() {
                   <div className="how-pulse-ring"></div>
                   <div className="how-loader-icon">📥</div>
                   <span className="how-step-badge">2</span>
-                </div>
-                <div className="how-wave-loader">
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.1s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.2s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.3s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.4s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.5s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.6s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.7s" }}
-                  ></div>
                 </div>
                 <h3 className="how-card-title">Ingestion</h3>
                 <p className="how-card-desc">
@@ -1062,36 +1024,6 @@ export default function LandingPage() {
                   <div className="how-loader-icon">🧠</div>
                   <span className="how-step-badge">3</span>
                 </div>
-                <div className="how-wave-loader">
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.2s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.3s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.4s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.5s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.6s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.7s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.8s" }}
-                  ></div>
-                </div>
                 <h3 className="how-card-title">AI Processing</h3>
                 <p className="how-card-desc">
                   Embeddings & semantic similarity via Gemini models
@@ -1110,36 +1042,6 @@ export default function LandingPage() {
                   <div className="how-pulse-ring"></div>
                   <div className="how-loader-icon">🔗</div>
                   <span className="how-step-badge">4</span>
-                </div>
-                <div className="how-wave-loader">
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.3s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.4s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.5s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.6s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.7s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.8s" }}
-                  ></div>
-                  <div
-                    className="how-wave-bar"
-                    style={{ animationDelay: "0.9s" }}
-                  ></div>
                 </div>
                 <h3 className="how-card-title">Clustering</h3>
                 <p className="how-card-desc">
@@ -1169,36 +1071,6 @@ export default function LandingPage() {
                     <div className="how-loader-icon">📝</div>
                     <span className="how-step-badge">5</span>
                   </div>
-                  <div className="how-wave-loader">
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.4s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.5s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.6s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.7s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.8s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.9s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "1.0s" }}
-                    ></div>
-                  </div>
                   <h3 className="how-card-title">Summaries</h3>
                   <p className="how-card-desc">
                     1-line, short & detailed AI summaries per story cluster
@@ -1218,36 +1090,6 @@ export default function LandingPage() {
                     <div className="how-loader-icon">⚖️</div>
                     <span className="how-step-badge">6</span>
                   </div>
-                  <div className="how-wave-loader">
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.5s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.6s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.7s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.8s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.9s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "1.0s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "1.1s" }}
-                    ></div>
-                  </div>
                   <h3 className="how-card-title">Difference Engine</h3>
                   <p className="how-card-desc">
                     Contradictions & gaps surfaced across all sources
@@ -1266,36 +1108,6 @@ export default function LandingPage() {
                     <div className="how-pulse-ring"></div>
                     <div className="how-loader-icon">📰</div>
                     <span className="how-step-badge">7</span>
-                  </div>
-                  <div className="how-wave-loader">
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.6s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.7s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.8s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "0.9s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "1.0s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "1.1s" }}
-                    ></div>
-                    <div
-                      className="how-wave-bar"
-                      style={{ animationDelay: "1.2s" }}
-                    ></div>
                   </div>
                   <h3 className="how-card-title">NewsIQ Story</h3>
                   <p className="how-card-desc">
