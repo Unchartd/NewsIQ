@@ -889,7 +889,7 @@
 .how-card {
   background: var(--landing-card);
   border: 1px solid var(--landing-border);
-  border-radius: var(--landing-r20);
+  border-radius: var(--landing-r16);
   padding: 16px 12px;
   position: relative;
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
@@ -900,7 +900,7 @@
   content: '';
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  height: 3px;
+  height: 2px;
   background: linear-gradient(90deg, var(--landing-primary), var(--landing-blue));
   transform: scaleX(0);
   transition: transform 0.5s ease;
@@ -926,23 +926,24 @@
 .how-pulse-ring {
   position: absolute;
   border-radius: 50%;
-  border: 2px solid;
+  border: 1px solid currentColor;
+  box-shadow: 0 0 8px currentColor, inset 0 0 4px currentColor;
   opacity: 0;
   animation: how-pulse-ring 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
 }
 .how-pulse-ring:nth-child(1) {
   width: 64px; height: 64px;
-  border-color: var(--landing-primary);
+  color: var(--landing-primary);
   animation-delay: 0s;
 }
 .how-pulse-ring:nth-child(2) {
   width: 48px; height: 48px;
-  border-color: var(--landing-blue);
+  color: var(--landing-blue);
   animation-delay: 0.5s;
 }
 .how-pulse-ring:nth-child(3) {
   width: 32px; height: 32px;
-  border-color: var(--landing-primary);
+  color: var(--landing-primary);
   opacity: 0.8;
   animation-delay: 1s;
 }
@@ -1097,9 +1098,9 @@
 .how-card.final .how-tag { background: rgba(255,255,255,0.15); color: white; }
 .how-card.final .how-time { color: rgba(255,255,255,0.6); }
 .how-card.final .how-time::before { background: var(--landing-green); }
-.how-card.final .how-pulse-ring:nth-child(1) { border-color: var(--landing-green); }
-.how-card.final .how-pulse-ring:nth-child(2) { border-color: var(--landing-blue); }
-.how-card.final .how-pulse-ring:nth-child(3) { border-color: var(--landing-amber); }
+.how-card.final .how-pulse-ring:nth-child(1) { color: var(--landing-green); }
+.how-card.final .how-pulse-ring:nth-child(2) { color: var(--landing-blue); }
+.how-card.final .how-pulse-ring:nth-child(3) { color: var(--landing-amber); }
 .how-card.final .how-wave-bar { background: linear-gradient(to top, var(--landing-green), var(--landing-blue)); }
 .how-card.final::after { background: linear-gradient(90deg, var(--landing-green), var(--landing-blue)); }
 .how-card.final:hover {
@@ -1135,8 +1136,8 @@
 /* Card Base */
 .prob-v-card {
   background: var(--landing-card);
-  border-radius: 24px;
-  padding: 48px 40px;
+  border-radius: var(--landing-r16);
+  padding: 28px 40px;
   position: relative;
   overflow: hidden;
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1145,7 +1146,7 @@
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 4px;
+  height: 2px;
   transition: transform 0.5s ease;
   transform-origin: left;
 }
@@ -1158,7 +1159,7 @@
 }
 .prob-card-traditional::before {
   background: linear-gradient(90deg, var(--landing-ink4), var(--landing-ink3));
-  transform: scaleX(0.3);
+  transform: scaleX(0);
 }
 .prob-card-traditional:hover {
   box-shadow: var(--landing-sh2);
@@ -1173,7 +1174,7 @@
 }
 .prob-card-newsiq::before {
   background: linear-gradient(90deg, var(--landing-primary), #e85d5d);
-  transform: scaleX(0.3);
+  transform: scaleX(0);
 }
 .prob-card-newsiq:hover {
   box-shadow: 0 12px 40px var(--landing-primary-glow), var(--landing-sh3);
@@ -1186,7 +1187,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 40px;
 }
 .prob-card-lbl {
   font-size: 11px;
@@ -1215,7 +1215,6 @@
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  padding: 16px 0;
   position: relative;
   opacity: 0;
   animation: prob-stepIn 0.6s ease forwards;
@@ -1395,7 +1394,7 @@
   padding: 20px 32px;
   background: var(--landing-card);
   border: 1px solid var(--landing-border);
-  border-radius: 16px;
+  border-radius: var(--landing-r16);
   max-width: 600px;
   opacity: 0;
   animation: prob-fadeInUp 0.8s ease 1s forwards;
