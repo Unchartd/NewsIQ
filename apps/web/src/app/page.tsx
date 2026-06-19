@@ -1016,7 +1016,6 @@ export default function LandingPage() {
                   <div className="how-pulse-ring"></div>
                   <div className="how-pulse-ring"></div>
                   <div className="how-loader-icon">📡</div>
-                  <span className="how-step-badge">1</span>
                 </div>
 
                 <h3 className="how-card-title">News Sources</h3>
@@ -1036,7 +1035,6 @@ export default function LandingPage() {
                   <div className="how-pulse-ring"></div>
                   <div className="how-pulse-ring"></div>
                   <div className="how-loader-icon">📥</div>
-                  <span className="how-step-badge">2</span>
                 </div>
                 <h3 className="how-card-title">Ingestion</h3>
                 <p className="how-card-desc">
@@ -1055,7 +1053,6 @@ export default function LandingPage() {
                   <div className="how-pulse-ring"></div>
                   <div className="how-pulse-ring"></div>
                   <div className="how-loader-icon">🧠</div>
-                  <span className="how-step-badge">3</span>
                 </div>
                 <h3 className="how-card-title">AI Processing</h3>
                 <p className="how-card-desc">
@@ -1074,7 +1071,6 @@ export default function LandingPage() {
                   <div className="how-pulse-ring"></div>
                   <div className="how-pulse-ring"></div>
                   <div className="how-loader-icon">🔗</div>
-                  <span className="how-step-badge">4</span>
                 </div>
                 <h3 className="how-card-title">Clustering</h3>
                 <p className="how-card-desc">
@@ -1102,7 +1098,6 @@ export default function LandingPage() {
                     <div className="how-pulse-ring"></div>
                     <div className="how-pulse-ring"></div>
                     <div className="how-loader-icon">📝</div>
-                    <span className="how-step-badge">5</span>
                   </div>
                   <h3 className="how-card-title">Summaries</h3>
                   <p className="how-card-desc">
@@ -1121,7 +1116,6 @@ export default function LandingPage() {
                     <div className="how-pulse-ring"></div>
                     <div className="how-pulse-ring"></div>
                     <div className="how-loader-icon">⚖️</div>
-                    <span className="how-step-badge">6</span>
                   </div>
                   <h3 className="how-card-title">Difference Engine</h3>
                   <p className="how-card-desc">
@@ -1140,7 +1134,6 @@ export default function LandingPage() {
                     <div className="how-pulse-ring"></div>
                     <div className="how-pulse-ring"></div>
                     <div className="how-loader-icon">📰</div>
-                    <span className="how-step-badge">7</span>
                   </div>
                   <h3 className="how-card-title">NewsIQ Story</h3>
                   <p className="how-card-desc">
