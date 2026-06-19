@@ -818,7 +818,9 @@ export default function LandingPage() {
                   </div>
                   <div className="prob-step-content">
                     <div className="prob-step-txt">10 articles published</div>
-                    <div className="prob-step-meta">Same event, fragmented coverage</div>
+                    <div className="prob-step-meta">
+                      Same event, fragmented coverage
+                    </div>
                   </div>
                 </div>
                 <div className="prob-step">
@@ -827,8 +829,12 @@ export default function LandingPage() {
                     <div className="prob-step-line"></div>
                   </div>
                   <div className="prob-step-content">
-                    <div className="prob-step-txt">10 different perspectives</div>
-                    <div className="prob-step-meta">Conflicting narratives, no synthesis</div>
+                    <div className="prob-step-txt">
+                      10 different perspectives
+                    </div>
+                    <div className="prob-step-meta">
+                      Conflicting narratives, no synthesis
+                    </div>
                   </div>
                 </div>
                 <div className="prob-step">
@@ -838,7 +844,9 @@ export default function LandingPage() {
                   </div>
                   <div className="prob-step-content">
                     <div className="prob-step-txt">Redundant reading</div>
-                    <div className="prob-step-meta">Repeating facts, missing context</div>
+                    <div className="prob-step-meta">
+                      Repeating facts, missing context
+                    </div>
                   </div>
                 </div>
                 <div className="prob-step">
@@ -851,7 +859,12 @@ export default function LandingPage() {
                       <strong>45 minutes</strong> of your day gone
                     </div>
                     <div className="prob-time-waste">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <circle cx="12" cy="12" r="10" />
                         <polyline points="12 6 12 12 16 14" />
                       </svg>
@@ -864,10 +877,15 @@ export default function LandingPage() {
                     <div className="prob-step-dot final"></div>
                   </div>
                   <div className="prob-step-content">
-                    <div className="prob-step-txt" style={{ color: "var(--landing-ink4)" }}>
+                    <div
+                      className="prob-step-txt"
+                      style={{ color: "var(--landing-ink4)" }}
+                    >
                       Still confused
                     </div>
-                    <div className="prob-step-meta">No clear picture of what happened</div>
+                    <div className="prob-step-meta">
+                      No clear picture of what happened
+                    </div>
                   </div>
                 </div>
               </div>
@@ -894,7 +912,9 @@ export default function LandingPage() {
                   </div>
                   <div className="prob-step-content">
                     <div className="prob-step-txt">10 articles ingested</div>
-                    <div className="prob-step-meta">Every source, automatically</div>
+                    <div className="prob-step-meta">
+                      Every source, automatically
+                    </div>
                   </div>
                 </div>
                 <div className="prob-step">
@@ -904,7 +924,9 @@ export default function LandingPage() {
                   </div>
                   <div className="prob-step-content">
                     <div className="prob-step-txt">AI clusters the event</div>
-                    <div className="prob-step-meta">Semantic grouping across sources</div>
+                    <div className="prob-step-meta">
+                      Semantic grouping across sources
+                    </div>
                   </div>
                 </div>
                 <div className="prob-step">
@@ -914,7 +936,9 @@ export default function LandingPage() {
                   </div>
                   <div className="prob-step-content">
                     <div className="prob-step-txt">One structured story</div>
-                    <div className="prob-step-meta">All perspectives, organized</div>
+                    <div className="prob-step-meta">
+                      All perspectives, organized
+                    </div>
                   </div>
                 </div>
                 <div className="prob-step">
@@ -934,10 +958,18 @@ export default function LandingPage() {
                     <div className="prob-step-dot final"></div>
                   </div>
                   <div className="prob-step-content">
-                    <div className="prob-step-txt" style={{ color: "var(--landing-primary)", fontWeight: 700 }}>
+                    <div
+                      className="prob-step-txt"
+                      style={{
+                        color: "var(--landing-primary)",
+                        fontWeight: 700,
+                      }}
+                    >
                       Complete understanding
                     </div>
-                    <div className="prob-step-meta">Full context, zero redundancy</div>
+                    <div className="prob-step-meta">
+                      Full context, zero redundancy
+                    </div>
                   </div>
                 </div>
               </div>
@@ -946,7 +978,8 @@ export default function LandingPage() {
 
           <div className="prob-summary reveal">
             <span className="prob-summary-txt">
-              Turn <strong>45 minutes</strong> of noise into <strong>30 seconds</strong> of signal
+              Turn <strong>45 minutes</strong> of noise into{" "}
+              <strong>30 seconds</strong> of signal
             </span>
             <span className="prob-summary-arrow">→</span>
           </div>
@@ -970,8 +1003,8 @@ export default function LandingPage() {
             <div className="eyebrow">How it works</div>
             <h2 className="section-title">From headlines to understanding</h2>
             <p className="section-sub">
-              Seven automated steps from raw articles to structured intelligence —
-              happening in under 5 minutes.
+              Seven automated steps from raw articles to structured intelligence
+              — happening in under 5 minutes.
             </p>
           </div>
           <div className="how-grid-container reveal">
@@ -985,7 +1018,7 @@ export default function LandingPage() {
                   <div className="how-loader-icon">📡</div>
                   <span className="how-step-badge">1</span>
                 </div>
-               
+
                 <h3 className="how-card-title">News Sources</h3>
                 <p className="how-card-desc">
                   RSS, APIs & crawlers from 10,000+ publishers worldwide
@@ -1283,7 +1316,7 @@ export default function LandingPage() {
                       width: "80%",
                       background: "var(--landing-primary)",
                       borderRadius: "99px",
-                      animation: "loadBar 2s ease-in-out infinite alternate",
+                      animation: "loadBar 6s ease-in-out infinite alternate",
                     }}
                   ></div>
                 </div>
@@ -1771,65 +1804,136 @@ export default function LandingPage() {
       {/* ════════════════════════════════════════
            WHY DIFFERENT
            ════════════════════════════════════════ */}
-      <section className="section">
+      <section className="section" id="why-newsiq">
         <div className="container">
           <div className="section-header center reveal">
             <div className="eyebrow">Why NewsIQ</div>
-            <h2 className="section-title">
-              Built for understanding, not clicks
-            </h2>
+            <h2 className="section-title">Built for understanding, not clicks</h2>
             <p className="section-sub">
               Other aggregators surface articles. NewsIQ explains stories.
             </p>
           </div>
-          <div className="comparison-grid reveal">
-            <div className="cmp-card">
-              <div className="cmp-logo">🔍</div>
-              <div className="cmp-name">Google News</div>
-              <div className="cmp-desc">
-                Lists article links from publishers. You click, you read, you
-                repeat.
+
+          <div className="why-comparison reveal">
+            {/* Google News */}
+            <div className="why-card why-card-side">
+              <div className="why-card-hdr">
+                <div className="why-card-icon why-icon-google">🔍</div>
+                <div className="why-card-name">Google News</div>
+                <div className="why-card-tagline">
+                  Lists article links from publishers. You click, you read, you repeat.
+                </div>
               </div>
-              <ul className="cmp-list">
-                <li className="cmp-row yes">Broad coverage</li>
-                <li className="cmp-row yes">Real-time updates</li>
-                <li className="cmp-row no">No AI summaries</li>
-                <li className="cmp-row no">No source comparison</li>
-                <li className="cmp-row no">No Difference Engine</li>
-                <li className="cmp-row no">Clickbait headlines</li>
+              <ul className="why-feat-list">
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-yes">✓</span>
+                  <span className="why-feat-txt">Broad coverage</span>
+                </li>
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-yes">✓</span>
+                  <span className="why-feat-txt">Real-time updates</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">No AI summaries</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">No source comparison</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">No Difference Engine</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">Clickbait headlines</span>
+                </li>
               </ul>
+              <div className="why-side-cta">
+                <span className="why-side-lbl">Link aggregator</span>
+              </div>
             </div>
-            <div className="cmp-card featured">
-              <div className="cmp-logo">📰</div>
-              <div className="cmp-name">NewsIQ</div>
-              <div className="cmp-desc">
-                Understands stories. Surfaces contradictions. Gives you the full
-                picture in 30 seconds.
+
+            {/* NewsIQ */}
+            <div className="why-card why-card-center">
+              <div className="why-best-badge">Best Choice</div>
+              <div className="why-card-hdr">
+                <div className="why-card-icon why-icon-newsiq">📰</div>
+                <div className="why-card-name">NewsIQ</div>
+                <div className="why-card-tagline">
+                  Understands stories. Surfaces contradictions. Gives you the full picture in 30 seconds.
+                </div>
               </div>
-              <ul className="cmp-list">
-                <li className="cmp-row yes">10,000+ sources</li>
-                <li className="cmp-row yes">AI story summaries</li>
-                <li className="cmp-row yes">Source comparison table</li>
-                <li className="cmp-row yes">Difference Engine</li>
-                <li className="cmp-row yes">Neutral headlines</li>
-                <li className="cmp-row yes">Story timelines</li>
+              <ul className="why-feat-list">
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-star">★</span>
+                  <span className="why-feat-txt">10,000+ sources</span>
+                </li>
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-star">★</span>
+                  <span className="why-feat-txt">AI story summaries</span>
+                </li>
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-star">★</span>
+                  <span className="why-feat-txt">Source comparison table</span>
+                </li>
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-star">★</span>
+                  <span className="why-feat-txt">Difference Engine</span>
+                </li>
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-star">★</span>
+                  <span className="why-feat-txt">Neutral headlines</span>
+                </li>
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-star">★</span>
+                  <span className="why-feat-txt">Story timelines</span>
+                </li>
               </ul>
+              <div className="why-center-cta">
+                <span className="why-cta-txt">The complete news experience</span>
+              </div>
             </div>
-            <div className="cmp-card">
-              <div className="cmp-logo">📋</div>
-              <div className="cmp-name">Traditional Aggregators</div>
-              <div className="cmp-desc">
-                Curated headline lists. Human editors. Limited AI. Still
-                requires you to read.
+
+            {/* Traditional Aggregators */}
+            <div className="why-card why-card-side">
+              <div className="why-card-hdr">
+                <div className="why-card-icon why-icon-traditional">📋</div>
+                <div className="why-card-name">Traditional Aggregators</div>
+                <div className="why-card-tagline">
+                  Curated headline lists. Human editors. Limited AI. Still requires you to read.
+                </div>
               </div>
-              <ul className="cmp-list">
-                <li className="cmp-row yes">Curated selection</li>
-                <li className="cmp-row no">No AI clustering</li>
-                <li className="cmp-row no">No source comparison</li>
-                <li className="cmp-row no">No fact differences</li>
-                <li className="cmp-row no">No timelines</li>
-                <li className="cmp-row no">Slow to update</li>
+              <ul className="why-feat-list">
+                <li className="why-feat-item yes">
+                  <span className="why-feat-icon why-icon-yes">✓</span>
+                  <span className="why-feat-txt">Curated selection</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">No AI clustering</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">No source comparison</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">No fact differences</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">No timelines</span>
+                </li>
+                <li className="why-feat-item no">
+                  <span className="why-feat-icon why-icon-no">—</span>
+                  <span className="why-feat-txt">Slow to update</span>
+                </li>
               </ul>
+              <div className="why-side-cta">
+                <span className="why-side-lbl">Manual curation</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1838,7 +1942,7 @@ export default function LandingPage() {
       {/* ════════════════════════════════════════
            TESTIMONIALS
            ════════════════════════════════════════ */}
-     {/*  <section
+      {/*  <section
         className="section"
         style={{
           background: "var(--landing-card)",

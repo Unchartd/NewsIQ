@@ -1074,7 +1074,7 @@
   background: var(--landing-primary);
   border-radius: 50%;
   top: 50%; transform: translateY(-50%);
-  animation: how-travel 3s linear infinite;
+  animation: how-travel 9s linear infinite;
   box-shadow: 0 0 10px var(--landing-primary);
 }
 @keyframes how-travel {
@@ -1437,4 +1437,296 @@
     background: linear-gradient(to right, transparent, var(--landing-border), transparent);
   }
   .prob-v-card { padding: 32px 24px; }
+}
+
+/* ═══════════════════════════════════════════
+   REDESIGNED WHY NEWSIQ SECTION
+   ═══════════════════════════════════════════ */
+.why-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  gap: 0;
+  align-items: stretch;
+  position: relative;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Card Base */
+.why-card {
+  background: var(--landing-card);
+  border: 1px solid var(--landing-border);
+  padding: 40px 32px;
+  position: relative;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  animation: why-cardIn 0.7s ease forwards;
+  display: flex;
+  flex-direction: column;
+}
+.why-card:nth-child(1) {
+  animation-delay: 0.1s;
+  border-radius: var(--landing-r16) 0 0 var(--landing-r16);
+}
+.why-card:nth-child(2) {
+  animation-delay: 0.25s;
+  z-index: 2;
+  border-radius: var(--landing-r16);
+}
+.why-card:nth-child(3) {
+  animation-delay: 0.4s;
+  border-radius: 0 var(--landing-r16) var(--landing-r16) 0;
+}
+
+@keyframes why-cardIn {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Side Cards */
+.why-card-side:hover {
+  border-color: var(--landing-border-strong);
+  box-shadow: var(--landing-sh2);
+}
+
+/* Center Card (NewsIQ) */
+.why-card-center {
+  background: linear-gradient(180deg, var(--landing-card) 0%, var(--landing-surface) 100%);
+  border: 2px solid var(--landing-primary);
+  box-shadow: 0 0 0 4px var(--landing-primary-glow), var(--landing-sh2);
+  transform: scale(1.02);
+  margin-top: -12px;
+  margin-bottom: -12px;
+  padding-top: 52px;
+  padding-bottom: 52px;
+}
+.why-card-center:hover {
+  box-shadow: 0 0 0 6px var(--landing-primary-glow), var(--landing-sh3);
+  transform: scale(1.03) translateY(-4px);
+}
+
+/* Best Choice Badge */
+.why-best-badge {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-d));
+  color: white;
+  padding: 7px 20px;
+  border-radius: 50px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 16px var(--landing-primary-glow);
+  animation: why-badgeDrop 0.6s ease 0.8s both;
+  white-space: nowrap;
+}
+.why-best-badge::before {
+  content: '★';
+  font-size: 10px;
+}
+@keyframes why-badgeDrop {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Card Header */
+.why-card-hdr {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.why-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--landing-r12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 24px;
+  transition: transform 0.4s ease;
+}
+.why-card:hover .why-card-icon { transform: scale(1.1); }
+
+.why-icon-google { background: rgba(29, 78, 216, 0.08); }
+.why-icon-newsiq { 
+  background: var(--landing-primary-glow);
+  box-shadow: 0 4px 16px var(--landing-primary-glow);
+}
+.why-icon-traditional { background: var(--landing-surface); }
+
+.why-card-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--landing-ink);
+  margin-bottom: 6px;
+}
+.why-card-tagline {
+  font-size: 13.5px;
+  color: var(--landing-ink3);
+  line-height: 1.6;
+  max-width: 240px;
+  margin: 0 auto;
+}
+
+/* Feature List */
+.why-feat-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+.why-feat-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--landing-ink3);
+  line-height: 1.5;
+  opacity: 0;
+  animation: why-featureIn 0.4s ease forwards;
+}
+
+.why-card:nth-child(1) .why-feat-item:nth-child(1) { animation-delay: 0.3s; }
+.why-card:nth-child(1) .why-feat-item:nth-child(2) { animation-delay: 0.4s; }
+.why-card:nth-child(1) .why-feat-item:nth-child(3) { animation-delay: 0.5s; }
+.why-card:nth-child(1) .why-feat-item:nth-child(4) { animation-delay: 0.6s; }
+.why-card:nth-child(1) .why-feat-item:nth-child(5) { animation-delay: 0.7s; }
+.why-card:nth-child(1) .why-feat-item:nth-child(6) { animation-delay: 0.8s; }
+
+.why-card:nth-child(2) .why-feat-item:nth-child(1) { animation-delay: 0.45s; }
+.why-card:nth-child(2) .why-feat-item:nth-child(2) { animation-delay: 0.55s; }
+.why-card:nth-child(2) .why-feat-item:nth-child(3) { animation-delay: 0.65s; }
+.why-card:nth-child(2) .why-feat-item:nth-child(4) { animation-delay: 0.75s; }
+.why-card:nth-child(2) .why-feat-item:nth-child(5) { animation-delay: 0.85s; }
+.why-card:nth-child(2) .why-feat-item:nth-child(6) { animation-delay: 0.95s; }
+
+.why-card:nth-child(3) .why-feat-item:nth-child(1) { animation-delay: 0.6s; }
+.why-card:nth-child(3) .why-feat-item:nth-child(2) { animation-delay: 0.7s; }
+.why-card:nth-child(3) .why-feat-item:nth-child(3) { animation-delay: 0.8s; }
+.why-card:nth-child(3) .why-feat-item:nth-child(4) { animation-delay: 0.9s; }
+.why-card:nth-child(3) .why-feat-item:nth-child(5) { animation-delay: 1.0s; }
+.why-card:nth-child(3) .why-feat-item:nth-child(6) { animation-delay: 1.1s; }
+
+@keyframes why-featureIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.why-feat-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.why-icon-yes {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--landing-green);
+}
+.why-icon-no {
+  background: var(--landing-surface);
+  color: var(--landing-ink4);
+}
+.why-icon-star {
+  background: var(--landing-primary-glow);
+  color: var(--landing-primary);
+}
+
+.why-feat-item.yes { color: var(--landing-ink); }
+.why-feat-item.no { color: var(--landing-ink4); }
+
+/* Center card features are bold */
+.why-card-center .why-feat-item.yes {
+  font-weight: 600;
+  color: var(--landing-ink);
+}
+.why-card-center .why-feat-item.yes .why-feat-txt {
+  position: relative;
+}
+.why-card-center .why-feat-item.yes .why-feat-txt::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--landing-primary), transparent);
+  transition: width 0.4s ease;
+}
+.why-card-center:hover .why-feat-item.yes .why-feat-txt::after {
+  width: 100%;
+}
+
+/* Bottom CTA area on center card */
+.why-center-cta {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--landing-border);
+  text-align: center;
+}
+.why-cta-txt {
+  font-size: 13px;
+  color: var(--landing-primary);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Side card CTAs */
+.why-side-cta {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--landing-border);
+  text-align: center;
+}
+.why-side-lbl {
+  font-size: 12px;
+  color: var(--landing-ink4);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Connecting lines between cards (desktop) */
+@media (min-width: 769px) {
+  .why-comparison::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 33.33%;
+    width: 33.33%;
+    height: 1px;
+    background: linear-gradient(90deg, var(--landing-border), var(--landing-primary-glow), var(--landing-border));
+    z-index: 1;
+    opacity: 0.5;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .why-comparison {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .why-card {
+    border-radius: var(--landing-r16) !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 32px 24px !important;
+  }
+  .why-card-center {
+    box-shadow: 0 0 0 4px var(--landing-primary-glow), var(--landing-sh2);
+    order: -1;
+  }
 }
