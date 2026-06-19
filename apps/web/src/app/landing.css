@@ -926,8 +926,8 @@
 .how-pulse-ring {
   position: absolute;
   border-radius: 50%;
-  border: 1px solid currentColor;
-  box-shadow: 0 0 8px currentColor, inset 0 0 4px currentColor;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  box-shadow: 0 0 1px currentColor, inset 0 0 1px currentColor;
   opacity: 0;
   animation: how-pulse-ring 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
 }
