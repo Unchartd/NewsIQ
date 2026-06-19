@@ -1301,47 +1301,6 @@ export default function LandingPage() {
             </div>
 
             <div className="feat-card">
-              <div className="feat-icon">📝</div>
-              <div className="feat-title">Neutral Headlines</div>
-              <div className="feat-desc">
-                AI rewrites sensationalised headlines into factual, clear
-                statements. You know what happened before you click.
-              </div>
-              <div
-                style={{
-                  marginTop: "16px",
-                  padding: "12px",
-                  background: "var(--landing-surface)",
-                  borderRadius: "var(--landing-r6)",
-                  fontSize: "12px",
-                }}
-              >
-                <div
-                  style={{
-                    color: "var(--landing-ink4)",
-                    textDecoration: "line-through",
-                    marginBottom: "6px",
-                  }}
-                >
-                  "You Won't Believe What Happened In Bengaluru!"
-                </div>
-                <div
-                  style={{
-                    color: "var(--landing-green)",
-                    fontWeight: 600,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "5px",
-                  }}
-                >
-                  <span>✓</span>"Heavy monsoon rains flood Outer Ring Road;
-                  schools closed"
-                </div>
-              </div>
-            </div>
-
-            {/* Row 2 */}
-            <div className="feat-card">
               <div className="feat-icon">📊</div>
               <div className="feat-title">Source Comparison</div>
               <div className="feat-desc">
@@ -1350,6 +1309,7 @@ export default function LandingPage() {
               </div>
             </div>
 
+            {/* Row 2 */}
             <div className="feat-card">
               <div className="feat-icon">⏱️</div>
               <div className="feat-title">Multi-Level Summaries</div>
@@ -1409,7 +1369,6 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Row 3 */}
             <div className="feat-card">
               <div className="feat-icon">📍</div>
               <div className="feat-title">Location-Based Feed</div>
@@ -1419,6 +1378,7 @@ export default function LandingPage() {
               </div>
             </div>
 
+            {/* Row 3 */}
             <div className="feat-card">
               <div className="feat-icon">🔥</div>
               <div className="feat-title">Trending Intelligence</div>
