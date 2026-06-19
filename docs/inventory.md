@@ -24,6 +24,10 @@ This document maps ownership, maintenance statuses, completeness coverage, and s
 | **Operations Runbooks** | DevOps | Troubleshooting and recovery procedures. | June 19, 2026 | New | High | DB, Redis, LLM endpoints |
 | **System Changelogs** | Tech Leads | Log of changes and Alembic migrations. | June 19, 2026 | New | Medium | Alembic history |
 | **Drift Detection Suite** | Tooling | Tool configuration and drift warnings report. | June 19, 2026 | New | High | Python parsing script |
+| **SEO Audit** | SEO Eng | Technical SEO, AEO, GEO, LLMO, and E-E-A-T audit. | June 20, 2026 | New | High | Next.js App, crawler configs |
+| **AEO & GEO Playbook** | AI & Growth | Citation and answer optimizations for LLM search. | June 20, 2026 | New | High | AI pipelines, summaries, entities |
+| **E-E-A-T Strategy** | Growth / Legal | Transparency hubs, publisher policies, and schema signals. | June 20, 2026 | New | High | Public SSR pages, JSON-LD |
+| **Technical SEO Guide** | SEO Eng / Dev | Server Wrappers, dynamic sitemaps, and robots.txt. | June 20, 2026 | New | High | robots.ts, sitemap.ts, config |
 
 ---
 

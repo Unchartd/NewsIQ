@@ -26,6 +26,12 @@ This document provides a comprehensive audit of all existing documentation files
 - **[legal-audit.md](file:///c:/Users/zakau/NewsIQ/docs/legal-audit.md)**: Legal context for compliance framework. (Historical).
 - **[legal-implementation-checklist.md](file:///c:/Users/zakau/NewsIQ/docs/legal-implementation-checklist.md)**: Completed roadmap checklist. (Complete).
 
+### C. `/docs/seo` Subdirectory Documents
+- **[seo-audit.md](file:///c:/Users/zakau/NewsIQ/docs/seo/seo-audit.md)**: Full technical SEO, AEO, GEO, LLMO, E-E-A-T audit. (Up-to-date).
+- **[aeo-geo-playbook.md](file:///c:/Users/zakau/NewsIQ/docs/seo/aeo-geo-playbook.md)**: Optimization strategy for generative and answer engine search (ChatGPT, Google Overviews, Perplexity). (Up-to-date).
+- **[eeat-strategy.md](file:///c:/Users/zakau/NewsIQ/docs/seo/eeat-strategy.md)**: Details on E-E-A-T transparency pages, publisher attribution, and schema mappings. (Up-to-date).
+- **[technical-seo-guide.md](file:///c:/Users/zakau/NewsIQ/docs/seo/technical-seo-guide.md)**: Next.js app structure, Server Wrapper pattern, robots.txt, sitemaps, and core performance optimizations. (Up-to-date).
+
 ---
 
 ## 2. Identified Coverage Gaps
