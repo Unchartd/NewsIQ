@@ -792,7 +792,7 @@ export default function LandingPage() {
       {/* ════════════════════════════════════════
            PROBLEM / SOLUTION
            ════════════════════════════════════════ */}
-      <section className="section">
+      <section className="section" id="problem">
         <div className="container">
           <div className="section-header center reveal">
             <div className="eyebrow">The problem</div>
@@ -802,102 +802,153 @@ export default function LandingPage() {
               from ten different angles. There's a better way.
             </p>
           </div>
-          <div className="problem-grid reveal">
-            {/* Old way */}
-            <div className="problem-card old">
-              <div className="prob-heading">Traditional news</div>
-              <div className="prob-flow">
-                <div className="prob-step">
-                  <div className="prob-step-text">10 articles published</div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-arrow">↓</div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-step-text">
-                    10 different perspectives
-                  </div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-arrow">↓</div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-step-text">Redundant reading</div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-arrow">↓</div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-step-text dim">
-                    45 minutes of your day gone
-                  </div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-arrow">↓</div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-step-text dim">Still confused</div>
-                </div>
+
+          <div className="prob-comparison reveal">
+            {/* Traditional News */}
+            <div className="prob-v-card prob-card-traditional">
+              <div className="prob-card-hdr">
+                <span className="prob-card-lbl">Traditional News</span>
+                <div className="prob-card-icon">📰</div>
               </div>
-            </div>
-            <div className="problem-vs">vs</div>
-            {/* NewsIQ way */}
-            <div className="problem-card new">
-              <div className="prob-heading">NewsIQ</div>
-              <div className="prob-flow">
+              <div className="prob-timeline">
                 <div className="prob-step">
-                  <div className="prob-step-text">10 articles ingested</div>
-                </div>
-                <div className="prob-step">
-                  <div
-                    className="prob-arrow"
-                    style={{ color: "var(--landing-primary)" }}
-                  >
-                    ↓
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">10 articles published</div>
+                    <div className="prob-step-meta">Same event, fragmented coverage</div>
                   </div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-step-text">AI clusters the event</div>
-                </div>
-                <div className="prob-step">
-                  <div
-                    className="prob-arrow"
-                    style={{ color: "var(--landing-primary)" }}
-                  >
-                    ↓
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">10 different perspectives</div>
+                    <div className="prob-step-meta">Conflicting narratives, no synthesis</div>
                   </div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-step-text">One structured story</div>
-                </div>
-                <div className="prob-step">
-                  <div
-                    className="prob-arrow"
-                    style={{ color: "var(--landing-primary)" }}
-                  >
-                    ↓
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">Redundant reading</div>
+                    <div className="prob-step-meta">Repeating facts, missing context</div>
                   </div>
                 </div>
                 <div className="prob-step">
-                  <div className="prob-step-text highlight">
-                    Under 30 seconds
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">
+                      <strong>45 minutes</strong> of your day gone
+                    </div>
+                    <div className="prob-time-waste">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
+                      Time lost
+                    </div>
                   </div>
                 </div>
                 <div className="prob-step">
-                  <div
-                    className="prob-arrow"
-                    style={{ color: "var(--landing-primary)" }}
-                  >
-                    ↓
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot final"></div>
                   </div>
-                </div>
-                <div className="prob-step">
-                  <div className="prob-step-text highlight">
-                    Complete understanding
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt" style={{ color: "var(--landing-ink4)" }}>
+                      Still confused
+                    </div>
+                    <div className="prob-step-meta">No clear picture of what happened</div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* VS */}
+            <div className="prob-vs-divider">
+              <div className="prob-vs-line"></div>
+              <div className="prob-vs-badge">VS</div>
+              <div className="prob-vs-line"></div>
+            </div>
+
+            {/* NewsIQ */}
+            <div className="prob-v-card prob-card-newsiq">
+              <div className="prob-card-hdr">
+                <span className="prob-card-lbl">NewsIQ</span>
+                <div className="prob-card-icon">⚡</div>
+              </div>
+              <div className="prob-timeline">
+                <div className="prob-step">
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">10 articles ingested</div>
+                    <div className="prob-step-meta">Every source, automatically</div>
+                  </div>
+                </div>
+                <div className="prob-step">
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">AI clusters the event</div>
+                    <div className="prob-step-meta">Semantic grouping across sources</div>
+                  </div>
+                </div>
+                <div className="prob-step">
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">One structured story</div>
+                    <div className="prob-step-meta">All perspectives, organized</div>
+                  </div>
+                </div>
+                <div className="prob-step">
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot"></div>
+                    <div className="prob-step-line"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt">
+                      <strong>Under 30 seconds</strong>
+                    </div>
+                    <div className="prob-time-save">⚡ 90x faster</div>
+                  </div>
+                </div>
+                <div className="prob-step">
+                  <div className="prob-step-conn">
+                    <div className="prob-step-dot final"></div>
+                  </div>
+                  <div className="prob-step-content">
+                    <div className="prob-step-txt" style={{ color: "var(--landing-primary)", fontWeight: 700 }}>
+                      Complete understanding
+                    </div>
+                    <div className="prob-step-meta">Full context, zero redundancy</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="prob-summary reveal">
+            <span className="prob-summary-txt">
+              Turn <strong>45 minutes</strong> of noise into <strong>30 seconds</strong> of signal
+            </span>
+            <span className="prob-summary-arrow">→</span>
           </div>
         </div>
       </section>
