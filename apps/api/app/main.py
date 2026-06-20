@@ -73,10 +73,13 @@ app = FastAPI(
 )
 
 if settings.SENTRY_DSN:
+    from app.core.sentry_integration import before_send_handler, before_send_transaction_handler
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         traces_sample_rate=1.0,
         profiles_sample_rate=1.0,
+        before_send=before_send_handler,
+        before_send_transaction=before_send_transaction_handler,
     )
 
 
@@ -187,3 +190,12 @@ async def readiness_check():
 
     all_ok = all(v == "ok" for v in checks.values())
     return {"status": "ready" if all_ok else "degraded", "checks": checks}
+
+
+@app.get("/metrics", tags=["monitoring"])
+def metrics():
+    """Prometheus metrics endpoint."""
+    import app.core.metrics  # noqa: F401
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from fastapi import Response
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

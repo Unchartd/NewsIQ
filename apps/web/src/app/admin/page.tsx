@@ -90,173 +90,151 @@ export default function AdminPage() {
     },
   });
 
-  if (!isAuthenticated || !isAdmin) {
-    return (
-      <AppShell>
-        <div className="max-w-md mx-auto py-16 text-center">
-          <Shield className="w-12 h-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-foreground">Access Denied</h2>
-          <p className="text-muted-foreground text-sm mt-1">
-            You do not have the required administrative permissions to access this page.
-          </p>
-        </div>
-      </AppShell>
-    );
-  }
-
   return (
-    <AppShell>
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
-        {/* Title */}
-        <div className="flex items-center gap-2">
-          <Shield className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold">Admin Console</h1>
-        </div>
+    <div className="space-y-6">
+      {/* Pipeline Control Card */}
+      <Card className="border-border/50 rounded-2xl bg-card/50 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Play className="w-4 h-4 text-muted-foreground" />
+            Pipeline Operations
+          </CardTitle>
+          <CardDescription>Manually trigger Celery news worker pipelines.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-4">
+          <Button
+            onClick={() => triggerIngestionMutation.mutate()}
+            disabled={triggerIngestionMutation.isPending}
+            className="rounded-xl flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${triggerIngestionMutation.isPending ? "animate-spin" : ""}`} />
+            Trigger News Ingestion
+          </Button>
+        </CardContent>
+      </Card>
 
-        {/* Pipeline Control Card */}
-        <Card className="border-border/50 rounded-2xl">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Add Source Form */}
+        <Card className="border-border/50 rounded-2xl bg-card/50 backdrop-blur-sm h-fit">
           <CardHeader>
             <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Play className="w-4 h-4 text-muted-foreground" />
-              Pipeline Operations
+              <Plus className="w-4 h-4 text-muted-foreground" />
+              Add News Source
             </CardTitle>
-            <CardDescription>Manually trigger Celery news worker pipelines.</CardDescription>
+            <CardDescription>Register a new publisher RSS feed.</CardDescription>
           </CardHeader>
-          <CardContent className="flex gap-4">
-            <Button
-              onClick={() => triggerIngestionMutation.mutate()}
-              disabled={triggerIngestionMutation.isPending}
-              className="rounded-xl flex items-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${triggerIngestionMutation.isPending ? "animate-spin" : ""}`} />
-              Trigger News Ingestion
-            </Button>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Publisher Name</label>
+                <Input
+                  placeholder="e.g. Reuters"
+                  value={newSourceName}
+                  onChange={(e) => {
+                    setNewSourceName(e.target.value);
+                    setNewSourceSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+                  }}
+                  className="rounded-xl text-xs h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Slug</label>
+                <Input
+                  placeholder="e.g. reuters"
+                  value={newSourceSlug}
+                  onChange={(e) => setNewSourceSlug(e.target.value)}
+                  className="rounded-xl text-xs h-9"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">RSS Feed URL</label>
+              <Input
+                placeholder="https://www.reuters.com/rss"
+                value={newSourceRss}
+                onChange={(e) => setNewSourceRss(e.target.value)}
+                className="rounded-xl text-xs h-9"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Website URL</label>
+              <Input
+                placeholder="https://www.reuters.com"
+                value={newSourceWeb}
+                onChange={(e) => setNewSourceWeb(e.target.value)}
+                className="rounded-xl text-xs h-9"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-2 space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Logo URL</label>
+                <Input
+                  placeholder="https://example.com/logo.png"
+                  value={newSourceLogo}
+                  onChange={(e) => setNewSourceLogo(e.target.value)}
+                  className="rounded-xl text-xs h-9"
+                />
+              </div>
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Country</label>
+                <Input
+                  placeholder="US"
+                  value={newSourceCountry}
+                  onChange={(e) => setNewSourceCountry(e.target.value.toUpperCase())}
+                  className="rounded-xl text-xs h-9"
+                />
+              </div>
+            </div>
           </CardContent>
+          <CardFooter className="bg-secondary/20 py-3 flex justify-end">
+            <Button
+              onClick={() => createSourceMutation.mutate()}
+              disabled={createSourceMutation.isPending || !newSourceName || !newSourceRss}
+              className="rounded-xl text-xs h-9 px-4"
+            >
+              Add Source
+            </Button>
+          </CardFooter>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Add Source Form */}
-          <Card className="border-border/50 rounded-2xl h-fit">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Plus className="w-4 h-4 text-muted-foreground" />
-                Add News Source
-              </CardTitle>
-              <CardDescription>Register a new publisher RSS feed.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Publisher Name</label>
-                  <Input
-                    placeholder="e.g. Reuters"
-                    value={newSourceName}
-                    onChange={(e) => {
-                      setNewSourceName(e.target.value);
-                      setNewSourceSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
-                    }}
-                    className="rounded-xl text-xs h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Slug</label>
-                  <Input
-                    placeholder="e.g. reuters"
-                    value={newSourceSlug}
-                    onChange={(e) => setNewSourceSlug(e.target.value)}
-                    className="rounded-xl text-xs h-9"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">RSS Feed URL</label>
-                <Input
-                  placeholder="https://www.reuters.com/rss"
-                  value={newSourceRss}
-                  onChange={(e) => setNewSourceRss(e.target.value)}
-                  className="rounded-xl text-xs h-9"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Website URL</label>
-                <Input
-                  placeholder="https://www.reuters.com"
-                  value={newSourceWeb}
-                  onChange={(e) => setNewSourceWeb(e.target.value)}
-                  className="rounded-xl text-xs h-9"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Logo URL</label>
-                  <Input
-                    placeholder="https://example.com/logo.png"
-                    value={newSourceLogo}
-                    onChange={(e) => setNewSourceLogo(e.target.value)}
-                    className="rounded-xl text-xs h-9"
-                  />
-                </div>
-                <div className="col-span-1 space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Country</label>
-                  <Input
-                    placeholder="US"
-                    value={newSourceCountry}
-                    onChange={(e) => setNewSourceCountry(e.target.value.toUpperCase())}
-                    className="rounded-xl text-xs h-9"
-                  />
-                </div>
-              </div>
-            </CardContent>
-            <CardFooter className="bg-secondary/20 py-3 flex justify-end">
-              <Button
-                onClick={() => createSourceMutation.mutate()}
-                disabled={createSourceMutation.isPending || !newSourceName || !newSourceRss}
-                className="rounded-xl text-xs h-9 px-4"
-              >
-                Add Source
-              </Button>
-            </CardFooter>
-          </Card>
-
-          {/* News Sources List */}
-          <Card className="border-border/50 rounded-2xl">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Layers className="w-4 h-4 text-muted-foreground" />
-                Active Feeds
-              </CardTitle>
-              <CardDescription>Publishers currently active in ingestion.</CardDescription>
-            </CardHeader>
-            <CardContent className="max-h-[380px] overflow-y-auto space-y-3">
-              {isLoading ? (
-                <p className="text-xs text-muted-foreground">Loading sources...</p>
-              ) : !sources || sources.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No sources added yet.</p>
-              ) : (
-                sources.map((src) => (
-                  <div
-                    key={src.id}
-                    className="flex items-center justify-between p-3 rounded-xl border border-border/40 hover:bg-muted/10 transition-colors"
-                  >
-                    <div>
-                      <p className="text-xs font-bold text-foreground">{src.name}</p>
-                      <p className="text-[10px] text-muted-foreground truncate max-w-[240px] mt-0.5">
-                        {src.rss_url}
-                      </p>
-                    </div>
-                    <Badge variant={src.active ? "secondary" : "outline"} className="text-[9px]">
-                      {src.active ? "Active" : "Inactive"}
-                    </Badge>
+        {/* News Sources List */}
+        <Card className="border-border/50 rounded-2xl bg-card/50 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Layers className="w-4 h-4 text-muted-foreground" />
+              Active Feeds
+            </CardTitle>
+            <CardDescription>Publishers currently active in ingestion.</CardDescription>
+          </CardHeader>
+          <CardContent className="max-h-[380px] overflow-y-auto space-y-3">
+            {isLoading ? (
+              <p className="text-xs text-muted-foreground">Loading sources...</p>
+            ) : !sources || sources.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No sources added yet.</p>
+            ) : (
+              sources.map((src) => (
+                <div
+                  key={src.id}
+                  className="flex items-center justify-between p-3 rounded-xl border border-border/40 hover:bg-muted/10 transition-colors"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-foreground">{src.name}</p>
+                    <p className="text-[10px] text-muted-foreground truncate max-w-[240px] mt-0.5">
+                      {src.rss_url}
+                    </p>
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                  <Badge variant={src.active ? "secondary" : "outline"} className="text-[9px]">
+                    {src.active ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </AppShell>
+    </div>
   );
 }

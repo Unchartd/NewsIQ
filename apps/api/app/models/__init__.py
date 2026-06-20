@@ -29,9 +29,22 @@ from app.models.models import (
     UserPreference,
 )
 from app.models.consent import ConsentPreference, ConsentAuditLog
+from app.models.observability_models import (
+    CostRecordModel,
+    ErrorLogModel,
+    HumanReviewModel,
+    LLMTraceModel,
+    PipelineRunModel,
+    PromptVersionModel,
+    QueueMetricsModel,
+    RetryHistoryModel,
+    StageRunModel,
+    TokenUsageModel,
+)
 
 
 __all__ = [
+    # Core models
     "ApiKey",
     "Article",
     "ArticleEvent",
@@ -60,4 +73,15 @@ __all__ = [
     "UserPreference",
     "ConsentPreference",
     "ConsentAuditLog",
+    # Observability models
+    "PipelineRunModel",
+    "StageRunModel",
+    "LLMTraceModel",
+    "TokenUsageModel",
+    "CostRecordModel",
+    "RetryHistoryModel",
+    "ErrorLogModel",
+    "PromptVersionModel",
+    "QueueMetricsModel",
+    "HumanReviewModel",
 ]

@@ -63,5 +63,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.digest_tasks.process_hourly_digests_task",
         "schedule": crontab(minute="0"),
     },
+    # Collect queue and worker metrics every minute
+    "collect-queue-metrics-every-minute": {
+        "task": "app.workers.tasks.collect_queue_metrics_task",
+        "schedule": crontab(minute="*"),
+    },
 }
 
