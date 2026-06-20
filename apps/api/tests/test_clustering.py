@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.models import Article
+from app.models.models import Article, ArticleEvent
 from app.services.ai_service import SourceDifferenceSchema, StoryAIResponse, TimelineEventSchema
 from app.services.clustering_service import clustering_service
 
@@ -44,14 +44,29 @@ async def test_run_batch_clustering(
         embedding_status="completed",
     )
 
-    # Mock DB queries
-    # Mocking first query (fetch unclustered articles)
+    # Mock DB queries using a query-aware helper
     from app.services.embedding_service import EMBEDDING_DIM
-    mock_execute_result = MagicMock()
-    mock_execute_result.scalars.return_value.all.return_value = [art1, art2]
-    mock_execute_result.scalar_one.return_value = 2
-    mock_execute_result.scalar_one_or_none.return_value = None
-    mock_db_session.execute.return_value = mock_execute_result
+    
+    async def mock_execute_side_effect(stmt):
+        stmt_str = str(stmt).lower()
+        res = MagicMock()
+        res.scalar_one_or_none.return_value = None
+        res.scalar_one.return_value = 0
+        res.scalar.return_value = None
+        res.scalars.return_value.all.return_value = []
+        if "article_events" in stmt_str:
+            res.scalar_one_or_none.return_value = ArticleEvent(event_type_canonical="ATTACK")
+            res.scalars.return_value.all.return_value = [ArticleEvent(event_type_canonical="ATTACK")]
+        elif "articles" in stmt_str or "article " in stmt_str:
+            res.scalars.return_value.all.return_value = [art1, art2]
+            res.scalar_one_or_none.return_value = art1
+        elif "sources" in stmt_str or "source" in stmt_str:
+            res.scalar_one_or_none.return_value = MagicMock(name="Source Mock", country_code="US")
+        elif "canonical_entities" in stmt_str:
+            res.scalar_one_or_none.return_value = MagicMock(id=uuid.uuid4())
+        return res
+
+    mock_db_session.execute.side_effect = mock_execute_side_effect
 
     # Mock Qdrant retrieve returning vectors for our two articles
     mock_point_1 = MagicMock(id=str(article_id_1), vector=[0.1] * EMBEDDING_DIM)

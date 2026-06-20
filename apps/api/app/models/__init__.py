@@ -3,7 +3,9 @@
 from app.models.models import (
     ApiKey,
     Article,
+    ArticleEvent,
     Bookmark,
+    CanonicalEntity,
     Category,
     DigestSubscription,
     Notification,
@@ -31,7 +33,9 @@ from app.models.consent import ConsentPreference, ConsentAuditLog
 __all__ = [
     "ApiKey",
     "Article",
+    "ArticleEvent",
     "Bookmark",
+    "CanonicalEntity",
     "Category",
     "DigestSubscription",
     "Notification",

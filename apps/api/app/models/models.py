@@ -147,10 +147,58 @@ class Article(Base):
     created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     source: Mapped["Source"] = relationship(back_populates="articles")
+    events: Mapped[list["ArticleEvent"]] = relationship(
+        back_populates="article", cascade="all, delete-orphan"
+    )
+    # Track event extraction pipeline status
+    event_extraction_status: Mapped[str | None] = mapped_column(
+        String(30), default="pending"
+    )
 
     __table_args__ = (
         Index("idx_articles_published", published_at.desc()),
         Index("idx_articles_source", "source_id"),
+    )
+
+
+# ──────────────────────────────────────────────
+# Article Events (Event Extraction Pipeline)
+# ──────────────────────────────────────────────
+
+
+class ArticleEvent(Base):
+    """Structured event extracted from a single article.
+
+    Stores WHO did WHAT to WHOM, WHERE, WHEN — extracted by EventService
+    before clustering. This is the foundation for event-centric clustering.
+    """
+
+    __tablename__ = "article_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id", ondelete="CASCADE"), index=True
+    )
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=True)
+    event_type: Mapped[str] = mapped_column(String(100))
+    event_type_canonical: Mapped[str | None] = mapped_column(String(100))
+    actors: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    targets: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    objects: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255))
+    event_time: Mapped[datetime | None] = mapped_column()
+    event_time_raw: Mapped[str | None] = mapped_column(String(255))
+    numbers: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
+
+    article: Mapped["Article"] = relationship(back_populates="events")
+
+    __table_args__ = (
+        Index("idx_article_events_type", "event_type_canonical"),
+        Index("idx_article_events_article", "article_id"),
     )
 
 
@@ -184,6 +232,7 @@ class Story(Base):
     # created_at is the canonical creation timestamp used for ordering/digest queries
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
     updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
+    knowledge_graph: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     category: Mapped["Category | None"] = relationship()
     articles: Mapped[list["StoryArticle"]] = relationship(
@@ -311,12 +360,30 @@ class StoryEntity(Base):
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
     story_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("stories.id"), index=True
+        UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), index=True
     )
-    entity_type: Mapped[str] = mapped_column(String(30))  # PERSON, ORG, LOCATION, EVENT, COUNTRY
+    canonical_entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("canonical_entities.id", ondelete="SET NULL"), nullable=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(50))
     entity_value: Mapped[str] = mapped_column(String(255))
 
     story: Mapped["Story"] = relationship(back_populates="entities")
+    canonical_entity: Mapped["CanonicalEntity | None"] = relationship()
+
+
+class CanonicalEntity(Base):
+    __tablename__ = "canonical_entities"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    canonical_name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    entity_type: Mapped[str] = mapped_column(String(50))
+    wikidata_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    aliases: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # JSONB array of strings
+    metadata_payload: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
 
 
 class StoryMetric(Base):
