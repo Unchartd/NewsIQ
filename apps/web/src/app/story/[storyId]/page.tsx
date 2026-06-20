@@ -6,6 +6,9 @@ import { buildStoryMetadata } from "@/lib/metadata";
 import {
   buildNewsArticleSchema,
   buildBreadcrumbSchema,
+  buildStoryFAQSchema,
+  buildSourceCoverageSchema,
+  buildTimelineSchema,
   serializeJsonLd,
 } from "@/lib/jsonld";
 import { SITE_URL } from "@/lib/metadata";
@@ -50,6 +53,10 @@ export default async function StoryDetailPage({ params }: PageProps) {
       ])
     : null;
 
+  const faqSchema = story ? buildStoryFAQSchema(story) : null;
+  const sourceCoverageSchema = story ? buildSourceCoverageSchema(story) : null;
+  const timelineSchema = story ? buildTimelineSchema(story) : null;
+
   return (
     <>
       {newsArticleSchema && (
@@ -62,6 +69,24 @@ export default async function StoryDetailPage({ params }: PageProps) {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
+        />
+      )}
+      {faqSchema && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqSchema) }}
+        />
+      )}
+      {sourceCoverageSchema && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(sourceCoverageSchema) }}
+        />
+      )}
+      {timelineSchema && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(timelineSchema) }}
         />
       )}
       <StoryDetailClient storyId={storyId} initialStory={story} />

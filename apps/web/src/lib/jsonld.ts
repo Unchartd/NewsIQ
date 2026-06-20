@@ -141,6 +141,51 @@ export function buildNewsArticleSchema(story: {
     .filter(Boolean)
     .join(", ");
 
+  const hasPartElements: any[] = [];
+
+  if (story.one_line_summary) {
+    hasPartElements.push({
+      "@type": "WebPageElement",
+      "name": "One-line Summary",
+      "description": "Factual single-sentence summary of the story.",
+      "text": story.one_line_summary
+    });
+  }
+
+  if (story.short_summary) {
+    hasPartElements.push({
+      "@type": "WebPageElement",
+      "name": "Short Summary",
+      "description": "Concise multi-sentence overview of the event.",
+      "text": story.short_summary
+    });
+  }
+
+  if (story.detailed_summary) {
+    hasPartElements.push({
+      "@type": "WebPageElement",
+      "name": "Detailed Summary",
+      "description": "Comprehensive multi-perspective summary of the event.",
+      "text": story.detailed_summary
+    });
+  }
+
+  if (story.key_facts && story.key_facts.length > 0) {
+    hasPartElements.push({
+      "@type": "ItemList",
+      "name": "Key Facts",
+      "description": "Consensus bullet points and facts verified across publishers.",
+      "itemListElement": story.key_facts.map((fact, index) => ({
+        "@type": "ListItem",
+        "position": index + 1,
+        "item": {
+          "@type": "CreativeWork",
+          "text": fact
+        }
+      }))
+    });
+  }
+
   return {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
@@ -165,6 +210,7 @@ export function buildNewsArticleSchema(story: {
       url: ogImage,
       width: 1200,
       height: 630,
+      caption: story.headline,
     },
     author: {
       "@type": "Organization",
@@ -194,7 +240,7 @@ export function buildNewsArticleSchema(story: {
     // Speakable — helps voice assistants read the key content
     speakable: {
       "@type": "SpeakableSpecification",
-      cssSelector: [".story-headline", ".story-summary", ".story-key-facts"],
+      cssSelector: [".sd-head", ".sumblock", ".kf-list"],
     },
     // Mentions — entities for knowledge graph
     mentions: (story.entities || [])
@@ -210,6 +256,8 @@ export function buildNewsArticleSchema(story: {
             : "Thing",
         name: e.entity_value,
       })),
+    // hasPart structure
+    ...(hasPartElements.length > 0 ? { hasPart: hasPartElements } : {})
   };
 }
 
@@ -309,4 +357,130 @@ export function buildWebPageSchema(
 
 export function serializeJsonLd(schema: object): string {
   return JSON.stringify(schema);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Story FAQ Schema (AEO/GEO/LLM Voice Search)
+// ─────────────────────────────────────────────────────────────
+
+export function buildStoryFAQSchema(story: {
+  headline: string;
+  short_summary?: string;
+  key_facts?: string[];
+  articles?: Array<{ source?: { name: string } }>;
+  differences?: Array<{ source?: { name: string }; contradictions?: string | null }>;
+}) {
+  const sourcesText = (story.articles || [])
+    .map((a) => a.source?.name)
+    .filter((v, i, a) => v && a.indexOf(v) === i)
+    .join(", ");
+
+  const contradictionsList = (story.differences || [])
+    .filter((d) => d.contradictions)
+    .map((d) => `${d.source?.name}: ${d.contradictions}`)
+    .join(" ");
+
+  const faqs = [
+    {
+      question: `What is the story '${story.headline}' about?`,
+      answer: story.short_summary || "An AI-summarized intelligence report on developing news.",
+    },
+  ];
+
+  if (story.key_facts && story.key_facts.length > 0) {
+    faqs.push({
+      question: "What are the key facts of this event?",
+      answer: `Key developments include: ${story.key_facts.join(" ")}`,
+    });
+  }
+
+  if (sourcesText) {
+    faqs.push({
+      question: "Which publications covered this news story?",
+      answer: `This story was covered and cross-referenced across multiple sources including ${sourcesText}.`,
+    });
+  }
+
+  if (contradictionsList) {
+    faqs.push({
+      question: "Are there any conflicts or contradictions between reporting sources?",
+      answer: `Yes, differences were noted in reporting: ${contradictionsList}`,
+    });
+  } else {
+    faqs.push({
+      question: "Do the sources agree on the details of this story?",
+      answer: "The indexed news sources show a high level of factual alignment with no significant conflicts or contradictions reported.",
+    });
+  }
+
+  return buildFAQSchema(faqs);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Source Coverage Schema (ItemList representation)
+// ─────────────────────────────────────────────────────────────
+
+export function buildSourceCoverageSchema(story: {
+  headline: string;
+  articles?: Array<{ url?: string; title?: string; source?: { name: string } }>;
+}) {
+  const articlesList = story.articles || [];
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": `Source coverage for: ${story.headline}`,
+    "description": "List of original publisher articles compiled for this intelligence report.",
+    "numberOfItems": articlesList.length,
+    "itemListElement": articlesList.map((art, index) => ({
+      "@type": "ListItem",
+      "position": index + 1,
+      "item": {
+        "@type": "NewsArticle",
+        "url": art.url || "",
+        "headline": art.title || "Original Reporting",
+        "publisher": {
+          "@type": "Organization",
+          "name": art.source?.name || "News Publisher"
+        }
+      }
+    }))
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Timeline Schema (Chronological ItemList of events)
+// ─────────────────────────────────────────────────────────────
+
+export function buildTimelineSchema(story: {
+  headline: string;
+  timeline?: Array<{ event_time: string; description: string }>;
+}) {
+  const timelineEvents = story.timeline || [];
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": `Chronological timeline for: ${story.headline}`,
+    "description": "Verified events structured sequentially as they unfolded over time.",
+    "numberOfItems": timelineEvents.length,
+    "itemListElement": timelineEvents.map((ev, index) => {
+      const dateStr = ev.event_time ? new Date(ev.event_time).toISOString() : new Date().toISOString();
+      return {
+        "@type": "ListItem",
+        "position": index + 1,
+        "item": {
+          "@type": "Event",
+          "name": ev.description,
+          "startDate": dateStr,
+          "endDate": dateStr,
+          "description": ev.description,
+          "location": {
+            "@type": "Place",
+            "name": "Global / Virtual"
+          }
+        }
+      };
+    })
+  };
 }
