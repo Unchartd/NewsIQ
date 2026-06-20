@@ -250,6 +250,9 @@ class Story(Base):
     differences: Mapped[list["StoryDifference"]] = relationship(
         back_populates="story", cascade="all, delete-orphan"
     )
+    contradictions: Mapped[list["StoryContradiction"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
     tags: Mapped[list["StoryTag"]] = relationship(
         back_populates="story", cascade="all, delete-orphan"
     )
@@ -337,6 +340,24 @@ class StoryDifference(Base):
     __table_args__ = (
         UniqueConstraint("story_id", "source_id", name="uq_story_difference"),
     )
+
+
+class StoryContradiction(Base):
+    __tablename__ = "story_contradictions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stories.id", ondelete="CASCADE"), index=True
+    )
+    fact_type: Mapped[str] = mapped_column(String(50))
+    description: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Numeric(5, 4))
+    source_attribution: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+    story: Mapped["Story"] = relationship(back_populates="contradictions")
 
 
 class StoryTag(Base):

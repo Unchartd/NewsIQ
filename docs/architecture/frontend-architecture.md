@@ -73,3 +73,26 @@ The frontend blocks all analytics/marketing scripts using `ConsentProvider` ([co
    - Queries `GET /consent/preferences` to check if settings already exist.
    - If not found or if the version does not match `CONSENT_VERSION`, it opens the floating `CookieBanner`.
 3. **Tracker Enforcement**: Checks toggles in real-time. Script tags for Google Analytics, PostHog, Meta, and LinkedIn are injected only if consent is active. On withdrawal, it reloads the browser to flush tracking variables.
+
+---
+
+## 6. SEO, Metadata, & JSON-LD Serialization
+
+NewsIQ incorporates advanced structured schemas to guarantee maximum search visibility, AEO/GEO compatibility, and voice assistant readability:
+- **Server Component Generation**: Metadata is generated dynamically server-side using Next.js APIs. Dynamic sitemaps (`sitemap.ts`) and Google News sitemaps (`news-sitemap.xml`) are populated by querying internal API microservices within the Docker overlay network.
+- **Hydration Mismatch Mitigation**: Large JSON-LD `<script>` elements injected in Server Page Wrappers have `suppressHydrationWarning` flags enabled to ensure client-side hydration completes cleanly without mismatch warnings.
+- **Speakable Schemas**: Structured JSON-LD graphs map layout components (e.g. `.sd-head`, `.sumblock`, and `.kf-list`) as voice-assistant speakable components to optimize AEO/GEO citation profiles.
+
+---
+
+## 7. Interactive Story Details UI Components
+
+- **Key Entities UX Section**:
+  - Story entities are automatically grouped by type (e.g. `LOCATION`, `COUNTRY`, `PERSON`, `ORG`, `EVENT`) and sorted according to a priority matrix.
+  - Entity values are deduplicated case-insensitively, preserving original insertion order.
+  - By default, up to 5 entities per type are rendered as tag chips (linking directly to search). Remaining entities are truncated behind an interactive `+N more` toggle that expands inline without full-page re-renders.
+  - Special `STATUS` entity values (developing, ongoing, resolved, etc.) are dynamically parsed and styled with semantic color status badges (e.g., green, amber, red).
+- **Summary Depth Switcher Component**:
+  - Enables user switching between `1-line`, `Short`, and `Detailed` summary models.
+  - The switcher buttons use theme-independent semantic CSS variables. Active switcher buttons are styled with `background: var(--ink)` and `color: var(--background)`. Binding active text colors to `var(--background)` ensures the text color remains perfectly visible in both light (dark text on cream background) and dark modes (dark text on off-white/cream background).
+  - Time-relative strings (e.g., event timelines, publish dates) are rendered using a `mounted` state guard to bypass hydration mismatches by ensuring that local timezone formatting only executes client-side after mount, falling back to a stable UTC representation during initial SSR rendering.

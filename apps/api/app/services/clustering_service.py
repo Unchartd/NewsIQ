@@ -15,6 +15,7 @@ from app.models.models import (
     Source,
     Story,
     StoryArticle,
+    StoryContradiction,
     StoryDifference,
     StoryEntity,
     StoryMetric,
@@ -27,6 +28,9 @@ from app.services.ner_service_v2 import ner_service_v2
 from app.services.vector_service import vector_service
 from app.services.entity_linker import entity_linker
 from app.services.knowledge_graph import build_story_knowledge_graph
+from app.services.contradiction_service import contradiction_service
+from app.services.source_comparison_service import source_comparison_service
+from datetime import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -65,57 +69,7 @@ class ClusteringService:
         self, story: Story, articles: list[Article], session: AsyncSession
     ) -> None:
         """Trigger AI generation and NER extraction to populate a story's sub-tables."""
-        # 1. Prepare article details for Gemini prompt
-        article_data = []
-        full_text_corpus = ""
-        source_countries = []
-        for art in articles:
-            # Fetch source name
-            stmt = select(Source).where(Source.id == art.source_id)
-            res = await session.execute(stmt)
-            source = res.scalar_one_or_none()
-            src_name = source.name if source else "Unknown Source"
-            if source and source.country_code:
-                source_countries.append(source.country_code)
-
-            article_data.append(
-                {
-                    "source_name": src_name,
-                    "title": art.title,
-                    "content": art.content or art.description or "",
-                    "published_at": art.published_at.isoformat() if art.published_at else None,
-                }
-            )
-            full_text_corpus += (
-                f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
-            )
-
-        # 2. Call AI Service
-        ai_res = await ai_service.analyze_story(article_data)
-
-        # Update main story details
-        story.headline = ai_res.headline
-        story.one_line_summary = ai_res.one_line_summary
-        story.short_summary = ai_res.short_summary
-        story.detailed_summary = ai_res.detailed_summary
-        # Persist key_facts to JSONB column (previously discarded)
-        story.key_facts = [f for f in ai_res.key_facts if f] if ai_res.key_facts else []
-
-        # Resolve and assign location_country from article sources
-        if source_countries:
-            from collections import Counter
-            story.location_country = Counter(source_countries).most_common(1)[0][0]
-        else:
-            story.location_country = None
-
-        # 3. Resolve and assign category from AI response
-        cat_slug = ai_res.category if ai_res.category in CATEGORY_SLUGS else "world"
-        cat_id = await self.get_or_create_category(
-            cat_slug, cat_slug.replace("-", " ").title(), session
-        )
-        story.category_id = cat_id
-
-        # 4. Clear existing sub-table rows explicitly before regenerating
+        # 1. Clear existing sub-table rows explicitly before regenerating
         #    Using DELETE statements is safer than .clear() on lazy-loaded collections
         await session.execute(
             delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
@@ -132,77 +86,108 @@ class ClusteringService:
         await session.execute(
             delete(StoryTag).where(StoryTag.story_id == story.id)
         )
+        await session.execute(
+            delete(StoryContradiction).where(StoryContradiction.story_id == story.id)
+        )
         await session.flush()
 
-        # 5. Save Timeline Events
-        for ev in ai_res.timeline:
-            event_time: datetime | None = None
-            try:
-                event_time = datetime.fromisoformat(ev.date)
-            except (ValueError, TypeError):
-                pass  # Store raw string; frontend will display it as-is
-
-            session.add(
-                StoryTimelineEvent(
-                    id=uuid.uuid4(),
-                    story_id=story.id,
-                    event_time=event_time,
-                    event_time_raw=ev.date,  # Always store the raw AI string
-                    description=ev.description,
-                    created_at=_now(),
-                )
-            )
-
-        # 6. Save Source Coverages & Differences
-        seen_sources: set[uuid.UUID] = set()
-        sources_list: list[Source] = []
-        for diff in ai_res.differences:
-            stmt = select(Source).where(Source.name == diff.source_name)
+        # 2. Prepare article details, fetch sources and article events
+        full_text_corpus = ""
+        source_countries = []
+        seen_sources = set()
+        sources_list = []
+        article_source_map = {}
+        for art in articles:
+            stmt = select(Source).where(Source.id == art.source_id)
             res = await session.execute(stmt)
             source = res.scalar_one_or_none()
-            if not source or source.id in seen_sources:
-                continue
-            seen_sources.add(source.id)
-            sources_list.append(source)
+            if source:
+                article_source_map[art.id] = source.name
+                if source.country_code:
+                    source_countries.append(source.country_code)
+                if source.id not in seen_sources:
+                    seen_sources.add(source.id)
+                    sources_list.append(source)
+            else:
+                article_source_map[art.id] = "Unknown Source"
 
-            # Distill focus_area to a clean short label (max 100 chars, first sentence)
-            raw_focus = diff.unique_information or "General coverage"
-            first_sentence = raw_focus.split(".")[0].strip()
-            focus_area = (first_sentence[:100] + ".") if first_sentence else "General coverage"
-
-            session.add(
-                StorySourceCoverage(
-                    id=uuid.uuid4(),
-                    story_id=story.id,
-                    source_id=source.id,
-                    focus_area=focus_area,
-                    published_at=_now(),
-                )
-            )
-            session.add(
-                StoryDifference(
-                    id=uuid.uuid4(),
-                    story_id=story.id,
-                    source_id=source.id,
-                    unique_information=diff.unique_information,
-                    missing_information=diff.missing_information,
-                    contradictions=diff.contradictions,
-                )
+            full_text_corpus += (
+                f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
             )
 
-        # 7. Extract Named Entities using enhanced NER v2 Service
+        # Resolve and assign location_country from article sources
+        if source_countries:
+            from collections import Counter
+            story.location_country = Counter(source_countries).most_common(1)[0][0]
+        else:
+            story.location_country = None
+
+        article_ids = [art.id for art in articles]
+        stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
+        res = await session.execute(stmt)
+        article_events = list(res.scalars().all())
+
+        # 3. Save Timeline Events (Sorted by parsed event time with UTC normalization)
+        timeline_entries = []
+        for evt in article_events:
+            t = evt.event_time or evt.created_at or datetime.now(timezone.utc)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            else:
+                t = t.astimezone(timezone.utc)
+
+            src_name = article_source_map.get(evt.article_id, "Unknown Source")
+            evt_type = (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
+
+            details = []
+            if evt.actors:
+                details.append(f"Actors: {', '.join(evt.actors)}")
+            if evt.targets:
+                details.append(f"Targets: {', '.join(evt.targets)}")
+            if evt.location:
+                details.append(f"Location: {evt.location}")
+            if evt.numbers:
+                num_parts = [f"{k}: {v}" for k, v in evt.numbers.items()]
+                details.append(f"Data: {', '.join(num_parts)}")
+
+            details_str = f" ({'; '.join(details)})" if details else ""
+            desc = f"{evt_type} reported by {src_name}{details_str}."
+
+            timeline_entries.append({
+                "event_time": t,
+                "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "description": desc,
+            })
+
+        # Sort timeline entries chronologically
+        timeline_entries.sort(key=lambda x: x["event_time"])
+
+        saved_timeline_objects = []
+        for entry in timeline_entries:
+            tl_event = StoryTimelineEvent(
+                id=uuid.uuid4(),
+                story_id=story.id,
+                event_time=entry["event_time"],
+                event_time_raw=entry["event_time_raw"],
+                description=entry["description"],
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(tl_event)
+            saved_timeline_objects.append(tl_event)
+
+        # 4. Extract Named Entities using enhanced NER v2 Service
         entities = await ner_service_v2.extract_entities(full_text_corpus)
-        
+
         # Perform Local Coreference Resolution & Entity Linking
         grouped_entities = entity_linker.group_entities_locally(entities)
-        
+
         # Limit to top 15 groups/canonical entities for storage
-        saved_story_entities: list[StoryEntity] = []
-        tags_added: set[str] = set()
-        
+        saved_story_entities = []
+        tags_added = set()
+
         for rep, grouped_mentions in list(grouped_entities.items())[:15]:
             etype = grouped_mentions[0]["type"]
-            
+
             # Resolve/Link to globally unique CanonicalEntity
             try:
                 canonical_ent = await entity_linker.link_entity(
@@ -216,7 +201,7 @@ class ClusteringService:
                 logger.error("Failed to link entity %s: %s", rep, e)
                 canonical_ent = None
                 canonical_entity_id = None
-                
+
             # Add StoryEntity rows for each variant mention in the group
             for mention in grouped_mentions:
                 story_ent = StoryEntity(
@@ -229,38 +214,118 @@ class ClusteringService:
                 story_ent.canonical_entity = canonical_ent
                 session.add(story_ent)
                 saved_story_entities.append(story_ent)
-                
+
             # Add to tag list
             tag = rep.lower().strip()
             if tag and len(tag) < 30 and tag not in tags_added:
                 tags_added.add(tag)
 
-        # 8. Save Story Tags from entities (limit to 5)
+        # Save Story Tags from entities (limit to 5)
         for tag in list(tags_added)[:5]:
             session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
 
-        # 9. Build and Serialize Knowledge Graph
+        # 5. Build and Serialize Knowledge Graph
+        kg_dict = {}
         try:
-            # Fetch article events for these articles
-            article_ids = [art.id for art in articles]
-            stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
-            res = await session.execute(stmt)
-            article_events = res.scalars().all()
-            
             kg = build_story_knowledge_graph(
                 articles=articles,
                 article_events=article_events,
                 story_entities=saved_story_entities,
                 sources=sources_list,
             )
-            story.knowledge_graph = kg.to_dict()
+            kg_dict = kg.to_dict()
+            story.knowledge_graph = kg_dict
             logger.info("Knowledge Graph successfully generated and assigned for story %s.", story.id)
         except Exception as e:
             logger.error("Failed to generate knowledge graph for story %s: %s", story.id, e)
 
+        # 6. Run Contradiction & Source Comparison Engines
+        saved_contras = []
+        try:
+            saved_contras = await contradiction_service.detect_and_save_contradictions(story.id, session)
+            logger.info("Contradiction detection successfully run for story %s.", story.id)
+        except Exception as e:
+            logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
+
+        saved_coverage = []
+        saved_differences = []
+        try:
+            saved_coverage, saved_differences = await source_comparison_service.compare_sources_and_save(story.id, session)
+            logger.info("Source comparison successfully run for story %s.", story.id)
+        except Exception as e:
+            logger.error("Failed to run source comparison for story %s: %s", story.id, e)
+
+        # Serialize inputs for KG-grounded summarization
+        contradictions_list = [
+            {
+                "fact_type": c.fact_type,
+                "description": c.description,
+                "confidence": float(c.confidence),
+                "source_attribution": c.source_attribution,
+            }
+            for c in saved_contras
+        ]
+
+        timeline_list = [
+            {
+                "date": t.event_time_raw or (t.event_time.isoformat() if t.event_time else "Unknown"),
+                "description": t.description,
+            }
+            for t in saved_timeline_objects
+        ]
+
+        source_comparisons_list = []
+        for diff in saved_differences:
+            cov = next((c for c in saved_coverage if c.source_id == diff.source_id), None)
+            focus = cov.focus_area if cov else "General coverage"
+            src_name = article_source_map.get(
+                next((art.id for art in articles if art.source_id == diff.source_id), None),
+                "Unknown Source"
+            )
+            source_comparisons_list.append({
+                "source_name": src_name,
+                "focus_area": focus,
+                "unique_information": diff.unique_information or "",
+                "missing_information": diff.missing_information or "",
+                "contradictions": diff.contradictions or "",
+            })
+
+        # 7. Call Summary Engine (KG-grounded summarization)
+        cat_slug = "world"
+        try:
+            summary_res = await ai_service.summarize_story_from_kg(
+                kg=kg_dict,
+                contradictions=contradictions_list,
+                timeline=timeline_list,
+                source_comparisons=source_comparisons_list,
+            )
+
+            # Update main story details
+            story.headline = summary_res.headline
+            story.one_line_summary = summary_res.one_line_summary
+            story.short_summary = summary_res.short_summary
+            story.detailed_summary = summary_res.detailed_summary
+            story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+
+            # Resolve and assign category
+            cat_slug = summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
+            cat_id = await self.get_or_create_category(
+                cat_slug, cat_slug.replace("-", " ").title(), session
+            )
+            story.category_id = cat_id
+            story.story_status = "active"
+            logger.info("Story summaries successfully synthesized and updated for story %s.", story.id)
+        except Exception as e:
+            logger.error("Failed to summarize story from KG %s: %s", story.id, e)
+            story.headline = story.headline or "Factual Synthesis"
+            story.one_line_summary = story.one_line_summary or "Factual Synthesis of events."
+            story.short_summary = story.short_summary or "Factual Synthesis of events."
+            story.detailed_summary = story.detailed_summary or "Factual Synthesis of events."
+            story.key_facts = story.key_facts or []
+
         await session.commit()
 
-        # 10. Index in Meilisearch and invalidate caches for this story
+        # 8. Index in Meilisearch and invalidate caches for this story
         await self._index_and_invalidate(story, cat_slug, list(tags_added))
 
     async def _index_and_invalidate(

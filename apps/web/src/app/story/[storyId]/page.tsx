@@ -62,30 +62,35 @@ export default async function StoryDetailPage({ params }: PageProps) {
       {newsArticleSchema && (
         <script
           type="application/ld+json"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(newsArticleSchema) }}
         />
       )}
       {breadcrumbSchema && (
         <script
           type="application/ld+json"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
         />
       )}
       {faqSchema && (
         <script
           type="application/ld+json"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqSchema) }}
         />
       )}
       {sourceCoverageSchema && (
         <script
           type="application/ld+json"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(sourceCoverageSchema) }}
         />
       )}
       {timelineSchema && (
         <script
           type="application/ld+json"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(timelineSchema) }}
         />
       )}
