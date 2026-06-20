@@ -71,7 +71,7 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
       try {
         const res = await apiClient.get("/auth/me");
         setUser(res.data);
-      } catch (err) {
+      } catch {
         setUser(null);
       } finally {
         setLoading(false);
@@ -145,6 +145,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       });
       if (typeof window !== "undefined") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).queryClient = client;
       }
       return client;

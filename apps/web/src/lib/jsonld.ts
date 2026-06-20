@@ -141,7 +141,7 @@ export function buildNewsArticleSchema(story: {
     .filter(Boolean)
     .join(", ");
 
-  const hasPartElements: any[] = [];
+  const hasPartElements: object[] = [];
 
   if (story.one_line_summary) {
     hasPartElements.push({
