@@ -42,14 +42,14 @@ export default function StoriesPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <Layers className="w-6 h-6 text-violet-400" />
+            <Layers className="w-6 h-6 text-primary" />
             Story Clusters
           </h1>
           <p className="text-slate-500 text-sm mt-1">
             Browse and inspect all clustered news stories
           </p>
         </div>
-        <span className="text-xs text-slate-600 px-3 py-1.5 glass rounded-xl border border-[#1e2333]">
+        <span className="text-xs text-slate-550 px-3 py-1.5 glass rounded-xl border border-border">
           {total} stories total
         </span>
       </div>
@@ -63,8 +63,8 @@ export default function StoriesPage() {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search stories…"
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1a1f2e] border border-[#1e2333] text-slate-200 text-sm placeholder-slate-600
-            focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition-all"
+          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-background border border-border text-foreground text-sm placeholder-slate-650
+            focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all"
         />
       </div>
 
@@ -72,7 +72,7 @@ export default function StoriesPage() {
       <div className="glass rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="border-b border-[#1e2333]">
+            <thead className="border-b border-border">
               <tr>
                 <th className="text-left px-5 py-3 text-slate-500 font-semibold">Headline</th>
                 <th className="text-center px-4 py-3 text-slate-500 font-semibold">Articles</th>
@@ -84,7 +84,7 @@ export default function StoriesPage() {
             <tbody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-[#1e2333]/50">
+                  <tr key={i} className="border-b border-border/50">
                     <td className="px-5 py-3" colSpan={5}>
                       <div className="h-3 shimmer rounded-full" />
                     </td>
@@ -100,7 +100,7 @@ export default function StoriesPage() {
                 stories.map((story) => (
                   <tr
                     key={story.id}
-                    className="border-b border-[#1e2333]/50 hover:bg-white/2 transition-colors"
+                    className="border-b border-border/50 hover:bg-white/2 transition-colors"
                   >
                     <td className="px-5 py-3">
                       <p className="font-medium text-slate-200 line-clamp-1">
@@ -141,7 +141,7 @@ export default function StoriesPage() {
                       <Link
                         href={`/dashboard/stories/${story.id}`}
                         id={`story-inspect-${story.id}`}
-                        className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors whitespace-nowrap"
+                        className="flex items-center gap-1 text-primary hover:text-primary/80 transition-colors whitespace-nowrap"
                       >
                         Inspect <ArrowUpRight className="w-3 h-3" />
                       </Link>
@@ -155,7 +155,7 @@ export default function StoriesPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-[#1e2333]">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border">
             <span className="text-xs text-slate-600">
               Page {page} of {totalPages}
             </span>
@@ -163,14 +163,14 @@ export default function StoriesPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 rounded-lg text-xs glass border border-[#1e2333] text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-all"
+                className="px-3 py-1.5 rounded-lg text-xs glass border border-border text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-all"
               >
                 Previous
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="px-3 py-1.5 rounded-lg text-xs glass border border-[#1e2333] text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-all"
+                className="px-3 py-1.5 rounded-lg text-xs glass border border-border text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-all"
               >
                 Next
               </button>

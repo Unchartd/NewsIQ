@@ -77,14 +77,14 @@ export default function DashboardLayout({
   }
 
   const Sidebar = (
-    <aside className="flex flex-col h-full w-64 bg-[#0f1117] border-r border-[#1e2333]">
+    <aside className="flex flex-col h-full w-64 bg-card border-r border-border">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-[#1e2333]">
-        <div className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-          <Shield className="w-5 h-5 text-indigo-400" />
+      <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
+        <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/15">
+          <Shield className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <p className="text-sm font-bold text-slate-100 leading-none">
+          <p className="text-sm font-bold text-foreground leading-none">
             NewsIQ
           </p>
           <p className="text-[10px] text-slate-500 mt-0.5 font-mono">Admin Console</p>
@@ -92,7 +92,7 @@ export default function DashboardLayout({
       </div>
 
       {/* SSE Status */}
-      <div className="px-5 py-3 border-b border-[#1e2333]">
+      <div className="px-5 py-3 border-b border-border">
         <div className="flex items-center gap-2 text-xs">
           <SSEStatusDot status={sseStatus} />
           <span className="text-slate-500">
@@ -118,14 +118,14 @@ export default function DashboardLayout({
               onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
                 isActive
-                  ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
+                  ? "bg-primary/10 text-primary border border-primary/20"
                   : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span className="flex-1">{item.label}</span>
               {isActive && (
-                <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />
+                <ChevronRight className="w-3.5 h-3.5 text-primary" />
               )}
             </Link>
           );
@@ -133,9 +133,9 @@ export default function DashboardLayout({
       </nav>
 
       {/* User + Logout */}
-      <div className="border-t border-[#1e2333] px-4 py-4">
+      <div className="border-t border-border px-4 py-4">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-rose-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
             {user?.name?.charAt(0).toUpperCase() ?? "A"}
           </div>
           <div className="flex-1 min-w-0">
@@ -148,7 +148,7 @@ export default function DashboardLayout({
         <button
           id="admin-logout-btn"
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-red-450 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
         >
           <LogOut className="w-3.5 h-3.5" />
           Sign Out
@@ -158,7 +158,7 @@ export default function DashboardLayout({
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop sidebar */}
       <div className="hidden lg:flex shrink-0">{Sidebar}</div>
 
@@ -176,7 +176,7 @@ export default function DashboardLayout({
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile topbar */}
-        <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-[#1e2333] bg-[#0f1117]">
+        <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
           <button
             onClick={() => setSidebarOpen(true)}
             className="text-slate-400 hover:text-slate-200 transition-colors"
@@ -184,7 +184,7 @@ export default function DashboardLayout({
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-indigo-400" />
+            <Shield className="w-5 h-5 text-primary" />
             <span className="text-sm font-bold text-slate-100">NewsIQ Admin</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -204,7 +204,7 @@ export default function DashboardLayout({
       {/* Close mobile sidebar btn */}
       {sidebarOpen && (
         <button
-          className="lg:hidden fixed top-4 right-4 z-50 w-9 h-9 flex items-center justify-center rounded-xl bg-[#1a1f2e] border border-[#1e2333] text-slate-400"
+          className="lg:hidden fixed top-4 right-4 z-50 w-9 h-9 flex items-center justify-center rounded-xl bg-card border border-border text-slate-400"
           onClick={() => setSidebarOpen(false)}
         >
           <X className="w-4 h-4" />

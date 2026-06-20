@@ -44,7 +44,7 @@ export default function ReviewPage() {
           </h1>
           <p className="text-slate-500 text-sm mt-1">Human intervention audit log and override history</p>
         </div>
-        <span className="text-xs text-slate-600 px-3 py-1.5 glass rounded-xl border border-[#1e2333]">
+        <span className="text-xs text-slate-550 px-3 py-1.5 glass rounded-xl border border-border">
           {actions.length} actions
         </span>
       </div>
@@ -57,7 +57,7 @@ export default function ReviewPage() {
         ) : actions.length === 0 ? (
           <div className="glass rounded-2xl py-16 text-center">
             <UserCheck className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-            <p className="text-slate-600 text-sm">No manual interventions recorded yet.</p>
+            <p className="text-slate-655 text-sm">No manual interventions recorded yet.</p>
           </div>
         ) : (
           actions.map((action) => {
@@ -71,8 +71,8 @@ export default function ReviewPage() {
             return (
               <div key={action.id} className="glass rounded-2xl p-5">
                 <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-xl bg-[#1a1f2e] border border-[#1e2333] flex items-center justify-center shrink-0">
-                    <Icon className="w-4 h-4 text-slate-400" />
+                  <div className="w-8 h-8 rounded-xl bg-background border border-border flex items-center justify-center shrink-0">
+                    <Icon className="w-4 h-4 text-slate-500" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -93,7 +93,7 @@ export default function ReviewPage() {
                         {action.before && (
                           <div>
                             <p className="text-[9px] font-semibold text-red-400 uppercase tracking-wider mb-1">Before</p>
-                            <pre className="text-[9px] text-slate-500 bg-[#1a1f2e] rounded-lg p-2 overflow-x-auto font-mono">
+                            <pre className="text-[9px] text-slate-500 bg-background border border-border rounded-lg p-2 overflow-x-auto font-mono">
                               {JSON.stringify(action.before, null, 2)}
                             </pre>
                           </div>
@@ -101,7 +101,7 @@ export default function ReviewPage() {
                         {action.after && (
                           <div>
                             <p className="text-[9px] font-semibold text-emerald-400 uppercase tracking-wider mb-1">After</p>
-                            <pre className="text-[9px] text-slate-500 bg-[#1a1f2e] rounded-lg p-2 overflow-x-auto font-mono">
+                            <pre className="text-[9px] text-slate-500 bg-background border border-border rounded-lg p-2 overflow-x-auto font-mono">
                               {JSON.stringify(action.after, null, 2)}
                             </pre>
                           </div>

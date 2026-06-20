@@ -16,7 +16,7 @@ import {
   Legend,
 } from "recharts";
 
-const PIE_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#3b82f6", "#60a5fa", "#818cf8"];
+const PIE_COLORS = ["#e8334a", "#fb7185", "#be123c", "#fbbf24", "#5b8def", "#8b5cf6", "#6b6b62"];
 
 interface CostData {
   total_cost_usd: number;
@@ -61,8 +61,8 @@ export default function CostsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Total Cost", value: data ? `$${data.total_cost_usd.toFixed(4)}` : "—", icon: DollarSign, color: "text-amber-400 bg-amber-500/15" },
-          { label: "Total Tokens", value: data?.total_tokens?.toLocaleString() ?? "—", icon: Zap, color: "text-indigo-400 bg-indigo-500/15" },
-          { label: "Stages Tracked", value: stageData.length || "—", icon: BarChart3, color: "text-violet-400 bg-violet-500/15" },
+          { label: "Total Tokens", value: data?.total_tokens?.toLocaleString() ?? "—", icon: Zap, color: "text-primary bg-primary/15" },
+          { label: "Stages Tracked", value: stageData.length || "—", icon: BarChart3, color: "text-primary bg-primary/15" },
           { label: "Models Used", value: modelData.length || "—", icon: TrendingUp, color: "text-blue-400 bg-blue-500/15" },
         ].map((c) => {
           const Icon = c.icon;
@@ -84,17 +84,17 @@ export default function CostsPage() {
         <div className="glass rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-slate-200 mb-4">Cost by Pipeline Stage</h2>
           {stageData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-600 text-sm">No data yet.</div>
+            <div className="h-48 flex items-center justify-center text-slate-655 text-sm">No data yet.</div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={stageData} layout="vertical" margin={{ left: 20, right: 20, top: 0, bottom: 0 }}>
                 <XAxis type="number" dataKey="cost" tick={{ fill: "#64748b", fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(4)}`} />
                 <YAxis type="category" dataKey="stage" tick={{ fill: "#94a3b8", fontSize: 10 }} width={100} />
                 <Tooltip
-                  contentStyle={{ background: "#0f1117", border: "1px solid #1e2333", borderRadius: 12, fontSize: 11 }}
+                  contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
                   formatter={(v: unknown) => [`$${Number(v).toFixed(6)}`, "Cost"]}
                 />
-                <Bar dataKey="cost" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="cost" fill="#e8334a" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -104,7 +104,7 @@ export default function CostsPage() {
         <div className="glass rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-slate-200 mb-4">Cost Distribution by Model</h2>
           {modelData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-600 text-sm">No data yet.</div>
+            <div className="h-48 flex items-center justify-center text-slate-655 text-sm">No data yet.</div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
@@ -122,7 +122,7 @@ export default function CostsPage() {
                   ))}
                 </Pie>
                 <Tooltip
-                  contentStyle={{ background: "#0f1117", border: "1px solid #1e2333", borderRadius: 12, fontSize: 11 }}
+                  contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
                   formatter={(v) => [`$${Number(v).toFixed(6)}`, "Cost"]}
                 />
                 <Legend
@@ -138,11 +138,11 @@ export default function CostsPage() {
 
       {/* Cost breakdown table */}
       <div className="glass rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#1e2333]">
+        <div className="px-5 py-4 border-b border-border">
           <h2 className="text-sm font-semibold text-slate-200">Spend Breakdown by Stage</h2>
         </div>
         <table className="w-full text-xs">
-          <thead className="border-b border-[#1e2333]">
+          <thead className="border-b border-border">
             <tr>
               <th className="text-left px-5 py-3 text-slate-500 font-semibold">Stage</th>
               <th className="text-right px-4 py-3 text-slate-500 font-semibold">Cost (USD)</th>
@@ -154,7 +154,7 @@ export default function CostsPage() {
               <tr><td colSpan={3} className="px-5 py-8 text-center text-slate-600">No data.</td></tr>
             ) : (
               stageData.map((row) => (
-                <tr key={row.stage} className="border-b border-[#1e2333]/50 hover:bg-white/2 transition-colors">
+                <tr key={row.stage} className="border-b border-border/50 hover:bg-white/2 transition-colors">
                   <td className="px-5 py-3 font-medium text-slate-300 capitalize">{row.stage}</td>
                   <td className="px-4 py-3 text-right font-mono text-amber-400">${row.cost.toFixed(6)}</td>
                   <td className="px-4 py-3 text-right font-mono text-slate-500">

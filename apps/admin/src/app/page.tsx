@@ -89,35 +89,35 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-background">
       {/* Animated background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a0f] via-[#0d0f1a] to-[#0a0a0f]" />
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-violet-600/8 rounded-full blur-3xl animate-pulse [animation-delay:1s]" />
-      <div className="absolute top-1/2 right-1/3 w-64 h-64 bg-blue-600/6 rounded-full blur-3xl animate-pulse [animation-delay:2s]" />
+      <div className="absolute inset-0 bg-gradient-to-br from-background via-card to-background" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-primary/5 rounded-full blur-3xl animate-pulse [animation-delay:1s]" />
+      <div className="absolute top-1/2 right-1/3 w-64 h-64 bg-primary/3 rounded-full blur-3xl animate-pulse [animation-delay:2s]" />
 
       {/* Login card */}
       <div className="relative z-10 w-full max-w-md mx-4 animate-fade-in">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 mb-4 shadow-lg shadow-indigo-500/20">
-            <Shield className="w-8 h-8 text-indigo-400" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 mb-4 shadow-lg shadow-primary/15">
+            <Shield className="w-8 h-8 text-primary" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight">
             <span className="gradient-text">NewsIQ</span>
           </h1>
           <p className="text-slate-400 text-sm mt-1.5 font-medium">Admin Console</p>
-          <p className="text-slate-600 text-xs mt-1">
+          <p className="text-slate-500 text-xs mt-1">
             AI Observability · Pipeline Tracing · Replay Engine
           </p>
         </div>
 
         {/* Card */}
-        <div className="glass rounded-2xl p-8 shadow-2xl shadow-black/50">
+        <div className="glass rounded-2xl p-8 shadow-2xl shadow-black/80">
           <div className="flex items-center gap-2 mb-6">
-            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
             <span className="text-xs text-slate-500 font-medium px-2">SECURE LOGIN</span>
-            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
@@ -138,8 +138,8 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@newsiq.com"
                   required
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1a1f2e] border border-[#1e2333] text-slate-200 text-sm placeholder-slate-600
-                    focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-background border border-border text-foreground text-sm placeholder-slate-600
+                    focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all"
                 />
               </div>
             </div>
@@ -161,8 +161,8 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••"
                   required
-                  className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-[#1a1f2e] border border-[#1e2333] text-slate-200 text-sm placeholder-slate-600
-                    focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition-all"
+                  className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-background border border-border text-foreground text-sm placeholder-slate-600
+                    focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all"
                 />
                 <button
                   type="button"
@@ -184,9 +184,9 @@ export default function LoginPage() {
               type="submit"
               disabled={isLoading || !email || !password}
               className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm text-white transition-all
-                bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500
+                bg-gradient-to-r from-primary to-rose-600 hover:from-primary/95 hover:to-rose-500
                 disabled:opacity-50 disabled:cursor-not-allowed
-                shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40
+                shadow-lg shadow-primary/20 hover:shadow-primary/30
                 flex items-center justify-center gap-2 mt-2"
             >
               {isLoading ? (
@@ -204,16 +204,16 @@ export default function LoginPage() {
           </form>
 
           {/* Footer */}
-          <div className="mt-6 pt-5 border-t border-[#1e2333] flex items-center justify-center gap-2">
+          <div className="mt-6 pt-5 border-t border-border flex items-center justify-center gap-2">
             <Activity className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="text-xs text-slate-600">
+            <span className="text-xs text-slate-500">
               Access restricted to administrators only
             </span>
           </div>
         </div>
 
         {/* Version badge */}
-        <p className="text-center text-[11px] text-slate-700 mt-4 font-mono">
+        <p className="text-center text-[11px] text-slate-600 mt-4 font-mono">
           NewsIQ Admin v1.0 · SRE Platform
         </p>
       </div>

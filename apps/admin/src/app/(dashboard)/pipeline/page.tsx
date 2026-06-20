@@ -31,7 +31,7 @@ const PIPELINE_STAGES = [
 
 const GROUP_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   ingestion: { bg: "bg-blue-500/10", border: "border-blue-500/30", text: "text-blue-400" },
-  processing: { bg: "bg-violet-500/10", border: "border-violet-500/30", text: "text-violet-400" },
+  processing: { bg: "bg-primary/10", border: "border-primary/30", text: "text-primary" },
   generation: { bg: "bg-amber-500/10", border: "border-amber-500/30", text: "text-amber-400" },
   output: { bg: "bg-emerald-500/10", border: "border-emerald-500/30", text: "text-emerald-400" },
 };
@@ -39,9 +39,9 @@ const GROUP_COLORS: Record<string, { bg: string; border: string; text: string }>
 const STATUS_CONFIG: Record<string, { icon: React.ElementType; cls: string; label: string }> = {
   success: { icon: CheckCircle2, cls: "text-emerald-400", label: "Success" },
   failed: { icon: XCircle, cls: "text-red-400", label: "Failed" },
-  running: { icon: Loader2, cls: "text-indigo-400 animate-spin", label: "Running" },
+  running: { icon: Loader2, cls: "text-primary animate-spin", label: "Running" },
   pending: { icon: Clock, cls: "text-slate-500", label: "Pending" },
-  skipped: { icon: SkipForward, cls: "text-slate-600", label: "Skipped" },
+  skipped: { icon: SkipForward, cls: "text-slate-650", label: "Skipped" },
 };
 
 function StageNode({
@@ -115,7 +115,7 @@ export default function PipelinePage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <GitBranch className="w-6 h-6 text-indigo-400" />
+            <GitBranch className="w-6 h-6 text-primary" />
             Pipeline DAG
           </h1>
           <p className="text-slate-500 text-sm mt-1">
@@ -127,7 +127,7 @@ export default function PipelinePage() {
             id="pipeline-refresh-btn"
             onClick={() => refetch()}
             disabled={isLoading}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl glass border border-[#1e2333] text-xs text-slate-400 hover:text-slate-200 transition-all"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl glass border border-border text-xs text-slate-400 hover:text-slate-200 transition-all"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
@@ -136,7 +136,7 @@ export default function PipelinePage() {
             id="pipeline-trigger-btn"
             onClick={() => triggerMutation.mutate()}
             disabled={triggerMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-semibold transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
           >
             {triggerMutation.isPending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -156,12 +156,12 @@ export default function PipelinePage() {
               ? "bg-emerald-500 animate-pulse"
               : sseStatus === "connecting"
               ? "bg-amber-400 animate-pulse"
-              : "bg-slate-600"
+              : "bg-slate-655"
           }`}
         />
         <span className="text-xs text-slate-400">
           Live SSE Stream:{" "}
-          <span className="font-mono capitalize text-slate-300">{sseStatus}</span>
+          <span className="font-mono capitalize text-slate-350">{sseStatus}</span>
         </span>
         {lastEvent && (
           <>
@@ -173,8 +173,8 @@ export default function PipelinePage() {
                   lastEvent.status === "success"
                     ? "text-emerald-400"
                     : lastEvent.status === "failed"
-                    ? "text-red-400"
-                    : "text-indigo-400"
+                    ? "text-red-405"
+                    : "text-primary"
                 }
               >
                 {lastEvent.status}
@@ -197,7 +197,7 @@ export default function PipelinePage() {
         </div>
 
         {/* Group legend */}
-        <div className="mt-6 pt-4 border-t border-[#1e2333] flex flex-wrap gap-4">
+        <div className="mt-6 pt-4 border-t border-border flex flex-wrap gap-4">
           {Object.entries(GROUP_COLORS).map(([group, colors]) => (
             <div key={group} className="flex items-center gap-2">
               <div className={`w-3 h-3 rounded-sm border ${colors.border} ${colors.bg}`} />
@@ -213,13 +213,13 @@ export default function PipelinePage() {
           <h2 className="text-sm font-semibold text-slate-200">
             Recent Stage Transitions
           </h2>
-          <span className="text-xs text-slate-600">{events.length} events received</span>
+          <span className="text-xs text-slate-500">{events.length} events received</span>
         </div>
 
         {events.length === 0 ? (
           <div className="text-center py-8">
             <AlertTriangle className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-slate-655">
               No events yet. Trigger an ingestion run to see live updates.
             </p>
           </div>
@@ -227,7 +227,7 @@ export default function PipelinePage() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-[#1e2333]">
+                <tr className="border-b border-border">
                   <th className="text-left py-2 pr-4 text-slate-500 font-semibold">Stage</th>
                   <th className="text-left py-2 pr-4 text-slate-500 font-semibold">Status</th>
                   <th className="text-left py-2 pr-4 text-slate-500 font-semibold">Run ID</th>
@@ -239,7 +239,7 @@ export default function PipelinePage() {
                   const cfg = STATUS_CONFIG[ev.status] ?? STATUS_CONFIG.pending;
                   const Icon = cfg.icon;
                   return (
-                    <tr key={i} className="border-b border-[#1e2333]/50 hover:bg-white/2 transition-colors">
+                    <tr key={i} className="border-b border-border/50 hover:bg-white/2 transition-colors">
                       <td className="py-2 pr-4 font-mono text-slate-300">{ev.stage}</td>
                       <td className="py-2 pr-4">
                         <span className={`flex items-center gap-1.5 ${cfg.cls}`}>

@@ -27,9 +27,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         closeButton
         toastOptions={{
           style: {
-            background: "rgba(15,17,23,0.95)",
-            border: "1px solid rgba(30,35,51,0.8)",
+            background: "rgba(17, 17, 16, 0.95)",
+            border: "1px solid rgba(46, 46, 42, 0.8)",
             backdropFilter: "blur(12px)",
+            color: "#f0efe9",
           },
         }}
       />

@@ -82,14 +82,14 @@ function RecentEventRow({ event }: { event: { stage: string; status: string; run
   const cfg = statusConfig[event.status] ?? statusConfig.pending;
 
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-[#1e2333] last:border-0">
+    <div className="flex items-center gap-3 py-2.5 border-b border-border last:border-0">
       <span className={`badge ${cfg.cls}`}>{cfg.label}</span>
       <span className="text-xs text-slate-300 font-mono flex-1 truncate">{event.stage}</span>
-      <span className="text-[10px] text-slate-600 font-mono truncate max-w-[120px]">
+      <span className="text-[10px] text-slate-650 font-mono truncate max-w-[120px]">
         {event.run_id?.slice(0, 8)}…
       </span>
       {event.duration_ms && (
-        <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">
+        <span className="text-[10px] text-slate-550 font-mono whitespace-nowrap">
           {event.duration_ms}ms
         </span>
       )}
@@ -140,17 +140,17 @@ export default function DashboardHome() {
       {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">System Overview</h1>
+          <h1 className="text-2xl font-bold text-foreground">System Overview</h1>
           <p className="text-slate-500 text-sm mt-1">
             Real-time AI pipeline observability and health metrics
           </p>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-[#1e2333] text-xs">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-border text-xs">
           <span
             className={`w-2 h-2 rounded-full ${
               sseStatus === "connected"
                 ? "bg-emerald-500 animate-pulse"
-                : "bg-slate-600"
+                : "bg-slate-650"
             }`}
           />
           <span className="text-slate-400 font-mono capitalize">{sseStatus}</span>
@@ -164,7 +164,7 @@ export default function DashboardHome() {
           value={pipelineStatus?.active_runs ?? "—"}
           sub="Currently running"
           icon={Activity}
-          color="bg-indigo-500/15 text-indigo-400"
+          color="bg-primary/15 text-primary"
           href="/dashboard/pipeline"
         />
         <StatCard
@@ -180,7 +180,7 @@ export default function DashboardHome() {
           value={storiesCount?.total ?? "—"}
           sub="In story cluster database"
           icon={Layers}
-          color="bg-violet-500/15 text-violet-400"
+          color="bg-primary/15 text-primary"
           href="/dashboard/stories"
         />
         <StatCard
@@ -230,16 +230,16 @@ export default function DashboardHome() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                <GitBranch className="w-4 h-4 text-indigo-400" />
+                <GitBranch className="w-4 h-4 text-primary" />
                 Live Pipeline Events
               </h2>
-              <p className="text-xs text-slate-600 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Last {Math.min(events.length, 10)} events via SSE stream
               </p>
             </div>
             <Link
               href="/dashboard/pipeline"
-              className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+              className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
             >
               View DAG <ArrowUpRight className="w-3 h-3" />
             </Link>
@@ -248,7 +248,7 @@ export default function DashboardHome() {
           {events.length === 0 ? (
             <div className="text-center py-8">
               <Activity className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-              <p className="text-xs text-slate-600">
+              <p className="text-xs text-slate-655">
                 {sseStatus === "connecting"
                   ? "Connecting to live stream…"
                   : "No pipeline events yet. Trigger an ingestion run."}
@@ -271,11 +271,11 @@ export default function DashboardHome() {
                 <TrendingUp className="w-4 h-4 text-amber-400" />
                 Cost by AI Model
               </h2>
-              <p className="text-xs text-slate-600 mt-0.5">Cumulative spend breakdown</p>
+              <p className="text-xs text-slate-500 mt-0.5">Cumulative spend breakdown</p>
             </div>
             <Link
               href="/dashboard/costs"
-              className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+              className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
             >
               Full Report <ArrowUpRight className="w-3 h-3" />
             </Link>
@@ -284,7 +284,7 @@ export default function DashboardHome() {
           {!costs?.by_model || Object.keys(costs.by_model).length === 0 ? (
             <div className="text-center py-8">
               <DollarSign className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-              <p className="text-xs text-slate-600">No cost data yet.</p>
+              <p className="text-xs text-slate-655">No cost data yet.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -302,9 +302,9 @@ export default function DashboardHome() {
                           ${cost.toFixed(4)}
                         </span>
                       </div>
-                      <div className="h-1.5 bg-[#1e2333] rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-border rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-700"
+                          className="h-full bg-gradient-to-r from-primary to-rose-500 rounded-full transition-all duration-700"
                           style={{ width: `${pct}%` }}
                         />
                       </div>

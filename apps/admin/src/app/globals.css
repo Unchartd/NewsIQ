@@ -1,28 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0a0a0f;
-  --color-foreground: #e2e8f0;
-  --color-card: #0f1117;
-  --color-card-foreground: #e2e8f0;
-  --color-border: #1e2333;
-  --color-input: #1a1f2e;
-  --color-primary: #6366f1;
+  --color-background: #111110;
+  --color-foreground: #f0efe9;
+  --color-card: #1c1c1a;
+  --color-card-foreground: #f0efe9;
+  --color-border: #2e2e2a;
+  --color-input: #2e2e2a;
+  --color-primary: #e8334a;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #1e2333;
-  --color-secondary-foreground: #94a3b8;
-  --color-muted: #1a1f2e;
-  --color-muted-foreground: #64748b;
-  --color-accent: #312e81;
-  --color-accent-foreground: #a5b4fc;
-  --color-destructive: #ef4444;
+  --color-secondary: #1c1c1a;
+  --color-secondary-foreground: #f0efe9;
+  --color-muted: #1c1c1a;
+  --color-muted-foreground: #6b6b62;
+  --color-accent: #2e2e2a;
+  --color-accent-foreground: #f0efe9;
+  --color-destructive: #f87171;
   --color-destructive-foreground: #ffffff;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-info: #3b82f6;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-info: #5b8def;
 
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
 
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
@@ -68,32 +68,32 @@ body {
 
 /* Glass morphism utility */
 .glass {
-  background: rgba(15, 17, 23, 0.7);
+  background: rgba(28, 28, 26, 0.75);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(30, 35, 51, 0.8);
+  border: 1px solid rgba(46, 46, 42, 0.8);
 }
 
 .glass-hover:hover {
-  background: rgba(26, 31, 46, 0.8);
+  background: rgba(46, 46, 42, 0.8);
 }
 
 /* Glow effects */
 .glow-primary {
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 20px rgba(232, 51, 74, 0.15);
 }
 
 .glow-success {
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.15);
 }
 
 .glow-danger {
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+  box-shadow: 0 0 20px rgba(248, 113, 113, 0.15);
 }
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(135deg, #6366f1, #a78bfa, #818cf8);
+  background: linear-gradient(135deg, #e8334a, #fb7185, #f43f5e);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -154,8 +154,8 @@ body {
   letter-spacing: 0.03em;
 }
 
-.badge-primary { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
-.badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-.badge-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
-.badge-danger  { background: rgba(239, 68, 68, 0.15);  color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
-.badge-neutral { background: rgba(100, 116, 139, 0.15); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.3); }
+.badge-primary { background: rgba(232, 51, 74, 0.15); color: #fb7185; border: 1px solid rgba(232, 51, 74, 0.3); }
+.badge-success { background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+.badge-warning { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+.badge-danger  { background: rgba(248, 113, 113, 0.15);  color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
+.badge-neutral { background: rgba(107, 107, 98, 0.15); color: #a8a89e; border: 1px solid rgba(107, 107, 98, 0.3); }

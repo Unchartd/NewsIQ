@@ -71,7 +71,7 @@ export default function StoryInspectorPage() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 border-b border-[#1e2333]">
+      <div className="flex gap-1 border-b border-border">
         {TABS.map((t) => (
           <button
             key={t}
@@ -79,7 +79,7 @@ export default function StoryInspectorPage() {
             onClick={() => setTab(t)}
             className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
               tab === t
-                ? "border-indigo-500 text-indigo-400"
+                ? "border-primary text-primary"
                 : "border-transparent text-slate-500 hover:text-slate-300"
             }`}
           >
@@ -92,9 +92,9 @@ export default function StoryInspectorPage() {
       {tab === "Overview" && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Article Count", value: story.article_count ?? "—", icon: Layers, color: "text-violet-400" },
+            { label: "Article Count", value: story.article_count ?? "—", icon: Layers, color: "text-rose-450" },
             { label: "Cluster Confidence", value: story.cluster_confidence != null ? `${(story.cluster_confidence * 100).toFixed(1)}%` : "—", icon: CheckCircle2, color: "text-emerald-400" },
-            { label: "Entity Count", value: story.entities?.length ?? "—", icon: Users, color: "text-blue-400" },
+            { label: "Entity Count", value: story.entities?.length ?? "—", icon: Users, color: "text-blue-405" },
             { label: "LLM Calls", value: story.llm_calls?.length ?? "—", icon: Zap, color: "text-amber-400" },
           ].map((card) => {
             const Icon = card.icon;
@@ -102,14 +102,14 @@ export default function StoryInspectorPage() {
               <div key={card.label} className="glass rounded-xl p-4">
                 <Icon className={`w-5 h-5 ${card.color} mb-2`} />
                 <p className="text-xl font-bold text-slate-100">{card.value}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{card.label}</p>
+                <p className="text-xs text-slate-550 mt-0.5">{card.label}</p>
               </div>
             );
           })}
           {story.summary && (
             <div className="col-span-2 lg:col-span-4 glass rounded-xl p-5">
               <h3 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">AI Summary</h3>
-              <p className="text-sm text-slate-300 leading-relaxed">{story.summary}</p>
+              <p className="text-sm text-slate-350 leading-relaxed">{story.summary}</p>
             </div>
           )}
           {story.contradictions?.length > 0 && (
@@ -149,7 +149,7 @@ export default function StoryInspectorPage() {
                   </span>
                 )}
                 {a.url && (
-                  <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 shrink-0">
+                  <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 shrink-0">
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 )}
@@ -162,7 +162,7 @@ export default function StoryInspectorPage() {
       {tab === "Entities" && (
         <div className="glass rounded-2xl overflow-hidden">
           <table className="w-full text-xs">
-            <thead className="border-b border-[#1e2333]">
+            <thead className="border-b border-border">
               <tr>
                 <th className="text-left px-5 py-3 text-slate-500 font-semibold">Entity</th>
                 <th className="text-left px-4 py-3 text-slate-500 font-semibold">Type</th>
@@ -175,15 +175,15 @@ export default function StoryInspectorPage() {
                 <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-600">No entities found.</td></tr>
               ) : (
                 story.entities.map((e: { name: string; type: string; wikidata_id?: string; confidence: number }, i: number) => (
-                  <tr key={i} className="border-b border-[#1e2333]/50 hover:bg-white/2 transition-colors">
+                  <tr key={i} className="border-b border-border/50 hover:bg-white/2 transition-colors">
                     <td className="px-5 py-3 font-medium text-slate-200">{e.name}</td>
                     <td className="px-4 py-3"><span className="badge badge-neutral">{e.type}</span></td>
                     <td className="px-4 py-3">
                       {e.wikidata_id ? (
-                        <a href={`https://www.wikidata.org/wiki/${e.wikidata_id}`} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-mono">
+                        <a href={`https://www.wikidata.org/wiki/${e.wikidata_id}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 flex items-center gap-1 font-mono">
                           {e.wikidata_id} <ExternalLink className="w-3 h-3" />
                         </a>
-                      ) : <span className="text-slate-600">—</span>}
+                      ) : <span className="text-slate-650">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400">{(e.confidence * 100).toFixed(1)}%</td>
                   </tr>
@@ -217,7 +217,7 @@ export default function StoryInspectorPage() {
                 {call.system_prompt && (
                   <div>
                     <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">System Prompt</p>
-                    <pre className="text-[10px] text-slate-400 bg-[#1a1f2e] rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">{call.system_prompt}</pre>
+                    <pre className="text-[10px] text-slate-400 bg-background border border-border rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">{call.system_prompt}</pre>
                   </div>
                 )}
                 {call.completion && (
@@ -241,7 +241,7 @@ export default function StoryInspectorPage() {
               <button
                 key={stage}
                 id={`replay-${stage}`}
-                className="flex items-center gap-2 px-4 py-3 rounded-xl glass border border-[#1e2333] text-xs text-slate-400 hover:text-slate-200 hover:border-indigo-500/30 transition-all"
+                className="flex items-center gap-2 px-4 py-3 rounded-xl glass border border-border text-xs text-slate-400 hover:text-slate-200 hover:border-primary/30 transition-all"
                 onClick={async () => {
                   try {
                     await apiClient.post(`/admin/stories/${storyId}/replay`, { stage: stage === "full" ? null : stage });

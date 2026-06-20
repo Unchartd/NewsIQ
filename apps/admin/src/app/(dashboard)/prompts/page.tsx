@@ -42,7 +42,7 @@ export default function PromptsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <FileText className="w-6 h-6 text-indigo-400" />
+          <FileText className="w-6 h-6 text-primary" />
           Prompt Viewer
         </h1>
         <p className="text-slate-500 text-sm mt-1">Browse versioned prompt templates by pipeline stage</p>
@@ -57,8 +57,8 @@ export default function PromptsPage() {
             onClick={() => setStageFilter(s)}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all capitalize ${
               stageFilter === s
-                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25"
-                : "glass border border-[#1e2333] text-slate-400 hover:text-slate-200"
+                ? "bg-primary text-white shadow-lg shadow-primary/20"
+                : "glass border border-border text-slate-400 hover:text-slate-200"
             }`}
           >
             {s.replace("_", " ")}
@@ -74,7 +74,7 @@ export default function PromptsPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-slate-600">No prompts found.</div>
+        <div className="text-center py-12 text-slate-655">No prompts found.</div>
       ) : (
         <div className="space-y-3">
           {filtered.map((prompt) => (
@@ -100,19 +100,19 @@ export default function PromptsPage() {
                   </div>
                 </div>
                 {expandedId === prompt.id ? (
-                  <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" />
+                  <ChevronUp className="w-4 h-4 text-slate-550 shrink-0" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+                  <ChevronDown className="w-4 h-4 text-slate-550 shrink-0" />
                 )}
               </button>
 
               {/* Expanded content */}
               {expandedId === prompt.id && (
-                <div className="border-t border-[#1e2333] px-5 py-4 space-y-4">
+                <div className="border-t border-border px-5 py-4 space-y-4">
                   {prompt.system_template && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">System Prompt</span>
+                        <span className="text-[10px] font-semibold text-slate-550 uppercase tracking-wider">System Prompt</span>
                         <button
                           onClick={() => copyToClipboard(prompt.system_template, "System prompt")}
                           className="text-slate-600 hover:text-slate-400 transition-colors"
@@ -120,7 +120,7 @@ export default function PromptsPage() {
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <pre className="text-[11px] text-slate-400 bg-[#1a1f2e] rounded-xl p-4 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed border border-[#1e2333]">
+                      <pre className="text-[11px] text-slate-400 bg-background rounded-xl p-4 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed border border-border">
                         {prompt.system_template}
                       </pre>
                     </div>
@@ -128,15 +128,15 @@ export default function PromptsPage() {
                   {prompt.user_template && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">User Template</span>
+                        <span className="text-[10px] font-semibold text-slate-555 uppercase tracking-wider">User Template</span>
                         <button
                           onClick={() => copyToClipboard(prompt.user_template, "User template")}
-                          className="text-slate-600 hover:text-slate-400 transition-colors"
+                          className="text-slate-655 hover:text-slate-400 transition-colors"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <pre className="text-[11px] text-indigo-300/80 bg-indigo-500/5 rounded-xl p-4 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed border border-indigo-500/10">
+                      <pre className="text-[11px] text-rose-350 bg-primary/5 rounded-xl p-4 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed border border-primary/10">
                         {prompt.user_template}
                       </pre>
                     </div>

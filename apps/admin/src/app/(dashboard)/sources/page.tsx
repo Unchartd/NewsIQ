@@ -55,7 +55,7 @@ export default function SourcesPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <Radio className="w-6 h-6 text-blue-400" />
+            <Radio className="w-6 h-6 text-primary" />
             News Sources
           </h1>
           <p className="text-slate-500 text-sm mt-1">Manage RSS feeds and trigger ingestion</p>
@@ -64,7 +64,7 @@ export default function SourcesPage() {
           id="trigger-ingestion-btn"
           onClick={() => triggerMutation.mutate()}
           disabled={triggerMutation.isPending}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-semibold transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
         >
           {triggerMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
           Trigger Ingestion
@@ -75,7 +75,7 @@ export default function SourcesPage() {
         {/* Add source form */}
         <div className="glass rounded-2xl p-6 space-y-4">
           <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-indigo-400" />
+            <Plus className="w-4 h-4 text-primary" />
             Add News Source
           </h2>
           <div className="grid grid-cols-2 gap-3">
@@ -86,7 +86,7 @@ export default function SourcesPage() {
               <div key={f.label} className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{f.label}</label>
                 <input value={f.val} onChange={(e) => f.set(e.target.value)} placeholder={f.ph}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1a1f2e] border border-[#1e2333] text-slate-200 text-xs placeholder-slate-600 focus:outline-none focus:border-indigo-500/60 transition-all" />
+                  className="w-full px-3 py-2 rounded-xl bg-background border border-border text-slate-200 text-xs placeholder-slate-650 focus:outline-none focus:border-primary/60 transition-all" />
               </div>
             ))}
           </div>
@@ -97,19 +97,19 @@ export default function SourcesPage() {
             <div key={f.label} className="space-y-1.5">
               <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{f.label}</label>
               <input value={f.val} onChange={(e) => f.set(e.target.value)} placeholder={f.ph}
-                className="w-full px-3 py-2 rounded-xl bg-[#1a1f2e] border border-[#1e2333] text-slate-200 text-xs placeholder-slate-600 focus:outline-none focus:border-indigo-500/60 transition-all" />
+                className="w-full px-3 py-2 rounded-xl bg-background border border-border text-slate-200 text-xs placeholder-slate-655 focus:outline-none focus:border-primary/60 transition-all" />
             </div>
           ))}
           <div className="space-y-1.5">
             <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Country Code</label>
             <input value={country} onChange={(e) => setCountry(e.target.value.toUpperCase().slice(0, 2))} placeholder="US"
-              className="w-24 px-3 py-2 rounded-xl bg-[#1a1f2e] border border-[#1e2333] text-slate-200 text-xs placeholder-slate-600 focus:outline-none focus:border-indigo-500/60 transition-all" />
+              className="w-24 px-3 py-2 rounded-xl bg-background border border-border text-slate-200 text-xs placeholder-slate-655 focus:outline-none focus:border-primary/60 transition-all" />
           </div>
           <button
             id="add-source-btn"
             onClick={() => createMutation.mutate()}
             disabled={createMutation.isPending || !name || !rssUrl}
-            className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {createMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
             Add Source
@@ -118,9 +118,9 @@ export default function SourcesPage() {
 
         {/* Sources list */}
         <div className="glass rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#1e2333] flex items-center justify-between">
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-200">Active Feeds</h2>
-            <span className="text-xs text-slate-600 font-mono">{sources?.length ?? 0} sources</span>
+            <span className="text-xs text-slate-500 font-mono">{sources?.length ?? 0} sources</span>
           </div>
           <div className="overflow-y-auto max-h-[480px]">
             {isLoading ? (
@@ -133,7 +133,7 @@ export default function SourcesPage() {
               <div className="py-12 text-center text-slate-600 text-sm">No sources added yet.</div>
             ) : (
               sources!.map((src) => (
-                <div key={src.id} className="flex items-center gap-3 px-5 py-3 border-b border-[#1e2333]/50 hover:bg-white/2 transition-colors">
+                <div key={src.id} className="flex items-center gap-3 px-5 py-3 border-b border-border/50 hover:bg-white/2 transition-colors">
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-slate-200">{src.name}</p>
                     <p className="text-[10px] text-slate-600 truncate mt-0.5">{src.rss_url}</p>
