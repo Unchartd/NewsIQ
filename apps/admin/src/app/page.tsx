@@ -42,13 +42,9 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
-      // OAuth2 password flow — FastAPI expects form data
-      const params = new URLSearchParams();
-      params.append("username", email);
-      params.append("password", password);
-
-      const res = await apiClient.post("/auth/login", params, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      const res = await apiClient.post("/auth/login", {
+        email,
+        password,
       });
 
       const { access_token } = res.data;
