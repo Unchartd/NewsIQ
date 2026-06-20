@@ -50,7 +50,7 @@ export default function LoginPage() {
       const { access_token } = res.data;
 
       // Fetch current user profile to verify admin role
-      const meRes = await apiClient.get("/users/me", {
+      const meRes = await apiClient.get("/auth/me", {
         headers: { Authorization: `Bearer ${access_token}` },
       });
 
