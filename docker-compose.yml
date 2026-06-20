@@ -338,6 +338,25 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
 
+  # ──────────────────────────────────────────────
+  # Standalone Admin Dashboard
+  # ──────────────────────────────────────────────
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    container_name: newsiq-admin
+    restart: unless-stopped
+    ports:
+      - "3002:3001"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_APP_NAME=NewsIQ Admin
+    depends_on:
+      - api
+    profiles:
+      - admin
+
 volumes:
   postgres_data:
   redis_data:
