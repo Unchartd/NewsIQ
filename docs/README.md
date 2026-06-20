@@ -57,6 +57,13 @@ Troubleshooting guidelines for common outage scenarios:
 ### 8. [System Changelogs](file:///c:/Users/zakau/NewsIQ/docs/changelogs/CHANGELOG.md)
 - **[Release Log](file:///c:/Users/zakau/NewsIQ/docs/changelogs/CHANGELOG.md)**: Tracking features and schema migrations.
 
+### 9. [Search Visibility & Optimization (SEO/AEO/GEO)](file:///c:/Users/zakau/NewsIQ/docs/seo/seo-audit.md)
+Detailed strategies and technical references for search and AI engine crawl optimizations:
+- **[SEO Audit](file:///c:/Users/zakau/NewsIQ/docs/seo/seo-audit.md)**: Baseline technical SEO, AEO, GEO, LLMO, and E-E-A-T audit.
+- **[AEO & GEO Playbook](file:///c:/Users/zakau/NewsIQ/docs/seo/aeo-geo-playbook.md)**: Strategic guidelines for generative answer citations (ChatGPT, Gemini, Perplexity).
+- **[E-E-A-T Strategy Guide](file:///c:/Users/zakau/NewsIQ/docs/seo/eeat-strategy.md)**: Publisher attribution principles, trust policies, and schema structures.
+- **[Technical SEO Guide](file:///c:/Users/zakau/NewsIQ/docs/seo/technical-seo-guide.md)**: Next.js App Router indexing, sitemaps, robots.txt, and image/font optimization.
+
 ---
 
 ## 📋 Owner Registry & Maintenance

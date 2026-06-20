@@ -5,6 +5,7 @@ const PUBLIC_PATHS = [
   "/",
   "/home",
   "/category",
+  "/story",
   "/login",
   "/signup",
   "/forgot-password",
@@ -12,6 +13,7 @@ const PUBLIC_PATHS = [
   "/verify-email",
   "/tos",
   "/privacy",
+  "/legal",
   "/auth/callback",
 ];
 

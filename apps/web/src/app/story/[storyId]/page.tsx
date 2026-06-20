@@ -2,12 +2,20 @@ import type { Metadata } from "next";
 
 import { fetchStoryServer } from "@/lib/server-api";
 import { StoryDetailClient } from "./story-detail-client";
+import { buildStoryMetadata } from "@/lib/metadata";
+import {
+  buildNewsArticleSchema,
+  buildBreadcrumbSchema,
+  buildStoryFAQSchema,
+  buildSourceCoverageSchema,
+  buildTimelineSchema,
+  serializeJsonLd,
+} from "@/lib/jsonld";
+import { SITE_URL } from "@/lib/metadata";
 
 interface PageProps {
   params: Promise<{ storyId: string }>;
 }
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.app";
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { storyId } = await params;
@@ -15,70 +23,75 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!story) {
     return {
-      title: "Story not found",
+      title: "Story Not Found",
+      description: "This story could not be found on NewsIQ.",
       robots: { index: false, follow: false },
     };
   }
 
-  const description =
-    story.one_line_summary || story.short_summary || "AI-summarized news story on NewsIQ.";
-  const url = `${SITE_URL}/story/${storyId}`;
-  const ogImage = story.articles?.find((a) => a.image_url)?.image_url || undefined;
-
-  return {
-    title: story.headline || "News story",
-    description,
-    alternates: { canonical: url },
-    openGraph: {
-      type: "article",
-      url,
-      title: story.headline || "News story",
-      description,
-      siteName: "NewsIQ",
-      images: ogImage ? [{ url: ogImage }] : undefined,
-      publishedTime: story.first_seen_at || undefined,
-      modifiedTime: story.updated_at || undefined,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: story.headline || "News story",
-      description,
-      images: ogImage ? [ogImage] : undefined,
-    },
-  };
+  return buildStoryMetadata(story);
 }
 
 export default async function StoryDetailPage({ params }: PageProps) {
   const { storyId } = await params;
   const story = await fetchStoryServer(storyId);
 
-  // NewsArticle structured data for SEO / rich results
-  const jsonLd = story
-    ? {
-        "@context": "https://schema.org",
-        "@type": "NewsArticle",
-        headline: story.headline,
-        description: story.one_line_summary || story.short_summary,
-        datePublished: story.first_seen_at || undefined,
-        dateModified: story.updated_at || undefined,
-        articleSection: story.category?.name,
-        url: `${SITE_URL}/story/${storyId}`,
-        publisher: {
-          "@type": "Organization",
-          name: "NewsIQ",
-        },
-        isBasedOn: (story.articles || [])
-          .filter((a) => a.url)
-          .map((a) => a.url),
-      }
+  const newsArticleSchema = story
+    ? buildNewsArticleSchema(story)
     : null;
+
+  const breadcrumbSchema = story
+    ? buildBreadcrumbSchema([
+        { name: "Home", url: SITE_URL },
+        {
+          name: story.category?.name ? `${story.category.name} News` : "News",
+          url: story.category?.name
+            ? `${SITE_URL}/category/${story.category.name.toLowerCase()}`
+            : `${SITE_URL}/trending`,
+        },
+        { name: story.headline, url: `${SITE_URL}/story/${storyId}` },
+      ])
+    : null;
+
+  const faqSchema = story ? buildStoryFAQSchema(story) : null;
+  const sourceCoverageSchema = story ? buildSourceCoverageSchema(story) : null;
+  const timelineSchema = story ? buildTimelineSchema(story) : null;
 
   return (
     <>
-      {jsonLd && (
+      {newsArticleSchema && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(newsArticleSchema) }}
+        />
+      )}
+      {breadcrumbSchema && (
+        <script
+          type="application/ld+json"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
+        />
+      )}
+      {faqSchema && (
+        <script
+          type="application/ld+json"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqSchema) }}
+        />
+      )}
+      {sourceCoverageSchema && (
+        <script
+          type="application/ld+json"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(sourceCoverageSchema) }}
+        />
+      )}
+      {timelineSchema && (
+        <script
+          type="application/ld+json"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(timelineSchema) }}
         />
       )}
       <StoryDetailClient storyId={storyId} initialStory={story} />

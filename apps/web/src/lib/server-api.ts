@@ -8,7 +8,9 @@
 import type { StoryDetail } from "@/types";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+  process.env.INTERNAL_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000/api/v1";
 
 /**
  * Fetch a story by ID on the server. Returns null on any error (404, network).

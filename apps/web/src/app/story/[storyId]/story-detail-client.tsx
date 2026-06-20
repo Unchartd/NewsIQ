@@ -17,7 +17,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
-import type { StoryDetail } from "@/types";
+import type { StoryDetail, StoryEntity } from "@/types";
 
 interface Props {
   storyId: string;
@@ -29,6 +29,18 @@ const SOURCE_COLORS = [
   "#0E7490", "#065F46", "#374151", "#6B21A8", "#0369A1",
 ];
 
+/** Returns a stable short date (no locale, no relative) — safe for SSR. */
+function formatDateStable(dateString: string): string {
+  try {
+    const d = new Date(dateString);
+    // ISO slice gives YYYY-MM-DD — locale-independent
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
+}
+
+/** Relative time — only call on the client (after mount). */
 function formatTimeAgo(dateString: string): string {
   try {
     const date = new Date(dateString);
@@ -48,10 +60,33 @@ function formatTimeAgo(dateString: string): string {
   }
 }
 
+/** Locale-safe HH:MM — only call on client (after mount). */
+function formatTime(dateString: string): string {
+  try {
+    return new Date(dateString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+/** Locale-safe short date — only call on client (after mount). */
+function formatDate(dateString: string): string {
+  try {
+    return new Date(dateString).toLocaleDateString();
+  } catch {
+    return "";
+  }
+}
+
 export function StoryDetailClient({ storyId, initialStory }: Props) {
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
-  const [summaryType, setSummaryType] = useState<"one_line" | "short" | "detailed" >("short");
+  const [summaryType, setSummaryType] = useState<"one_line" | "short" | "detailed">("short");
+  // Guard: relative / locale-dependent time values must only render after hydration
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  // Track which entity-type rows the user has expanded
+  const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set());
 
   const { data: story, isLoading, error } = useQuery<StoryDetail>({
     queryKey: ["story-detail", storyId],
@@ -205,20 +240,22 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
       {story.related_stories && story.related_stories.length > 0 && (
         <div className="pcrd">
           <div className="slbl" style={{ marginBottom: 10 }}>Related</div>
-          {story.related_stories.slice(0, 3).map((relStory) => (
-            <Link key={relStory.id} href={`/story/${relStory.id}`} style={{ textDecoration: "none" }}>
-              <div className="titem" style={{ padding: "8px 0" }}>
-                <div>
-                  <div className="ti-h" style={{ fontSize: 13 }}>
-                    {relStory.headline}
-                  </div>
-                  <div className="ti-m">
-                    {relStory.source_count} sources · {formatTimeAgo(relStory.updated_at)}
+          <nav aria-label="Related stories" style={{ display: "flex", flexDirection: "column" }}>
+            {story.related_stories.slice(0, 3).map((relStory) => (
+              <Link key={relStory.id} href={`/story/${relStory.id}`} style={{ textDecoration: "none" }}>
+                <div className="titem" style={{ padding: "8px 0" }}>
+                  <div>
+                    <div className="ti-h" style={{ fontSize: 13 }}>
+                      {relStory.headline}
+                    </div>
+                    <div className="ti-m">
+                      {relStory.source_count} sources · {mounted ? formatTimeAgo(relStory.updated_at) : formatDateStable(relStory.updated_at)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            ))}
+          </nav>
         </div>
       )}
     </div>
@@ -227,15 +264,33 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
   return (
     <AppShell sidebar={sidebar}>
       <div style={{ padding: "0 0 48px 0" }}>
-        {/* Back */}
-        <Link href="/home" style={{ fontSize: 13, color: "var(--ink3)", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 24, textDecoration: "none" }}>
-          <ChevronLeft size={14} /> Back to feed
-        </Link>
+        {/* Breadcrumb List for E-E-A-T and AEO */}
+        <nav aria-label="Breadcrumb" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--ink3)", marginBottom: 24, flexWrap: "wrap" }}>
+          <Link href="/home" style={{ color: "var(--ink3)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <ChevronLeft size={14} /> Home
+          </Link>
+          <span>/</span>
+          {story.category && (
+            <>
+              <Link href={`/category/${story.category.slug}`} style={{ color: "var(--ink3)", textDecoration: "none" }}>
+                {story.category.name}
+              </Link>
+              <span>/</span>
+            </>
+          )}
+          <span style={{ color: "var(--ink2)", maxWidth: "240px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {story.headline}
+          </span>
+        </nav>
 
         {/* Story Header */}
         <div style={{ marginBottom: 28 }}>
           <div className="sd-meta">
-            {story.category && <CategoryBadge category={story.category.name} />}
+            {story.category && (
+              <Link href={`/category/${story.category.slug}`} style={{ textDecoration: "none" }}>
+                <CategoryBadge category={story.category.name} />
+              </Link>
+            )}
             {locationLabel && (
               <>
                 <span className="mdot" />
@@ -243,8 +298,11 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
               </>
             )}
             <span className="mdot" />
-            <span style={{ fontSize: 12, color: "var(--ink3)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              {story.updated_at && <>{formatTimeAgo(story.updated_at)}</>}
+            <span
+              suppressHydrationWarning
+              style={{ fontSize: 12, color: "var(--ink3)", display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              {story.updated_at ? (mounted ? formatTimeAgo(story.updated_at) : formatDateStable(story.updated_at)) : ""}
             </span>
           </div>
 
@@ -257,10 +315,15 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
             <span>·</span>
             <div className="ai-lbl">✦ AI Summary</div>
             <span>·</span>
-            <span style={{ fontSize: 12, color: "var(--ink3)" }}>
-              Summarised from {story.articles?.slice(0, 3).map((a) => a.source?.name).join(", ")}
-              {(story.articles?.length ?? 0) > 3 ? ` +${(story.articles?.length ?? 0) - 3} more` : ""}
-            </span>
+            {(() => {
+              const uniqueSources = Array.from(new Set(story.articles?.map((a) => a.source?.name).filter(Boolean) ?? []));
+              return (
+                <span style={{ fontSize: 12, color: "var(--ink3)" }}>
+                  Summarised from {uniqueSources.slice(0, 3).join(", ")}
+                  {uniqueSources.length > 3 ? ` +${uniqueSources.length - 3} more` : ""}
+                </span>
+              );
+            })()}
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <button
                 className="btno"
@@ -342,20 +405,89 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
           </>
         )}
 
-        {/* Key Entities */}
-        {story.entities && story.entities.length > 0 && (
-          <>
-            <div className="slbl">Key Entities</div>
-            <div className="fgrid" style={{ marginBottom: 28 }}>
-              {story.entities.slice(0, 4).map((fact, i) => (
-                <div key={fact.id || i} className="fchip">
-                  <div className="flbl">{fact.entity_type}</div>
-                  <div className="fval">{fact.entity_value}</div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
+        {/* Key Entities — grouped by type */}
+        {story.entities && story.entities.length > 0 && (() => {
+          // 1. Group & deduplicate, preserving first-seen order
+          const MAX_VISIBLE = 5;
+          const TYPE_ORDER: StoryEntity["entity_type"][] = ["LOCATION", "COUNTRY", "PERSON", "ORG", "EVENT"];
+          const grouped = new Map<string, string[]>();
+          for (const e of story.entities) {
+            const type = e.entity_type ?? "OTHER";
+            if (!grouped.has(type)) grouped.set(type, []);
+            const existing = grouped.get(type)!;
+            if (!existing.some(v => v.toLowerCase() === e.entity_value.toLowerCase())) {
+              existing.push(e.entity_value);
+            }
+          }
+          // 2. Sort groups by TYPE_ORDER, then alphabetically for remainder
+          const sortedGroups = [...grouped.entries()].sort(([a], [b]) => {
+            const ai = TYPE_ORDER.indexOf(a as StoryEntity["entity_type"]);
+            const bi = TYPE_ORDER.indexOf(b as StoryEntity["entity_type"]);
+            if (ai === -1 && bi === -1) return a.localeCompare(b);
+            if (ai === -1) return 1;
+            if (bi === -1) return -1;
+            return ai - bi;
+          });
+
+          return (
+            <>
+              <div className="slbl">Key Entities</div>
+              <div className="eg-section">
+                {sortedGroups.map(([type, values]) => {
+                  const isExpanded = expandedEntityTypes.has(type);
+                  const visible = isExpanded ? values : values.slice(0, MAX_VISIBLE);
+                  const hiddenCount = values.length - MAX_VISIBLE;
+                  const isStatus = type === "STATUS";
+                  return (
+                    <div key={type} className="eg-row">
+                      <span className="eg-type">{type}</span>
+                      <div className="eg-chips">
+                        {visible.map((val) => {
+                          let chipClass = "eg-chip";
+                          if (isStatus) {
+                            const v = val.toLowerCase();
+                            if (v.includes("develop") || v.includes("escalat")) chipClass += " eg-status-developing";
+                            else if (v.includes("ongoing") || v.includes("active") || v.includes("alert")) chipClass += " eg-status-active";
+                            else if (v.includes("resolv") || v.includes("confirm") || v.includes("complet")) chipClass += " eg-status-resolved";
+                            else if (v.includes("denied") || v.includes("false") || v.includes("dismiss")) chipClass += " eg-status-denied";
+                            else chipClass += " eg-status-developing";
+                          }
+                          return (
+                            <Link
+                              key={val}
+                              href={`/search?q=${encodeURIComponent(val)}`}
+                              className={chipClass}
+                            >
+                              {val}
+                            </Link>
+                          );
+                        })}
+                        {!isExpanded && hiddenCount > 0 && (
+                          <button
+                            className="eg-more"
+                            onClick={() => setExpandedEntityTypes(prev => new Set([...prev, type]))}
+                            aria-label={`Show ${hiddenCount} more ${type} entities`}
+                          >
+                            +{hiddenCount} more
+                          </button>
+                        )}
+                        {isExpanded && values.length > MAX_VISIBLE && (
+                          <button
+                            className="eg-more"
+                            onClick={() => setExpandedEntityTypes(prev => { const s = new Set(prev); s.delete(type); return s; })}
+                            aria-label={`Show fewer ${type} entities`}
+                          >
+                            Show less
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
 
         {/* Timeline */}
         {story.timeline && story.timeline.length > 0 && (
@@ -364,8 +496,8 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
             <div style={{ marginBottom: 28 }}>
               {story.timeline.map((ev, i) => (
                 <div key={ev.id || i} className="tl-item">
-                  <div className="tl-time">
-                    {ev.event_time ? new Date(ev.event_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
+                  <div className="tl-time" suppressHydrationWarning>
+                    {ev.event_time ? (mounted ? formatTime(ev.event_time) : formatDateStable(ev.event_time)) : ""}
                   </div>
                   <div className="tl-rail">
                     <div className={`tl-dot ${i === 0 ? "lat" : ""}`} />
@@ -373,8 +505,8 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                   </div>
                   <div>
                     <div className="tl-ev">{ev.description}</div>
-                    <div className="tl-src">
-                      {ev.event_time ? new Date(ev.event_time).toLocaleDateString() : ""}
+                    <div className="tl-src" suppressHydrationWarning>
+                      {ev.event_time ? (mounted ? formatDate(ev.event_time) : formatDateStable(ev.event_time)) : ""}
                     </div>
                   </div>
                 </div>
@@ -421,7 +553,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                       </td>
 
                       <td className="sfoc">{cov.focus_area}</td>
-                      <td className="stim">{cov.published_at ? new Date(cov.published_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}</td>
+                      <td className="stim" suppressHydrationWarning>{cov.published_at ? (mounted ? formatTime(cov.published_at) : formatDateStable(cov.published_at)) : "—"}</td>
                       <td>
                         {(() => {
                           const srcArticle = story.articles?.find(
@@ -526,7 +658,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                       )}
                       <span>{art.source?.name}</span>
                       {art.author && <span>By {art.author}</span>}
-                      <span>{new Date(art.published_at).toLocaleDateString()}</span>
+                      <span suppressHydrationWarning>{mounted ? formatDate(art.published_at) : formatDateStable(art.published_at)}</span>
                     </div>
 
                   </div>

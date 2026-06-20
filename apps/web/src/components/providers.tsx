@@ -17,6 +17,7 @@ const PUBLIC_PATHS = [
   "/",
   "/home",
   "/category",
+  "/story",
   "/login",
   "/signup",
   "/forgot-password",
@@ -43,10 +44,26 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function initAuth() {
-      // Skip auth check for public pages to avoid redundant /auth/me calls
-      const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/tos", "/privacy", "/legal"];
+      // Skip auth check for authentication pages and basic legal docs to avoid redundant /auth/me calls
+      const publicNoAuthCheckPaths = [
+        "/login",
+        "/signup",
+        "/forgot-password",
+        "/reset-password",
+        "/verify-email",
+        "/tos",
+        "/privacy",
+        "/legal",
+        "/auth/callback",
+      ];
 
-      if (publicPaths.includes(window.location.pathname)) {
+      const shouldSkipAuth = publicNoAuthCheckPaths.some(
+        (path) =>
+          window.location.pathname === path ||
+          window.location.pathname.startsWith(path + "/")
+      );
+
+      if (shouldSkipAuth) {
         setLoading(false);
         return;
       }
@@ -54,7 +71,7 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
       try {
         const res = await apiClient.get("/auth/me");
         setUser(res.data);
-      } catch (err) {
+      } catch {
         setUser(null);
       } finally {
         setLoading(false);
@@ -117,8 +134,8 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
-    () =>
-      new QueryClient({
+    () => {
+      const client = new QueryClient({
         defaultOptions: {
           queries: {
             staleTime: 60 * 1000, // 1 minute
@@ -126,7 +143,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
             retry: 2,
           },
         },
-      })
+      });
+      if (typeof window !== "undefined") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).queryClient = client;
+      }
+      return client;
+    }
   );
 
   return (

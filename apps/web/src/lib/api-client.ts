@@ -91,10 +91,28 @@ apiClient.interceptors.response.use(
         
         // Prevent redirect loops if already on a public/auth page
         if (typeof window !== "undefined") {
-          const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/tos", "/privacy", "/"];
+          const publicPaths = [
+            "/",
+            "/home",
+            "/category",
+            "/story",
+            "/login",
+            "/signup",
+            "/forgot-password",
+            "/reset-password",
+            "/verify-email",
+            "/tos",
+            "/privacy",
+            "/legal",
+            "/auth/callback",
+          ];
           const currentPath = window.location.pathname;
           
-          if (!publicPaths.includes(currentPath)) {
+          const isPublicPath = publicPaths.some(
+            (path) => currentPath === path || currentPath.startsWith(path + "/")
+          );
+          
+          if (!isPublicPath) {
             window.location.href = "/login";
           }
         }

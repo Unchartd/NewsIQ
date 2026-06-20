@@ -681,6 +681,11 @@
   padding-left: 8px !important;
 }
 
+/* Mobile toggle hidden by default (desktop) */
+.mobile-toc-toggle {
+  display: none;
+}
+
 /* ── MOBILE OVERLAY DRAWER ── */
 @media (max-width: 720px) {
   .mobile-toc-toggle {

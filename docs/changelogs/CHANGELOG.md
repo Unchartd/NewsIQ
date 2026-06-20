@@ -14,6 +14,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Anonymized Audits**: Implemented salted IP address hashing (`SHA-256`) to satisfy GDPR data minimization requirements in consent audit logging.
 - **Centralized Documentation Hub**: Consolidated all technical specifications, database designs, API endpoints, and running configurations under `/docs`.
 - **Drift Detection Tooling**: Added a automated python validation script (`drift-check.py`) to raise warning flags when API route annotations diverge from markdown documents.
+- **AEO/GEO & SEO Optimizations**: Dynamic sitemaps, semantic Schema.json breadcrumbs and JSON-LD structural graphs, Speakable voice assistant tags, robots.txt bot rules, and Apple Touch icons, favicons, and manifest metadata configurations.
+- **Key Entities UX Redesign**: Grouped story entities by type (`PERSON`, `ORG`, `LOCATION`, etc.) and deduplicated values case-insensitively. Added interactive, inline-expandable tags with a `+N more` toggle state.
+
+### Fixed
+- **Summary Depth Switcher Contrast**: Corrected button text visibility in dark mode by dynamically styling the active state using `var(--background)` to contrast against `var(--ink)`.
+- **Source Name Deduplication**: Deduplicated source names in the story detail AI summary subheader using a Set to prevent repeated publisher names when multiple articles belong to the same source.
 
 ---
 
