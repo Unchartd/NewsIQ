@@ -409,6 +409,7 @@ class StageSpan:
             self.error_traceback = "".join(
                 traceback.format_exception(exc_type, exc_val, exc_tb)
             )
+            self.metadata["error_traceback"] = self.error_traceback
         else:
             if self.status == StageStatus.RUNNING:
                 self.status = StageStatus.SUCCESS

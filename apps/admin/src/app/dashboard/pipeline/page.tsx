@@ -100,9 +100,15 @@ function getBackendStagesForFrontend(frontendStage: string): string[] {
 function LiveLogViewer({ runId, stage, isRunning }: { runId: string; stage: string; isRunning: boolean }) {
   const [logs, setLogs] = useState<string[]>([]);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
+  const prevRunAndStageRef = useRef<string>("");
 
   useEffect(() => {
-    setLogs([]);
+    const currentKey = `${runId}:${stage}`;
+    if (prevRunAndStageRef.current !== currentKey) {
+      setLogs([]);
+      prevRunAndStageRef.current = currentKey;
+    }
+
     if (!runId || !stage) return;
 
     let eventSource: EventSource | null = null;
@@ -218,6 +224,7 @@ function StageNode({
 export default function PipelinePage() {
   const { lastEvent, events, status: sseStatus } = useSSE();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [wasAutoPinned, setWasAutoPinned] = useState(false);
 
   // Active stage drawer states
   const [activeStageId, setActiveStageId] = useState<string | null>(null); // e.g. "NLP_ANALYSIS"
@@ -225,7 +232,7 @@ export default function PipelinePage() {
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "inputs" | "outputs" | "errors" | "metrics" | "retries">("overview");
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
-  const { data: pipelineStatus, isLoading, refetch } = useQuery({
+  const { data: pipelineStatus, isLoading, refetch } = useQuery<any>({
     queryKey: ["pipeline-status", selectedRunId],
     queryFn: async () => {
       const url = selectedRunId
@@ -234,7 +241,10 @@ export default function PipelinePage() {
       const res = await apiClient.get(url);
       return res.data;
     },
-    refetchInterval: selectedRunId ? undefined : 6000,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return !selectedRunId || !data || data.status === "running" ? 6000 : false;
+    },
   });
 
   const { data: metricsSummary } = useQuery({
@@ -312,7 +322,7 @@ export default function PipelinePage() {
   }, [activeStageId, pipelineStatus]);
 
   // Fetch detailed telemetry for active stage run
-  const { data: stageDetails, isLoading: isLoadingDetails } = useQuery({
+  const { data: stageDetails, isLoading: isLoadingDetails } = useQuery<any>({
     queryKey: ["stage-details", pipelineStatus?.run_id, selectedBackendStage],
     queryFn: async () => {
       if (!pipelineStatus?.run_id || !selectedBackendStage) return null;
@@ -320,20 +330,26 @@ export default function PipelinePage() {
       return res.data;
     },
     enabled: !!pipelineStatus?.run_id && !!selectedBackendStage,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return !data || data.status === "running" ? 4000 : false;
+    },
   });
 
   // Build real-time map of stage -> status
   const stageStatusMap: Record<string, string> = {};
-  [...events].reverse().forEach((ev) => {
-    const frontendStageId = mapBackendToFrontendStage(ev.stage);
-    stageStatusMap[frontendStageId] = ev.status;
-  });
+  if (!selectedRunId) {
+    [...events].reverse().forEach((ev) => {
+      const frontendStageId = mapBackendToFrontendStage(ev.stage);
+      stageStatusMap[frontendStageId] = ev.status;
+    });
+  }
 
   // Merge with pipeline database status
   if (pipelineStatus?.stages) {
     for (const stg of pipelineStatus.stages) {
       const frontendStageId = mapBackendToFrontendStage(stg.stage);
-      if (stageStatusMap[frontendStageId] !== "running") {
+      if (!selectedRunId || stageStatusMap[frontendStageId] !== "running") {
         stageStatusMap[frontendStageId] = stg.status;
       }
     }
@@ -497,6 +513,10 @@ export default function PipelinePage() {
               onClick={() => {
                 setActiveStageId(stage.id);
                 setActiveTab("overview");
+                if (!selectedRunId && pipelineStatus?.run_id) {
+                  setSelectedRunId(pipelineStatus.run_id);
+                  setWasAutoPinned(true);
+                }
               }}
               isActive={activeStageId === stage.id}
             />
@@ -527,6 +547,10 @@ export default function PipelinePage() {
             onClick={() => {
               setActiveStageId(null);
               setSelectedBackendStage(null);
+              if (wasAutoPinned) {
+                setSelectedRunId(null);
+                setWasAutoPinned(false);
+              }
             }}
           />
 
@@ -545,6 +569,10 @@ export default function PipelinePage() {
                 onClick={() => {
                   setActiveStageId(null);
                   setSelectedBackendStage(null);
+                  if (wasAutoPinned) {
+                    setSelectedRunId(null);
+                    setWasAutoPinned(false);
+                  }
                 }}
                 className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white transition-all text-xs font-mono"
               >

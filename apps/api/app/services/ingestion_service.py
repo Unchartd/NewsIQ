@@ -48,18 +48,21 @@ class IngestionService:
 
     async def ingest_rss_source(self, source: Source, session: AsyncSession) -> int:
         """Ingest articles from a source's RSS feed."""
+        source_name = source.name
+        source_id = source.id
+
         if not source.rss_url:
-            logger.warning("Source '%s' does not have an RSS URL.", source.name)
+            logger.warning("Source '%s' does not have an RSS URL.", source_name)
             return 0
 
-        logger.info("Starting ingestion for source: %s (%s)", source.name, source.rss_url)
+        logger.info("Starting ingestion for source: %s (%s)", source_name, source.rss_url)
         try:
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 response = await client.get(source.rss_url)
                 response.raise_for_status()
                 feed_data = response.text
         except Exception as e:
-            logger.error("Failed to fetch RSS feed for '%s': %s", source.name, e)
+            logger.error("Failed to fetch RSS feed for '%s': %s", source_name, e)
             return 0
 
         # Parse the RSS feed using feedparser (which parses the text directly)
@@ -82,7 +85,7 @@ class IngestionService:
             new_entries.append((entry, url))
 
         if not new_entries:
-            logger.info("No new articles found for '%s'", source.name)
+            logger.info("No new articles found for '%s'", source_name)
             return 0
 
         # Crawl concurrently with a semaphore
@@ -140,7 +143,7 @@ class IngestionService:
                 content = fallback_content
 
             article = Article(
-                source_id=source.id,
+                source_id=source_id,
                 title=title,
                 description=description,
                 content=content,
@@ -160,31 +163,38 @@ class IngestionService:
             try:
                 await session.commit()
                 logger.info(
-                    "Ingested %d new articles for source '%s'", new_articles_count, source.name
+                    "Ingested %d new articles for source '%s'", new_articles_count, source_name
                 )
             except Exception as e:
                 await session.rollback()
-                logger.error("Failed to save ingested articles for '%s': %s", source.name, e)
+                logger.error("Failed to save ingested articles for '%s': %s", source_name, e)
                 return 0
         else:
-            logger.info("No new articles found for '%s'", source.name)
+            logger.info("No new articles found for '%s'", source_name)
 
         return new_articles_count
 
     async def ingest_all_active_sources(self, session: AsyncSession) -> dict[str, int]:
         """Ingest articles from all active news sources sequentially to prevent concurrent database session usage."""
-        stmt = select(Source).where(Source.active)
+        stmt = select(Source.id).where(Source.active)
         result = await session.execute(stmt)
-        sources = result.scalars().all()
+        source_ids = result.scalars().all()
 
         results = {}
-        for source in sources:
+        for source_id in source_ids:
+            # Query each source fresh to prevent SQLAlchemy greenlet/expired attribute issues after commits
+            source_stmt = select(Source).where(Source.id == source_id)
+            source_result = await session.execute(source_stmt)
+            source = source_result.scalar_one_or_none()
+            if not source:
+                continue
+            source_name = source.name
             try:
                 count = await self.ingest_rss_source(source, session)
-                results[source.name] = count
+                results[source_name] = count
             except Exception as e:
-                logger.error("Error during ingestion for %s: %s", source.name, e)
-                results[source.name] = 0
+                logger.error("Error during ingestion for %s: %s", source_name, e)
+                results[source_name] = 0
 
         return results
 
