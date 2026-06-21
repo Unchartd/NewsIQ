@@ -70,3 +70,12 @@ celery_app.conf.beat_schedule = {
     },
 }
 
+
+from celery.signals import setup_logging
+
+@setup_logging.connect
+def on_setup_logging(*args, **kwargs):
+    from app.core.logging import setup_logging
+    setup_logging(settings.DEBUG)
+
+

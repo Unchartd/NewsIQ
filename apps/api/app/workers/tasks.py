@@ -83,12 +83,12 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
 
 
 @celery_app.task(name="app.workers.tasks.ingest_news_task")
-def ingest_news_task() -> dict[str, int]:
+def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> dict[str, int]:
     """Ingest articles from all active RSS news sources."""
     logger.info("Celery task: Starting RSS news ingestion.")
 
     async def _run():
-        async with PipelineRun(trigger="celery_beat", pipeline_type="incremental") as run:
+        async with PipelineRun(trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
             async with StageSpan(run, stage=PipelineStage.INGESTION_RSS) as span:
                 async with async_session_factory() as session:
                     results = await ingestion_service.ingest_all_active_sources(session)
@@ -103,7 +103,7 @@ def ingest_news_task() -> dict[str, int]:
                             "RSS ingestion complete",
                             extra={"articles_ingested": total_new},
                         )
-                        process_pending_embeddings_task.delay()
+                        process_pending_embeddings_task.delay(run.id, run.trace_id)
                     else:
                         span.mark_skipped()
                     return results
@@ -112,7 +112,7 @@ def ingest_news_task() -> dict[str, int]:
 
 
 @celery_app.task(name="app.workers.tasks.ingest_gnews_task")
-def ingest_gnews_task() -> dict[str, int]:
+def ingest_gnews_task(run_id: str | None = None, trace_id: str | None = None) -> dict[str, int]:
     """Ingest articles from the GNews API across configured categories and countries.
 
     Rate-limit guard is handled inside GNewsService via Redis TTL locks.
@@ -123,7 +123,7 @@ def ingest_gnews_task() -> dict[str, int]:
     async def _run():
         from app.services.gnews_service import gnews_service
 
-        async with PipelineRun(trigger="celery_beat", pipeline_type="incremental") as run:
+        async with PipelineRun(trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
             async with StageSpan(run, stage=PipelineStage.INGESTION_GNEWS) as span:
                 async with async_session_factory() as session:
                     results = await gnews_service.ingest_all(session)
@@ -137,7 +137,7 @@ def ingest_gnews_task() -> dict[str, int]:
                             "GNews ingestion complete",
                             extra={"articles_ingested": total_new},
                         )
-                        process_pending_embeddings_task.delay()
+                        process_pending_embeddings_task.delay(run.id, run.trace_id)
                     else:
                         span.mark_skipped()
                     return results
@@ -146,12 +146,12 @@ def ingest_gnews_task() -> dict[str, int]:
 
 
 @celery_app.task(name="app.workers.tasks.process_pending_embeddings_task")
-def process_pending_embeddings_task() -> int:
+def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | None = None) -> int:
     """Process pending article embeddings, vectorizing and storing in Qdrant."""
     logger.info("Celery task: Processing pending article embeddings.")
 
     async def _run():
-        async with PipelineRun(trigger="chained", pipeline_type="incremental") as run:
+        async with PipelineRun(trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
             async with StageSpan(run, stage=PipelineStage.EMBEDDING) as span:
                 async with async_session_factory() as session:
                     # Fetch pending articles
@@ -252,12 +252,12 @@ def process_pending_embeddings_task() -> int:
 
                     if success_count > 0:
                         # Trigger event extraction for newly embedded articles, then clustering
-                        extract_events_task.delay()
-                        cluster_news_task.delay()
+                        extract_events_task.delay(run.id, run.trace_id)
+                        cluster_news_task.delay(run.id, run.trace_id)
 
                     # If we processed a full batch, check for more
                     if len(pending_articles) == 50:
-                        process_pending_embeddings_task.delay()
+                        process_pending_embeddings_task.delay(run.id, run.trace_id)
 
                     return success_count
 
@@ -265,7 +265,7 @@ def process_pending_embeddings_task() -> int:
 
 
 @celery_app.task(name="app.workers.tasks.extract_events_task")
-def extract_events_task() -> int:
+def extract_events_task(run_id: str | None = None, trace_id: str | None = None) -> int:
     """Extract structured events from articles that haven't been processed yet.
 
     Pipeline step: runs AFTER embedding, BEFORE clustering.
@@ -277,7 +277,7 @@ def extract_events_task() -> int:
         from app.services.event_service import event_service
         from app.services.event_taxonomy import get_parent_type
 
-        async with PipelineRun(trigger="chained", pipeline_type="incremental") as run:
+        async with PipelineRun(trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
             async with StageSpan(run, stage=PipelineStage.EVENT_EXTRACTION) as span:
                 async with async_session_factory() as session:
                     # Find articles that are embedded but not yet event-extracted
@@ -395,7 +395,7 @@ def extract_events_task() -> int:
 
                     # If we processed a full batch, check for more
                     if len(articles) == 20:
-                        extract_events_task.delay()
+                        extract_events_task.delay(run.id, run.trace_id)
 
                     return success_count
 
@@ -418,12 +418,12 @@ def _try_parse_event_time(raw: str | None) -> datetime | None:
 
 
 @celery_app.task(name="app.workers.tasks.cluster_news_task")
-def cluster_news_task() -> int:
+def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) -> int:
     """Run batch clustering of unclustered articles into stories."""
     logger.info("Celery task: Running batch clustering.")
 
     async def _run():
-        async with PipelineRun(trigger="chained", pipeline_type="batch") as run:
+        async with PipelineRun(trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id) as run:
             async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
                 async with async_session_factory() as session:
                     from app.services.clustering_service import clustering_service

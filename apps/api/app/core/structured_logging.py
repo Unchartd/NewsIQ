@@ -87,6 +87,51 @@ def _add_service_info(
     return event_dict
 
 
+def _store_and_publish_log(
+    logger: Any, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Interceptors for logging inside a StageSpan to persist and stream via Redis."""
+    run_id = event_dict.get("run_id")
+    stage = event_dict.get("stage")
+    if run_id and stage:
+        try:
+            import json
+            import redis
+            from app.core.config import settings
+
+            # Format log line
+            timestamp = event_dict.get("timestamp", datetime.now(UTC).isoformat())
+            level = event_dict.get("level", "info").upper()
+            event = event_dict.get("event", "")
+            
+            # Filter standard keys to get extra fields
+            filtered_keys = {
+                "timestamp", "level", "event", "run_id", "trace_id", 
+                "span_id", "stage", "story_id", "article_id", "service"
+            }
+            extra = {
+                k: v for k, v in event_dict.items() 
+                if k not in filtered_keys and not k.startswith("_")
+            }
+            extra_str = f" {json.dumps(extra, default=str)}" if extra else ""
+            log_line = f"{timestamp} [{level}] {event}{extra_str}"
+
+            r = redis.from_url(settings.REDIS_URL)
+            
+            # 1. Store in Redis list (expire in 24 hours)
+            redis_key = f"newsiq:logs:{run_id}:{stage}"
+            r.rpush(redis_key, log_line)
+            r.expire(redis_key, 86400)
+            
+            # 2. Publish to Redis channel for live streaming
+            redis_channel = f"newsiq:logs:{run_id}:{stage}:stream"
+            r.publish(redis_channel, log_line)
+        except Exception:
+            pass
+            
+    return event_dict
+
+
 def setup_structlog(debug: bool = False) -> None:
     """Initialize structlog with the full processing pipeline.
 
@@ -107,6 +152,7 @@ def setup_structlog(debug: bool = False) -> None:
         _add_trace_context,
         _add_request_id,
         _add_service_info,
+        _store_and_publish_log,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
@@ -147,6 +193,7 @@ def setup_structlog(debug: bool = False) -> None:
             _add_trace_context,
             _add_request_id,
             _add_service_info,
+            _store_and_publish_log,
             structlog.stdlib.ExtraAdder(),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.UnicodeDecoder(),

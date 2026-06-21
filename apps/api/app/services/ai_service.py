@@ -30,6 +30,7 @@ from tenacity import (
 )
 
 from app.core.config import settings
+from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -268,8 +269,8 @@ class AIService:
                     retry=retry_if_exception_type(Exception),
                     reraise=True,
                 )
-                async def _call(m: str = model) -> str:
-                    response = await client.aio.models.generate_content(
+                async def _call(m: str = model):
+                    return await client.aio.models.generate_content(
                         model=m,
                         contents=prompt,
                         config=types.GenerateContentConfig(
@@ -278,9 +279,14 @@ class AIService:
                             temperature=0.1,
                         ),
                     )
-                    return response.text
 
-                raw_text = await _call()
+                async with track_llm_call("gemini", model, "story_analysis", user_prompt=prompt) as call:
+                    response = await _call()
+                    call.response_text = response.text
+                    if getattr(response, "usage_metadata", None):
+                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
+                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
+                    raw_text = response.text
 
                 try:
                     data = json.loads(raw_text)
@@ -410,11 +416,17 @@ class AIService:
                 temperature=0.1,
             )
 
-        response = await _call()
-        data = response.choices[0].message.parsed
-        if data.category not in CATEGORY_SLUGS:
-            data.category = "world"
-        return data
+        async with track_llm_call("openai", "gpt-4o-mini", "story_analysis", user_prompt=prompt) as call:
+            response = await _call()
+            call.response_text = response.choices[0].message.content or ""
+            if getattr(response, "usage", None):
+                call.input_tokens = response.usage.prompt_tokens or 0
+                call.output_tokens = response.usage.completion_tokens or 0
+            
+            data = response.choices[0].message.parsed
+            if data.category not in CATEGORY_SLUGS:
+                data.category = "world"
+            return data
 
     # ── Mock fallback ──────────────────────────────────────────────────────────
 
@@ -559,8 +571,8 @@ class AIService:
                     retry=retry_if_exception_type(Exception),
                     reraise=True,
                 )
-                async def _call(m: str = model) -> str:
-                    response = await client.aio.models.generate_content(
+                async def _call(m: str = model):
+                    return await client.aio.models.generate_content(
                         model=m,
                         contents=prompt,
                         config=types.GenerateContentConfig(
@@ -569,9 +581,14 @@ class AIService:
                             temperature=0.1,
                         ),
                     )
-                    return response.text
 
-                raw_text = await _call()
+                async with track_llm_call("gemini", model, "summary_generation", user_prompt=prompt) as call:
+                    response = await _call()
+                    call.response_text = response.text
+                    if getattr(response, "usage_metadata", None):
+                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
+                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
+                    raw_text = response.text
                 data = json.loads(raw_text)
 
                 key_map = {
@@ -641,11 +658,18 @@ class AIService:
                 response_format=StorySummaryResponse,
                 temperature=0.1,
             )
-        response = await _call()
-        data = response.choices[0].message.parsed
-        if data.category not in CATEGORY_SLUGS:
-            data.category = "world"
-        return data
+
+        async with track_llm_call("openai", "gpt-4o-mini", "summary_generation", user_prompt=prompt) as call:
+            response = await _call()
+            call.response_text = response.choices[0].message.content or ""
+            if getattr(response, "usage", None):
+                call.input_tokens = response.usage.prompt_tokens or 0
+                call.output_tokens = response.usage.completion_tokens or 0
+            
+            data = response.choices[0].message.parsed
+            if data.category not in CATEGORY_SLUGS:
+                data.category = "world"
+            return data
 
     def _generate_mock_summary_response(
         self,

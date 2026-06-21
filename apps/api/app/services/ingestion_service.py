@@ -172,22 +172,19 @@ class IngestionService:
         return new_articles_count
 
     async def ingest_all_active_sources(self, session: AsyncSession) -> dict[str, int]:
-        """Ingest articles from all active news sources concurrently."""
+        """Ingest articles from all active news sources sequentially to prevent concurrent database session usage."""
         stmt = select(Source).where(Source.active)
         result = await session.execute(stmt)
         sources = result.scalars().all()
 
-        # Run ingestion tasks concurrently
-        tasks = [self.ingest_rss_source(source, session) for source in sources]
-        counts = await asyncio.gather(*tasks, return_exceptions=True)
-
         results = {}
-        for source, count in zip(sources, counts):
-            if isinstance(count, Exception):
-                logger.error("Error during concurrent ingestion for %s: %s", source.name, count)
-                results[source.name] = 0
-            else:
+        for source in sources:
+            try:
+                count = await self.ingest_rss_source(source, session)
                 results[source.name] = count
+            except Exception as e:
+                logger.error("Error during ingestion for %s: %s", source.name, e)
+                results[source.name] = 0
 
         return results
 

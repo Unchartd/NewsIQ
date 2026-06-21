@@ -33,6 +33,7 @@ from tenacity import (
 
 from app.core.config import settings
 from app.services.event_taxonomy import canonicalize_event_type, get_all_canonical_types
+from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -208,8 +209,8 @@ class EventService:
             retry=retry_if_exception_type(Exception),
             reraise=True,
         )
-        async def _call() -> str:
-            response = await self._gemini_client.aio.models.generate_content(
+        async def _call():
+            return await self._gemini_client.aio.models.generate_content(
                 model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -218,9 +219,14 @@ class EventService:
                     temperature=0.1,
                 ),
             )
-            return response.text
 
-        raw_text = await _call()
+        async with track_llm_call("gemini", model, "event_extraction", user_prompt=prompt) as call:
+            response = await _call()
+            call.response_text = response.text
+            if getattr(response, "usage_metadata", None):
+                call.input_tokens = response.usage_metadata.prompt_token_count or 0
+                call.output_tokens = response.usage_metadata.candidates_token_count or 0
+            raw_text = response.text
 
         try:
             data = json.loads(raw_text)
@@ -261,8 +267,14 @@ class EventService:
                 temperature=0.1,
             )
 
-        response = await _call()
-        return response.choices[0].message.parsed
+        async with track_llm_call("openai", "gpt-4o-mini", "event_extraction", user_prompt=prompt) as call:
+            response = await _call()
+            call.response_text = response.choices[0].message.content or ""
+            if getattr(response, "usage", None):
+                call.input_tokens = response.usage.prompt_tokens or 0
+                call.output_tokens = response.usage.completion_tokens or 0
+            
+            return response.choices[0].message.parsed
 
     # ── Response normalization ────────────────────────────────────────────────
 

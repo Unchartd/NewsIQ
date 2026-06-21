@@ -23,6 +23,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from app.core.config import settings
 from app.models.models import Article, ArticleEvent, Story, StoryContradiction, StoryArticle
 from app.services.ai_service import _wait_for_synthesis_quota
+from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -101,35 +102,45 @@ class ContradictionService:
             try:
                 from google.genai import types
 
-                response = await self._gemini_client.aio.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=ContradictionResolution,
-                        temperature=0.1,
-                    ),
-                )
-                data = json.loads(response.text)
-                return ContradictionResolution(**data)
+                async with track_llm_call("gemini", model, "contradiction_detection", user_prompt=prompt) as call:
+                    response = await self._gemini_client.aio.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=ContradictionResolution,
+                            temperature=0.1,
+                        ),
+                    )
+                    call.response_text = response.text
+                    if getattr(response, "usage_metadata", None):
+                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
+                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
+                    data = json.loads(response.text)
+                    return ContradictionResolution(**data)
             except Exception as e:
                 logger.warning("Gemini contradiction verification failed: %s", e)
 
         if self.openai_enabled and self._openai_client:
             try:
-                response = await self._openai_client.beta.chat.completions.parse(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a named entity resolution and contradiction checker.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    response_format=ContradictionResolution,
-                    temperature=0.1,
-                )
-                return response.choices[0].message.parsed
+                async with track_llm_call("openai", "gpt-4o-mini", "contradiction_detection", user_prompt=prompt) as call:
+                    response = await self._openai_client.beta.chat.completions.parse(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a named entity resolution and contradiction checker.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        response_format=ContradictionResolution,
+                        temperature=0.1,
+                    )
+                    call.response_text = response.choices[0].message.content or ""
+                    if getattr(response, "usage", None):
+                        call.input_tokens = response.usage.prompt_tokens or 0
+                        call.output_tokens = response.usage.completion_tokens or 0
+                    return response.choices[0].message.parsed
             except Exception as e:
                 logger.warning("OpenAI contradiction verification failed: %s", e)
 

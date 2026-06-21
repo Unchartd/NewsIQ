@@ -30,7 +30,7 @@ from app.services.entity_linker import entity_linker
 from app.services.knowledge_graph import build_story_knowledge_graph
 from app.services.contradiction_service import contradiction_service
 from app.services.source_comparison_service import source_comparison_service
-from datetime import timezone
+from app.core.trace import StageSpan, PipelineStage
 
 logger = logging.getLogger(__name__)
 
@@ -128,132 +128,168 @@ class ClusteringService:
         article_events = list(res.scalars().all())
 
         # 3. Save Timeline Events (Sorted by parsed event time with UTC normalization)
-        timeline_entries = []
-        for evt in article_events:
-            t = evt.event_time or evt.created_at or datetime.now(timezone.utc)
-            if t.tzinfo is None:
-                t = t.replace(tzinfo=timezone.utc)
-            else:
-                t = t.astimezone(timezone.utc)
-
-            src_name = article_source_map.get(evt.article_id, "Unknown Source")
-            evt_type = (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
-
-            details = []
-            if evt.actors:
-                details.append(f"Actors: {', '.join(evt.actors)}")
-            if evt.targets:
-                details.append(f"Targets: {', '.join(evt.targets)}")
-            if evt.location:
-                details.append(f"Location: {evt.location}")
-            if evt.numbers:
-                num_parts = [f"{k}: {v}" for k, v in evt.numbers.items()]
-                details.append(f"Data: {', '.join(num_parts)}")
-
-            details_str = f" ({'; '.join(details)})" if details else ""
-            desc = f"{evt_type} reported by {src_name}{details_str}."
-
-            timeline_entries.append({
-                "event_time": t,
-                "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                "description": desc,
-            })
-
-        # Sort timeline entries chronologically
-        timeline_entries.sort(key=lambda x: x["event_time"])
-
         saved_timeline_objects = []
-        for entry in timeline_entries:
-            tl_event = StoryTimelineEvent(
-                id=uuid.uuid4(),
-                story_id=story.id,
-                event_time=entry["event_time"],
-                event_time_raw=entry["event_time_raw"],
-                description=entry["description"],
-                created_at=datetime.now(timezone.utc),
-            )
-            session.add(tl_event)
-            saved_timeline_objects.append(tl_event)
+        timeline_entries = []
+        async with StageSpan(stage=PipelineStage.TIMELINE_GENERATION, story_id=str(story.id)) as span:
+            for evt in article_events:
+                t = evt.event_time or evt.created_at or _now()
+                if t.tzinfo is not None:
+                    t = t.astimezone(UTC).replace(tzinfo=None)
 
-        # 4. Extract Named Entities using enhanced NER v2 Service
-        entities = await ner_service_v2.extract_entities(full_text_corpus)
+                src_name = article_source_map.get(evt.article_id, "Unknown Source")
+                evt_type = (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
 
-        # Perform Local Coreference Resolution & Entity Linking
-        grouped_entities = entity_linker.group_entities_locally(entities)
+                details = []
+                if evt.actors:
+                    details.append(f"Actors: {', '.join(evt.actors)}")
+                if evt.targets:
+                    details.append(f"Targets: {', '.join(evt.targets)}")
+                if evt.location:
+                    details.append(f"Location: {evt.location}")
+                if evt.numbers:
+                    num_parts = [f"{k}: {v}" for k, v in evt.numbers.items()]
+                    details.append(f"Data: {', '.join(num_parts)}")
 
-        # Limit to top 15 groups/canonical entities for storage
-        saved_story_entities = []
-        tags_added = set()
+                details_str = f" ({'; '.join(details)})" if details else ""
+                desc = f"{evt_type} reported by {src_name}{details_str}."
 
-        for rep, grouped_mentions in list(grouped_entities.items())[:15]:
-            etype = grouped_mentions[0]["type"]
+                timeline_entries.append({
+                    "event_time": t,
+                    "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "description": desc,
+                })
 
-            # Resolve/Link to globally unique CanonicalEntity
-            try:
-                canonical_ent = await entity_linker.link_entity(
-                    name=rep,
-                    entity_type=etype,
-                    context=full_text_corpus,
-                    session=session,
-                )
-                canonical_entity_id = canonical_ent.id
-            except Exception as e:
-                logger.error("Failed to link entity %s: %s", rep, e)
-                canonical_ent = None
-                canonical_entity_id = None
+            # Sort timeline entries chronologically
+            timeline_entries.sort(key=lambda x: x["event_time"])
 
-            # Add StoryEntity rows for each variant mention in the group
-            for mention in grouped_mentions:
-                story_ent = StoryEntity(
+            for entry in timeline_entries:
+                tl_event = StoryTimelineEvent(
                     id=uuid.uuid4(),
                     story_id=story.id,
-                    canonical_entity_id=canonical_entity_id,
-                    entity_type=mention["type"],
-                    entity_value=mention["value"],
+                    event_time=entry["event_time"],
+                    event_time_raw=entry["event_time_raw"],
+                    description=entry["description"],
+                    created_at=_now(),
                 )
-                story_ent.canonical_entity = canonical_ent
-                session.add(story_ent)
-                saved_story_entities.append(story_ent)
+                session.add(tl_event)
+                saved_timeline_objects.append(tl_event)
+            
+            span.set_metadata({
+                "inputs": {"article_events_count": len(article_events)},
+                "outputs": {"timeline_events_count": len(saved_timeline_objects)}
+            })
 
-            # Add to tag list
-            tag = rep.lower().strip()
-            if tag and len(tag) < 30 and tag not in tags_added:
-                tags_added.add(tag)
+        # 4. Extract Named Entities using enhanced NER v2 Service
+        entities = []
+        async with StageSpan(stage=PipelineStage.ENTITY_EXTRACTION, story_id=str(story.id)) as span:
+            entities = await ner_service_v2.extract_entities(full_text_corpus)
+            span.set_metadata({
+                "inputs": {"corpus_length": len(full_text_corpus)},
+                "outputs": {"entities_extracted": len(entities)}
+            })
 
-        # Save Story Tags from entities (limit to 5)
-        for tag in list(tags_added)[:5]:
-            session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
+        # Perform Local Coreference Resolution & Entity Linking
+        saved_story_entities = []
+        tags_added = set()
+        async with StageSpan(stage=PipelineStage.ENTITY_LINKING, story_id=str(story.id)) as span:
+            grouped_entities = entity_linker.group_entities_locally(entities)
+
+            # Limit to top 15 groups/canonical entities for storage
+            for rep, grouped_mentions in list(grouped_entities.items())[:15]:
+                etype = grouped_mentions[0]["type"]
+
+                # Resolve/Link to globally unique CanonicalEntity
+                try:
+                    canonical_ent = await entity_linker.link_entity(
+                        name=rep,
+                        entity_type=etype,
+                        context=full_text_corpus,
+                        session=session,
+                    )
+                    canonical_entity_id = canonical_ent.id
+                except Exception as e:
+                    logger.error("Failed to link entity %s: %s", rep, e)
+                    canonical_ent = None
+                    canonical_entity_id = None
+
+                # Add StoryEntity rows for each variant mention in the group
+                for mention in grouped_mentions:
+                    story_ent = StoryEntity(
+                        id=uuid.uuid4(),
+                        story_id=story.id,
+                        canonical_entity_id=canonical_entity_id,
+                        entity_type=mention["type"],
+                        entity_value=mention["value"],
+                    )
+                    story_ent.canonical_entity = canonical_ent
+                    session.add(story_ent)
+                    saved_story_entities.append(story_ent)
+
+                # Add to tag list
+                tag = rep.lower().strip()
+                if tag and len(tag) < 30 and tag not in tags_added:
+                    tags_added.add(tag)
+
+            # Save Story Tags from entities (limit to 5)
+            for tag in list(tags_added)[:5]:
+                session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
+                
+            span.set_metadata({
+                "inputs": {"entities_to_link": len(entities)},
+                "outputs": {
+                    "canonical_entities_linked": len(saved_story_entities),
+                    "tags": list(tags_added)
+                }
+            })
 
         # 5. Build and Serialize Knowledge Graph
         kg_dict = {}
-        try:
-            kg = build_story_knowledge_graph(
-                articles=articles,
-                article_events=article_events,
-                story_entities=saved_story_entities,
-                sources=sources_list,
-            )
-            kg_dict = kg.to_dict()
-            story.knowledge_graph = kg_dict
-            logger.info("Knowledge Graph successfully generated and assigned for story %s.", story.id)
-        except Exception as e:
-            logger.error("Failed to generate knowledge graph for story %s: %s", story.id, e)
+        async with StageSpan(stage=PipelineStage.KNOWLEDGE_GRAPH, story_id=str(story.id)) as span:
+            try:
+                kg = build_story_knowledge_graph(
+                    articles=articles,
+                    article_events=article_events,
+                    story_entities=saved_story_entities,
+                    sources=sources_list,
+                )
+                kg_dict = kg.to_dict()
+                story.knowledge_graph = kg_dict
+                logger.info("Knowledge Graph successfully generated and assigned for story %s.", story.id)
+            except Exception as e:
+                logger.error("Failed to generate knowledge graph for story %s: %s", story.id, e)
+            
+            span.set_metadata({
+                "inputs": {"articles_count": len(articles)},
+                "outputs": {"nodes_count": len(kg_dict.get("nodes", [])), "edges_count": len(kg_dict.get("edges", []))}
+            })
 
         # 6. Run Contradiction & Source Comparison Engines
         saved_contras = []
-        try:
-            saved_contras = await contradiction_service.detect_and_save_contradictions(story.id, session)
-            logger.info("Contradiction detection successfully run for story %s.", story.id)
-        except Exception as e:
-            logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
+        async with StageSpan(stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)) as span:
+            try:
+                saved_contras = await contradiction_service.detect_and_save_contradictions(story.id, session)
+                logger.info("Contradiction detection successfully run for story %s.", story.id)
+            except Exception as e:
+                logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
+            
+            span.set_metadata({
+                "inputs": {"story_id": str(story.id)},
+                "outputs": {"contradictions_count": len(saved_contras)}
+            })
 
         saved_coverage = []
         saved_differences = []
-        try:
-            saved_coverage, saved_differences = await source_comparison_service.compare_sources_and_save(story.id, session)
-            logger.info("Source comparison successfully run for story %s.", story.id)
-        except Exception as e:
-            logger.error("Failed to run source comparison for story %s: %s", story.id, e)
+        async with StageSpan(stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)) as span:
+            try:
+                saved_coverage, saved_differences = await source_comparison_service.compare_sources_and_save(story.id, session)
+                logger.info("Source comparison successfully run for story %s.", story.id)
+            except Exception as e:
+                logger.error("Failed to run source comparison for story %s: %s", story.id, e)
+            
+            span.set_metadata({
+                "inputs": {"story_id": str(story.id)},
+                "outputs": {"differences_count": len(saved_differences)}
+            })
 
         # Serialize inputs for KG-grounded summarization
         contradictions_list = [
@@ -292,41 +328,62 @@ class ClusteringService:
 
         # 7. Call Summary Engine (KG-grounded summarization)
         cat_slug = "world"
-        try:
-            summary_res = await ai_service.summarize_story_from_kg(
-                kg=kg_dict,
-                contradictions=contradictions_list,
-                timeline=timeline_list,
-                source_comparisons=source_comparisons_list,
-            )
+        async with StageSpan(stage=PipelineStage.SUMMARY_GENERATION, story_id=str(story.id)) as span:
+            try:
+                summary_res = await ai_service.summarize_story_from_kg(
+                    kg=kg_dict,
+                    contradictions=contradictions_list,
+                    timeline=timeline_list,
+                    source_comparisons=source_comparisons_list,
+                )
 
-            # Update main story details
-            story.headline = summary_res.headline
-            story.one_line_summary = summary_res.one_line_summary
-            story.short_summary = summary_res.short_summary
-            story.detailed_summary = summary_res.detailed_summary
-            story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+                # Update main story details
+                story.headline = summary_res.headline
+                story.one_line_summary = summary_res.one_line_summary
+                story.short_summary = summary_res.short_summary
+                story.detailed_summary = summary_res.detailed_summary
+                story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
 
-            # Resolve and assign category
-            cat_slug = summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
-            cat_id = await self.get_or_create_category(
-                cat_slug, cat_slug.replace("-", " ").title(), session
-            )
-            story.category_id = cat_id
-            story.story_status = "active"
-            logger.info("Story summaries successfully synthesized and updated for story %s.", story.id)
-        except Exception as e:
-            logger.error("Failed to summarize story from KG %s: %s", story.id, e)
-            story.headline = story.headline or "Factual Synthesis"
-            story.one_line_summary = story.one_line_summary or "Factual Synthesis of events."
-            story.short_summary = story.short_summary or "Factual Synthesis of events."
-            story.detailed_summary = story.detailed_summary or "Factual Synthesis of events."
-            story.key_facts = story.key_facts or []
+                # Resolve and assign category
+                cat_slug = summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
+                cat_id = await self.get_or_create_category(
+                    cat_slug, cat_slug.replace("-", " ").title(), session
+                )
+                story.category_id = cat_id
+                story.story_status = "active"
+                logger.info("Story summaries successfully synthesized and updated for story %s.", story.id)
+            except Exception as e:
+                logger.error("Failed to summarize story from KG %s: %s", story.id, e)
+                story.headline = story.headline or "Factual Synthesis"
+                story.one_line_summary = story.one_line_summary or "Factual Synthesis of events."
+                story.short_summary = story.short_summary or "Factual Synthesis of events."
+                story.detailed_summary = story.detailed_summary or "Factual Synthesis of events."
+                story.key_facts = story.key_facts or []
+
+            span.set_metadata({
+                "inputs": {
+                    "kg_nodes": len(kg_dict.get("nodes", [])),
+                    "contradictions_count": len(contradictions_list),
+                    "timeline_count": len(timeline_list),
+                },
+                "outputs": {
+                    "headline": story.headline,
+                    "category": cat_slug,
+                    "one_line_summary": story.one_line_summary,
+                    "short_summary": story.short_summary,
+                    "key_facts": story.key_facts
+                }
+            })
 
         await session.commit()
 
         # 8. Index in Meilisearch and invalidate caches for this story
-        await self._index_and_invalidate(story, cat_slug, list(tags_added))
+        async with StageSpan(stage=PipelineStage.INDEXING, story_id=str(story.id)) as span:
+            await self._index_and_invalidate(story, cat_slug, list(tags_added))
+            span.set_metadata({
+                "inputs": {"story_id": str(story.id), "category": cat_slug, "tags": list(tags_added)},
+                "outputs": {"indexed": True}
+            })
 
     async def _index_and_invalidate(
         self,

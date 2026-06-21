@@ -26,6 +26,7 @@ from enum import StrEnum
 from typing import Any
 
 from app.core.langfuse_client import langfuse_client
+from sqlalchemy import select
 
 # ── Context Variables ─────────────────────────────────────────────────────────
 # These propagate trace IDs across async boundaries and Celery workers.
@@ -36,6 +37,17 @@ span_id_ctx: ContextVar[str] = ContextVar("span_id", default="")
 stage_ctx: ContextVar[str] = ContextVar("stage", default="")
 story_id_ctx: ContextVar[str] = ContextVar("story_id", default="")
 article_id_ctx: ContextVar[str] = ContextVar("article_id", default="")
+active_pipeline_run_ctx: ContextVar[PipelineRun | None] = ContextVar("active_pipeline_run", default=None)
+
+def _to_uuid(val: Any) -> uuid.UUID | None:
+    if not val:
+        return None
+    if isinstance(val, uuid.UUID):
+        return val
+    try:
+        return uuid.UUID(str(val))
+    except ValueError:
+        return None
 
 
 class StageStatus(StrEnum):
@@ -137,9 +149,11 @@ class PipelineRun:
         pipeline_type: str = "batch",
         parent_run_id: str | None = None,
         is_replay: bool = False,
+        run_id: str | None = None,
+        trace_id: str | None = None,
     ) -> None:
-        self.id = str(uuid.uuid4())
-        self.trace_id = str(uuid.uuid4())
+        self.id = run_id or str(uuid.uuid4())
+        self.trace_id = trace_id or str(uuid.uuid4())
         self.trigger = trigger
         self.pipeline_type = pipeline_type
         self.parent_run_id = parent_run_id
@@ -152,10 +166,12 @@ class PipelineRun:
         self._tokens: dict[str, int] = {}
         self._run_id_token = None
         self._trace_id_token = None
+        self._active_run_token = None
 
     async def __aenter__(self) -> PipelineRun:
         self._run_id_token = run_id_ctx.set(self.id)
         self._trace_id_token = trace_id_ctx.set(self.trace_id)
+        self._active_run_token = active_pipeline_run_ctx.set(self)
         self.status = StageStatus.RUNNING
 
         # Create Langfuse trace
@@ -172,6 +188,13 @@ class PipelineRun:
             )
         except Exception:
             pass
+        
+        # Persist initial status (running)
+        try:
+            await self._persist()
+        except Exception:
+            pass
+            
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
@@ -187,8 +210,10 @@ class PipelineRun:
             run_id_ctx.reset(self._run_id_token)
         if self._trace_id_token:
             trace_id_ctx.reset(self._trace_id_token)
+        if self._active_run_token:
+            active_pipeline_run_ctx.reset(self._active_run_token)
 
-        # Persist the run asynchronously (best-effort)
+        # Persist the final run status asynchronously
         try:
             await self._persist()
         except Exception:
@@ -197,49 +222,73 @@ class PipelineRun:
         return False  # Don't suppress exceptions
 
     async def _persist(self) -> None:
-        """Persist the PipelineRun and all StageRuns to the database."""
+        """Persist/Upsert the PipelineRun and all StageRuns to the database."""
         from app.core.database import async_session_factory
         from app.models.observability_models import PipelineRunModel, StageRunModel
 
         async with async_session_factory() as session:
-            run = PipelineRunModel(
-                id=uuid.UUID(self.id),
-                trace_id=uuid.UUID(self.trace_id),
-                trigger=self.trigger,
-                pipeline_type=self.pipeline_type,
-                parent_run_id=uuid.UUID(self.parent_run_id) if self.parent_run_id else None,
-                is_replay=self.is_replay,
-                status=self.status.value,
-                started_at=self.started_at,
-                completed_at=self.completed_at,
-                total_latency_ms=(
-                    (self.completed_at - self.started_at).total_seconds() * 1000
-                    if self.completed_at
-                    else 0
-                ),
-                error=self.error,
-                metadata_payload={},
-            )
-            session.add(run)
+            stmt = select(PipelineRunModel).where(PipelineRunModel.id == _to_uuid(self.id))
+            res = await session.execute(stmt)
+            run = res.scalar_one_or_none()
+
+            if not run:
+                run = PipelineRunModel(
+                    id=_to_uuid(self.id),
+                    trace_id=_to_uuid(self.trace_id),
+                    trigger=self.trigger,
+                    pipeline_type=self.pipeline_type,
+                    parent_run_id=_to_uuid(self.parent_run_id),
+                    is_replay=self.is_replay,
+                    status=self.status.value,
+                    started_at=self.started_at,
+                    completed_at=self.completed_at,
+                    total_latency_ms=(
+                        (self.completed_at - self.started_at).total_seconds() * 1000
+                        if self.completed_at
+                        else 0
+                    ),
+                    error=self.error,
+                    metadata_payload={},
+                )
+                session.add(run)
+            else:
+                run.status = self.status.value
+                run.completed_at = self.completed_at
+                if self.completed_at:
+                    run.total_latency_ms = (self.completed_at - self.started_at).total_seconds() * 1000
+                run.error = self.error
 
             for span in self.stages:
-                stage_run = StageRunModel(
-                    id=uuid.UUID(span.span_id),
-                    run_id=uuid.UUID(span.run_id),
-                    trace_id=uuid.UUID(span.trace_id),
-                    stage=span.stage,
-                    status=span.status.value,
-                    started_at=span.started_at,
-                    completed_at=span.completed_at,
-                    latency_ms=span.latency_ms,
-                    retry_count=span.retry_count,
-                    error=span.error,
-                    error_type=span.error_type,
-                    story_id=uuid.UUID(span.story_id) if span.story_id else None,
-                    article_id=uuid.UUID(span.article_id) if span.article_id else None,
-                    metadata_payload=span.metadata,
-                )
-                session.add(stage_run)
+                stage_stmt = select(StageRunModel).where(StageRunModel.id == _to_uuid(span.span_id))
+                stage_res = await session.execute(stage_stmt)
+                stage_run = stage_res.scalar_one_or_none()
+
+                if not stage_run:
+                    stage_run = StageRunModel(
+                        id=_to_uuid(span.span_id),
+                        run_id=_to_uuid(span.run_id),
+                        trace_id=_to_uuid(span.trace_id),
+                        stage=span.stage,
+                        status=span.status.value,
+                        started_at=span.started_at,
+                        completed_at=span.completed_at,
+                        latency_ms=span.latency_ms,
+                        retry_count=span.retry_count,
+                        error=span.error,
+                        error_type=span.error_type,
+                        story_id=_to_uuid(span.story_id),
+                        article_id=_to_uuid(span.article_id),
+                        metadata_payload=span.metadata,
+                    )
+                    session.add(stage_run)
+                else:
+                    stage_run.status = span.status.value
+                    stage_run.completed_at = span.completed_at
+                    stage_run.latency_ms = span.latency_ms
+                    stage_run.retry_count = span.retry_count
+                    stage_run.error = span.error
+                    stage_run.error_type = span.error_type
+                    stage_run.metadata_payload = span.metadata
 
             await session.commit()
 
@@ -271,12 +320,20 @@ class StageSpan:
 
     def __init__(
         self,
-        pipeline_run: PipelineRun,
-        stage: str | PipelineStage,
+        pipeline_run: PipelineRun | None = None,
+        stage: str | PipelineStage = "",
         story_id: str | None = None,
         article_id: str | None = None,
     ) -> None:
         self.span_id = str(uuid.uuid4())
+        
+        # Look up active run if not explicitly provided
+        if pipeline_run is None:
+            pipeline_run = active_pipeline_run_ctx.get(None)
+        if pipeline_run is None:
+            # Create a fallback/orphan run so we have trace IDs
+            pipeline_run = PipelineRun(trigger="orphan", pipeline_type="incremental")
+            
         self.pipeline_run = pipeline_run
         self.stage = stage.value if isinstance(stage, PipelineStage) else stage
         self.story_id = story_id
@@ -332,6 +389,12 @@ class StageSpan:
         except Exception:
             pass
 
+        # Persist stage run status in DB
+        try:
+            await self._persist_db_status()
+        except Exception:
+            pass
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
@@ -347,7 +410,8 @@ class StageSpan:
                 traceback.format_exception(exc_type, exc_val, exc_tb)
             )
         else:
-            self.status = StageStatus.SUCCESS
+            if self.status == StageStatus.RUNNING:
+                self.status = StageStatus.SUCCESS
 
         # Record Prometheus metrics
         try:
@@ -405,6 +469,12 @@ class StageSpan:
         )
         self.pipeline_run.stages.append(span_data)
 
+        # Persist stage run status in DB
+        try:
+            await self._persist_db_status()
+        except Exception:
+            pass
+
         # Reset context vars
         if self._span_token:
             span_id_ctx.reset(self._span_token)
@@ -416,6 +486,52 @@ class StageSpan:
             article_id_ctx.reset(self._article_token)
 
         return False  # Don't suppress exceptions
+
+    async def _persist_db_status(self) -> None:
+        """Persist/update this stage run record in the database."""
+        # Ensure the pipeline run parent is in DB
+        if self.pipeline_run:
+            try:
+                await self.pipeline_run._persist()
+            except Exception:
+                pass
+
+        from app.core.database import async_session_factory
+        from app.models.observability_models import StageRunModel
+
+        async with async_session_factory() as session:
+            stmt = select(StageRunModel).where(StageRunModel.id == _to_uuid(self.span_id))
+            res = await session.execute(stmt)
+            stage_run = res.scalar_one_or_none()
+
+            if not stage_run:
+                stage_run = StageRunModel(
+                    id=_to_uuid(self.span_id),
+                    run_id=_to_uuid(self.pipeline_run.id) if self.pipeline_run else None,
+                    trace_id=_to_uuid(self.pipeline_run.trace_id) if self.pipeline_run else None,
+                    stage=self.stage,
+                    status=self.status.value,
+                    started_at=self.started_at,
+                    completed_at=self.completed_at,
+                    latency_ms=self.latency_ms,
+                    retry_count=self.retry_count,
+                    error=self.error,
+                    error_type=self.error_type,
+                    story_id=_to_uuid(self.story_id or story_id_ctx.get("")),
+                    article_id=_to_uuid(self.article_id or article_id_ctx.get("")),
+                    metadata_payload=self.metadata,
+                )
+                session.add(stage_run)
+            else:
+                stage_run.status = self.status.value
+                stage_run.completed_at = self.completed_at
+                stage_run.latency_ms = self.latency_ms
+                stage_run.retry_count = self.retry_count
+                stage_run.error = self.error
+                stage_run.error_type = self.error_type
+                stage_run.metadata_payload = self.metadata
+
+            await session.commit()
 
     def set_metadata(self, data: dict[str, Any]) -> None:
         """Add metadata to this span (e.g., articles_count, model_used)."""
@@ -608,9 +724,61 @@ async def track_llm_call(
 async def _persist_llm_call(call: LLMCallData) -> None:
     """Persist an LLM call record to the database."""
     from app.core.database import async_session_factory
-    from app.models.observability_models import LLMTraceModel
+    from app.models.observability_models import LLMTraceModel, PromptVersionModel
+    from sqlalchemy import select, func, update
+    import hashlib
 
     async with async_session_factory() as session:
+        # Find active prompt version for this stage
+        stmt = select(PromptVersionModel).where(
+            PromptVersionModel.stage == call.stage,
+            PromptVersionModel.is_active == True
+        )
+        res = await session.execute(stmt)
+        pv = res.scalar_one_or_none()
+
+        if not pv:
+            # Create a default fallback/auto-captured prompt version for this stage
+            sys_prompt = call.system_prompt or ""
+            user_tmpl = call.user_prompt or ""
+            if len(user_tmpl) > 1000:
+                user_tmpl = user_tmpl[:1000] + "\n... [Dynamic Context] ..."
+            
+            combined = f"stage:{call.stage}\nsys:{sys_prompt}\nuser:{user_tmpl}"
+            prompt_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
+
+            # Check if this prompt hash already exists in DB (maybe it was deactivated)
+            stmt_hash = select(PromptVersionModel).where(PromptVersionModel.prompt_hash == prompt_hash)
+            res_hash = await session.execute(stmt_hash)
+            pv = res_hash.scalar_one_or_none()
+
+            if not pv:
+                # Find current max version for this stage
+                stmt_max = select(func.max(PromptVersionModel.version)).where(PromptVersionModel.stage == call.stage)
+                res_max = await session.execute(stmt_max)
+                max_v = res_max.scalar() or 0
+                new_v = max_v + 1
+
+                # Deactivate older prompt versions
+                await session.execute(
+                    update(PromptVersionModel)
+                    .where(PromptVersionModel.stage == call.stage)
+                    .values(is_active=False)
+                )
+
+                pv = PromptVersionModel(
+                    id=uuid.uuid4(),
+                    prompt_hash=prompt_hash,
+                    stage=call.stage,
+                    system_prompt=sys_prompt or None,
+                    user_prompt_template=user_tmpl or None,
+                    version=new_v,
+                    description=f"Auto-captured prompt for {call.stage}",
+                    is_active=True,
+                )
+                session.add(pv)
+                await session.flush()
+
         trace = LLMTraceModel(
             id=uuid.UUID(call.call_id),
             run_id=uuid.UUID(call.run_id) if call.run_id else None,
@@ -632,6 +800,7 @@ async def _persist_llm_call(call: LLMCallData) -> None:
             retry_count=call.retry_count,
             story_id=uuid.UUID(call.story_id) if call.story_id else None,
             article_id=uuid.UUID(call.article_id) if call.article_id else None,
+            prompt_version_id=pv.id if pv else None,
         )
         session.add(trace)
         await session.commit()

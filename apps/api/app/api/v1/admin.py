@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import require_admin
 from app.models.models import Article, Source, Story, User, CanonicalEntity, StoryArticle
+from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel
 from app.schemas.admin_schemas import (
     ClusterDebuggerResponse,
     CostAnalyticsResponse,
@@ -176,10 +177,44 @@ async def inspect_story(
 
 @router.get("/pipeline/status", response_model=PipelineStatusResponse)
 async def pipeline_status(
+    run_id: uuid.UUID | None = None,
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get status of the latest pipeline execution run (admin only)."""
+    """Get status of the latest or specified pipeline execution run (admin only)."""
+    if run_id:
+        from app.schemas.admin_schemas import PipelineStageStatusSchema
+        run_result = await db.execute(
+            select(PipelineRunModel).where(PipelineRunModel.id == run_id)
+        )
+        run = run_result.scalar_one_or_none()
+        if not run:
+            raise HTTPException(status_code=404, detail="Pipeline run not found")
+
+        stages_result = await db.execute(
+            select(StageRunModel)
+            .where(StageRunModel.run_id == run.id)
+            .order_by(StageRunModel.started_at.asc())
+        )
+        stage_runs = stages_result.scalars().all()
+
+        stages = [
+            PipelineStageStatusSchema(
+                stage=sr.stage,
+                status=sr.status,
+                started_at=sr.started_at,
+                completed_at=sr.completed_at,
+                latency_ms=sr.latency_ms,
+                error=sr.error,
+            )
+            for sr in stage_runs
+        ]
+
+        return PipelineStatusResponse(
+            run_id=run.id,
+            status=run.status,
+            stages=stages,
+        )
     return await admin_service.get_pipeline_status(db)
 
 
@@ -292,10 +327,172 @@ async def replay_story_stage(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a replay of a specific stage for a story (admin only)."""
-    from app.workers.tasks import replay_story_stage_task
-    replay_story_stage_task.delay(str(story_id), stage)
-    return MessageResponse(message=f"Replay of stage {stage} triggered for story {story_id}.")
+    stage_norm = stage.lower().strip()
+    mapping = {
+        "nlp_analysis": "entity_extraction",
+        "entity_extraction": "entity_extraction",
+        "contradiction": "contradiction_detection",
+        "contradiction_engine": "contradiction_detection",
+        "contradiction_detection": "contradiction_detection",
+        "timeline": "timeline_generation",
+        "timeline_builder": "timeline_generation",
+        "timeline_generation": "timeline_generation",
+        "summarization": "summary_generation",
+        "ai_summarization": "summary_generation",
+        "summary_generation": "summary_generation",
+    }
+    stage_resolved = mapping.get(stage_norm, stage_norm)
 
+    if stage_resolved not in {"entity_extraction", "contradiction_detection", "timeline_generation", "summary_generation"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stage '{stage}' is not replayable. Replayable stages: NLP Analysis, Contradiction Engine, Timeline Builder, AI Summarization."
+        )
+
+    from app.workers.tasks import replay_story_stage_task
+    replay_story_stage_task.delay(str(story_id), stage_resolved)
+    return MessageResponse(message=f"Replay of stage {stage_resolved} triggered for story {story_id}.")
+
+
+@router.get("/pipeline/runs")
+async def list_pipeline_runs(
+    limit: int = 50,
+    offset: int = 0,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List historical pipeline executions (admin only)."""
+    stmt = select(PipelineRunModel).order_by(PipelineRunModel.started_at.desc()).limit(limit).offset(offset)
+    res = await db.execute(stmt)
+    runs = res.scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "trace_id": str(r.trace_id),
+            "trigger": r.trigger,
+            "pipeline_type": r.pipeline_type,
+            "status": r.status,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "total_latency_ms": r.total_latency_ms,
+            "error": r.error,
+        }
+        for r in runs
+    ]
+
+
+@router.get("/pipeline/runs/{run_id}/stages/{stage}")
+async def get_stage_run_details(
+    run_id: uuid.UUID,
+    stage: str,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve details (inputs, outputs, metrics, errors) of a specific stage run (admin only)."""
+    stage_lower = stage.lower().strip()
+    stmt = select(StageRunModel).where(
+        StageRunModel.run_id == run_id,
+        StageRunModel.stage == stage_lower
+    )
+    res = await db.execute(stmt)
+    stage_run = res.scalar_one_or_none()
+    if not stage_run:
+        raise HTTPException(status_code=404, detail=f"Stage run not found for stage {stage}")
+
+    llm_stmt = select(LLMTraceModel).where(
+        LLMTraceModel.run_id == run_id,
+        LLMTraceModel.stage == stage_lower
+    )
+    llm_res = await db.execute(llm_stmt)
+    llm_traces = llm_res.scalars().all()
+
+    traces_payload = [
+        {
+            "id": str(t.id),
+            "provider": t.provider,
+            "model": t.model,
+            "system_prompt": t.system_prompt,
+            "user_prompt": t.user_prompt,
+            "response_text": t.response_text,
+            "input_tokens": t.input_tokens,
+            "output_tokens": t.output_tokens,
+            "total_tokens": t.total_tokens,
+            "latency_ms": t.latency_ms,
+            "cost_usd": t.cost_usd,
+            "status": t.status,
+            "error": t.error,
+        }
+        for t in llm_traces
+    ]
+
+    return {
+        "id": str(stage_run.id),
+        "run_id": str(stage_run.run_id),
+        "trace_id": str(stage_run.trace_id),
+        "stage": stage_run.stage,
+        "status": stage_run.status,
+        "started_at": stage_run.started_at.isoformat() if stage_run.started_at else None,
+        "completed_at": stage_run.completed_at.isoformat() if stage_run.completed_at else None,
+        "latency_ms": stage_run.latency_ms,
+        "retry_count": stage_run.retry_count,
+        "error": stage_run.error,
+        "error_type": stage_run.error_type,
+        "story_id": str(stage_run.story_id) if stage_run.story_id else None,
+        "article_id": str(stage_run.article_id) if stage_run.article_id else None,
+        "metadata": stage_run.metadata_payload or {},
+        "llm_traces": traces_payload,
+    }
+
+
+@router.get("/pipeline/runs/{run_id}/stages/{stage}/logs")
+async def get_stage_run_logs(
+    run_id: uuid.UUID,
+    stage: str,
+    _admin: User = Depends(require_admin),
+):
+    """Retrieve all cached logs for a stage run (admin only)."""
+    import redis
+    from app.core.config import settings
+    stage_lower = stage.lower().strip()
+    r = redis.from_url(settings.REDIS_URL)
+    redis_key = f"newsiq:logs:{run_id}:{stage_lower}"
+    logs = r.lrange(redis_key, 0, -1)
+    return [line.decode("utf-8") if isinstance(line, bytes) else line for line in logs]
+
+
+@router.get("/pipeline/runs/{run_id}/stages/{stage}/logs/stream")
+async def stream_stage_run_logs(
+    run_id: uuid.UUID,
+    stage: str,
+):
+    """Stream logs live via SSE for a specific stage run."""
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+    stage_lower = stage.lower().strip()
+
+    async def log_generator():
+        r = aioredis.from_url(settings.REDIS_URL)
+        # Yield existing logs first
+        redis_key = f"newsiq:logs:{run_id}:{stage_lower}"
+        existing_logs = await r.lrange(redis_key, 0, -1)
+        for line in existing_logs:
+            decoded = line.decode("utf-8") if isinstance(line, bytes) else line
+            yield f"data: {decoded}\n\n"
+
+        pubsub = r.pubsub()
+        redis_channel = f"newsiq:logs:{run_id}:{stage_lower}:stream"
+        await pubsub.subscribe(redis_channel)
+        try:
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message:
+                    decoded = message['data'].decode('utf-8') if isinstance(message['data'], bytes) else message['data']
+                    yield f"data: {decoded}\n\n"
+        finally:
+            await pubsub.unsubscribe(redis_channel)
+            await r.aclose()
+
+    return StreamingResponse(log_generator(), media_type="text/event-stream")
 
 
 @router.get("/pipeline/stream")

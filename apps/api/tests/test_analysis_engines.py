@@ -356,10 +356,10 @@ async def test_generate_story_content_redesigned_timeline(
         assert len(timeline_events) == 2
 
         # Verify chronological sorting (earlier event should be first)
-        assert timeline_events[0].event_time == datetime.datetime(2026, 6, 20, 10, 0, 0, tzinfo=datetime.timezone.utc)
+        assert timeline_events[0].event_time == datetime.datetime(2026, 6, 20, 10, 0, 0)
         assert "Attack reported by BBC" in timeline_events[0].description
         assert "Actors: Russia" in timeline_events[0].description
 
-        assert timeline_events[1].event_time == datetime.datetime(2026, 6, 20, 15, 0, 0, tzinfo=datetime.timezone.utc)
+        assert timeline_events[1].event_time == datetime.datetime(2026, 6, 20, 15, 0, 0)
         assert "Detention reported by BBC" in timeline_events[1].description
         assert "Actors: Police" in timeline_events[1].description

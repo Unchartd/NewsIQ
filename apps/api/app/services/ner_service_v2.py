@@ -29,6 +29,7 @@ from tenacity import (
 )
 
 from app.core.config import settings
+from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -249,8 +250,8 @@ class NERServiceV2:
             retry=retry_if_exception_type(Exception),
             reraise=True,
         )
-        async def _call() -> str:
-            response = await self._gemini_client.aio.models.generate_content(
+        async def _call():
+            return await self._gemini_client.aio.models.generate_content(
                 model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -259,9 +260,15 @@ class NERServiceV2:
                     temperature=0.1,
                 ),
             )
-            return response.text
 
-        raw_text = await _call()
+        async with track_llm_call("gemini", model, "entity_extraction", user_prompt=prompt) as call:
+            response = await _call()
+            call.response_text = response.text
+            if getattr(response, "usage_metadata", None):
+                call.input_tokens = response.usage_metadata.prompt_token_count or 0
+                call.output_tokens = response.usage_metadata.candidates_token_count or 0
+            raw_text = response.text
+
         data = json.loads(raw_text)
         entities_raw = data.get("entities", [])
 
@@ -289,11 +296,17 @@ class NERServiceV2:
                 temperature=0.1,
             )
 
-        response = await _call()
-        parsed = response.choices[0].message.parsed
-        return self._normalize_entities(
-            [e.model_dump() for e in parsed.entities] if parsed else []
-        )
+        async with track_llm_call("openai", "gpt-4o-mini", "entity_extraction", user_prompt=prompt) as call:
+            response = await _call()
+            call.response_text = response.choices[0].message.content or ""
+            if getattr(response, "usage", None):
+                call.input_tokens = response.usage.prompt_tokens or 0
+                call.output_tokens = response.usage.completion_tokens or 0
+            
+            parsed = response.choices[0].message.parsed
+            return self._normalize_entities(
+                [e.model_dump() for e in parsed.entities] if parsed else []
+            )
 
     # ── spaCy fallback + rules ────────────────────────────────────────────────
 
