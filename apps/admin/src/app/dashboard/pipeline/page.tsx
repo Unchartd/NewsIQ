@@ -39,7 +39,7 @@ const GROUP_COLORS: Record<string, { bg: string; border: string; text: string }>
 const STATUS_CONFIG: Record<string, { icon: React.ElementType; cls: string; label: string }> = {
   success: { icon: CheckCircle2, cls: "text-emerald-400", label: "Success" },
   failed: { icon: XCircle, cls: "text-red-400", label: "Failed" },
-  running: { icon: Loader2, cls: "text-primary animate-spin", label: "Running" },
+  running: { icon: Loader2, cls: "text-primary", label: "Running" },
   pending: { icon: Clock, cls: "text-slate-500", label: "Pending" },
   skipped: { icon: SkipForward, cls: "text-slate-650", label: "Skipped" },
 };
@@ -64,7 +64,7 @@ function StageNode({
         <span className={`text-xs font-semibold ${group.text}`}>
           {stage.label}
         </span>
-        <Icon className={`w-4 h-4 shrink-0 ${cfg.cls}`} />
+        <Icon className={`w-4 h-4 shrink-0 ${cfg.cls} ${status === "running" ? "animate-spin" : ""}`} />
       </div>
       <span className="text-[10px] font-mono text-slate-600">{stage.id}</span>
       <span className={`text-[10px] font-semibold ${cfg.cls}`}>{cfg.label}</span>
@@ -243,7 +243,7 @@ export default function PipelinePage() {
                       <td className="py-2 pr-4 font-mono text-slate-300">{ev.stage}</td>
                       <td className="py-2 pr-4">
                         <span className={`flex items-center gap-1.5 ${cfg.cls}`}>
-                          <Icon className="w-3 h-3" />
+                          <Icon className={`w-3 h-3 ${ev.status === "running" ? "animate-spin" : ""}`} />
                           {cfg.label}
                         </span>
                       </td>
