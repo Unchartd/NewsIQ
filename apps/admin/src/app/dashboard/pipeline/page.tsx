@@ -46,13 +46,13 @@ const GROUP_COLORS: Record<string, { bg: string; border: string; text: string }>
   output: { bg: "bg-emerald-500/10", border: "border-emerald-500/30", text: "text-emerald-400" },
 };
 
-const STATUS_CONFIG: Record<string, { icon: React.ElementType; cls: string; label: string }> = {
+const STATUS_CONFIG: Record<string, { icon: React.ElementType; cls: string; label: string; iconCls?: string }> = {
   success: { icon: CheckCircle2, cls: "text-emerald-400", label: "Success" },
   failed: { icon: XCircle, cls: "text-red-400", label: "Failed" },
-  running: { icon: Loader2, cls: "text-blue-400 animate-spin", label: "Running" },
+  running: { icon: Loader2, cls: "text-blue-400", iconCls: "animate-spin", label: "Running" },
   pending: { icon: Clock, cls: "text-slate-500", label: "Pending" },
-  skipped: { icon: SkipForward, cls: "text-slate-600", label: "Skipped" },
-  retrying: { icon: RotateCw, cls: "text-amber-400 animate-pulse", label: "Retrying" },
+  skipped: { icon: SkipForward, cls: "text-slate-650", label: "Skipped" },
+  retrying: { icon: RotateCw, cls: "text-amber-400", iconCls: "animate-pulse", label: "Retrying" },
 };
 
 // Stage normalization helper mappings
@@ -203,7 +203,7 @@ function StageNode({
         <span className="text-[12px] font-bold tracking-tight">
           {stage.label}
         </span>
-        <Icon className="w-3.5 h-3.5 shrink-0" />
+        <Icon className={`w-3.5 h-3.5 shrink-0 ${cfg.iconCls || ""}`} />
       </div>
       <span className="text-[9px] font-mono text-slate-600 uppercase mt-0.5">{stage.id}</span>
       <div className="flex items-center gap-1.5 mt-2">
@@ -995,7 +995,7 @@ export default function PipelinePage() {
                       <td className="py-2.5 pr-4 font-mono text-slate-400 capitalize">{run.pipeline_type}</td>
                       <td className="py-2.5 pr-4">
                         <span className={`flex items-center gap-1.5 font-bold uppercase text-[10px] ${cfg.cls}`}>
-                          <Icon className="w-3.5 h-3.5" />
+                          <Icon className={`w-3.5 h-3.5 ${cfg.iconCls || ""}`} />
                           {cfg.label}
                         </span>
                       </td>
