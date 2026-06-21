@@ -578,6 +578,13 @@ class ClusteringService:
                             score,
                         )
                         continue  # Try next candidate match
+                else:
+                    logger.warning(
+                        "Rejecting merge of article %s into story %s due to missing event or story metadata.",
+                        article_id,
+                        story_id,
+                    )
+                    continue
 
                 return await self.merge_article_into_existing_story(article, story_id, session)
 
@@ -672,7 +679,7 @@ class ClusteringService:
                             if sub_evt:
                                 total_sim += self._compute_event_similarity_direct(art_evt, sub_evt)
                             else:
-                                total_sim += 1.0
+                                total_sim += 0.0
                         avg_sim = total_sim / len(sub)
                         if avg_sim >= 0.80:
                             matched_sub = sub

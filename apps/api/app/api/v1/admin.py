@@ -679,7 +679,7 @@ async def split_cluster(
                     if sub_evt:
                         total_sim += clustering_service._compute_event_similarity_direct(art_evt, sub_evt)
                     else:
-                        total_sim += 1.0
+                        total_sim += 0.0
                 avg_sim = total_sim / len(sub)
                 if avg_sim >= 0.80:
                     matched_sub = sub

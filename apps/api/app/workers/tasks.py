@@ -169,10 +169,7 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                         extra={"batch_size": len(pending_articles)},
                     )
                     success_count = 0
-                    merged_count = 0
                     failed_count = 0
-
-                    from app.services.clustering_service import clustering_service
 
                     for article in pending_articles:
                         bind_article_context(str(article.id))
@@ -214,13 +211,6 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                             article.embedding_status = "completed"
                             await session.commit()
                             success_count += 1
-
-                            # Try real-time incremental merge into similar story
-                            merged = await clustering_service.add_article_to_existing_story_if_similar(
-                                article.id, session
-                            )
-                            if merged:
-                                merged_count += 1
                         except Exception as e:
                             logger.error(
                                 "Embedding failed",
@@ -237,7 +227,6 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                         "batch_size": len(pending_articles),
                         "success_count": success_count,
                         "failed_count": failed_count,
-                        "merged_count": merged_count,
                     })
 
                     logger.info(
@@ -245,7 +234,6 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                         extra={
                             "success": success_count,
                             "failed": failed_count,
-                            "merged": merged_count,
                             "total": len(pending_articles),
                         },
                     )
@@ -303,6 +291,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     )
                     success_count = 0
                     failed_count = 0
+                    merged_count = 0
 
                     for article in articles:
                         bind_article_context(str(article.id))
@@ -366,6 +355,14 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             await session.commit()
                             success_count += 1
 
+                            # Try real-time incremental merge into similar story
+                            from app.services.clustering_service import clustering_service
+                            merged = await clustering_service.add_article_to_existing_story_if_similar(
+                                article.id, session
+                            )
+                            if merged:
+                                merged_count += 1
+
                         except Exception as e:
                             logger.error(
                                 "Event extraction failed",
@@ -382,6 +379,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                         "batch_size": len(articles),
                         "success_count": success_count,
                         "failed_count": failed_count,
+                        "merged_count": merged_count,
                     })
 
                     logger.info(
@@ -389,6 +387,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                         extra={
                             "success": success_count,
                             "failed": failed_count,
+                            "merged": merged_count,
                             "total": len(articles),
                         },
                     )
