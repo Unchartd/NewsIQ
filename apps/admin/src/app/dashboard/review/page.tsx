@@ -26,8 +26,18 @@ export default function ReviewPage() {
   const { data, isLoading } = useQuery<ReviewAction[]>({
     queryKey: ["admin-review"],
     queryFn: async () => {
-      const res = await apiClient.get("/admin/review");
-      return Array.isArray(res.data) ? res.data : res.data?.actions ?? [];
+      const res = await apiClient.get("/admin/review/queue");
+      const reviews = res.data?.reviews ?? [];
+      return reviews.map((r: any) => ({
+        id: r.id,
+        action_type: r.action,
+        story_id: r.story_id,
+        user_email: "admin@newsiq.com",
+        created_at: r.created_at,
+        before: r.before_value,
+        after: r.after_value,
+        note: r.notes,
+      }));
     },
     refetchInterval: 30000,
   });

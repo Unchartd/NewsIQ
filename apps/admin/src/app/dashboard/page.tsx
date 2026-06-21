@@ -103,8 +103,38 @@ export default function DashboardHome() {
   const { data: pipelineStatus } = useQuery<PipelineStatus>({
     queryKey: ["pipeline-status"],
     queryFn: async () => {
-      const res = await apiClient.get("/admin/pipeline/status");
-      return res.data;
+      const [statusRes, metricsRes] = await Promise.all([
+        apiClient.get("/admin/pipeline/status"),
+        apiClient.get("/admin/metrics/summary"),
+      ]);
+      const statusData = statusRes.data;
+      const metricsData = metricsRes.data;
+      
+      const active_runs = statusData.status === "running" ? 1 : 0;
+      const failed_today = metricsData.failed_runs_count ?? 0;
+      const total_runs = metricsData.total_pipeline_runs ?? 0;
+      const completed_today = Math.max(0, total_runs - failed_today);
+      
+      let avg_duration_ms = 0;
+      if (statusData.stages && statusData.stages.length > 0) {
+        const completedStages = statusData.stages.filter((s: any) => s.completed_at && s.started_at);
+        if (completedStages.length > 0) {
+          const totalDuration = completedStages.reduce((sum: number, s: any) => {
+            const start = new Date(s.started_at).getTime();
+            const end = new Date(s.completed_at).getTime();
+            return sum + Math.max(0, end - start);
+          }, 0);
+          avg_duration_ms = totalDuration / completedStages.length;
+        }
+      }
+      
+      return {
+        active_runs,
+        completed_today,
+        failed_today,
+        avg_duration_ms,
+        stages: statusData.stages || [],
+      };
     },
     refetchInterval: 15000,
   });
@@ -113,7 +143,28 @@ export default function DashboardHome() {
     queryKey: ["cost-analytics"],
     queryFn: async () => {
       const res = await apiClient.get("/admin/costs");
-      return res.data;
+      const rawData = res.data;
+      const breakdown = rawData?.breakdown ?? [];
+      const total_cost_usd = rawData?.total_cost_usd ?? 0.0;
+      
+      let total_tokens = 0;
+      const by_stage: Record<string, number> = {};
+      const by_model: Record<string, number> = {};
+      
+      for (const item of breakdown) {
+        const tokens = (item.input_tokens || 0) + (item.output_tokens || 0);
+        total_tokens += tokens;
+        
+        by_stage[item.stage] = (by_stage[item.stage] || 0) + (item.cost_usd || 0);
+        by_model[item.model] = (by_model[item.model] || 0) + (item.cost_usd || 0);
+      }
+      
+      return {
+        total_cost_usd,
+        total_tokens,
+        by_stage,
+        by_model,
+      };
     },
     refetchInterval: 60000,
   });
@@ -121,8 +172,9 @@ export default function DashboardHome() {
   const { data: storiesCount } = useQuery<{ total: number }>({
     queryKey: ["stories-count"],
     queryFn: async () => {
-      const res = await apiClient.get("/admin/stories?limit=1");
-      return { total: res.data?.total ?? res.data?.length ?? 0 };
+      const res = await apiClient.get("/stories", { params: { limit: 1 } });
+      const raw = Array.isArray(res.data) ? res.data : [];
+      return { total: raw.length };
     },
   });
 

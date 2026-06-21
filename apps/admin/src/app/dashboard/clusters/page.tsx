@@ -25,7 +25,14 @@ export default function ClustersPage() {
     queryKey: ["admin-clusters", search],
     queryFn: async () => {
       const res = await apiClient.get("/admin/clusters", { params: { q: search || undefined, limit: 50 } });
-      return Array.isArray(res.data) ? res.data : res.data?.clusters ?? [];
+      const rawClusters = Array.isArray(res.data) ? res.data : res.data?.clusters ?? [];
+      return rawClusters.map((c: any) => ({
+        id: c.story_id,
+        canonical_headline: c.headline,
+        article_count: c.article_count,
+        cluster_confidence: c.avg_similarity,
+        created_at: c.articles?.[0]?.published_at || "",
+      }));
     },
   });
 

@@ -25,7 +25,17 @@ export default function PromptsPage() {
     queryKey: ["admin-prompts"],
     queryFn: async () => {
       const res = await apiClient.get("/admin/prompts");
-      return Array.isArray(res.data) ? res.data : res.data?.prompts ?? [];
+      const raw = Array.isArray(res.data) ? res.data : res.data?.prompts ?? [];
+      return raw.map((p: any) => ({
+        id: p.id,
+        stage: p.stage,
+        version: p.version,
+        hash: p.prompt_hash,
+        system_template: p.system_prompt,
+        user_template: p.user_prompt_template,
+        is_active: p.is_active,
+        created_at: p.created_at,
+      }));
     },
   });
 

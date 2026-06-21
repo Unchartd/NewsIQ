@@ -301,7 +301,7 @@ class AdminService:
         for row in rows:
             # Look up a canonical entity matching this value
             ce_result = await db.execute(
-                select(CanonicalEntity).where(CanonicalEntity.name == row.entity_value).limit(1)
+                select(CanonicalEntity).where(CanonicalEntity.canonical_name == row.entity_value).limit(1)
             )
             ce = ce_result.scalar_one_or_none()
             entities.append(

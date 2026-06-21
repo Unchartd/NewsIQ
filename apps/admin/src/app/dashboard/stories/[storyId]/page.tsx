@@ -29,7 +29,7 @@ export default function StoryInspectorPage() {
   const { data: story, isLoading } = useQuery({
     queryKey: ["story-inspect", storyId],
     queryFn: async () => {
-      const res = await apiClient.get(`/admin/stories/${storyId}/inspect`);
+      const res = await apiClient.get(`/admin/stories/${storyId}`);
       return res.data;
     },
     enabled: !!storyId,
@@ -244,7 +244,11 @@ export default function StoryInspectorPage() {
                 className="flex items-center gap-2 px-4 py-3 rounded-xl glass border border-border text-xs text-slate-400 hover:text-slate-200 hover:border-primary/30 transition-all"
                 onClick={async () => {
                   try {
-                    await apiClient.post(`/admin/stories/${storyId}/replay`, { stage: stage === "full" ? null : stage });
+                    if (stage === "full") {
+                      await apiClient.post(`/admin/replay/${storyId}`);
+                    } else {
+                      await apiClient.post(`/admin/replay/${storyId}/${stage}`);
+                    }
                     alert(`Replay queued: ${stage}`);
                   } catch { alert("Failed to queue replay."); }
                 }}

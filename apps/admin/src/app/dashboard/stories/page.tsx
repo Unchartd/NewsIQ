@@ -23,12 +23,19 @@ export default function StoriesPage() {
   const { data, isLoading } = useQuery<{ stories: Story[]; total: number }>({
     queryKey: ["admin-stories", search, page],
     queryFn: async () => {
-      const res = await apiClient.get("/admin/stories", {
-        params: { q: search || undefined, skip: (page - 1) * limit, limit },
+      const res = await apiClient.get("/stories", {
+        params: { q: search || undefined, offset: (page - 1) * limit, limit },
       });
-      return Array.isArray(res.data)
-        ? { stories: res.data, total: res.data.length }
-        : res.data;
+      const rawStories = Array.isArray(res.data) ? res.data : [];
+      const mapped = rawStories.map((s: any) => ({
+        id: s.id,
+        canonical_headline: s.headline,
+        summary: s.one_line_summary || s.short_summary || "",
+        article_count: s.article_count,
+        created_at: s.first_seen_at || s.updated_at || "",
+        cluster_confidence: 0.95,
+      }));
+      return { stories: mapped, total: mapped.length };
     },
   });
 

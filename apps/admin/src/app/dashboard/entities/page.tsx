@@ -24,7 +24,16 @@ export default function EntitiesPage() {
     queryKey: ["admin-entities", search],
     queryFn: async () => {
       const res = await apiClient.get("/admin/entities", { params: { q: search || undefined, limit: 50 } });
-      return Array.isArray(res.data) ? { entities: res.data, total: res.data.length } : res.data;
+      const rawEntities = Array.isArray(res.data) ? res.data : res.data?.entities ?? [];
+      const mapped = rawEntities.map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        wikidata_id: e.wikidata_id,
+        confidence: e.confidence,
+        mention_count: e.occurrences,
+      }));
+      return { entities: mapped, total: mapped.length };
     },
   });
 

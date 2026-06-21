@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import require_admin
-from app.models.models import Article, Source, Story, User
+from app.models.models import Article, Source, Story, User, CanonicalEntity, StoryArticle
 from app.schemas.admin_schemas import (
     ClusterDebuggerResponse,
     CostAnalyticsResponse,
@@ -329,3 +329,213 @@ async def metrics_summary(
 ):
     """Get overall cost, tokens, runs, and current queue sizes (admin only)."""
     return await admin_service.get_metrics_summary(db)
+
+
+class EntityOverrideRequest(BaseModel):
+    wikidata_id: str | None = Field(None, max_length=50)
+
+
+class ClusterMergeRequest(BaseModel):
+    source_id: uuid.UUID
+    target_id: uuid.UUID
+
+
+@router.patch("/entities/{entity_id}", response_model=MessageResponse)
+async def update_entity_wikidata(
+    entity_id: uuid.UUID,
+    body: EntityOverrideRequest,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Override the Wikidata ID for a canonical entity (admin only)."""
+    result = await db.execute(select(CanonicalEntity).where(CanonicalEntity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        from app.models.models import StoryEntity
+        result_se = await db.execute(select(StoryEntity).order_by(StoryEntity.id.desc()))
+        story_entities = result_se.scalars().all()
+        matching_se = None
+        for se in story_entities:
+            if uuid.uuid5(uuid.NAMESPACE_DNS, se.entity_value) == entity_id:
+                matching_se = se
+                break
+        if matching_se:
+            entity = CanonicalEntity(
+                canonical_name=matching_se.entity_value,
+                entity_type=matching_se.entity_type,
+                wikidata_id=body.wikidata_id,
+                aliases=[matching_se.entity_value],
+                metadata_payload={"description": "Created on patch override"},
+            )
+            db.add(entity)
+            await db.commit()
+        else:
+            raise HTTPException(status_code=404, detail="Entity not found")
+    else:
+        entity.wikidata_id = body.wikidata_id
+        await db.commit()
+    
+    try:
+        from app.services.cache_service import cache_service
+        import re
+        slug = re.sub(r"[^a-z0-9]+", "_", entity.canonical_name.lower())
+        await cache_service.delete(f"newsiq:entity_link:{slug}")
+    except Exception:
+        pass
+        
+    return MessageResponse(message="Entity Wikidata ID updated successfully.")
+
+
+@router.post("/clusters/merge", response_model=MessageResponse)
+async def merge_clusters(
+    body: ClusterMergeRequest,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Merge source cluster into target cluster (admin only)."""
+    source_result = await db.execute(select(Story).where(Story.id == body.source_id))
+    source_story = source_result.scalar_one_or_none()
+    target_result = await db.execute(select(Story).where(Story.id == body.target_id))
+    target_story = target_result.scalar_one_or_none()
+    
+    if not source_story or not target_story:
+        raise HTTPException(status_code=404, detail="One or both stories not found")
+        
+    stmt = select(StoryArticle).where(StoryArticle.story_id == body.source_id)
+    res = await db.execute(stmt)
+    sa_links = res.scalars().all()
+    
+    for link in sa_links:
+        exist_stmt = select(StoryArticle).where(
+            StoryArticle.story_id == body.target_id,
+            StoryArticle.article_id == link.article_id
+        )
+        exist_res = await db.execute(exist_stmt)
+        if not exist_res.scalar_one_or_none():
+            link.story_id = body.target_id
+        else:
+            await db.delete(link)
+            
+    await db.flush()
+    
+    await admin_service.apply_review_action(
+        story_id=body.target_id,
+        action="merge",
+        target_type="story",
+        target_id=body.source_id,
+        before_value={"source_story_id": str(body.source_id)},
+        after_value={"merged_into_target_id": str(body.target_id)},
+        notes=f"Merged cluster {body.source_id} into {body.target_id}",
+        db=db,
+    )
+    
+    await db.delete(source_story)
+    await db.commit()
+    
+    from app.services.clustering_service import clustering_service
+    stmt_art = select(Article).join(StoryArticle).where(StoryArticle.story_id == body.target_id)
+    res_art = await db.execute(stmt_art)
+    all_articles = list(res_art.scalars().all())
+    
+    await clustering_service.generate_story_content(target_story, all_articles, db)
+    await clustering_service.compute_trending_score(target_story, db)
+    
+    return MessageResponse(message="Story clusters merged successfully.")
+
+
+@router.post("/clusters/{story_id}/split", response_model=MessageResponse)
+async def split_cluster(
+    story_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Split a story cluster into sub-clusters based on event similarity (admin only)."""
+    result = await db.execute(select(Story).where(Story.id == story_id))
+    story = result.scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+        
+    stmt = select(Article).join(StoryArticle).where(StoryArticle.story_id == story_id)
+    res = await db.execute(stmt)
+    all_articles = list(res.scalars().all())
+    
+    if len(all_articles) <= 1:
+        raise HTTPException(status_code=400, detail="Cannot split a cluster with 1 or fewer articles")
+        
+    from app.services.clustering_service import clustering_service
+    from app.models.models import ArticleEvent
+    
+    sub_clusters = []
+    for art in all_articles:
+        matched_sub = None
+        stmt_evt = select(ArticleEvent).where(ArticleEvent.article_id == art.id).limit(1)
+        res_evt = await db.execute(stmt_evt)
+        art_evt = res_evt.scalar_one_or_none()
+        
+        if art_evt:
+            for sub in sub_clusters:
+                total_sim = 0.0
+                for sub_art in sub:
+                    stmt_sub = select(ArticleEvent).where(ArticleEvent.article_id == sub_art.id).limit(1)
+                    res_sub = await db.execute(stmt_sub)
+                    sub_evt = res_sub.scalar_one_or_none()
+                    if sub_evt:
+                        total_sim += clustering_service._compute_event_similarity_direct(art_evt, sub_evt)
+                    else:
+                        total_sim += 1.0
+                avg_sim = total_sim / len(sub)
+                if avg_sim >= 0.80:
+                    matched_sub = sub
+                    break
+        if matched_sub is not None:
+            matched_sub.append(art)
+        else:
+            sub_clusters.append([art])
+            
+    if len(sub_clusters) <= 1:
+        sub_clusters = [[all_articles[0]], all_articles[1:]]
+        
+    await admin_service.apply_review_action(
+        story_id=story_id,
+        action="split",
+        target_type="story",
+        target_id=story_id,
+        before_value={"article_count": len(all_articles)},
+        after_value={"sub_clusters_count": len(sub_clusters)},
+        notes=f"Split cluster {story_id} into {len(sub_clusters)} clusters",
+        db=db,
+    )
+    
+    await db.delete(story)
+    await db.commit()
+    
+    from app.models.models import StoryMetric
+    
+    for art_list in sub_clusters:
+        new_story_id = uuid.uuid4()
+        now = datetime.now(UTC).replace(tzinfo=None)
+        new_story = Story(
+            id=new_story_id,
+            story_status="active",
+            first_seen_at=min((a.published_at for a in art_list if a.published_at), default=now),
+            trend_score=1.0,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(new_story)
+        
+        for art in art_list:
+            link = StoryArticle(story_id=new_story_id, article_id=art.id)
+            db.add(link)
+            
+        metrics = StoryMetric(story_id=new_story_id, views=0, bookmarks=0, shares=0, clicks=0)
+        db.add(metrics)
+        await db.commit()
+        
+        try:
+            await clustering_service.generate_story_content(new_story, art_list, db)
+            await clustering_service.compute_trending_score(new_story, db)
+        except Exception:
+            pass
+            
+    return MessageResponse(message=f"Story cluster split into {len(sub_clusters)} clusters successfully.")

@@ -30,7 +30,28 @@ export default function CostsPage() {
     queryKey: ["cost-analytics"],
     queryFn: async () => {
       const res = await apiClient.get("/admin/costs");
-      return res.data;
+      const rawData = res.data;
+      const breakdown = rawData?.breakdown ?? [];
+      const total_cost_usd = rawData?.total_cost_usd ?? 0.0;
+      
+      let total_tokens = 0;
+      const by_stage: Record<string, number> = {};
+      const by_model: Record<string, number> = {};
+      
+      for (const item of breakdown) {
+        const tokens = (item.input_tokens || 0) + (item.output_tokens || 0);
+        total_tokens += tokens;
+        
+        by_stage[item.stage] = (by_stage[item.stage] || 0) + (item.cost_usd || 0);
+        by_model[item.model] = (by_model[item.model] || 0) + (item.cost_usd || 0);
+      }
+      
+      return {
+        total_cost_usd,
+        total_tokens,
+        by_stage,
+        by_model,
+      };
     },
     refetchInterval: 60000,
   });
