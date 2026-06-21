@@ -603,96 +603,101 @@ class ClusteringService:
         res = await session.execute(stmt)
         unclustered_articles = list(res.scalars().all())
 
-        if len(unclustered_articles) < 2:
-            logger.info(
-                "Not enough unclustered articles to run batch clustering (count: %d).",
-                len(unclustered_articles),
-            )
+        if len(unclustered_articles) < 1:
+            logger.info("No unclustered articles to run batch clustering.")
             return 0
 
         logger.info(
             "Running batch clustering on %d unclustered articles.", len(unclustered_articles)
         )
 
-        # Retrieve vectors for all these articles
-        article_ids = [str(a.id) for a in unclustered_articles]
-        vectors = []
-        valid_articles = []
-
-        try:
-            points = await vector_service.client.retrieve(
-                collection_name="articles", ids=article_ids, with_vectors=True
-            )
-            points_dict = {uuid.UUID(p.id): p.vector for p in points if p.vector}
-
-            for art in unclustered_articles:
-                if art.id in points_dict:
-                    vectors.append(points_dict[art.id])
-                    valid_articles.append(art)
-        except Exception as e:
-            logger.error("Failed to fetch vectors for batch clustering: %s", e)
-            return 0
-
-        if len(valid_articles) < 2:
-            return 0
-
-        # Run HDBSCAN
-        from hdbscan import HDBSCAN
-
-        X = np.array(vectors)
-
-        clusterer = HDBSCAN(
-            min_cluster_size=2,
-            min_samples=1,
-            metric="euclidean",
-            cluster_selection_epsilon=0.35,
-        )
-        labels = clusterer.fit_predict(X)
-
-        # Group articles by labels
-        clusters: dict[int, list[Article]] = {}
-        for idx, label in enumerate(labels):
-            if label == -1:
-                continue  # Outlier
-            if label not in clusters:
-                clusters[label] = []
-            clusters[label].append(valid_articles[idx])
-
-        # Verify and split clusters using multi-signal similarity
         verified_clusters: list[list[Article]] = []
-        for label, art_list in clusters.items():
-            sub_clusters: list[list[Article]] = []
-            for art in art_list:
-                matched_sub = None
-                stmt = select(ArticleEvent).where(ArticleEvent.article_id == art.id).limit(1)
-                res = await session.execute(stmt)
-                art_evt = res.scalar_one_or_none()
 
-                if art_evt:
+        if len(unclustered_articles) == 1:
+            verified_clusters.append([unclustered_articles[0]])
+        else:
+            # Retrieve vectors for all these articles
+            article_ids = [str(a.id) for a in unclustered_articles]
+            vectors = []
+            valid_articles = []
+
+            try:
+                points = await vector_service.client.retrieve(
+                    collection_name="articles", ids=article_ids, with_vectors=True
+                )
+                points_dict = {uuid.UUID(p.id): p.vector for p in points if p.vector}
+
+                for art in unclustered_articles:
+                    if art.id in points_dict:
+                        vectors.append(points_dict[art.id])
+                        valid_articles.append(art)
+            except Exception as e:
+                logger.error("Failed to fetch vectors for batch clustering: %s", e)
+                return 0
+
+            if len(valid_articles) == 0:
+                return 0
+            elif len(valid_articles) == 1:
+                verified_clusters.append([valid_articles[0]])
+            else:
+                # Run HDBSCAN
+                from hdbscan import HDBSCAN
+
+                X = np.array(vectors)
+
+                clusterer = HDBSCAN(
+                    min_cluster_size=2,
+                    min_samples=1,
+                    metric="euclidean",
+                    cluster_selection_epsilon=0.35,
+                )
+                labels = clusterer.fit_predict(X)
+
+                # Group articles by labels
+                clusters: dict[int, list[Article]] = {}
+                for idx, label in enumerate(labels):
+                    if label == -1:
+                        # Outlier: keep as its own single-article cluster to allow synthesis
+                        verified_clusters.append([valid_articles[idx]])
+                        continue
+                    if label not in clusters:
+                        clusters[label] = []
+                    clusters[label].append(valid_articles[idx])
+
+                # Verify and split clusters using multi-signal similarity
+                for label, art_list in clusters.items():
+                    sub_clusters: list[list[Article]] = []
+                    for art in art_list:
+                        matched_sub = None
+                        stmt = select(ArticleEvent).where(ArticleEvent.article_id == art.id).limit(1)
+                        res = await session.execute(stmt)
+                        art_evt = res.scalar_one_or_none()
+
+                        if art_evt:
+                            for sub in sub_clusters:
+                                # Compare art_evt with all articles in sub-cluster
+                                total_sim = 0.0
+                                for sub_art in sub:
+                                    stmt_sub = select(ArticleEvent).where(ArticleEvent.article_id == sub_art.id).limit(1)
+                                    res_sub = await session.execute(stmt_sub)
+                                    sub_evt = res_sub.scalar_one_or_none()
+                                    if sub_evt:
+                                        total_sim += self._compute_event_similarity_direct(art_evt, sub_evt)
+                                    else:
+                                        total_sim += 0.0
+                                avg_sim = total_sim / len(sub)
+                                if avg_sim >= 0.80:
+                                    matched_sub = sub
+                                    break
+
+                        if matched_sub is not None:
+                            matched_sub.append(art)
+                        else:
+                            sub_clusters.append([art])
+
+                    # Keep all sub-clusters (even size 1)
                     for sub in sub_clusters:
-                        # Compare art_evt with all articles in sub-cluster
-                        total_sim = 0.0
-                        for sub_art in sub:
-                            stmt_sub = select(ArticleEvent).where(ArticleEvent.article_id == sub_art.id).limit(1)
-                            res_sub = await session.execute(stmt_sub)
-                            sub_evt = res_sub.scalar_one_or_none()
-                            if sub_evt:
-                                total_sim += self._compute_event_similarity_direct(art_evt, sub_evt)
-                            else:
-                                total_sim += 0.0
-                        avg_sim = total_sim / len(sub)
-                        if avg_sim >= 0.80:
-                            matched_sub = sub
-                            break
-
-                if matched_sub is not None:
-                    matched_sub.append(art)
-                else:
-                    sub_clusters.append([art])
-
-            # Keep all sub-clusters (even size 1)
-            for sub in sub_clusters:
-                verified_clusters.append(sub)
+                        verified_clusters.append(sub)
 
         stories_created = 0
 
