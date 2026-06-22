@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # Monitoring
     SENTRY_DSN: str | None = None
 
+    # Langfuse
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_HOST: str = "http://localhost:3000"
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

@@ -10,7 +10,7 @@ engine = create_async_engine(
     echo=settings.DEBUG,
     pool_size=20,
     max_overflow=10,
-    pool_pre_ping=True,
+    pool_pre_ping=False,
 )
 
 async_session_factory = async_sessionmaker(

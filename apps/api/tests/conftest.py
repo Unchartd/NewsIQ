@@ -27,5 +27,12 @@ def mock_db_session():
     session.add = MagicMock()
     session.flush = AsyncMock()  # flush is async in AsyncSession
     session.refresh = AsyncMock() # refresh is async in AsyncSession
+
+    # Mock begin_nested() for savepoints / nested transactions
+    nested_mock = AsyncMock()
+    nested_mock.__aenter__ = AsyncMock(return_value=nested_mock)
+    nested_mock.__aexit__ = AsyncMock(return_value=None)
+    session.begin_nested = MagicMock(return_value=nested_mock)
+
     return session
 

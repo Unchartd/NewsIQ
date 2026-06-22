@@ -150,6 +150,9 @@ class Article(Base):
     events: Mapped[list["ArticleEvent"]] = relationship(
         back_populates="article", cascade="all, delete-orphan"
     )
+    article_entities: Mapped[list["ArticleEntity"]] = relationship(
+        back_populates="article", cascade="all, delete-orphan"
+    )
     # Track event extraction pipeline status
     event_extraction_status: Mapped[str | None] = mapped_column(
         String(30), default="pending"
@@ -192,6 +195,7 @@ class ArticleEvent(Base):
     event_time_raw: Mapped[str | None] = mapped_column(String(255))
     numbers: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    event_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     article: Mapped["Article"] = relationship(back_populates="events")
@@ -199,6 +203,44 @@ class ArticleEvent(Base):
     __table_args__ = (
         Index("idx_article_events_type", "event_type_canonical"),
         Index("idx_article_events_article", "article_id"),
+        Index("idx_article_events_fingerprint", "event_fingerprint"),
+    )
+
+
+# ──────────────────────────────────────────────
+# Article Entities (Per-Article Entity Extraction)
+# ──────────────────────────────────────────────
+
+
+class ArticleEntity(Base):
+    """Named entity extracted from a single article during event extraction.
+
+    Stores per-article entities before clustering, enabling entity overlap
+    as a clustering signal. Linked to CanonicalEntity for global dedup.
+    """
+
+    __tablename__ = "article_entities"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id", ondelete="CASCADE"), index=True
+    )
+    canonical_entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("canonical_entities.id", ondelete="SET NULL"), nullable=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(50))
+    entity_value: Mapped[str] = mapped_column(String(255))
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
+
+    article: Mapped["Article"] = relationship(back_populates="article_entities")
+    canonical_entity: Mapped["CanonicalEntity | None"] = relationship()
+
+    __table_args__ = (
+        Index("idx_article_entities_article", "article_id"),
+        Index("idx_article_entities_canonical", "canonical_entity_id"),
     )
 
 

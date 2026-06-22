@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
+from app.core.trace import track_llm_call
+
 from app.models.models import CanonicalEntity
 from app.services.cache_service import cache_service
 
@@ -270,35 +272,45 @@ class EntityLinker:
             model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
 
             try:
-                response = await self._gemini_client.aio.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=EntityResolution,
-                        temperature=0.1,
-                    ),
-                )
-                data = json.loads(response.text)
-                return EntityResolution(**data)
+                async with track_llm_call("gemini", model, "entity_linking", user_prompt=prompt) as call:
+                    response = await self._gemini_client.aio.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=EntityResolution,
+                            temperature=0.1,
+                        ),
+                    )
+                    call.response_text = response.text
+                    if getattr(response, "usage_metadata", None):
+                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
+                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
+                    data = json.loads(response.text)
+                    return EntityResolution(**data)
             except Exception as e:
                 logger.warning("Gemini disambiguation failed for %s: %s", name, e)
 
         if self.openai_enabled and self._openai_client:
             try:
-                response = await self._openai_client.beta.chat.completions.parse(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a named entity resolution engine.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    response_format=EntityResolution,
-                    temperature=0.1,
-                )
-                return response.choices[0].message.parsed
+                async with track_llm_call("openai", "gpt-4o-mini", "entity_linking", user_prompt=prompt) as call:
+                    response = await self._openai_client.beta.chat.completions.parse(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a named entity resolution engine.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        response_format=EntityResolution,
+                        temperature=0.1,
+                    )
+                    call.response_text = response.choices[0].message.content or ""
+                    if getattr(response, "usage", None):
+                        call.input_tokens = response.usage.prompt_tokens or 0
+                        call.output_tokens = response.usage.completion_tokens or 0
+                    return response.choices[0].message.parsed
             except Exception as e:
                 logger.warning("OpenAI disambiguation failed for %s: %s", name, e)
 
@@ -395,9 +407,22 @@ class EntityLinker:
                 aliases=cached.get("aliases", [clean_name]),
                 metadata_payload={"description": cached.get("description")},
             )
-            session.add(new_entity)
-            await session.commit()
-            return new_entity
+            try:
+                async with session.begin_nested():
+                    session.add(new_entity)
+                await session.commit()
+                return new_entity
+            except Exception:
+                # Concurrent insert of the same canonical name might have succeeded.
+                # Let's query it from DB.
+                stmt = select(CanonicalEntity).where(
+                    CanonicalEntity.canonical_name.ilike(new_entity.canonical_name)
+                )
+                res = await session.execute(stmt)
+                db_entity = res.scalar_one_or_none()
+                if db_entity:
+                    return db_entity
+                raise
 
         # ── 3. LLM + Wikidata Call ────────────────────────────────────────────
         logger.info("Resolving new entity: %s (%s)", clean_name, entity_type)
@@ -416,6 +441,24 @@ class EntityLinker:
                     resolution.canonical_name = wiki_res["label"]
         except Exception as e:
             logger.warning("Wikidata lookup failed for %s: %s", clean_name, e)
+
+        # Agentic fallback if Wikidata did not resolve QID
+        if not wikidata_id:
+            logger.info("Wikidata lookup failed to find QID for %s. Invoking EntityDisambiguationAgent.", clean_name)
+            try:
+                from app.agents.entity_disambiguation_agent import disambiguate_entity
+                agent_res = await disambiguate_entity(
+                    entity_value=clean_name,
+                    entity_type=entity_type,
+                    context=context
+                )
+                if agent_res:
+                    resolution.canonical_name = agent_res.canonical_name
+                    entity_type = agent_res.entity_type
+                    wikidata_id = agent_res.wikidata_id
+                    wikidata_desc = agent_res.explanation
+            except Exception as e:
+                logger.error("EntityDisambiguationAgent failed for %s: %s", clean_name, e)
 
         # Check DB by wikidata_id if found
         if wikidata_id:
@@ -445,8 +488,21 @@ class EntityLinker:
             aliases=aliases,
             metadata_payload={"description": wikidata_desc},
         )
-        session.add(new_entity)
-        await session.commit()
+        try:
+            async with session.begin_nested():
+                session.add(new_entity)
+            await session.commit()
+        except Exception:
+            # Query the existing one
+            stmt = select(CanonicalEntity).where(
+                CanonicalEntity.canonical_name.ilike(new_entity.canonical_name)
+            )
+            res = await session.execute(stmt)
+            db_entity = res.scalar_one_or_none()
+            if db_entity:
+                new_entity = db_entity
+            else:
+                raise
 
         # Cache in Redis
         cache_val = {

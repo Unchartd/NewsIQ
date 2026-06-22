@@ -28,6 +28,25 @@ _INSECURE_DEFAULT_KEY = "change-me-in-production-use-openssl-rand-hex-32"
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
     # ——— Startup ———
+    # Initialize Prometheus multiprocess directory if configured
+    import os
+    import shutil
+    prom_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
+    if prom_dir:
+        try:
+            if os.path.exists(prom_dir):
+                for f in os.listdir(prom_dir):
+                    fp = os.path.join(prom_dir, f)
+                    if os.path.isfile(fp):
+                        os.unlink(fp)
+                    elif os.path.isdir(fp):
+                        shutil.rmtree(fp)
+            else:
+                os.makedirs(prom_dir, exist_ok=True)
+            logger.info("Prometheus multiprocess metrics directory initialized: %s", prom_dir)
+        except Exception as e:
+            logger.warning("Failed to clean/create PROMETHEUS_MULTIPROC_DIR: %s", e)
+
     # Guard: reject the default SECRET_KEY in production
     if not settings.DEBUG and settings.SECRET_KEY == _INSECURE_DEFAULT_KEY:
         raise RuntimeError(
@@ -73,10 +92,13 @@ app = FastAPI(
 )
 
 if settings.SENTRY_DSN:
+    from app.core.sentry_integration import before_send_handler, before_send_transaction_handler
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         traces_sample_rate=1.0,
         profiles_sample_rate=1.0,
+        before_send=before_send_handler,
+        before_send_transaction=before_send_transaction_handler,
     )
 
 
@@ -187,3 +209,22 @@ async def readiness_check():
 
     all_ok = all(v == "ok" for v in checks.values())
     return {"status": "ready" if all_ok else "degraded", "checks": checks}
+
+
+@app.get("/metrics", tags=["monitoring"])
+def metrics():
+    """Prometheus metrics endpoint."""
+    import os
+    import app.core.metrics  # noqa: F401
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry, multiprocess
+    from fastapi import Response
+
+    prom_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
+    if prom_dir:
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        data = generate_latest(registry)
+    else:
+        data = generate_latest()
+
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)

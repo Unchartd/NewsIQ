@@ -1,43 +1,24 @@
-import json
-import logging
-import sys
-from contextvars import ContextVar
-from datetime import UTC, datetime
+"""Application logging configuration.
 
-# Context variable to store request ID across async calls
+Delegates to structlog-based structured logging (structured_logging.py).
+Preserves the request_id context variable for the FastAPI middleware.
+"""
+
+from contextvars import ContextVar
+
+# Context variable to store request ID across async calls.
+# Used by the request_id_middleware in main.py.
 request_id_ctx_var: ContextVar[str] = ContextVar("request_id", default="")
 
-class JSONFormatter(logging.Formatter):
-    """Custom formatter to output logs as JSON with request IDs."""
 
-    def format(self, record: logging.LogRecord) -> str:
-        log_obj = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "request_id": request_id_ctx_var.get()
-        }
+def setup_logging(debug: bool = False) -> None:
+    """Initialize structured logging for the application.
 
-        if record.exc_info:
-            log_obj["exception"] = self.formatException(record.exc_info)
+    This is the main entry point called from main.py on startup.
+    Configures structlog with trace context injection, JSON output,
+    and stdlib logger integration.
+    """
+    from app.core.structured_logging import setup_structlog
 
-        return json.dumps(log_obj)
+    setup_structlog(debug=debug)
 
-def setup_logging(debug: bool = False):
-    """Initialize structured JSON logging for the application."""
-    root_logger = logging.getLogger()
-
-    # Remove existing handlers
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JSONFormatter())
-
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.DEBUG if debug else logging.INFO)
-
-    # Silence chatty third-party loggers
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)

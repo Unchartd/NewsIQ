@@ -18,21 +18,21 @@ TARGET:   Articles → Events → Entities → Knowledge Graph → Cluster → A
 | Phase | Name | Priority | Dependencies | Est. Effort | Status |
 |:--:|:--|:--:|:--|:--:|:--:|
 | 1 | Pipeline Audit | 🔴 | — | ✅ Done | ✅ |
-| 2 | Event Extraction Engine | 🔴 | Phase 1 | 2-3 days | ⬜ |
-| 3 | Event Canonicalization | 🔴 | Phase 2 | 1 day | ⬜ |
-| 4 | Event Time vs Reporting Time | 🔴 | Phase 2 | 1 day | ⬜ |
-| 5 | Knowledge Graph | 🟠 | Phases 2-4, 6-7 | 2-3 days | ⬜ |
-| 6 | Entity Extraction Redesign | 🔴 | Phase 1 | 2-3 days | ⬜ |
-| 7 | Entity Linking | 🟠 | Phase 6 | 2 days | ⬜ |
-| 8 | Story Clustering Redesign | 🔴 | Phases 2-7 | 3-4 days | ⬜ |
-| 9 | Contradiction Engine | 🟠 | Phase 5 | 2 days | ⬜ |
-| 10 | Source Coverage Engine | 🟠 | Phase 5 | 1-2 days | ⬜ |
-| 11 | Timeline Engine Redesign | 🟡 | Phase 4 | 1 day | ⬜ |
-| 12 | Summary Engine Redesign | 🔴 | Phases 5, 8-11 | 2-3 days | ⬜ |
-| 13 | Difference Engine Redesign | 🟠 | Phases 9-10 | 1-2 days | ⬜ |
-| 14 | Quality Gate | 🟠 | Phase 8 | 1 day | ⬜ |
-| 15 | Test Dataset & Evaluation | 🟡 | All | 2-3 days | ⬜ |
-| 16 | Documentation | 🟢 | All | 1-2 days | ⬜ |
+| 2 | Event Extraction Engine | 🔴 | Phase 1 | ✅ Done | ✅ |
+| 3 | Event Canonicalization | 🔴 | Phase 2 | ✅ Done | ✅ |
+| 4 | Event Time vs Reporting Time | 🔴 | Phase 2 | ✅ Done | ✅ |
+| 5 | Knowledge Graph | 🟠 | Phases 2-4, 6-7 | ✅ Done | ✅ |
+| 6 | Entity Extraction Redesign | 🔴 | Phase 1 | ✅ Done | ✅ |
+| 7 | Entity Linking | 🟠 | Phase 6 | ✅ Done | ✅ |
+| 8 | Story Clustering Redesign | 🔴 | Phases 2-7 | ✅ Done | ✅ |
+| 9 | Contradiction Engine | 🟠 | Phase 5 | ✅ Done | ✅ |
+| 10 | Source Coverage Engine | 🟠 | Phase 5 | ✅ Done | ✅ |
+| 11 | Timeline Engine Redesign | 🟡 | Phase 4 | ✅ Done | ✅ |
+| 12 | Summary Engine Redesign | 🔴 | Phases 5, 8-11 | ✅ Done | ✅ |
+| 13 | Difference Engine Redesign | 🟠 | Phases 9-10 | ✅ Done | ✅ |
+| 14 | Quality Gate | 🟠 | Phase 8 | ✅ Done | ✅ |
+| 15 | Test Dataset & Evaluation | 🟡 | All | ✅ Done | ✅ |
+| 16 | Documentation | 🟢 | All | ✅ Done | ✅ |
 
 ---
 

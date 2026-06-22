@@ -25,6 +25,8 @@ from app.models.models import (
     UserCategory,
     UserEvent,
     UserLocation,
+    CanonicalEntity,
+    StoryEntity,
 )
 from app.schemas.story import (
     CategoryResponse,
@@ -636,6 +638,53 @@ async def get_story_comparison(
         sources=comparison_items,
         source_coverage=story.source_coverage,
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GET /entity/{canonical_entity_id}/timeline — entity timeline view
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.get("/entity/{canonical_entity_id}/timeline", response_model=list[StoryListResponse])
+async def get_entity_timeline(
+    canonical_entity_id: uuid.UUID,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve all stories linked to a specific Canonical Entity (Entity Timeline).
+
+    Returns stories ordered by updated_at descending.
+    """
+    # First verify if the Canonical Entity exists
+    ent_stmt = select(CanonicalEntity).where(CanonicalEntity.id == canonical_entity_id)
+    res_ent = await db.execute(ent_stmt)
+    entity = res_ent.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Canonical Entity not found.",
+        )
+
+    # Fetch stories linked through StoryEntity
+    stmt = (
+        select(Story)
+        .join(StoryEntity, Story.id == StoryEntity.story_id)
+        .where(StoryEntity.canonical_entity_id == canonical_entity_id)
+        .options(
+            selectinload(Story.category),
+            selectinload(Story.articles)
+            .selectinload(StoryArticle.article)
+            .selectinload(Article.source),
+        )
+        .order_by(Story.updated_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(stmt)
+    stories = result.scalars().all()
+
+    return [_build_story_list_response(s) for s in stories]
 
 
 # ──────────────────────────────────────────────────────────────────────────────

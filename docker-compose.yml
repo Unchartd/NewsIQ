@@ -95,6 +95,7 @@ services:
       - "8000:8000"
     volumes:
       - ./apps/api:/app
+      - prometheus_multiproc:/tmp/prometheus_multiproc
     environment:
       - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
@@ -108,10 +109,18 @@ services:
       - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
+      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
       - NEWSAPI_KEY=${NEWSAPI_KEY:-}
       - GNEWS_API_KEY=${GNEWS_API_KEY:-}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-2.5-flash}
+      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -146,6 +155,7 @@ services:
     container_name: newsiq-celery-worker
     volumes:
       - ./apps/api:/app
+      - prometheus_multiproc:/tmp/prometheus_multiproc
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
     restart: unless-stopped
     environment:
@@ -161,10 +171,18 @@ services:
       - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
+      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
       - NEWSAPI_KEY=${NEWSAPI_KEY:-}
       - GNEWS_API_KEY=${GNEWS_API_KEY:-}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-2.5-flash}
+      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -191,6 +209,7 @@ services:
     container_name: newsiq-celery-beat
     volumes:
       - ./apps/api:/app
+      - prometheus_multiproc:/tmp/prometheus_multiproc
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
     restart: unless-stopped
     environment:
@@ -206,10 +225,18 @@ services:
       - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
+      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
       - NEWSAPI_KEY=${NEWSAPI_KEY:-}
       - GNEWS_API_KEY=${GNEWS_API_KEY:-}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-2.5-flash}
+      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -271,8 +298,99 @@ services:
           path: ./apps/web/tailwind.config.ts
           target: /app/tailwind.config.ts
 
+  flower:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-flower
+    volumes:
+      - ./apps/api:/app
+    command: celery -A app.workers.celery_app.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      - redis
+
+  langfuse-db:
+    image: postgres:17-alpine
+    container_name: newsiq-langfuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: newsiq-langfuse
+    restart: unless-stopped
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3100:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=my-secret-key-1234
+      - NEXTAUTH_URL=http://localhost:3100
+      - TELEMETRY_ENABLED=false
+      - ENCRYPTION_KEY=7ead3dd24cd258cddee5056b3986ffa56717a188f65fad9997b6ddf1764d1573
+      - SALT=ea8cca740f3bf60376c887b5af8696d9c94e3879c042fd4c2969d1b2add62339
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: newsiq-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./apps/api/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: newsiq-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+
+  # ──────────────────────────────────────────────
+  # Standalone Admin Dashboard
+  # ──────────────────────────────────────────────
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    container_name: newsiq-admin
+    restart: unless-stopped
+    ports:
+      - "3002:3001"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_APP_NAME=NewsIQ Admin
+    depends_on:
+      - api
+    profiles:
+      - admin
+
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
   meilisearch_data:
+  langfuse_db_data:
+  grafana_data:
+  prometheus_multiproc:

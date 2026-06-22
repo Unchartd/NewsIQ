@@ -55,8 +55,15 @@ async def test_run_batch_clustering(
         res.scalar.return_value = None
         res.scalars.return_value.all.return_value = []
         if "article_events" in stmt_str:
-            res.scalar_one_or_none.return_value = ArticleEvent(event_type_canonical="ATTACK")
-            res.scalars.return_value.all.return_value = [ArticleEvent(event_type_canonical="ATTACK")]
+            evt = ArticleEvent(
+                event_type_canonical="ATTACK",
+                actors=["Russia"],
+                targets=["Ukraine"],
+                location="Kyiv",
+                event_time=datetime.datetime(2026, 6, 20),
+            )
+            res.scalar_one_or_none.return_value = evt
+            res.scalars.return_value.all.return_value = [evt]
         elif "articles" in stmt_str or "article " in stmt_str:
             res.scalars.return_value.all.return_value = [art1, art2]
             res.scalar_one_or_none.return_value = art1

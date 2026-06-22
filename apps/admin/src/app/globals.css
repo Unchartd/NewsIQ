@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #111110;
+  --color-foreground: #f0efe9;
+  --color-card: #1c1c1a;
+  --color-card-foreground: #f0efe9;
+  --color-border: #2e2e2a;
+  --color-input: #2e2e2a;
+  --color-primary: #e8334a;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #1c1c1a;
+  --color-secondary-foreground: #f0efe9;
+  --color-muted: #1c1c1a;
+  --color-muted-foreground: #6b6b62;
+  --color-accent: #2e2e2a;
+  --color-accent-foreground: #f0efe9;
+  --color-destructive: #f87171;
+  --color-destructive-foreground: #ffffff;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-info: #5b8def;
+
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-muted);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-secondary-foreground);
+}
+
+/* Glass morphism utility */
+.glass {
+  background: rgba(28, 28, 26, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(46, 46, 42, 0.8);
+}
+
+.glass-hover:hover {
+  background: rgba(46, 46, 42, 0.8);
+}
+
+/* Glow effects */
+.glow-primary {
+  box-shadow: 0 0 20px rgba(232, 51, 74, 0.15);
+}
+
+.glow-success {
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.15);
+}
+
+.glow-danger {
+  box-shadow: 0 0 20px rgba(248, 113, 113, 0.15);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #e8334a, #fb7185, #f43f5e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Status dot pulse */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Card shimmer loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-muted) 25%,
+    var(--color-secondary) 50%,
+    var(--color-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Page fade-in */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in-up 0.4s ease-out both;
+}
+
+/* Badge variants */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.badge-primary { background: rgba(232, 51, 74, 0.15); color: #fb7185; border: 1px solid rgba(232, 51, 74, 0.3); }
+.badge-success { background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+.badge-warning { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+.badge-danger  { background: rgba(248, 113, 113, 0.15);  color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
+.badge-neutral { background: rgba(107, 107, 98, 0.15); color: #a8a89e; border: 1px solid rgba(107, 107, 98, 0.3); }
