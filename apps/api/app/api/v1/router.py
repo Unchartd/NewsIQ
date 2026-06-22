@@ -9,9 +9,11 @@ api_router = APIRouter()
 
 role_norm = settings.BACKEND_SERVICE_ROLE.lower().strip()
 
-# Auth endpoints (loaded on both backends to support login/session management)
+# Shared endpoints (loaded on both backends to support SRE operations and feeds delivery)
 if role_norm in ("monolith", "user", "processing", "admin"):
     api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+    api_router.include_router(sources.router, prefix="/sources", tags=["sources"])
+    api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
 
 # User-facing routes
 if role_norm in ("monolith", "user"):
@@ -24,12 +26,6 @@ if role_norm in ("monolith", "user"):
 
     # User endpoints
     api_router.include_router(users.router, prefix="/users", tags=["users"])
-
-    # Source endpoints (read-only for user backend)
-    api_router.include_router(sources.router, prefix="/sources", tags=["sources"])
-
-    # Story endpoints (includes /search, /categories, /trending-widgets, /bookmarks)
-    api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
 
 # Admin & Observability routes
 if role_norm in ("monolith", "processing", "admin"):
