@@ -13,6 +13,8 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3-flash"},
             {"provider": "google", "model": "gemini-2.5-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -21,6 +23,8 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-2.5-pro"},
             {"provider": "google", "model": "gemini-3.5-flash"},
             {"provider": "google", "model": "gemini-3-flash"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -29,6 +33,7 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
             {"provider": "groq", "model": "llama-3.1-8b-instant"},
+            {"provider": "cerebras", "model": "llama3.1-8b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -37,6 +42,8 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -44,6 +51,8 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-2.5-pro"},
             {"provider": "google", "model": "gemini-3.1-pro"},
             {"provider": "google", "model": "gemini-3.5-flash"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -66,6 +75,7 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash"},
             {"provider": "groq", "model": "llama-3.1-8b-instant"},
+            {"provider": "cerebras", "model": "llama3.1-8b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -74,6 +84,7 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3.5-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
             {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -82,6 +93,7 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
             {"provider": "groq", "model": "llama-3.1-8b-instant"},
+            {"provider": "cerebras", "model": "llama3.1-8b"},
             {"provider": "mock", "model": "mock"},
         ],
     }
@@ -100,11 +112,15 @@ class FallbackChain:
             provider = "openai"
         elif "llama" in model_key or "groq" in primary_model:
             provider = "groq"
+        elif "cerebras" in primary_model:
+            provider = "cerebras"
 
         return [
             {"provider": provider, "model": primary_model},
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ]

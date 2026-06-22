@@ -27,6 +27,7 @@ class ProviderRouter:
             "google": GeminiProvider(),
             "openai": OpenAIProvider(provider_name="openai"),
             "groq": OpenAIProvider(provider_name="groq", base_url="https://api.groq.com/openai/v1"),
+            "cerebras": OpenAIProvider(provider_name="cerebras", base_url="https://api.cerebras.ai/v1"),
             "mock": MockProvider()
         }
 

@@ -39,17 +39,24 @@ class APIKeyPool:
 
         # 3. Groq Keys (falls back to OpenAI-compatible environment config or mock)
         groq_keys = []
-        groq_env = os.environ.get("GROQ_API_KEY", "")
+        groq_env = settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
         for k in [k.strip() for k in groq_env.split(",") if k.strip()]:
             groq_keys.append(APIKey(key=k, provider="groq", requests_per_minute=30, requests_per_day=14400))
         self.pools["groq"] = groq_keys
+
+        # 3.5. Cerebras Keys
+        cerebras_keys = []
+        cerebras_env = settings.CEREBRAS_API_KEY or os.environ.get("CEREBRAS_API_KEY", "")
+        for k in [k.strip() for k in cerebras_env.split(",") if k.strip()]:
+            cerebras_keys.append(APIKey(key=k, provider="cerebras", requests_per_minute=30, requests_per_day=14400))
+        self.pools["cerebras"] = cerebras_keys
 
         # 4. Fallbacks / Mock keys
         self.pools["mock"] = [APIKey(key="mock-key-1", provider="mock", requests_per_minute=1000, requests_per_day=100000)]
 
         logger.info(
-            "APIKeyPool loaded: google=%d, openai=%d, groq=%d, mock=%d keys.",
-            len(self.pools["google"]), len(self.pools["openai"]), len(self.pools["groq"]), len(self.pools["mock"])
+            "APIKeyPool loaded: google=%d, openai=%d, groq=%d, cerebras=%d, mock=%d keys.",
+            len(self.pools["google"]), len(self.pools["openai"]), len(self.pools["groq"]), len(self.pools["cerebras"]), len(self.pools["mock"])
         )
 
     def get_keys(self, provider: str) -> List[APIKey]:
