@@ -246,18 +246,18 @@ class AdminService:
 
     async def get_cost_analytics(self, db: AsyncSession) -> CostAnalyticsResponse:
         """Aggregate total token cost metrics by provider/model/stage."""
-        # Query cost records
+        # Query cost records from llm_traces
         result = await db.execute(
             select(
-                CostRecordModel.provider,
-                CostRecordModel.model,
-                CostRecordModel.stage,
-                func.sum(CostRecordModel.input_tokens).label("input_tokens"),
-                func.sum(CostRecordModel.output_tokens).label("output_tokens"),
-                func.sum(CostRecordModel.cost_usd).label("cost_usd"),
+                LLMTraceModel.provider,
+                LLMTraceModel.model,
+                LLMTraceModel.stage,
+                func.sum(LLMTraceModel.input_tokens).label("input_tokens"),
+                func.sum(LLMTraceModel.output_tokens).label("output_tokens"),
+                func.sum(LLMTraceModel.cost_usd).label("cost_usd"),
             )
-            .group_by(CostRecordModel.provider, CostRecordModel.model, CostRecordModel.stage)
-            .order_by(func.sum(CostRecordModel.cost_usd).desc())
+            .group_by(LLMTraceModel.provider, LLMTraceModel.model, LLMTraceModel.stage)
+            .order_by(func.sum(LLMTraceModel.cost_usd).desc())
         )
         rows = result.all()
 
@@ -470,11 +470,11 @@ class AdminService:
             )
         ).scalar_one() or 0
 
-        # Aggregate cost from CostRecordModel
-        total_cost = (await db.execute(select(func.sum(CostRecordModel.cost_usd)))).scalar_one() or 0.0
+        # Aggregate cost from LLMTraceModel
+        total_cost = (await db.execute(select(func.sum(LLMTraceModel.cost_usd)))).scalar_one() or 0.0
         total_tokens = (
             await db.execute(
-                select(func.sum(CostRecordModel.input_tokens + CostRecordModel.output_tokens))
+                select(func.sum(LLMTraceModel.input_tokens + LLMTraceModel.output_tokens))
             )
         ).scalar_one() or 0
 
