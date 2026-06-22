@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import { useSSE } from "@/lib/useSSE";
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   GitBranch,
   RefreshCw,
@@ -151,7 +152,7 @@ function LiveLogViewer({ runId, stage, isRunning }: { runId: string; stage: stri
   }, [logs]);
 
   return (
-    <div className="bg-slate-950 font-mono text-[11px] text-emerald-400 p-4 rounded-xl border border-slate-800 overflow-y-auto max-h-[380px] space-y-1 shadow-inner h-[380px]">
+    <div className="bg-slate-950 font-mono text-[11px] text-emerald-400 p-4 rounded-xl border border-slate-800 overflow-y-auto space-y-1 shadow-inner flex-1 min-h-0">
       {logs.length === 0 ? (
         <div className="text-slate-600 italic">No logs generated for this stage yet.</div>
       ) : (
@@ -228,9 +229,64 @@ export default function PipelinePage() {
 
   // Active stage drawer states
   const [activeStageId, setActiveStageId] = useState<string | null>(null); // e.g. "NLP_ANALYSIS"
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedBackendStage, setSelectedBackendStage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "inputs" | "outputs" | "errors" | "metrics" | "retries">("overview");
   const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  // Lock body scroll when drawer is open
+  useEffect(() => {
+    if (isDrawerOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isDrawerOpen]);
+
+  // Clean up timer on unmount and track mount state
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleOpenDrawer = (stageId: string) => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    setActiveStageId(stageId);
+    setIsDrawerOpen(true);
+    setActiveTab("overview");
+    if (!selectedRunId && pipelineStatus?.run_id) {
+      setSelectedRunId(pipelineStatus.run_id);
+      setWasAutoPinned(true);
+    }
+  };
+
+  const handleCloseDrawer = () => {
+    setIsDrawerOpen(false);
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+    }
+    closeTimeoutRef.current = setTimeout(() => {
+      setActiveStageId(null);
+      setSelectedBackendStage(null);
+      if (wasAutoPinned) {
+        setSelectedRunId(null);
+        setWasAutoPinned(false);
+      }
+      closeTimeoutRef.current = null;
+    }, 300);
+  };
 
   const { data: pipelineStatus, isLoading, refetch } = useQuery<any>({
     queryKey: ["pipeline-status", selectedRunId],
@@ -510,15 +566,8 @@ export default function PipelinePage() {
               key={stage.id}
               stage={stage}
               stageStatus={stageStatusMap[stage.id]}
-              onClick={() => {
-                setActiveStageId(stage.id);
-                setActiveTab("overview");
-                if (!selectedRunId && pipelineStatus?.run_id) {
-                  setSelectedRunId(pipelineStatus.run_id);
-                  setWasAutoPinned(true);
-                }
-              }}
-              isActive={activeStageId === stage.id}
+              onClick={() => handleOpenDrawer(stage.id)}
+              isActive={activeStageId === stage.id && isDrawerOpen}
             />
           ))}
         </div>
@@ -540,21 +589,22 @@ export default function PipelinePage() {
       </div>
 
       {/* Slide-over Detail Drawer */}
-      {activeStageId && (
+      {mounted && createPortal(
         <>
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300"
-            onClick={() => {
-              setActiveStageId(null);
-              setSelectedBackendStage(null);
-              if (wasAutoPinned) {
-                setSelectedRunId(null);
-                setWasAutoPinned(false);
-              }
-            }}
+            className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${
+              isDrawerOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+            }`}
+            onClick={handleCloseDrawer}
           />
 
-          <div className="fixed inset-y-0 right-0 w-[600px] bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out">
+          <div
+            className={`fixed inset-y-0 right-0 w-[600px] bg-slate-950/75 backdrop-blur-xl border-l border-slate-800/80 shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
+              isDrawerOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+        {activeStageId && (
+          <>
             {/* Header */}
             <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
               <div>
@@ -566,14 +616,7 @@ export default function PipelinePage() {
                 </h2>
               </div>
               <button
-                onClick={() => {
-                  setActiveStageId(null);
-                  setSelectedBackendStage(null);
-                  if (wasAutoPinned) {
-                    setSelectedRunId(null);
-                    setWasAutoPinned(false);
-                  }
-                }}
+                onClick={handleCloseDrawer}
                 className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white transition-all text-xs font-mono"
               >
                 ✕
@@ -637,14 +680,20 @@ export default function PipelinePage() {
             </div>
 
             {/* Content Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div
+              className={`flex-1 p-6 overscroll-contain ${
+                activeTab === "logs" || activeTab === "inputs" || activeTab === "outputs"
+                  ? "flex flex-col min-h-0 overflow-hidden"
+                  : "overflow-y-auto space-y-6"
+              }`}
+            >
               {isLoadingDetails ? (
-                <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
+                <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2 flex-1">
                   <Loader2 className="w-8 h-8 animate-spin text-primary" />
                   <span className="text-xs">Loading stage telemetry...</span>
                 </div>
               ) : !stageDetails ? (
-                <div className="text-center py-20 text-slate-500 text-xs">
+                <div className="text-center py-20 text-slate-500 text-xs flex-1">
                   No telemetry runs captured yet for <code className="text-slate-450">{selectedBackendStage}</code> in this run.
                 </div>
               ) : (
@@ -797,7 +846,7 @@ export default function PipelinePage() {
 
                   {/* Logs Tab */}
                   {activeTab === "logs" && (
-                    <div className="space-y-3">
+                    <div className="flex flex-col flex-1 min-h-0 space-y-3">
                       <div className="flex items-center justify-between text-xs text-slate-400">
                         <span>Terminal Log Output</span>
                         {stageDetails.status === "running" && (
@@ -817,9 +866,9 @@ export default function PipelinePage() {
 
                   {/* Inputs Tab */}
                   {activeTab === "inputs" && (
-                    <div className="space-y-4">
+                    <div className="flex flex-col flex-1 min-h-0 space-y-4">
                       <span className="text-xs text-slate-400 block">Factual inputs and configurations</span>
-                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-[350px]">
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 font-mono text-[11px] text-slate-300 overflow-auto flex-1 min-h-0">
                         <pre>
                           {JSON.stringify(
                             stageDetails.metadata?.inputs || 
@@ -831,22 +880,24 @@ export default function PipelinePage() {
                       </div>
 
                       {stageDetails.llm_traces?.length > 0 && (
-                        <div className="space-y-3 pt-3 border-t border-slate-800">
+                        <div className="space-y-3 pt-3 border-t border-slate-800 flex-1 min-h-0 flex flex-col">
                           <span className="text-xs font-bold text-slate-300 uppercase tracking-wide">LLM Prompts</span>
-                          {stageDetails.llm_traces.map((trace: any, idx: number) => (
-                            <div key={idx} className="bg-slate-950/80 p-3 rounded-lg border border-slate-850 space-y-2">
-                              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                                <span>{trace.model} ({trace.provider})</span>
-                                <span>Trace ID: {trace.id?.slice(0, 8)}</span>
+                          <div className="space-y-3 overflow-y-auto flex-1 min-h-0">
+                            {stageDetails.llm_traces.map((trace: any, idx: number) => (
+                              <div key={idx} className="bg-slate-950/80 p-3 rounded-lg border border-slate-850 space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                                  <span>{trace.model} ({trace.provider})</span>
+                                  <span>Trace ID: {trace.id?.slice(0, 8)}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded border border-slate-900 max-h-[150px] overflow-y-auto text-[10px] font-mono text-slate-400 whitespace-pre-wrap">
+                                  <strong>System:</strong> {trace.system_prompt || "N/A"}
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded border border-slate-900 max-h-[150px] overflow-y-auto text-[10px] font-mono text-slate-400 whitespace-pre-wrap">
+                                  <strong>User:</strong> {trace.user_prompt || "N/A"}
+                                </div>
                               </div>
-                              <div className="bg-slate-950 p-2.5 rounded border border-slate-900 max-h-[150px] overflow-y-auto text-[10px] font-mono text-slate-400 whitespace-pre-wrap">
-                                <strong>System:</strong> {trace.system_prompt || "N/A"}
-                              </div>
-                              <div className="bg-slate-950 p-2.5 rounded border border-slate-900 max-h-[150px] overflow-y-auto text-[10px] font-mono text-slate-400 whitespace-pre-wrap">
-                                <strong>User:</strong> {trace.user_prompt || "N/A"}
-                              </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -854,9 +905,9 @@ export default function PipelinePage() {
 
                   {/* Outputs Tab */}
                   {activeTab === "outputs" && (
-                    <div className="space-y-4">
+                    <div className="flex flex-col flex-1 min-h-0 space-y-4">
                       <span className="text-xs text-slate-400 block">Raw results and metadata payload</span>
-                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-[350px]">
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 font-mono text-[11px] text-slate-300 overflow-auto flex-1 min-h-0">
                         <pre>
                           {JSON.stringify(
                             stageDetails.metadata?.outputs ||
@@ -868,19 +919,21 @@ export default function PipelinePage() {
                       </div>
 
                       {stageDetails.llm_traces?.length > 0 && (
-                        <div className="space-y-3 pt-3 border-t border-slate-800">
+                        <div className="space-y-3 pt-3 border-t border-slate-800 flex-1 min-h-0 flex flex-col">
                           <span className="text-xs font-bold text-slate-300 uppercase tracking-wide">LLM Output Responses</span>
-                          {stageDetails.llm_traces.map((trace: any, idx: number) => (
-                            <div key={idx} className="bg-slate-950/80 p-3 rounded-lg border border-slate-850 space-y-2">
-                              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                                <span>{trace.model} ({trace.provider})</span>
-                                <span>Status: {trace.status}</span>
+                          <div className="space-y-3 overflow-y-auto flex-1 min-h-0">
+                            {stageDetails.llm_traces.map((trace: any, idx: number) => (
+                              <div key={idx} className="bg-slate-950/80 p-3 rounded-lg border border-slate-850 space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                                  <span>{trace.model} ({trace.provider})</span>
+                                  <span>Status: {trace.status}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded border border-slate-900 max-h-[200px] overflow-y-auto text-[10px] font-mono text-emerald-400 whitespace-pre-wrap">
+                                  {trace.response_text || "N/A"}
+                                </div>
                               </div>
-                              <div className="bg-slate-950 p-2.5 rounded border border-slate-900 max-h-[200px] overflow-y-auto text-[10px] font-mono text-emerald-400 whitespace-pre-wrap">
-                                {trace.response_text || "N/A"}
-                              </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -969,9 +1022,12 @@ export default function PipelinePage() {
                 </>
               )}
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
+    </>,
+    document.body
+  )}
 
       {/* Pipeline Runs History */}
       <div className="glass rounded-2xl p-5 border border-slate-850">

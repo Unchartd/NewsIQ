@@ -71,7 +71,9 @@ async def test_summarize_story_from_kg_mock_fallback():
         "edges": [],
     }
 
-    res = await ai_service.summarize_story_from_kg(kg, [], [], [])
+    with patch("app.llm_gateway.fallback_chain.FallbackChain.get_fallback_chain") as mock_chain:
+        mock_chain.return_value = [{"provider": "mock", "model": "mock"}]
+        res = await ai_service.summarize_story_from_kg(kg, [], [], [])
 
     assert "[mock]" in res.headline.lower()
     assert "protest" in res.headline.lower()

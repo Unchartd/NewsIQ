@@ -96,30 +96,23 @@ class ContradictionService:
             f'{{"is_contradiction": true/false, "description": "...", "confidence": 0.0-1.0}}'
         )
 
-        if self.gemini_enabled and self._gemini_client:
-            await _wait_for_synthesis_quota()
-            model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-            try:
-                from google.genai import types
-
-                async with track_llm_call("gemini", model, "contradiction_detection", user_prompt=prompt) as call:
-                    response = await self._gemini_client.aio.models.generate_content(
-                        model=model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=ContradictionResolution,
-                            temperature=0.1,
-                        ),
-                    )
-                    call.response_text = response.text
-                    if getattr(response, "usage_metadata", None):
-                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
-                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
-                    data = json.loads(response.text)
-                    return ContradictionResolution(**data)
-            except Exception as e:
-                logger.warning("Gemini contradiction verification failed: %s", e)
+        try:
+            from app.agents.contradiction_agent import check_contradiction
+            agent_res = await check_contradiction(
+                fact_type=fact_type,
+                val1=str(val1),
+                val2=str(val2),
+                source1_name=source1_name,
+                source2_name=source2_name,
+                context=context
+            )
+            return ContradictionResolution(
+                is_contradiction=agent_res.contradiction,
+                description=agent_res.explanation,
+                confidence=agent_res.confidence
+            )
+        except Exception as e:
+            logger.warning("Agno Contradiction Agent failed: %s. Falling back.", e)
 
         if self.openai_enabled and self._openai_client:
             try:
@@ -141,8 +134,8 @@ class ContradictionService:
                         call.input_tokens = response.usage.prompt_tokens or 0
                         call.output_tokens = response.usage.completion_tokens or 0
                     return response.choices[0].message.parsed
-            except Exception as e:
-                logger.warning("OpenAI contradiction verification failed: %s", e)
+            except Exception as exc:
+                logger.warning("OpenAI contradiction verification failed: %s", exc)
 
         # Fallback if AI disabled or failed
         desc = f"Mismatch on {fact_type}: {source1_name} reports '{val1}', while {source2_name} reports '{val2}'."

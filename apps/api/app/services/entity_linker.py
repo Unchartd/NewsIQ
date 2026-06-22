@@ -442,6 +442,24 @@ class EntityLinker:
         except Exception as e:
             logger.warning("Wikidata lookup failed for %s: %s", clean_name, e)
 
+        # Agentic fallback if Wikidata did not resolve QID
+        if not wikidata_id:
+            logger.info("Wikidata lookup failed to find QID for %s. Invoking EntityDisambiguationAgent.", clean_name)
+            try:
+                from app.agents.entity_disambiguation_agent import disambiguate_entity
+                agent_res = await disambiguate_entity(
+                    entity_value=clean_name,
+                    entity_type=entity_type,
+                    context=context
+                )
+                if agent_res:
+                    resolution.canonical_name = agent_res.canonical_name
+                    entity_type = agent_res.entity_type
+                    wikidata_id = agent_res.wikidata_id
+                    wikidata_desc = agent_res.explanation
+            except Exception as e:
+                logger.error("EntityDisambiguationAgent failed for %s: %s", clean_name, e)
+
         # Check DB by wikidata_id if found
         if wikidata_id:
             stmt = select(CanonicalEntity).where(

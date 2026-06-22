@@ -539,58 +539,34 @@ class AIService:
             f"{schema}"
         )
 
-    async def _summarize_with_gemini(
+    async def summarize_story_from_kg(
         self,
         kg: dict[str, Any],
         contradictions: list[dict[str, Any]],
         timeline: list[dict[str, Any]],
         source_comparisons: list[dict[str, Any]],
     ) -> StorySummaryResponse:
-        await _wait_for_synthesis_quota()
-        from google.genai import types
+        """Summarize story from its knowledge graph and analysis inputs through the LLM Gateway."""
         prompt = self._build_summary_prompt(kg, contradictions, timeline, source_comparisons)
-        client = self._gemini_client
-        primary = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-        model_chain = list(dict.fromkeys([
-            primary,
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-2.5-flash-lite",
-        ]))
+        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        
+        from app.llm_gateway.request_manager import llm_gateway
 
-        last_exc = None
-        for model in model_chain:
-            try:
-                @retry(
-                    stop=stop_after_attempt(3),
-                    wait=wait_combine(
-                        wait_exponential(multiplier=2, min=5, max=30),
-                        wait_random(min=0, max=2),
-                    ),
-                    retry=retry_if_exception_type(Exception),
-                    reraise=True,
-                )
-                async def _call(m: str = model):
-                    return await client.aio.models.generate_content(
-                        model=m,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=StorySummaryResponse,
-                            temperature=0.1,
-                        ),
-                    )
+        try:
+            logger.info("Summarizing story from KG via LLM Gateway.")
+            response = await llm_gateway.execute_request(
+                model=model,
+                stage="summary_generation",
+                messages=[{"role": "user", "content": prompt}],
+                response_format=StorySummaryResponse,
+                temperature=0.1,
+            )
 
-                async with track_llm_call("gemini", model, "summary_generation", user_prompt=prompt) as call:
-                    response = await _call()
-                    call.response_text = response.text
-                    if getattr(response, "usage_metadata", None):
-                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
-                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
-                    raw_text = response.text
-                data = json.loads(raw_text)
-
+            if response.parsed:
+                res_data = response.parsed
+            else:
+                import json
+                data = json.loads(response.content)
                 key_map = {
                     "oneLineSummary": "one_line_summary",
                     "shortSummary": "short_summary",
@@ -617,59 +593,13 @@ class AIService:
                     if field not in data or not data[field]:
                         data[field] = ""
 
-                result = StorySummaryResponse(**data)
-                if model != primary:
-                    logger.info("KG Synthesis succeeded using fallback model: %s", model)
-                return result
-            except Exception as exc:
-                err_str = str(exc)
-                if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
-                    logger.warning("Gemini model %s quota exhausted during KG summary — trying next.", model)
-                    last_exc = exc
-                    continue
-                raise
+                res_data = StorySummaryResponse(**data)
 
-        raise last_exc or RuntimeError("All Gemini models exhausted during KG summarization")
+            return res_data
 
-    async def _summarize_with_openai(
-        self,
-        kg: dict[str, Any],
-        contradictions: list[dict[str, Any]],
-        timeline: list[dict[str, Any]],
-        source_comparisons: list[dict[str, Any]],
-    ) -> StorySummaryResponse:
-        prompt = self._build_summary_prompt(kg, contradictions, timeline, source_comparisons)
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            retry=retry_if_exception_type(Exception),
-            reraise=True,
-        )
-        async def _call():
-            return await self.openai_client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an objective, expert news intelligence analyst.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format=StorySummaryResponse,
-                temperature=0.1,
-            )
-
-        async with track_llm_call("openai", "gpt-4o-mini", "summary_generation", user_prompt=prompt) as call:
-            response = await _call()
-            call.response_text = response.choices[0].message.content or ""
-            if getattr(response, "usage", None):
-                call.input_tokens = response.usage.prompt_tokens or 0
-                call.output_tokens = response.usage.completion_tokens or 0
-            
-            data = response.choices[0].message.parsed
-            if data.category not in CATEGORY_SLUGS:
-                data.category = "world"
-            return data
+        except Exception as exc:
+            logger.error("LLM Gateway failed during story KG summarization: %s — using mock response.", exc)
+            return self._generate_mock_summary_response(kg, contradictions, timeline, source_comparisons)
 
     def _generate_mock_summary_response(
         self,
@@ -678,53 +608,27 @@ class AIService:
         timeline: list[dict[str, Any]],
         source_comparisons: list[dict[str, Any]],
     ) -> StorySummaryResponse:
-        nodes = kg.get("nodes", [])
-        events = [n for n in nodes if n.get("type") == "event"]
-        entities = [n for n in nodes if n.get("type") == "entity"]
-        sources = [n for n in nodes if n.get("type") == "source"]
-
-        main_event = events[0]["label"] if events else "news event"
-        event_time_str = events[0]["properties"].get("event_time_raw") if events else None
-        time_part = f" on {event_time_str}" if event_time_str else ""
-
-        headline = f"[Mock] Synthesis of {main_event}{time_part}"
-        one_line = f"[Mock] A story summarizing {len(events)} events involving {len(entities)} entities from {len(sources)} sources."
-        short_s = f"[Mock] Event details: {main_event}. This summary was constructed deterministically from structured knowledge."
-        detailed_s = f"[Mock] Detailed summary of the story based on knowledge graph.\n\nEvents: {', '.join(e['label'] for e in events)}\nEntities: {', '.join(ent['label'] for ent in entities)}"
-
+        """Mock fallback for story summarization."""
+        title = "Major News Event"
+        if isinstance(kg, dict):
+            if "nodes" in kg:
+                for node in kg["nodes"]:
+                    if node.get("type") == "event":
+                        title = node.get("label") or node.get("properties", {}).get("name", "Major News Event")
+                        break
+            elif "event" in kg:
+                title = kg["event"].get("name", "Major News Event")
         return StorySummaryResponse(
-            headline=headline,
-            one_line_summary=one_line,
-            short_summary=short_s,
-            detailed_summary=detailed_s,
-            key_facts=[f"[Mock] Structured fact: {e['label']}" for e in events[:3]],
+            headline=f"[Mock] {title}",
+            one_line_summary=f"[Mock] Story summary based on structured event knowledge graph.",
+            short_summary=f"[Mock] Short summary of event: {title}.",
+            detailed_summary=f"[Mock] Detailed summary covering: {title}.\nTimeline events: {len(timeline)}.\nContradictions: {len(contradictions)}.",
+            key_facts=[
+                f"[Mock] Structured event contains {len(timeline)} timeline items.",
+                f"[Mock] Analyzed {len(source_comparisons)} source comparisons.",
+            ],
             category="world",
         )
-
-    async def summarize_story_from_kg(
-        self,
-        kg: dict[str, Any],
-        contradictions: list[dict[str, Any]],
-        timeline: list[dict[str, Any]],
-        source_comparisons: list[dict[str, Any]],
-    ) -> StorySummaryResponse:
-        """Summarize story from its knowledge graph and analysis inputs."""
-        if self.gemini_enabled:
-            try:
-                logger.info("Summarizing story from KG with Gemini.")
-                return await self._summarize_with_gemini(kg, contradictions, timeline, source_comparisons)
-            except Exception as exc:
-                logger.error("Gemini story KG summarization failed: %s — trying OpenAI.", exc)
-
-        if self.openai_enabled and self.openai_client:
-            try:
-                logger.info("Summarizing story from KG with OpenAI fallback.")
-                return await self._summarize_with_openai(kg, contradictions, timeline, source_comparisons)
-            except Exception as exc:
-                logger.error("OpenAI story KG summarization failed: %s — using mock.", exc)
-
-        logger.warning("All AI providers failed during KG summarization — using mock response.")
-        return self._generate_mock_summary_response(kg, contradictions, timeline, source_comparisons)
 
 
 ai_service = AIService()

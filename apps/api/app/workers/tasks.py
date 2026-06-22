@@ -38,7 +38,7 @@ from app.core.trace import (
     StageSpan,
     bind_article_context,
 )
-from app.models.models import Article, ArticleEvent
+from app.models.models import Article, ArticleEntity, ArticleEvent
 from app.services.embedding_service import embedding_service
 from app.services.ingestion_service import ingestion_service
 from app.services.vector_service import vector_service
@@ -310,9 +310,10 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 published_at=pub_at,
                             )
 
-                            # Store primary event
+                            # Store primary event with fingerprint
                             pe = event_response.primary_event
                             parsed_time = _try_parse_event_time(pe.event_time)
+                            fingerprint = event_service.compute_event_fingerprint(pe)
 
                             primary_event = ArticleEvent(
                                 id=uuid.uuid4(),
@@ -328,6 +329,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 event_time_raw=pe.event_time,
                                 numbers=pe.numbers,
                                 confidence=pe.confidence,
+                                event_fingerprint=fingerprint,
                             )
                             session.add(primary_event)
 
@@ -350,6 +352,33 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     confidence=se.confidence,
                                 )
                                 session.add(secondary_event)
+
+                            # Store per-article entities (from combined extraction)
+                            from app.services.entity_linker import entity_linker
+
+                            for ent in event_response.entities[:20]:
+                                canonical_entity_id = None
+                                try:
+                                    canonical_ent = await entity_linker.link_entity(
+                                        name=ent.canonical_name or ent.value,
+                                        entity_type=ent.type,
+                                        context=(article.title or "") + " " + (article.description or ""),
+                                        session=session,
+                                    )
+                                    canonical_entity_id = canonical_ent.id
+                                except Exception as link_err:
+                                    logger.warning(
+                                        "Entity linking failed for '%s': %s", ent.value, link_err
+                                    )
+
+                                article_entity = ArticleEntity(
+                                    id=uuid.uuid4(),
+                                    article_id=article.id,
+                                    canonical_entity_id=canonical_entity_id,
+                                    entity_type=ent.type,
+                                    entity_value=ent.value,
+                                )
+                                session.add(article_entity)
 
                             article.event_extraction_status = "completed"
                             await session.commit()

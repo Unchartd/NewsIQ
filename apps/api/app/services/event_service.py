@@ -17,6 +17,7 @@ Rate limiting:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from typing import Any
@@ -84,8 +85,23 @@ class ExtractedEvent(BaseModel):
     )
 
 
+class ExtractedArticleEntity(BaseModel):
+    """A named entity extracted from the article alongside events."""
+
+    value: str = Field(description="The entity text as it appears in the article")
+    type: str = Field(
+        description="Entity type: PERSON, ORG, COMPANY, COUNTRY, CITY, STATE, "
+        "LOCATION, POLITICAL_PARTY, GOVERNMENT_BODY, MILITARY_UNIT, "
+        "PRODUCT, TECHNOLOGY, LAW, AGREEMENT, WEAPON, SPORTS_TEAM, EVENT"
+    )
+    canonical_name: str | None = Field(
+        default=None,
+        description="Standardized canonical name (e.g., 'Rahul Gandhi' for 'Mr Gandhi')",
+    )
+
+
 class ArticleEventResponse(BaseModel):
-    """Response schema for per-article event extraction."""
+    """Response schema for per-article event + entity extraction."""
 
     primary_event: ExtractedEvent = Field(
         description="The main event described in the article"
@@ -93,6 +109,10 @@ class ArticleEventResponse(BaseModel):
     secondary_events: list[ExtractedEvent] = Field(
         default_factory=list,
         description="Any secondary events mentioned in the article",
+    )
+    entities: list[ExtractedArticleEntity] = Field(
+        default_factory=list,
+        description="Named entities mentioned in the article",
     )
 
 
@@ -148,8 +168,8 @@ class EventService:
         ]
 
         return (
-            "You are a structured event extraction engine for news articles.\n"
-            "Extract the PRIMARY EVENT described in the article.\n\n"
+            "You are a structured event and entity extraction engine for news articles.\n"
+            "Extract the PRIMARY EVENT described in the article AND all named entities.\n\n"
             "CRITICAL RULES:\n"
             "1. event_time is WHEN THE EVENT HAPPENED, NOT when the article was published.\n"
             f"   The article was published at: {published_at or 'unknown'}. Do NOT use this as event_time.\n"
@@ -160,9 +180,15 @@ class EventService:
             "4. objects = KEY THINGS involved (weapons, documents, bills, products)\n"
             "5. location = WHERE it happened (be specific: city + country if available)\n"
             "6. numbers = any KEY NUMBERS mentioned (casualties, amounts, counts, percentages)\n"
-            "7. confidence = how confident you are in this extraction (0.0-1.0)\n\n"
+            "7. confidence = how confident you are in this extraction (0.0-1.0)\n"
+            "8. entities = ALL named entities in the article (people, orgs, countries, cities, etc.)\n"
+            "   - For each entity, provide: value (text as-is), type (PERSON/ORG/COUNTRY/etc.), canonical_name (standardized)\n"
+            "   - Include entities from actors, targets, and location fields too\n\n"
             f"event_type must be one of: {', '.join(sample_types)}\n"
             "If none fit, use the closest match or a descriptive type.\n\n"
+            "entity type must be one of: PERSON, ORG, COMPANY, COUNTRY, CITY, STATE, "
+            "LOCATION, POLITICAL_PARTY, GOVERNMENT_BODY, MILITARY_UNIT, "
+            "PRODUCT, TECHNOLOGY, LAW, AGREEMENT, WEAPON, SPORTS_TEAM, EVENT\n\n"
             f"--- ARTICLE ---\n"
             f"Title: {title}\n"
             f"Content: {content[:6000]}\n"
@@ -179,7 +205,11 @@ class EventService:
             '    "numbers": {"<key>": <value>},\n'
             '    "confidence": 0.85\n'
             "  },\n"
-            '  "secondary_events": []\n'
+            '  "secondary_events": [],\n'
+            '  "entities": [\n'
+            '    {"value": "Joe Biden", "type": "PERSON", "canonical_name": "Joe Biden"},\n'
+            '    {"value": "US", "type": "COUNTRY", "canonical_name": "United States"}\n'
+            "  ]\n"
             "}\n"
         )
 
@@ -327,9 +357,26 @@ class EventService:
                 evt.setdefault("confidence", 0.3)
                 normalized_secondary.append(ExtractedEvent(**evt))
 
+        # Normalize entities
+        raw_entities = data.get("entities", [])
+        if not isinstance(raw_entities, list):
+            raw_entities = []
+        normalized_entities = []
+        for ent in raw_entities:
+            if isinstance(ent, dict):
+                val = str(ent.get("value", "")).strip()
+                etype = str(ent.get("type", "PERSON")).strip().upper()
+                if val:
+                    normalized_entities.append(ExtractedArticleEntity(
+                        value=val,
+                        type=etype,
+                        canonical_name=ent.get("canonical_name"),
+                    ))
+
         return ArticleEventResponse(
             primary_event=ExtractedEvent(**primary),
             secondary_events=normalized_secondary,
+            entities=normalized_entities,
         )
 
     # ── Mock fallback ─────────────────────────────────────────────────────────
@@ -350,6 +397,7 @@ class EventService:
                 confidence=0.1,
             ),
             secondary_events=[],
+            entities=[],
         )
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -406,6 +454,39 @@ class EventService:
         # Simple heuristic: if we have at least 2 distinct, non-null event times
         unique_times = set(times)
         return len(unique_times) > 1
+
+
+    @staticmethod
+    def compute_event_fingerprint(event: ExtractedEvent) -> str:
+        """Compute a deterministic fingerprint hash for dedup-based pre-grouping.
+
+        Hash of (event_type_canonical, sorted actors, sorted targets, location, event_date).
+        Articles with identical fingerprints describe the same event.
+        """
+        from app.services.event_taxonomy import canonicalize_event_type
+
+        canonical_type = canonicalize_event_type(event.event_type)
+        actors = sorted(a.strip().lower() for a in event.actors if a.strip())
+        targets = sorted(t.strip().lower() for t in event.targets if t.strip())
+        location = event.location.strip().lower() if event.location else ""
+
+        # Extract just the date portion from event_time for time-normalization
+        event_date = ""
+        if event.event_time:
+            raw = event.event_time.strip()
+            # Try ISO 8601 date extraction
+            if len(raw) >= 10:
+                event_date = raw[:10]  # YYYY-MM-DD
+
+        parts = [
+            canonical_type,
+            "|".join(actors),
+            "|".join(targets),
+            location,
+            event_date,
+        ]
+        fingerprint_str = "::".join(parts)
+        return hashlib.sha256(fingerprint_str.encode("utf-8")).hexdigest()[:32]
 
 
 event_service = EventService()

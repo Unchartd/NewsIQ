@@ -3,6 +3,7 @@
 from app.models.models import (
     ApiKey,
     Article,
+    ArticleEntity,
     ArticleEvent,
     Bookmark,
     CanonicalEntity,
@@ -47,6 +48,7 @@ __all__ = [
     # Core models
     "ApiKey",
     "Article",
+    "ArticleEntity",
     "ArticleEvent",
     "Bookmark",
     "CanonicalEntity",

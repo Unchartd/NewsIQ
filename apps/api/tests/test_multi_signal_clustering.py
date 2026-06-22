@@ -29,7 +29,8 @@ async def test_compute_event_similarity_direct_math():
         event_time=datetime.datetime(2026, 6, 20, 12, 0, 0),  # < 1 day diff -> 1.0
     )
     score = clustering_service._compute_event_similarity_direct(evt1, evt2)
-    assert pytest.approx(score) == 1.0
+    # Weights now sum to 0.90 (entity overlap 10% is applied externally)
+    assert pytest.approx(score) == 0.90
 
     # Symmetry check
     score_sym = clustering_service._compute_event_similarity_direct(evt2, evt1)
@@ -51,10 +52,10 @@ async def test_compute_event_similarity_direct_math():
         location=None,
         event_time=None,
     )
-    # Weights: actor (0.30 * 1.0) + target (0.25 * 1.0) + loc (0.20 * 0.5) + type (0.15 * 0.0) + time (0.10 * 0.8)
-    # Score = 0.30 + 0.25 + 0.10 + 0.0 + 0.08 = 0.73
+    # Weights: actor (0.25 * 1.0) + target (0.20 * 1.0) + loc (0.20 * 0.5) + type (0.15 * 0.0) + time (0.10 * 0.8)
+    # Score = 0.25 + 0.20 + 0.10 + 0.0 + 0.08 = 0.63
     score = clustering_service._compute_event_similarity_direct(evt_empty1, evt_empty2)
-    assert pytest.approx(score) == 0.73
+    assert pytest.approx(score) == 0.63
 
     # 3. Substring location and parent event type match
     # Location: "Kyiv" vs "Kyiv Oblast" (substring -> 0.8)
@@ -76,14 +77,14 @@ async def test_compute_event_similarity_direct_math():
         location="Kyiv Oblast",
         event_time=datetime.datetime(2026, 6, 22),
     )
-    # Actor: 0.30 * 0.5 = 0.15
-    # Target: 0.25 * 1.0 = 0.25
+    # Actor: 0.25 * 0.5 = 0.125
+    # Target: 0.20 * 1.0 = 0.20
     # Location: 0.20 * 0.8 = 0.16
     # Type: 0.15 * 0.5 = 0.075
     # Time: 0.10 * 0.5 = 0.05
-    # Total = 0.15 + 0.25 + 0.16 + 0.075 + 0.05 = 0.685
+    # Total = 0.125 + 0.20 + 0.16 + 0.075 + 0.05 = 0.61
     score = clustering_service._compute_event_similarity_direct(evt3, evt4)
-    assert pytest.approx(score) == 0.685
+    assert pytest.approx(score) == 0.61
 
 
 @pytest.mark.asyncio
