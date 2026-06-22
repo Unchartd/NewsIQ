@@ -1,76 +1,46 @@
 # NewsIQ Observability Platform — Roadmap
 
-> **Generated**: 2026-06-20
-> **Status**: In Progress
+This document outlines the execution milestones for transforming NewsIQ's pipeline observability into a production-grade AI pipeline intelligence system.
 
 ---
 
-## Vision
+## 1. System Vision
 
-Build a Bloomberg Terminal / LangSmith / Datadog-grade observability platform for the NewsIQ news intelligence pipeline. Every pipeline stage must be **traceable, replayable, measurable, and debuggable**.
-
----
-
-## Execution Tiers
-
-### Tier 1: Foundation ✅ IN PROGRESS
-**Phases 1-4 | ~3000 lines | Backend-only**
-
-| Phase | Milestone | Acceptance Criteria |
-|-------|-----------|-------------------|
-| 1 | Pipeline Audit | `docs/observability/current-pipeline.md` exists with full gap analysis |
-| 2 | Trace Model | Every Celery task emits `run_id` + `trace_id`. `PipelineRun` + `StageRun` tables populated |
-| 3 | DB Models | All observability models migrated: `LLMTrace`, `TokenUsage`, `CostRecord`, `RetryHistory`, `PromptVersion`, `ErrorLog`, `QueueMetrics` |
-| 4 | Structured Logging | All services use structlog with bound `trace_id`, `stage`, `latency_ms`. JSON output includes full context |
-
-### Tier 2: External Integrations
-**Phases 5-8 | ~2500 lines | Adds Docker services**
-
-| Phase | Milestone | Acceptance Criteria |
-|-------|-----------|-------------------|
-| 5 | Langfuse | Every LLM call captured with prompt, response, tokens, cost. Viewable at `localhost:3100` |
-| 6 | Flower | Queue health visible at `localhost:5555`. Dead-letter queue configured |
-| 7 | Sentry | All errors enriched with `trace_id`, `story_id`. Frontend errors captured |
-| 8 | Prometheus | `/metrics` endpoint returns all pipeline metrics. Prometheus scraping confirmed |
-
-### Tier 3: Admin UI
-**Phases 9-18 | ~8000 lines | Frontend panels**
-
-| Phase | Milestone | Acceptance Criteria |
-|-------|-----------|-------------------|
-| 9 | Grafana | 8 auto-provisioned dashboards at `localhost:3001` |
-| 10 | Story Inspector | `/admin/stories/[id]` shows full story trace with all sub-data |
-| 11 | Pipeline DAG | `/admin/pipeline` shows real-time stage status with color coding |
-| 12 | SSE Streaming | Pipeline DAG updates in real-time without polling |
-| 13 | Prompt Viewer | `/admin/prompts` shows versioned prompts with diffs |
-| 14 | Cost Analytics | `/admin/costs` shows per-provider, per-story cost breakdowns |
-| 15 | Entity Debugger | `/admin/entities` shows raw → canonical mapping with corrections |
-| 16 | Cluster Debugger | `/admin/clusters` shows similarity matrices and merge decisions |
-| 17 | Timeline Debugger | `/admin/timeline` shows chronological event ordering |
-| 18 | Human Review | `/admin/review` supports approve/reject/split/merge with feedback storage |
-
-### Tier 4: Replay System
-**Phase 19 | ~1500 lines**
-
-| Phase | Milestone | Acceptance Criteria |
-|-------|-----------|-------------------|
-| 19 | Replay | Can replay any story or individual stage. Side-by-side diff of original vs replayed output |
-
-### Tier 5: Documentation
-**Phase 20 | ~2000 lines**
-
-| Phase | Milestone | Acceptance Criteria |
-|-------|-----------|-------------------|
-| 20 | Docs | Complete `/docs/observability/` with 14 markdown guides |
+Build an observability platform comparable to Datadog, LangSmith, and Apache Airflow. SREs and developers should be able to audit and replay every stage of the ingestion, clustering, and summarization pipeline without looking at raw server terminal outputs.
 
 ---
 
-## Future Enhancements (Post-MVP)
+## 2. Execution Tiers
 
-- **Anomaly Detection**: Auto-detect quality degradation in summaries
-- **A/B Testing**: Compare prompt versions with quality metrics
-- **Model Evaluation**: Automated evaluation of summary quality using LLM-as-judge
-- **Alerting**: PagerDuty/Slack integration for critical pipeline failures
-- **Data Lineage**: Full provenance graph from raw RSS entry to final story
-- **Multi-tenant Observability**: Per-user pipeline analytics
-- **Custom Metric Queries**: Ad-hoc PromQL queries from admin UI
+```mermaid
+gantt
+    title Pipeline Observability Milestones
+    dateFormat  YYYY-MM-DD
+    section Tier 1: Foundation
+    Audits & DB Schema           :active, des1, 2026-06-20, 2d
+    E2E Contextvars Tracing      :active, des2, 2026-06-22, 2d
+    Structured Logging & Sentry  :des3, 2026-06-24, 2d
+    section Tier 2: Integrations
+    Langfuse & Prometheus        :des4, 2026-06-26, 3d
+    Celery / Flower Monitoring    :des5, 2026-06-29, 2d
+    section Tier 3: Admin UI
+    Admin DAG & SSE Streaming     :des6, 2026-07-01, 4d
+    Prompt Observability         :des7, 2026-07-05, 3d
+    Replay Controller            :des8, 2026-07-08, 3d
+```
+
+### Tier 1: Foundations (Core Integration)
+*   **Milestone 1:** E2E tracing using async-safe `contextvars`. Carry `trace_id` and `run_id` across Celery task boundaries.
+*   **Milestone 2:** Implement `FunctionRunModel` schema for function-level call trace tracking.
+*   **Milestone 3:** Standardize logging to stdout in JSON Pino format with Sentry exception hooks.
+
+### Tier 2: Observability Backend
+*   **Milestone 4:** Separate Processing Backend (Celery tasks, LLM routes) and User Backend (FastAPI, auth, recommendations) profiles.
+*   **Milestone 5:** Connect Langfuse client spans and Prometheus collectors to capture token usages and latencies.
+*   **Milestone 6:** Integrate Flower API endpoints to retrieve Celery queue lengths, active workers, and dead-letter tasks.
+
+### Tier 3: Frontend Dashboard (/admin)
+*   **Milestone 7:** Build `/admin/pipeline` with reactive DAG node cards rendering real-time SSE event updates.
+*   **Milestone 8:** Implement `/admin/stories/[id]` Story Inspector visualizing similarity matrices and Wikidata resolutions.
+*   **Milestone 9:** Create `/admin/prompts` version history, side-by-side diff viewers, and prompt playgrounds.
+*   **Milestone 10:** Create `/admin/replay` console allowing localized stage overrides and comparisons.

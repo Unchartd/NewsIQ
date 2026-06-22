@@ -43,10 +43,42 @@ graph TD
 
 ---
 
-## 2. Telemetry Primitives
+## 2. Split-Backend Architecture
 
-### 2.1 Context Propagation (`trace.py`)
-Because Celery workers execute asynchronously in a multi-process (`prefork`) pool, thread-local storage is insufficient. The platform utilizes Python's native `contextvars` to manage stack-safe, async-safe tracing variables:
+To protect user responsiveness and enforce reliability boundaries, the NewsIQ system is split into two distinct execution backends:
+
+```
+┌────────────────────────────────────────────────────────┐
+│               NEWSIQ PROCESSING BACKEND                │
+│ (Celery workers, LLM Gateways, Vector DBs, Crawlers)   │
+├────────────────────────────────────────────────────────┤
+│ Ingestion ──> Extraction ──> Embeddings ──> Clustering  │
+│ ──> Timeline ──> Synthesis ──> Publishing (to Cache)   │
+└──────────────────────────┬─────────────────────────────┘
+                           │ (Publishes to DB / Cache)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│                 NEWSIQ USER BACKEND                    │
+│      (FastAPI, Auth service, Feeds delivery)           │
+├────────────────────────────────────────────────────────┤
+│ Auth ──> Recommendations ──> Search ──> Delivery API   │
+└────────────────────────────────────────────────────────┘
+```
+
+### 2.1 Processing Backend
+*   **Responsibilities:** RSS/GNews fetching, raw web scraping, embedding calculation, HDBSCAN clustering, Wikidata linking, contradiction audits, AI summarization, reflection checks, and cache warming.
+*   **Operational Boundary:** Operates asynchronously in background worker processes. It is completely isolated from user traffic. Even if LLM latency spikes or API rate limits are hit, user API services are unaffected.
+
+### 2.2 User Backend
+*   **Responsibilities:** User login/session authentication, bookmark tracking, personal feeds generation, Meilisearch queries, and user notification triggers.
+*   **Operational Boundary:** Enforces strict execution limits (latencies under 100ms). It queries pre-computed summaries and story clusters from the database or Meilisearch caches and **never** awaits or initiates long-running AI generation jobs directly.
+
+---
+
+## 3. Telemetry Primitives
+
+### 3.1 Context Propagation (`trace.py`)
+Because Celery workers execute asynchronously in a multi-process pool, thread-local storage is insufficient. The platform utilizes Python's native `contextvars` to manage stack-safe, async-safe tracing variables:
 
 *   `run_id_ctx`: UUID of the parent pipeline run execution.
 *   `trace_id_ctx`: Propagation trace correlation ID (shared by DB, Sentry, and Langfuse).
@@ -60,24 +92,25 @@ These variables are automatically bound to:
 
 ---
 
-## 3. Database Schema
+## 4. Database Schema
 
-All database models are managed via SQLAlchemy under `app/models/observability_models.py` and migrated using time-ordered UUID v7 primary keys:
+All database models are managed via SQLAlchemy under `app/models/observability_models.py`:
 
-### 3.1 Core Telemetry Tables
+### 4.1 Core Telemetry Tables
 *   `pipeline_runs`: Records the execution trigger (`celery_beat`, `manual`, `chained`), type (`batch`, `incremental`), starting/ending timestamps, overall latency, and termination status.
 *   `stage_runs`: Stores granular timing, retries, and error traceback payloads for each pipeline stage. Linked to `pipeline_runs`.
 *   `llm_traces`: Logs every LLM completion. Stores model type, provider, system prompt, user prompt, response JSON/text, input/output tokens, cost, and latency.
+*   `function_runs`: Tracks generic processing functions (args, returns, duration, exceptions) executing across workers.
 *   `error_logs`: Captures pipeline failures, error types, trace references, and context.
 *   `queue_metrics`: Snapshots Redis queue lengths and Celery worker health.
 
-### 3.2 Human Review & Replay Tables
+### 4.2 Human Review & Replay Tables
 *   `human_reviews`: Stores manual interventions (approvals, rejections, cluster splits, cluster merges, and canonical entity/Wikidata overrides) with detailed Before/After JSON diff logs and justification notes.
 *   `prompt_versions`: Retains hash-deduplicated versions of system and user templates for LLM tasks, allowing comparisons across versions.
 
 ---
 
-## 4. Real-time Streaming (SSE)
+## 5. Real-time Streaming (SSE)
 
 Real-time transitions are streamed using HTML5 Server-Sent Events (SSE):
 
@@ -87,7 +120,7 @@ Real-time transitions are streamed using HTML5 Server-Sent Events (SSE):
 
 ---
 
-## 5. Replay Engine Architecture
+## 6. Replay Engine Architecture
 
 Replays are executed out-of-band in separate background Celery processes to prevent freezing Web UI operations:
 
