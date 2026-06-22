@@ -73,6 +73,7 @@ class RequestManager:
         for entry in chain:
             provider_name = entry["provider"]
             model_name = entry["model"]
+            selected_key = None
 
             try:
                 # Select client and API Key
@@ -169,7 +170,8 @@ class RequestManager:
                 
                 # Report key health failure
                 try:
-                    self.health_monitor.report_failure(selected_key, err_msg)
+                    if selected_key is not None:
+                        self.health_monitor.report_failure(selected_key, err_msg)
                 except Exception as health_exc:
                     logger.error("Health report failed: %s", health_exc)
 
@@ -200,6 +202,7 @@ class RequestManager:
         for entry in chain:
             provider_name = entry["provider"]
             model_name = entry["model"]
+            selected_key = None
 
             try:
                 selected_key, client = self.router.select_key_and_client(provider_name, model_name)
@@ -243,7 +246,8 @@ class RequestManager:
                 err_msg = str(e)
                 errors_encountered.append(f"{provider_name}/{model_name}: {err_msg}")
                 try:
-                    self.health_monitor.report_failure(selected_key, err_msg)
+                    if selected_key is not None:
+                        self.health_monitor.report_failure(selected_key, err_msg)
                 except Exception:
                     pass
                 newsiq_llm_gateway_calls_total.labels(
