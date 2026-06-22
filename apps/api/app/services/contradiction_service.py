@@ -22,8 +22,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 from app.models.models import Article, ArticleEvent, Story, StoryContradiction, StoryArticle
-from app.services.ai_service import _wait_for_synthesis_quota
-from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -46,28 +44,7 @@ class ContradictionService:
     """Detects and validates factual contradictions across articles in a story."""
 
     def __init__(self) -> None:
-        self.gemini_enabled = False
-        self._gemini_client = None
-        api_key = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY
-        if api_key:
-            try:
-                from google import genai as google_genai
-
-                self._gemini_client = google_genai.Client(api_key=api_key)
-                self.gemini_enabled = True
-            except ImportError:
-                pass
-
-        self._openai_client = None
-        self.openai_enabled = False
-        if settings.OPENAI_API_KEY:
-            try:
-                from openai import AsyncOpenAI as OpenAIClient
-
-                self._openai_client = OpenAIClient(api_key=settings.OPENAI_API_KEY)
-                self.openai_enabled = True
-            except Exception:
-                pass
+        pass
 
     @retry(
         stop=stop_after_attempt(3),
@@ -114,28 +91,30 @@ class ContradictionService:
         except Exception as e:
             logger.warning("Agno Contradiction Agent failed: %s. Falling back.", e)
 
-        if self.openai_enabled and self._openai_client:
+        # LLM Gateway fallback if Agno Agent fails
+        try:
+            model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+            from app.llm_gateway.request_manager import llm_gateway
+
+            response = await llm_gateway.execute_request(
+                model=model,
+                stage="contradiction_detection",
+                messages=[{"role": "user", "content": prompt}],
+                response_format=ContradictionResolution,
+                temperature=0.1,
+            )
+
+            if response.parsed:
+                return response.parsed
+            
             try:
-                async with track_llm_call("openai", "gpt-4o-mini", "contradiction_detection", user_prompt=prompt) as call:
-                    response = await self._openai_client.beta.chat.completions.parse(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a named entity resolution and contradiction checker.",
-                            },
-                            {"role": "user", "content": prompt},
-                        ],
-                        response_format=ContradictionResolution,
-                        temperature=0.1,
-                    )
-                    call.response_text = response.choices[0].message.content or ""
-                    if getattr(response, "usage", None):
-                        call.input_tokens = response.usage.prompt_tokens or 0
-                        call.output_tokens = response.usage.completion_tokens or 0
-                    return response.choices[0].message.parsed
-            except Exception as exc:
-                logger.warning("OpenAI contradiction verification failed: %s", exc)
+                import json
+                data = json.loads(response.content)
+                return ContradictionResolution(**data)
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("LLM Gateway contradiction verification failed: %s", exc)
 
         # Fallback if AI disabled or failed
         desc = f"Mismatch on {fact_type}: {source1_name} reports '{val1}', while {source2_name} reports '{val2}'."

@@ -5,8 +5,9 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-def test_metrics_endpoint():
+def test_metrics_endpoint(monkeypatch):
     """Verify that the /metrics endpoint returns prometheus metrics."""
+    monkeypatch.delenv("PROMETHEUS_MULTIPROC_DIR", raising=False)
     client = TestClient(app)
     response = client.get("/metrics")
     

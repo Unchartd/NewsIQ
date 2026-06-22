@@ -202,10 +202,10 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
 
 @pytest.mark.asyncio
 @patch("app.services.vector_service.vector_service.client")
-@patch("app.services.ai_service.ai_service.analyze_story")
+@patch("app.services.ai_service.ai_service.summarize_story_from_kg")
 @patch("app.services.ner_service_v2.ner_service_v2.extract_entities")
 async def test_batch_clustering_validation_split(
-    mock_extract_entities, mock_analyze_story, mock_qdrant_client, mock_db_session
+    mock_extract_entities, mock_summarize_story, mock_qdrant_client, mock_db_session
 ):
     """Verify that batch clustering splits clusters whose articles don't meet the similarity threshold."""
     # 1. Setup 2 unclustered articles

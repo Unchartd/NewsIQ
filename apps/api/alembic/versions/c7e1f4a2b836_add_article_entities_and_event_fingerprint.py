@@ -4,7 +4,7 @@ Per-article entity extraction enables entity overlap as a clustering signal.
 Event fingerprint enables dedup-based pre-grouping before HDBSCAN.
 
 Revision ID: c7e1f4a2b836
-Revises: obs_001_foundation_observability_tables
+Revises: obs_001_foundation
 Create Date: 2026-06-22 07:00:00.000000
 """
 from alembic import op
@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers, used by Alembic.
 revision = "c7e1f4a2b836"
-down_revision = "obs_001_foundation_observability_tables"
+down_revision = "obs_001_foundation"
 branch_labels = None
 depends_on = None
 

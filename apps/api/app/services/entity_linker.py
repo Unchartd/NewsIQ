@@ -157,29 +157,7 @@ class EntityLinker:
     """Links story entities to globally unique Wikidata items using a hybrid approach."""
 
     def __init__(self) -> None:
-        # LLM Clients setup
-        self._gemini_client = None
-        self.gemini_enabled = False
-        api_key = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY
-        if api_key:
-            try:
-                from google import genai as google_genai
-
-                self._gemini_client = google_genai.Client(api_key=api_key)
-                self.gemini_enabled = True
-            except ImportError:
-                pass
-
-        self._openai_client = None
-        self.openai_enabled = False
-        if settings.OPENAI_API_KEY:
-            try:
-                from openai import AsyncOpenAI
-
-                self._openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-                self.openai_enabled = True
-            except Exception:
-                pass
+        pass
 
     # ── Local Coreference Resolution ──────────────────────────────────────────
 
@@ -263,56 +241,30 @@ class EntityLinker:
     ) -> EntityResolution:
         """Query LLM to generate a clean search query and description."""
         prompt = self._build_disambiguation_prompt(name, entity_type, context)
+        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        
+        from app.llm_gateway.request_manager import llm_gateway
 
-        if self.gemini_enabled:
-            from app.services.ai_service import _wait_for_synthesis_quota
-            from google.genai import types
+        try:
+            response = await llm_gateway.execute_request(
+                model=model,
+                stage="entity_linking",
+                messages=[{"role": "user", "content": prompt}],
+                response_format=EntityResolution,
+                temperature=0.1,
+            )
 
-            await _wait_for_synthesis_quota()
-            model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-
+            if response.parsed:
+                return response.parsed
+            
             try:
-                async with track_llm_call("gemini", model, "entity_linking", user_prompt=prompt) as call:
-                    response = await self._gemini_client.aio.models.generate_content(
-                        model=model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=EntityResolution,
-                            temperature=0.1,
-                        ),
-                    )
-                    call.response_text = response.text
-                    if getattr(response, "usage_metadata", None):
-                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
-                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
-                    data = json.loads(response.text)
-                    return EntityResolution(**data)
-            except Exception as e:
-                logger.warning("Gemini disambiguation failed for %s: %s", name, e)
-
-        if self.openai_enabled and self._openai_client:
-            try:
-                async with track_llm_call("openai", "gpt-4o-mini", "entity_linking", user_prompt=prompt) as call:
-                    response = await self._openai_client.beta.chat.completions.parse(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a named entity resolution engine.",
-                            },
-                            {"role": "user", "content": prompt},
-                        ],
-                        response_format=EntityResolution,
-                        temperature=0.1,
-                    )
-                    call.response_text = response.choices[0].message.content or ""
-                    if getattr(response, "usage", None):
-                        call.input_tokens = response.usage.prompt_tokens or 0
-                        call.output_tokens = response.usage.completion_tokens or 0
-                    return response.choices[0].message.parsed
-            except Exception as e:
-                logger.warning("OpenAI disambiguation failed for %s: %s", name, e)
+                import json
+                data = json.loads(response.content)
+                return EntityResolution(**data)
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("LLM Gateway disambiguation failed for %s: %s", name, exc)
 
         # Fallback if LLM is disabled or failed
         return EntityResolution(
