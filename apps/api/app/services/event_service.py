@@ -34,7 +34,6 @@ from tenacity import (
 
 from app.core.config import settings
 from app.services.event_taxonomy import canonicalize_event_type, get_all_canonical_types
-from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -123,31 +122,7 @@ class EventService:
     """Extracts structured events from news article text using LLM."""
 
     def __init__(self) -> None:
-        self._gemini_client = None
-        self.gemini_enabled = False
-        api_key = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY
-        if api_key:
-            try:
-                from google import genai as google_genai
-
-                self._gemini_client = google_genai.Client(api_key=api_key)
-                self.gemini_enabled = True
-                logger.info("EventService: Gemini configured for event extraction.")
-            except ImportError:
-                logger.error("google-genai not installed for EventService.")
-            except Exception as exc:
-                logger.error("EventService Gemini init failed: %s", exc)
-
-        self._openai_client = None
-        self.openai_enabled = False
-        if settings.OPENAI_API_KEY:
-            try:
-                from openai import AsyncOpenAI
-
-                self._openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-                self.openai_enabled = True
-            except Exception as exc:
-                logger.error("EventService OpenAI init failed: %s", exc)
+        pass
 
     # ── Prompt ────────────────────────────────────────────────────────────────
 
@@ -212,99 +187,6 @@ class EventService:
             "  ]\n"
             "}\n"
         )
-
-    # ── Gemini extraction ─────────────────────────────────────────────────────
-
-    async def _extract_with_gemini(
-        self,
-        title: str,
-        content: str,
-        published_at: str | None = None,
-    ) -> ArticleEventResponse:
-        """Extract events using Gemini structured output."""
-        from app.services.ai_service import _wait_for_synthesis_quota
-        from google.genai import types
-
-        await _wait_for_synthesis_quota()
-
-        prompt = self._build_extraction_prompt(title, content, published_at)
-        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_combine(
-                wait_exponential(multiplier=2, min=5, max=30),
-                wait_random(min=0, max=2),
-            ),
-            retry=retry_if_exception_type(Exception),
-            reraise=True,
-        )
-        async def _call():
-            return await self._gemini_client.aio.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ArticleEventResponse,
-                    temperature=0.1,
-                ),
-            )
-
-        async with track_llm_call("gemini", model, "event_extraction", user_prompt=prompt) as call:
-            response = await _call()
-            call.response_text = response.text
-            if getattr(response, "usage_metadata", None):
-                call.input_tokens = response.usage_metadata.prompt_token_count or 0
-                call.output_tokens = response.usage_metadata.candidates_token_count or 0
-            raw_text = response.text
-
-        try:
-            data = json.loads(raw_text)
-        except json.JSONDecodeError:
-            logger.error("Gemini event extraction returned non-JSON: %.200s", raw_text)
-            raise
-
-        return self._normalize_response(data)
-
-    # ── OpenAI extraction ─────────────────────────────────────────────────────
-
-    async def _extract_with_openai(
-        self,
-        title: str,
-        content: str,
-        published_at: str | None = None,
-    ) -> ArticleEventResponse:
-        """Extract events using OpenAI structured output."""
-        prompt = self._build_extraction_prompt(title, content, published_at)
-
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            retry=retry_if_exception_type(Exception),
-            reraise=True,
-        )
-        async def _call():
-            return await self._openai_client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a structured event extraction engine for news articles.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format=ArticleEventResponse,
-                temperature=0.1,
-            )
-
-        async with track_llm_call("openai", "gpt-4o-mini", "event_extraction", user_prompt=prompt) as call:
-            response = await _call()
-            call.response_text = response.choices[0].message.content or ""
-            if getattr(response, "usage", None):
-                call.input_tokens = response.usage.prompt_tokens or 0
-                call.output_tokens = response.usage.completion_tokens or 0
-            
-            return response.choices[0].message.parsed
 
     # ── Response normalization ────────────────────────────────────────────────
 
@@ -420,19 +302,32 @@ class EventService:
         if not title and not content:
             return self._mock_extraction("", "")
 
-        if self.gemini_enabled:
-            try:
-                return await self._extract_with_gemini(title, content, published_at)
-            except Exception as exc:
-                logger.error("Gemini event extraction failed: %s — trying OpenAI.", exc)
+        prompt = self._build_extraction_prompt(title, content, published_at)
+        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        
+        from app.llm_gateway.request_manager import llm_gateway
 
-        if self.openai_enabled and self._openai_client:
-            try:
-                return await self._extract_with_openai(title, content, published_at)
-            except Exception as exc:
-                logger.error("OpenAI event extraction failed: %s — using mock.", exc)
+        try:
+            response = await llm_gateway.execute_request(
+                model=model,
+                stage="event_extraction",
+                messages=[{"role": "user", "content": prompt}],
+                response_format=ArticleEventResponse,
+                temperature=0.1,
+            )
 
-        logger.warning("All event extraction providers failed — using mock.")
+            if response.parsed:
+                return response.parsed
+            
+            try:
+                import json
+                data = json.loads(response.content)
+                return self._normalize_response(data)
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.error("LLM Gateway event extraction failed: %s — using mock fallback.", exc)
+
         return self._mock_extraction(title, content)
 
     async def detect_event_time_conflict(

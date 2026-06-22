@@ -163,29 +163,6 @@ class NERServiceV2:
     """
 
     def __init__(self) -> None:
-        # ── Gemini ────────────────────────────────────────────────────────────
-        self._gemini_client = None
-        self.gemini_enabled = False
-        api_key = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY
-        if api_key:
-            try:
-                from google import genai as google_genai
-                self._gemini_client = google_genai.Client(api_key=api_key)
-                self.gemini_enabled = True
-            except (ImportError, Exception) as exc:
-                logger.warning("NERServiceV2: Gemini init failed: %s", exc)
-
-        # ── OpenAI ────────────────────────────────────────────────────────────
-        self._openai_client = None
-        self.openai_enabled = False
-        if settings.OPENAI_API_KEY:
-            try:
-                from openai import AsyncOpenAI
-                self._openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-                self.openai_enabled = True
-            except Exception as exc:
-                logger.warning("NERServiceV2: OpenAI init failed: %s", exc)
-
         # ── spaCy fallback ────────────────────────────────────────────────────
         self._nlp = None
         try:
@@ -230,83 +207,7 @@ class NERServiceV2:
             '{"entities": [{"value": "...", "type": "...", "canonical_name": "...", "confidence": 0.9}]}\n'
         )
 
-    # ── Gemini extraction ─────────────────────────────────────────────────────
-
-    async def _extract_with_gemini(self, text: str) -> list[ExtractedEntity]:
-        from app.services.ai_service import _wait_for_synthesis_quota
-        from google.genai import types
-
-        await _wait_for_synthesis_quota()
-
-        prompt = self._build_ner_prompt(text)
-        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-
-        @retry(
-            stop=stop_after_attempt(2),
-            wait=wait_combine(
-                wait_exponential(multiplier=2, min=3, max=15),
-                wait_random(min=0, max=1),
-            ),
-            retry=retry_if_exception_type(Exception),
-            reraise=True,
-        )
-        async def _call():
-            return await self._gemini_client.aio.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=EntityExtractionResponse,
-                    temperature=0.1,
-                ),
-            )
-
-        async with track_llm_call("gemini", model, "entity_extraction", user_prompt=prompt) as call:
-            response = await _call()
-            call.response_text = response.text
-            if getattr(response, "usage_metadata", None):
-                call.input_tokens = response.usage_metadata.prompt_token_count or 0
-                call.output_tokens = response.usage_metadata.candidates_token_count or 0
-            raw_text = response.text
-
-        data = json.loads(raw_text)
-        entities_raw = data.get("entities", [])
-
-        return self._normalize_entities(entities_raw)
-
-    # ── OpenAI extraction ─────────────────────────────────────────────────────
-
-    async def _extract_with_openai(self, text: str) -> list[ExtractedEntity]:
-        prompt = self._build_ner_prompt(text)
-
-        @retry(
-            stop=stop_after_attempt(2),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            retry=retry_if_exception_type(Exception),
-            reraise=True,
-        )
-        async def _call():
-            return await self._openai_client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a named entity extraction engine."},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format=EntityExtractionResponse,
-                temperature=0.1,
-            )
-
-        async with track_llm_call("openai", "gpt-4o-mini", "entity_extraction", user_prompt=prompt) as call:
-            response = await _call()
-            call.response_text = response.choices[0].message.content or ""
-            if getattr(response, "usage", None):
-                call.input_tokens = response.usage.prompt_tokens or 0
-                call.output_tokens = response.usage.completion_tokens or 0
-            
-            parsed = response.choices[0].message.parsed
-            return self._normalize_entities(
-                [e.model_dump() for e in parsed.entities] if parsed else []
-            )
+    # LLM extraction routed through gateway in extract_entities()
 
     # ── spaCy fallback + rules ────────────────────────────────────────────────
 
@@ -519,40 +420,43 @@ class NERServiceV2:
         if not text or not text.strip():
             return []
 
-        entities: list[ExtractedEntity] = []
+        prompt = self._build_ner_prompt(text)
+        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        
+        from app.llm_gateway.request_manager import llm_gateway
 
-        # Try LLM extraction first
-        if self.gemini_enabled:
-            try:
-                entities = await self._extract_with_gemini(text)
-                if entities:
-                    return [
-                        {
-                            "value": e.value,
-                            "type": e.type,
-                            "canonical_name": e.canonical_name or e.value,
-                            "confidence": str(e.confidence),
-                        }
-                        for e in entities
-                    ]
-            except Exception as exc:
-                logger.error("Gemini NER failed: %s — trying OpenAI.", exc)
-
-        if self.openai_enabled and self._openai_client:
-            try:
-                entities = await self._extract_with_openai(text)
-                if entities:
-                    return [
-                        {
-                            "value": e.value,
-                            "type": e.type,
-                            "canonical_name": e.canonical_name or e.value,
-                            "confidence": str(e.confidence),
-                        }
-                        for e in entities
-                    ]
-            except Exception as exc:
-                logger.error("OpenAI NER failed: %s — using spaCy.", exc)
+        try:
+            response = await llm_gateway.execute_request(
+                model=model,
+                stage="entity_extraction",
+                messages=[{"role": "user", "content": prompt}],
+                response_format=EntityExtractionResponse,
+                temperature=0.1,
+            )
+            
+            entities_raw = []
+            if response.parsed:
+                entities_raw = [e.model_dump() for e in response.parsed.entities]
+            else:
+                try:
+                    data = json.loads(response.content)
+                    entities_raw = data.get("entities", [])
+                except Exception:
+                    pass
+            
+            if entities_raw:
+                normalized = self._normalize_entities(entities_raw)
+                return [
+                    {
+                        "value": e.value,
+                        "type": e.type,
+                        "canonical_name": e.canonical_name or e.value,
+                        "confidence": str(e.confidence),
+                    }
+                    for e in normalized
+                ]
+        except Exception as exc:
+            logger.error("LLM Gateway NER extraction failed: %s — falling back to spaCy.", exc)
 
         # spaCy / rules fallback (synchronous)
         entities = self._extract_with_spacy(text)

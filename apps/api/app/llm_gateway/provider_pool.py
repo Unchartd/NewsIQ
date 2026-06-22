@@ -86,7 +86,11 @@ class GeminiProvider(BaseLLMProvider):
             if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
                 config_args["response_schema"] = request.response_format
             elif isinstance(request.response_format, dict):
-                config_args["response_schema"] = request.response_format
+                # Skip OpenAI-style {"type": "json_object"} parameters
+                if request.response_format.get("type") == "json_object" and len(request.response_format) == 1:
+                    pass
+                else:
+                    config_args["response_schema"] = request.response_format
 
         config = types.GenerateContentConfig(**config_args)
         return {"contents": contents, "config": config}
@@ -342,60 +346,119 @@ class OpenAIProvider(BaseLLMProvider):
 class MockProvider(BaseLLMProvider):
     """Mock Provider that yields deterministic structured or text content based on request configurations."""
 
+    def _generate_mock_model_fields(self, schema: Type[BaseModel], event_name: str) -> Dict[str, Any]:
+        fields = {}
+        for field_name, field_type in schema.model_fields.items():
+            annotation = field_type.annotation
+            
+            # Simple check for Optional / Union / str | None types
+            origin = getattr(annotation, "__origin__", annotation)
+            # Support UnionType from Python 3.10+ (like str | None) or typing.Union
+            is_union = False
+            try:
+                import types as python_types
+                if origin in (Union, python_types.UnionType):
+                    is_union = True
+            except AttributeError:
+                if origin is Union:
+                    is_union = True
+
+            if is_union:
+                args = getattr(annotation, "__args__", [])
+                non_none_args = [a for a in args if a is not type(None)]
+                if non_none_args:
+                    annotation = non_none_args[0]
+                    origin = getattr(annotation, "__origin__", annotation)
+
+            if origin is bool:
+                fields[field_name] = True
+            elif origin is float:
+                fields[field_name] = 0.95
+            elif origin is int:
+                fields[field_name] = 42
+            elif origin is list:
+                args = getattr(annotation, "__args__", None)
+                item_type = args[0] if args else None
+                if item_type and isinstance(item_type, type) and issubclass(item_type, BaseModel):
+                    fields[field_name] = [self._generate_mock_model_fields(item_type, event_name)]
+                else:
+                    fields[field_name] = ["Mock bullet point"]
+            elif origin is dict:
+                fields[field_name] = {"mock_key": "mock_value"}
+            elif origin is str:
+                if field_name == "headline":
+                    fields[field_name] = f"[Mock] {event_name}"
+                elif field_name == "category":
+                    fields[field_name] = "world"
+                else:
+                    fields[field_name] = f"Mock {field_name.replace('_', ' ')}"
+            elif isinstance(origin, type) and issubclass(origin, BaseModel):
+                fields[field_name] = self._generate_mock_model_fields(origin, event_name)
+            else:
+                fields[field_name] = None
+        return fields
+
     def _generate_mock_output(self, request: GatewayRequest) -> GatewayResponse:
         content = "Mock response content."
         parsed = None
         
-        # Populate schema dummy if requested
-        if request.response_format:
-            if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
-                schema = request.response_format
-                fields = {}
-                
-                # Check messages for keywords to return smarter mocks
-                user_msg = ""
-                for msg in request.messages:
-                    if msg.get("role") == "user":
-                        user_msg += msg.get("content", "") + " "
-                user_msg_lower = user_msg.lower()
-                
-                event_name = "Major News Event"
-                if "protest" in user_msg_lower:
-                    event_name = "Protest"
-                elif "attack" in user_msg_lower:
-                    event_name = "Attack"
+        # Check messages for keywords to return smarter mocks
+        user_msg = ""
+        for msg in request.messages:
+            if msg.get("role") == "user":
+                user_msg += msg.get("content", "") + " "
+        user_msg_lower = user_msg.lower()
+        
+        event_name = "Major News Event"
+        if "protest" in user_msg_lower:
+            event_name = "Protest"
+        elif "attack" in user_msg_lower:
+            event_name = "Attack"
 
-                for field_name, field_type in schema.model_fields.items():
-                    # Generate simple mock values by field type
-                    origin = getattr(field_type.annotation, "__origin__", field_type.annotation)
-                    if origin is bool:
-                        fields[field_name] = True
-                    elif origin is float:
-                        fields[field_name] = 0.95
-                    elif origin is int:
-                        fields[field_name] = 42
-                    elif origin is list:
-                        args = getattr(field_type.annotation, "__args__", None)
-                        item_type = args[0] if args else None
-                        if item_type and isinstance(item_type, type) and issubclass(item_type, BaseModel):
-                            fields[field_name] = []
-                        else:
-                            fields[field_name] = ["Mock bullet point"]
-                    elif origin is str:
-                        if field_name == "headline":
-                            fields[field_name] = f"[Mock] {event_name}"
-                        elif field_name == "category":
-                            fields[field_name] = "world"
-                        else:
-                            fields[field_name] = f"Mock {field_name.replace('_', ' ')}"
-                    else:
-                        fields[field_name] = None
+        # Try to resolve schema from request.response_format or request.stage
+        schema = None
+        if request.response_format and isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+            schema = request.response_format
+        elif request.stage:
+            try:
+                if request.stage == "cluster_verification":
+                    from app.agents.cluster_verification_agent import ClusterVerificationSchema
+                    schema = ClusterVerificationSchema
+                elif request.stage == "entity_extraction":
+                    from app.services.ner_service_v2 import EntityExtractionResponse
+                    schema = EntityExtractionResponse
+                elif request.stage == "event_extraction" or request.stage == "event_service":
+                    from app.services.event_service import ArticleEventResponse
+                    schema = ArticleEventResponse
+                elif request.stage == "entity_linking":
+                    from app.services.entity_linker import EntityResolution
+                    schema = EntityResolution
+                elif request.stage == "source_comparison":
+                    from app.services.source_comparison_service import SourceComparisonResolution
+                    schema = SourceComparisonResolution
+                elif request.stage == "contradiction_detection":
+                    from app.services.contradiction_service import ContradictionResolution
+                    schema = ContradictionResolution
+                elif request.stage == "summary_generation":
+                    from app.services.ai_service import StorySummaryResponse
+                    schema = StorySummaryResponse
+            except Exception as e:
+                logger.warning("Could not resolve schema for stage %s in MockProvider: %s", request.stage, e)
+
+        if schema:
+            try:
+                fields = self._generate_mock_model_fields(schema, event_name)
                 parsed = schema.model_validate(fields)
                 content = parsed.model_dump_json()
-            elif isinstance(request.response_format, dict):
-                # Simple fallback JSON dict
+            except Exception as e:
+                logger.error("Failed to generate mock fields for schema %s: %s", schema, e)
+                # Fallback to simple dict
                 parsed = {"status": "success", "message": "Mock JSON fallback"}
                 content = json.dumps(parsed)
+        elif request.response_format:
+            # Simple fallback JSON dict
+            parsed = {"status": "success", "message": "Mock JSON fallback"}
+            content = json.dumps(parsed)
 
         return GatewayResponse(
             content=content,

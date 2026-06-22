@@ -7,16 +7,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.models import Article, ArticleEvent
-from app.services.ai_service import SourceDifferenceSchema, StoryAIResponse, TimelineEventSchema
+from app.services.ai_service import StorySummaryResponse
 from app.services.clustering_service import clustering_service
 
 
 @pytest.mark.asyncio
-@patch("app.services.ai_service.ai_service.analyze_story")
-@patch("app.services.ner_service.ner_service.extract_entities")
+@patch("app.services.ai_service.ai_service.summarize_story_from_kg")
+@patch("app.services.ner_service_v2.ner_service_v2.extract_entities")
 @patch("app.services.vector_service.vector_service.client")
 async def test_run_batch_clustering(
-    mock_qdrant_client, mock_extract_entities, mock_analyze_story, mock_db_session
+    mock_qdrant_client, mock_extract_entities, mock_summarize_story, mock_db_session
 ):
     """Verify that batch clustering groups articles, creates stories, and runs AI/NER synthesis."""
     # 1. Setup mock unclustered articles
@@ -88,21 +88,12 @@ async def test_run_batch_clustering(
         mock_hdbscan_cls.return_value = mock_instance
 
         # Mock AI Service output
-        mock_analyze_story.return_value = StoryAIResponse(
+        mock_summarize_story.return_value = StorySummaryResponse(
             headline="AI Deep Learning Breakthrough in Protein Prediction",
             one_line_summary="A new deep learning model predicts protein structures.",
             short_summary="Medical researchers achieve state of the art results using AI.",
             detailed_summary="Medical researchers achieve state of the art results using AI deep learning.",
             key_facts=["Breakthrough in medical AI.", "Uses deep learning."],
-            timeline=[TimelineEventSchema(date="2026-06-12", description="Incident reported")],
-            differences=[
-                SourceDifferenceSchema(
-                    source_name="Unknown Source",
-                    unique_information="Focuses on medical side.",
-                    missing_information="Omitted details.",
-                    contradictions="",
-                )
-            ],
             category="technology",
         )
 

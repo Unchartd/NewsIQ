@@ -273,10 +273,10 @@ async def test_source_comparison_deterministic_fallback():
 
 
 @pytest.mark.asyncio
-@patch("app.services.ai_service.ai_service.analyze_story")
+@patch("app.services.ai_service.ai_service.summarize_story_from_kg")
 @patch("app.services.ner_service_v2.ner_service_v2.extract_entities")
 async def test_generate_story_content_redesigned_timeline(
-    mock_extract_entities, mock_analyze_story, mock_db_session
+    mock_extract_entities, mock_summarize_story, mock_db_session
 ):
     """Verify that generate_story_content builds a chronological timeline from events."""
     story_id = uuid.uuid4()
@@ -327,16 +327,15 @@ async def test_generate_story_content_redesigned_timeline(
     mock_db_session.execute.side_effect = mock_execute
 
     # Mock AI Synthesis returns
-    mock_ai_res = MagicMock()
-    mock_ai_res.headline = "Headline"
-    mock_ai_res.one_line_summary = "One line"
-    mock_ai_res.short_summary = "Short summary"
-    mock_ai_res.detailed_summary = "Detailed summary"
-    mock_ai_res.key_facts = ["Fact 1"]
-    mock_ai_res.category = "world"
-    mock_ai_res.timeline = []  # Discarded in favor of parsed events
-    mock_ai_res.differences = []
-    mock_analyze_story.return_value = mock_ai_res
+    from app.services.ai_service import StorySummaryResponse
+    mock_summarize_story.return_value = StorySummaryResponse(
+        headline="Headline",
+        one_line_summary="One line",
+        short_summary="Short summary",
+        detailed_summary="Detailed summary",
+        key_facts=["Fact 1"],
+        category="world",
+    )
 
     # Mock NER returns
     mock_extract_entities.return_value = []

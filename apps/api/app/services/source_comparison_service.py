@@ -35,8 +35,6 @@ from app.models.models import (
     StoryContradiction,
     StoryArticle,
 )
-from app.services.ai_service import _wait_for_synthesis_quota
-from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -62,28 +60,7 @@ class SourceComparisonService:
     """Detects unique, missing, and contradictory facts per source in a story cluster."""
 
     def __init__(self) -> None:
-        self.gemini_enabled = False
-        self._gemini_client = None
-        api_key = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY
-        if api_key:
-            try:
-                from google import genai as google_genai
-
-                self._gemini_client = google_genai.Client(api_key=api_key)
-                self.gemini_enabled = True
-            except ImportError:
-                pass
-
-        self._openai_client = None
-        self.openai_enabled = False
-        if settings.OPENAI_API_KEY:
-            try:
-                from openai import AsyncOpenAI as OpenAIClient
-
-                self._openai_client = OpenAIClient(api_key=settings.OPENAI_API_KEY)
-                self.openai_enabled = True
-            except Exception:
-                pass
+        pass
 
     @retry(
         stop=stop_after_attempt(3),
@@ -114,53 +91,30 @@ class SourceComparisonService:
             f'{{"focus_area": "...", "unique_information": "...", "missing_information": "...", "contradictions": "..."}}'
         )
 
-        if self.gemini_enabled and self._gemini_client:
-            await _wait_for_synthesis_quota()
-            model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-            try:
-                from google.genai import types
+        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        
+        from app.llm_gateway.request_manager import llm_gateway
 
-                async with track_llm_call("gemini", model, "source_comparison", user_prompt=prompt) as call:
-                    response = await self._gemini_client.aio.models.generate_content(
-                        model=model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=SourceComparisonResolution,
-                            temperature=0.1,
-                        ),
-                    )
-                    call.response_text = response.text
-                    if getattr(response, "usage_metadata", None):
-                        call.input_tokens = response.usage_metadata.prompt_token_count or 0
-                        call.output_tokens = response.usage_metadata.candidates_token_count or 0
-                    data = json.loads(response.text)
-                    return SourceComparisonResolution(**data)
-            except Exception as e:
-                logger.warning("Gemini source comparison synthesis failed: %s", e)
+        try:
+            response = await llm_gateway.execute_request(
+                model=model,
+                stage="source_comparison",
+                messages=[{"role": "user", "content": prompt}],
+                response_format=SourceComparisonResolution,
+                temperature=0.1,
+            )
 
-        if self.openai_enabled and self._openai_client:
+            if response.parsed:
+                return response.parsed
+            
             try:
-                async with track_llm_call("openai", "gpt-4o-mini", "source_comparison", user_prompt=prompt) as call:
-                    response = await self._openai_client.beta.chat.completions.parse(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a professional news source comparison assistant.",
-                            },
-                            {"role": "user", "content": prompt},
-                        ],
-                        response_format=SourceComparisonResolution,
-                        temperature=0.1,
-                    )
-                    call.response_text = response.choices[0].message.content or ""
-                    if getattr(response, "usage", None):
-                        call.input_tokens = response.usage.prompt_tokens or 0
-                        call.output_tokens = response.usage.completion_tokens or 0
-                    return response.choices[0].message.parsed
-            except Exception as e:
-                logger.warning("OpenAI source comparison synthesis failed: %s", e)
+                import json
+                data = json.loads(response.content)
+                return SourceComparisonResolution(**data)
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("LLM Gateway source comparison failed for %s: %s", src_name, exc)
 
         # Fallback to deterministic representation
         return self._generate_deterministic_comparison(

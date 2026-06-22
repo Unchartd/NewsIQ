@@ -9,6 +9,7 @@ from app.services.event_taxonomy import (
     get_parent_type,
     get_all_canonical_types,
 )
+from app.llm_gateway.base_provider import GatewayResponse
 
 
 def test_event_taxonomy():
@@ -82,9 +83,9 @@ async def test_detect_event_time_conflict():
 
 
 @pytest.mark.asyncio
-@patch("app.services.event_service.event_service._extract_with_gemini")
-async def test_extract_events_gemini_success(mock_gemini):
-    """Verify that event extraction succeeds using Gemini when enabled."""
+@patch("app.llm_gateway.request_manager.llm_gateway.execute_request")
+async def test_extract_events_gateway_parsed_success(mock_execute_request):
+    """Verify that event extraction succeeds using LLM Gateway returning parsed response."""
     expected_response = ArticleEventResponse(
         primary_event=ExtractedEvent(
             event_type="DETENTION",
@@ -96,71 +97,56 @@ async def test_extract_events_gemini_success(mock_gemini):
         ),
         secondary_events=[],
     )
-    mock_gemini.return_value = expected_response
-
-    # Force enable Gemini
-    with patch.object(event_service, "gemini_enabled", True):
-        res = await event_service.extract_events(
-            title="Police arrested suspect",
-            content="London police arrested the suspect on Saturday.",
-        )
-        assert res.primary_event.event_type == "DETENTION"
-        assert "Police" in res.primary_event.actors
-        assert res.primary_event.confidence == 0.9
-        mock_gemini.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("app.services.event_service.event_service._extract_with_gemini")
-@patch("app.services.event_service.event_service._extract_with_openai")
-async def test_extract_events_fallback_to_openai(mock_openai, mock_gemini):
-    """Verify that event extraction falls back to OpenAI when Gemini fails."""
-    mock_gemini.side_effect = Exception("Gemini Quota Exceeded")
-    
-    expected_response = ArticleEventResponse(
-        primary_event=ExtractedEvent(
-            event_type="ELECTION",
-            actors=["Voters"],
-            targets=[],
-            location="France",
-            event_time="2026-06-20T00:00:00Z",
-            confidence=0.85,
-        ),
-        secondary_events=[],
+    mock_response = GatewayResponse(
+        content="",
+        parsed=expected_response,
+        provider="google",
+        model="gemini-2.5-flash-lite",
     )
-    mock_openai.return_value = expected_response
+    mock_execute_request.return_value = mock_response
 
-    # Force enable both
-    with patch.object(event_service, "gemini_enabled", True), \
-         patch.object(event_service, "openai_enabled", True), \
-         patch.object(event_service, "_openai_client", MagicMock()):
-        
-        res = await event_service.extract_events(
-            title="France Elections",
-            content="Voters in France cast their ballots.",
-        )
-        assert res.primary_event.event_type == "ELECTION"
-        assert "Voters" in res.primary_event.actors
-        mock_gemini.assert_called_once()
-        mock_openai.assert_called_once()
+    res = await event_service.extract_events(
+        title="Police arrested suspect",
+        content="London police arrested the suspect on Saturday.",
+    )
+    assert res.primary_event.event_type == "DETENTION"
+    assert "Police" in res.primary_event.actors
+    assert res.primary_event.confidence == 0.9
+    mock_execute_request.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.services.event_service.event_service._extract_with_gemini")
-@patch("app.services.event_service.event_service._extract_with_openai")
-async def test_extract_events_fallback_to_mock(mock_openai, mock_gemini):
-    """Verify that event extraction falls back to mock when both LLMs fail."""
-    mock_gemini.side_effect = Exception("Gemini Error")
-    mock_openai.side_effect = Exception("OpenAI Error")
+@patch("app.llm_gateway.request_manager.llm_gateway.execute_request")
+async def test_extract_events_gateway_json_string_success(mock_execute_request):
+    """Verify that event extraction succeeds using LLM Gateway returning raw JSON string."""
+    mock_response = GatewayResponse(
+        content='{"primary_event": {"event_type": "ELECTION", "actors": ["Voters"], "targets": [], "location": "France", "event_time": "2026-06-20T00:00:00Z", "confidence": 0.85}, "secondary_events": []}',
+        parsed=None,
+        provider="openai",
+        model="gpt-4o-mini",
+    )
+    mock_execute_request.return_value = mock_response
 
-    with patch.object(event_service, "gemini_enabled", True), \
-         patch.object(event_service, "openai_enabled", True), \
-         patch.object(event_service, "_openai_client", MagicMock()):
-        
-        res = await event_service.extract_events(
-            title="Failed API test",
-            content="Some news content.",
-        )
-        assert res.primary_event.event_type == "OTHER"
-        assert "[Mock] Unknown Actor" in res.primary_event.actors
-        assert res.primary_event.confidence == 0.1
+    res = await event_service.extract_events(
+        title="France Elections",
+        content="Voters in France cast their ballots.",
+    )
+    assert res.primary_event.event_type == "ELECTION"
+    assert "Voters" in res.primary_event.actors
+    mock_execute_request.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("app.llm_gateway.request_manager.llm_gateway.execute_request")
+async def test_extract_events_gateway_failure_fallback_to_mock(mock_execute_request):
+    """Verify that event extraction falls back to mock when gateway fails."""
+    mock_execute_request.side_effect = Exception("Gateway Timeout")
+
+    res = await event_service.extract_events(
+        title="Failed API test",
+        content="Some news content.",
+    )
+    assert res.primary_event.event_type == "OTHER"
+    assert "[Mock] Unknown Actor" in res.primary_event.actors
+    assert res.primary_event.confidence == 0.1
+    mock_execute_request.assert_called_once()
