@@ -146,7 +146,7 @@ export default function StoriesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Link
-                        href={`/dashboard/stories/${story.id}`}
+                        href={`/admin/stories/${story.id}`}
                         id={`story-inspect-${story.id}`}
                         className="flex items-center gap-1 text-primary hover:text-primary/80 transition-colors whitespace-nowrap"
                       >

@@ -149,7 +149,7 @@ export default function ClustersPage() {
                     {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <Link href={`/dashboard/stories/${c.id}`} className="text-primary hover:text-primary/80 flex items-center gap-1 transition-colors">
+                    <Link href={`/admin/stories/${c.id}`} className="text-primary hover:text-primary/80 flex items-center gap-1 transition-colors">
                       Inspect <ArrowUpRight className="w-3 h-3" />
                     </Link>
                   </td>

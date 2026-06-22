@@ -32,7 +32,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      router.replace("/dashboard");
+      router.replace("/admin");
     }
   }, [isAuthenticated, router]);
 
@@ -73,7 +73,7 @@ export default function LoginPage() {
       );
 
       toast.success(`Welcome back, ${user.full_name || user.email}!`);
-      router.replace("/dashboard");
+      router.replace("/admin");
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data

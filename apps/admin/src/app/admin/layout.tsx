@@ -23,15 +23,15 @@ import {
 } from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/pipeline", label: "Pipeline DAG", icon: GitBranch },
-  { href: "/dashboard/sources", label: "Sources", icon: Radio },
-  { href: "/dashboard/stories", label: "Stories", icon: Layers },
-  { href: "/dashboard/entities", label: "Entities", icon: Users },
-  { href: "/dashboard/clusters", label: "Clusters", icon: Layers },
-  { href: "/dashboard/prompts", label: "Prompts", icon: FileText },
-  { href: "/dashboard/costs", label: "Cost Analytics", icon: DollarSign },
-  { href: "/dashboard/review", label: "Review Queue", icon: UserCheck },
+  { href: "/admin", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/pipeline", label: "Pipeline DAG", icon: GitBranch },
+  { href: "/admin/sources", label: "Sources", icon: Radio },
+  { href: "/admin/stories", label: "Stories", icon: Layers },
+  { href: "/admin/entities", label: "Entities", icon: Users },
+  { href: "/admin/clusters", label: "Clusters", icon: Layers },
+  { href: "/admin/prompts", label: "Prompts", icon: FileText },
+  { href: "/admin/costs", label: "Cost Analytics", icon: DollarSign },
+  { href: "/admin/review", label: "Review Queue", icon: UserCheck },
 ];
 
 function SSEStatusDot({ status }: { status: string }) {
@@ -107,8 +107,8 @@ export default function DashboardLayout({
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive =
-            item.href === "/dashboard"
-              ? pathname === "/dashboard"
+            item.href === "/admin"
+              ? pathname === "/admin"
               : pathname.startsWith(item.href);
 
           return (

@@ -82,21 +82,89 @@ services:
   # ──────────────────────────────────────────────
   # Application Services
   # ──────────────────────────────────────────────
-  api:
+  user-api:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
-    container_name: newsiq-api
+    container_name: newsiq-user-api
     restart: unless-stopped
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"
     ports:
       - "8000:8000"
     volumes:
       - ./apps/api:/app
       - prometheus_multiproc:/tmp/prometheus_multiproc
     environment:
+      - BACKEND_SERVICE_ROLE=user
+      - DEBUG=${DEBUG:-true}
+      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=newsiq-dev-key
+      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
+      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
+      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
+      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
+      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    # ── Docker Watch ──────────────────────────────────────────────
+    # uvicorn --reload handles Python file changes automatically.
+    # pyproject.toml changes require a full rebuild (new deps).
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/api/app
+          target: /app/app
+          ignore:
+            - __pycache__/
+            - "**/*.pyc"
+            - "**/*.pyo"
+        - action: sync
+          path: ./apps/api/alembic
+          target: /app/alembic
+        - action: rebuild
+          path: ./apps/api/pyproject.toml
+
+  processing-api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-processing-api
+    restart: unless-stopped
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir app"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./apps/api:/app
+      - prometheus_multiproc:/tmp/prometheus_multiproc
+    environment:
+      - BACKEND_SERVICE_ROLE=processing
       - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
       - REDIS_URL=redis://redis:6379/0
@@ -274,10 +342,10 @@ services:
       - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
-      - INTERNAL_API_URL=http://api:8000/api/v1
+      - INTERNAL_API_URL=http://user-api:8000/api/v1
       - WATCHPACK_POLLING=true   # needed on Windows/WSL2 for inotify to work
     depends_on:
-      - api
+      - user-api
     # ── Docker Watch ──────────────────────────────────────────────
     # Source files: sync directly — Next.js HMR picks them up instantly.
     # package.json / lock file: rebuild so node_modules stays current.
@@ -356,7 +424,8 @@ services:
     ports:
       - "9090:9090"
     depends_on:
-      - api
+      - user-api
+      - processing-api
 
   grafana:
     image: grafana/grafana:latest
@@ -382,10 +451,10 @@ services:
     ports:
       - "3002:3001"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1
       - NEXT_PUBLIC_APP_NAME=NewsIQ Admin
     depends_on:
-      - api
+      - processing-api
     profiles:
       - admin
 
