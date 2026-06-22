@@ -9,10 +9,12 @@ api_router = APIRouter()
 
 role_norm = settings.BACKEND_SERVICE_ROLE.lower().strip()
 
+# Auth endpoints (loaded on both backends to support login/session management)
+if role_norm in ("monolith", "user", "processing", "admin"):
+    api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+
 # User-facing routes
 if role_norm in ("monolith", "user"):
-    # Auth endpoints
-    api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
     # Google OAuth endpoints
     api_router.include_router(oauth.router, prefix="/auth", tags=["oauth"])

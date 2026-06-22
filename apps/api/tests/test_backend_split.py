@@ -50,8 +50,11 @@ def test_processing_backend_routing(monkeypatch):
     # System ping should succeed
     assert client.get("/api/v1/ping").status_code == 200
     
-    # User endpoint must be absent (404)
-    assert client.post("/api/v1/auth/login").status_code == 404
+    # Auth endpoint exists on processing-api to support admin login
+    assert client.post("/api/v1/auth/login").status_code in (400, 422)
+    
+    # User-only route (like stories) must be absent (404)
+    assert client.get("/api/v1/stories/trending-widgets").status_code == 404
     
     # Admin endpoint exists (returns 401/403 since unauthenticated, but NOT 404)
     assert client.get("/api/v1/admin/stats").status_code in (401, 403, 307)
