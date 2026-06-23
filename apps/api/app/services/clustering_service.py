@@ -1115,8 +1115,11 @@ class ClusteringService:
 
         # ── Engagement score ──────────────────────────────────────────────────
         engagement_score = 0.0
-        if story.metrics:
-            m = story.metrics
+        from app.models.models import StoryMetric
+        stmt_metrics = select(StoryMetric).where(StoryMetric.story_id == story.id)
+        res_metrics = await session.execute(stmt_metrics)
+        m = res_metrics.scalar_one_or_none()
+        if m:
             raw = (m.views or 0) * 1 + (m.bookmarks or 0) * 3 + (m.shares or 0) * 5
             engagement_score = min(raw / 500.0, 1.0)
 

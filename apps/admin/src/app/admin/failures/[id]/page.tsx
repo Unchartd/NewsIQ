@@ -140,7 +140,7 @@ export default function FailureDetailPage({ params }: { params: Promise<{ id: st
     google: ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-3.5-flash", "gemini-3.1-pro"],
     openai: ["gpt-4o-mini", "gpt-4o", "o1-mini"],
     groq: ["llama-3.3-70b-specdec", "mixtral-8x7b-32768"],
-    cerebras: ["llama3.1-8b", "llama3.1-70b"],
+    cerebras: ["zai-glm-4.7", "gpt-oss-120b"],
     nvidia: ["mistralai/mistral-medium-3.5-128b", "deepseek-ai/deepseek-v4-flash", "nvidia/nemotron-3-super-120b-a12b"],
     mock: ["mock"],
   };
