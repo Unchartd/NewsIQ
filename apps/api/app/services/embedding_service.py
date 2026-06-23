@@ -156,7 +156,7 @@ class EmbeddingService:
     async def get_embedding(self, text: str) -> list[float]:
         """Return a single 768-dim embedding vector for the given text.
 
-        Fallback chain: Gemini → OpenAI → deterministic mock.
+        Fallback chain: Gemini → OpenAI → Raise error.
         """
         if not text or not text.strip():
             return [0.0] * EMBEDDING_DIM
@@ -169,16 +169,18 @@ class EmbeddingService:
                 return vectors[0]
             except Exception as exc:
                 logger.error("Gemini embedding failed: %s — trying OpenAI fallback.", exc)
+                if not self.openai_enabled:
+                    raise exc
 
         if self.openai_enabled and self._openai_client:
             try:
                 vectors = await self._embed_with_openai([clean])
                 return vectors[0]
             except Exception as exc:
-                logger.error("OpenAI embedding failed: %s — using mock.", exc)
+                logger.error("OpenAI embedding failed: %s — raising error.", exc)
+                raise exc
 
-        logger.warning("All embedding providers failed. Using mock for: %.60s", text)
-        return self._mock_embedding(clean)
+        raise RuntimeError("No embedding providers configured or enabled (Gemini and OpenAI are both disabled).")
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Return 768-dim embeddings for a batch of texts.
@@ -196,15 +198,17 @@ class EmbeddingService:
                 return await self._embed_with_gemini(clean_texts)
             except Exception as exc:
                 logger.error("Gemini batch embedding failed: %s — trying OpenAI.", exc)
+                if not self.openai_enabled:
+                    raise exc
 
         if self.openai_enabled and self._openai_client:
             try:
                 return await self._embed_with_openai(clean_texts)
             except Exception as exc:
-                logger.error("OpenAI batch embedding failed: %s — using mock.", exc)
+                logger.error("OpenAI batch embedding failed: %s — raising error.", exc)
+                raise exc
 
-        logger.warning("All embedding providers failed. Using mock for %d texts.", len(texts))
-        return [self._mock_embedding(t) for t in clean_texts]
+        raise RuntimeError("No embedding providers configured or enabled (Gemini and OpenAI are both disabled).")
 
 
 embedding_service = EmbeddingService()

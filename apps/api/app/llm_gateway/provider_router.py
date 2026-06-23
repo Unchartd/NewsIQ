@@ -28,6 +28,7 @@ class ProviderRouter:
             "openai": OpenAIProvider(provider_name="openai"),
             "groq": OpenAIProvider(provider_name="groq", base_url="https://api.groq.com/openai/v1"),
             "cerebras": OpenAIProvider(provider_name="cerebras", base_url="https://api.cerebras.ai/v1"),
+            "nvidia": OpenAIProvider(provider_name="nvidia", base_url="https://integrate.api.nvidia.com/v1"),
             "mock": MockProvider()
         }
 

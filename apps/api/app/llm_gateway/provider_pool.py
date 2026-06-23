@@ -51,17 +51,35 @@ class APIKeyPool:
             cerebras_keys.append(APIKey(key=k, provider="cerebras", requests_per_minute=30, requests_per_day=14400))
         self.pools["cerebras"] = cerebras_keys
 
-        # 4. Fallbacks / Mock keys
+        # 4. NVIDIA NIM Keys (OpenAI-compatible, https://integrate.api.nvidia.com/v1)
+        nvidia_keys = []
+        nvidia_env = settings.NVIDIA_API_KEY or os.environ.get("NVIDIA_API_KEY", "")
+        for k in [k.strip() for k in nvidia_env.split(",") if k.strip()]:
+            nvidia_keys.append(APIKey(key=k, provider="nvidia", requests_per_minute=15, requests_per_day=5000))
+        self.pools["nvidia"] = nvidia_keys
+
+        # 5. Fallbacks / Mock keys
         self.pools["mock"] = [APIKey(key="mock-key-1", provider="mock", requests_per_minute=1000, requests_per_day=100000)]
 
         logger.info(
-            "APIKeyPool loaded: google=%d, openai=%d, groq=%d, cerebras=%d, mock=%d keys.",
-            len(self.pools["google"]), len(self.pools["openai"]), len(self.pools["groq"]), len(self.pools["cerebras"]), len(self.pools["mock"])
+            "APIKeyPool loaded: google=%d, openai=%d, groq=%d, cerebras=%d, nvidia=%d, mock=%d keys.",
+            len(self.pools["google"]), len(self.pools["openai"]), len(self.pools["groq"]),
+            len(self.pools["cerebras"]), len(self.pools["nvidia"]), len(self.pools["mock"])
         )
 
     def get_keys(self, provider: str) -> List[APIKey]:
         """Return the key pool for a provider."""
         return self.pools.get(provider, [])
+
+
+def remove_additional_properties(schema: Any) -> Any:
+    """Recursively remove 'additionalProperties' keys from JSON Schema dicts."""
+    if isinstance(schema, dict):
+        schema.pop("additionalProperties", None)
+        return {k: remove_additional_properties(v) for k, v in schema.items()}
+    elif isinstance(schema, list):
+        return [remove_additional_properties(item) for item in schema]
+    return schema
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -91,13 +109,14 @@ class GeminiProvider(BaseLLMProvider):
         if request.response_format:
             config_args["response_mime_type"] = "application/json"
             if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
-                config_args["response_schema"] = request.response_format
+                schema_dict = request.response_format.model_json_schema()
+                config_args["response_schema"] = remove_additional_properties(schema_dict)
             elif isinstance(request.response_format, dict):
                 # Skip OpenAI-style {"type": "json_object"} parameters
                 if request.response_format.get("type") == "json_object" and len(request.response_format) == 1:
                     pass
                 else:
-                    config_args["response_schema"] = request.response_format
+                    config_args["response_schema"] = remove_additional_properties(request.response_format)
 
         config = types.GenerateContentConfig(**config_args)
         return {"contents": contents, "config": config}
@@ -238,8 +257,13 @@ class OpenAIProvider(BaseLLMProvider):
 
         start_time = datetime.utcnow()
         try:
-            # If Pydantic output schema is requested, use structured output parsing
-            if request.response_format and isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+            # If Pydantic output schema is requested, use structured output parsing for OpenAI only
+            if (
+                request.response_format 
+                and isinstance(request.response_format, type) 
+                and issubclass(request.response_format, BaseModel)
+                and self.provider_name == "openai"
+            ):
                 response = await client.beta.chat.completions.parse(
                     **params,
                     response_format=request.response_format
@@ -253,7 +277,17 @@ class OpenAIProvider(BaseLLMProvider):
                 output_tokens = response.usage.completion_tokens if response.usage else 0
             else:
                 if request.response_format:
-                    params["response_format"] = request.response_format
+                    if self.provider_name in ["groq", "cerebras", "nvidia"]:
+                        params["response_format"] = {"type": "json_object"}
+                        # Ensure 'json' is in the messages for JSON mode compliance
+                        has_json = any("json" in str(msg.get("content", "")).lower() for msg in request.messages)
+                        if not has_json:
+                            params["messages"] = list(request.messages) + [
+                                {"role": "system", "content": "Respond in valid JSON format."}
+                            ]
+                    else:
+                        params["response_format"] = request.response_format
+                
                 response = await client.chat.completions.create(**params)
                 latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 choice = response.choices[0]
@@ -265,7 +299,10 @@ class OpenAIProvider(BaseLLMProvider):
 
                 if request.response_format and content:
                     try:
-                        parsed = json.loads(content)
+                        if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+                            parsed = request.response_format.model_validate_json(content)
+                        else:
+                            parsed = json.loads(content)
                     except Exception:
                         pass
 
@@ -297,7 +334,12 @@ class OpenAIProvider(BaseLLMProvider):
 
         start_time = datetime.utcnow()
         try:
-            if request.response_format and isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+            if (
+                request.response_format 
+                and isinstance(request.response_format, type) 
+                and issubclass(request.response_format, BaseModel)
+                and self.provider_name == "openai"
+            ):
                 response = client.beta.chat.completions.parse(
                     **params,
                     response_format=request.response_format
@@ -311,7 +353,17 @@ class OpenAIProvider(BaseLLMProvider):
                 output_tokens = response.usage.completion_tokens if response.usage else 0
             else:
                 if request.response_format:
-                    params["response_format"] = request.response_format
+                    if self.provider_name in ["groq", "cerebras", "nvidia"]:
+                        params["response_format"] = {"type": "json_object"}
+                        # Ensure 'json' is in the messages for JSON mode compliance
+                        has_json = any("json" in str(msg.get("content", "")).lower() for msg in request.messages)
+                        if not has_json:
+                            params["messages"] = list(request.messages) + [
+                                {"role": "system", "content": "Respond in valid JSON format."}
+                            ]
+                    else:
+                        params["response_format"] = request.response_format
+                
                 response = client.chat.completions.create(**params)
                 latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 choice = response.choices[0]
@@ -323,7 +375,10 @@ class OpenAIProvider(BaseLLMProvider):
 
                 if request.response_format and content:
                     try:
-                        parsed = json.loads(content)
+                        if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+                            parsed = request.response_format.model_validate_json(content)
+                        else:
+                            parsed = json.loads(content)
                     except Exception:
                         pass
 

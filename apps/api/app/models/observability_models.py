@@ -347,6 +347,51 @@ class ErrorLogModel(Base):
     )
 
 
+class PipelineFailureModel(Base):
+    """Structured pipeline failure logs for Sentry-like observability."""
+
+    __tablename__ = "pipeline_failures"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
+    )
+    trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    stage: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="failed")
+    input_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    output_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exception: Mapped[str] = mapped_column(Text)
+    stack_trace: Mapped[str] = mapped_column(Text)
+    error_category: Mapped[str] = mapped_column(String(50))  # system_error, llm_error, data_error, agent_error
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    latency: Mapped[float] = mapped_column(Float, default=0.0)
+    timestamp: Mapped[datetime] = mapped_column(default=_now, index=True)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_pipeline_failures_category", "error_category"),
+        Index("idx_pipeline_failures_stage", "stage"),
+        Index("idx_pipeline_failures_resolved", "resolved"),
+    )
+
+
 # ──────────────────────────────────────────────
 # Prompt Management
 # ──────────────────────────────────────────────

@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY_SYNTH: str = ""
     GROQ_API_KEY: str = ""
     CEREBRAS_API_KEY: str = ""
+    NVIDIA_API_KEY: str = ""  # NVIDIA NIM Build API (nvapi-...)
     EMBEDDING_MODEL: str = "text-embedding-004"
     SUMMARIZATION_MODEL: str = "gemini-2.5-flash"       # No daily quota exhaustion, confirmed working
 

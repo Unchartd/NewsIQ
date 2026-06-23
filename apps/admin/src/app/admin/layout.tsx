@@ -20,6 +20,7 @@ import {
   Activity,
   Menu,
   X,
+  AlertOctagon,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -31,6 +32,8 @@ const NAV_ITEMS = [
   { href: "/admin/clusters", label: "Clusters", icon: Layers },
   { href: "/admin/prompts", label: "Prompts", icon: FileText },
   { href: "/admin/costs", label: "Cost Analytics", icon: DollarSign },
+  { href: "/admin/failures", label: "Failure Center", icon: AlertOctagon },
+  { href: "/admin/failure-analytics", label: "Failure Analytics", icon: Activity },
   { href: "/admin/review", label: "Review Queue", icon: UserCheck },
 ];
 

@@ -25,14 +25,20 @@ class CostTracker:
         "llama-3.3-70b-specdec": {"input": 0.59, "output": 0.79},
         "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
         "mock": {"input": 0.0, "output": 0.0},
+        # NVIDIA NIM Models (free prototyping tier — $0.00, update for enterprise)
+        "mistralai/mistral-medium-3.5-128b": {"input": 0.0, "output": 0.0},
+        "deepseek-ai/deepseek-v4-flash": {"input": 0.0, "output": 0.0},
+        "nvidia/nemotron-3-super-120b-a12b": {"input": 0.0, "output": 0.0},
+        "z-ai/glm-5.1": {"input": 0.0, "output": 0.0},
     }
 
     def calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
         """Calculate the cost in USD of a request based on input and output tokens."""
-        # Strip any provider prefix (e.g. "openai/gpt-4o-mini" -> "gpt-4o-mini")
-        model_key = model.split("/")[-1] if "/" in model else model
-        
-        pricing = self.PRICING_TABLE.get(model_key, {"input": 0.0, "output": 0.0})
+        pricing = self.PRICING_TABLE.get(model)
+        if not pricing:
+            # Strip any provider prefix (e.g. "openai/gpt-4o-mini" -> "gpt-4o-mini")
+            model_key = model.split("/")[-1] if "/" in model else model
+            pricing = self.PRICING_TABLE.get(model_key, {"input": 0.0, "output": 0.0})
         
         input_cost = (input_tokens / 1_000_000) * pricing["input"]
         output_cost = (output_tokens / 1_000_000) * pricing["output"]

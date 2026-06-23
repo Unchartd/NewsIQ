@@ -352,6 +352,16 @@ class StageSpan:
         self._stage_token = None
         self._story_token = None
         self._article_token = None
+        self.input_payload: dict[str, Any] | None = None
+        self.output_payload: dict[str, Any] | None = None
+
+    def set_input_payload(self, payload: dict[str, Any]) -> None:
+        """Set the raw input payload for failure replay observability."""
+        self.input_payload = payload
+
+    def set_output_payload(self, payload: dict[str, Any]) -> None:
+        """Set the raw output payload for failure replay observability."""
+        self.output_payload = payload
 
     async def __aenter__(self) -> StageSpan:
         self._span_token = span_id_ctx.set(self.span_id)
@@ -410,6 +420,28 @@ class StageSpan:
                 traceback.format_exception(exc_type, exc_val, exc_tb)
             )
             self.metadata["error_traceback"] = self.error_traceback
+
+            # Record Pipeline Failure
+            try:
+                from app.core.failure_recorder import record_pipeline_failure
+                provider = self.metadata.get("provider")
+                model = self.metadata.get("model")
+                await record_pipeline_failure(
+                    stage=self.stage,
+                    exception=exc_val,
+                    trace_id=_to_uuid(self.pipeline_run.trace_id) if self.pipeline_run else None,
+                    run_id=_to_uuid(self.pipeline_run.id) if self.pipeline_run else None,
+                    story_id=_to_uuid(self.story_id),
+                    article_id=_to_uuid(self.article_id),
+                    provider=provider,
+                    model=model,
+                    input_payload=self.input_payload,
+                    output_payload=self.output_payload,
+                    retry_count=self.retry_count,
+                    latency=self.latency_ms / 1000.0,
+                )
+            except Exception as rec_err:
+                logger.error("Failed to record stage failure in pipeline_failures: %s", rec_err)
         else:
             if self.status == StageStatus.RUNNING:
                 self.status = StageStatus.SUCCESS

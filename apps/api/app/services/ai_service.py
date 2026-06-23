@@ -99,54 +99,49 @@ class AIService:
         
         from app.llm_gateway.request_manager import llm_gateway
 
-        try:
-            logger.info("Summarizing story from KG via LLM Gateway.")
-            response = await llm_gateway.execute_request(
-                model=model,
-                stage="summary_generation",
-                messages=[{"role": "user", "content": prompt}],
-                response_format=StorySummaryResponse,
-                temperature=0.1,
-            )
+        logger.info("Summarizing story from KG via LLM Gateway.")
+        response = await llm_gateway.execute_request(
+            model=model,
+            stage="summary_generation",
+            messages=[{"role": "user", "content": prompt}],
+            response_format=StorySummaryResponse,
+            temperature=0.1,
+        )
 
-            if response.parsed:
-                res_data = response.parsed
+        if response.parsed:
+            res_data = response.parsed
+        else:
+            import json
+            data = json.loads(response.content)
+            key_map = {
+                "oneLineSummary": "one_line_summary",
+                "shortSummary": "short_summary",
+                "detailedSummary": "detailed_summary",
+                "keyFacts": "key_facts",
+            }
+            for old_key, new_key in key_map.items():
+                if old_key in data and new_key not in data:
+                    data[new_key] = data.pop(old_key)
+
+            if "key_facts" in data:
+                kf = data["key_facts"]
+                if isinstance(kf, str):
+                    data["key_facts"] = [kf]
+                elif isinstance(kf, list):
+                    data["key_facts"] = [str(f) for f in kf]
             else:
-                import json
-                data = json.loads(response.content)
-                key_map = {
-                    "oneLineSummary": "one_line_summary",
-                    "shortSummary": "short_summary",
-                    "detailedSummary": "detailed_summary",
-                    "keyFacts": "key_facts",
-                }
-                for old_key, new_key in key_map.items():
-                    if old_key in data and new_key not in data:
-                        data[new_key] = data.pop(old_key)
+                data["key_facts"] = []
 
-                if "key_facts" in data:
-                    kf = data["key_facts"]
-                    if isinstance(kf, str):
-                        data["key_facts"] = [kf]
-                    elif isinstance(kf, list):
-                        data["key_facts"] = [str(f) for f in kf]
-                else:
-                    data["key_facts"] = []
+            if data.get("category") not in CATEGORY_SLUGS:
+                data["category"] = "world"
 
-                if data.get("category") not in CATEGORY_SLUGS:
-                    data["category"] = "world"
+            for field in ("headline", "one_line_summary", "short_summary", "detailed_summary"):
+                if field not in data or not data[field]:
+                    data[field] = ""
 
-                for field in ("headline", "one_line_summary", "short_summary", "detailed_summary"):
-                    if field not in data or not data[field]:
-                        data[field] = ""
+            res_data = StorySummaryResponse(**data)
 
-                res_data = StorySummaryResponse(**data)
-
-            return res_data
-
-        except Exception as exc:
-            logger.error("LLM Gateway failed during story KG summarization: %s — using mock response.", exc)
-            return self._generate_mock_summary_response(kg, contradictions, timeline, source_comparisons)
+        return res_data
 
     def _generate_mock_summary_response(
         self,

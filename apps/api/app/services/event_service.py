@@ -300,35 +300,27 @@ class EventService:
             published_at: ISO 8601 publication timestamp (NOT used as event_time)
         """
         if not title and not content:
-            return self._mock_extraction("", "")
+            raise ValueError("Cannot extract events from empty article (both title and content are missing).")
 
         prompt = self._build_extraction_prompt(title, content, published_at)
         model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
         
         from app.llm_gateway.request_manager import llm_gateway
 
-        try:
-            response = await llm_gateway.execute_request(
-                model=model,
-                stage="event_extraction",
-                messages=[{"role": "user", "content": prompt}],
-                response_format=ArticleEventResponse,
-                temperature=0.1,
-            )
+        response = await llm_gateway.execute_request(
+            model=model,
+            stage="event_extraction",
+            messages=[{"role": "user", "content": prompt}],
+            response_format=ArticleEventResponse,
+            temperature=0.1,
+        )
 
-            if response.parsed:
-                return response.parsed
-            
-            try:
-                import json
-                data = json.loads(response.content)
-                return self._normalize_response(data)
-            except Exception:
-                pass
-        except Exception as exc:
-            logger.error("LLM Gateway event extraction failed: %s — using mock fallback.", exc)
-
-        return self._mock_extraction(title, content)
+        if response.parsed:
+            return response.parsed
+        
+        import json
+        data = json.loads(response.content)
+        return self._normalize_response(data)
 
     async def detect_event_time_conflict(
         self,

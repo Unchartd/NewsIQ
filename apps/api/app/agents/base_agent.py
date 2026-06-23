@@ -37,6 +37,27 @@ async def run_agent_with_observability(
         return run_output
     except Exception as e:
         status = "error"
+        try:
+            from app.core.failure_recorder import record_pipeline_failure
+            from app.core.trace import _to_uuid, trace_id_ctx, run_id_ctx
+            
+            provider = getattr(agent.model, "provider", None)
+            model_id = getattr(agent.model, "id", None)
+            
+            await record_pipeline_failure(
+                stage=stage,
+                exception=e,
+                trace_id=_to_uuid(trace_id_ctx.get("")),
+                run_id=_to_uuid(run_id_ctx.get("")),
+                story_id=_to_uuid(story_id) if story_id else None,
+                article_id=_to_uuid(article_id) if article_id else None,
+                provider=provider,
+                model=model_id,
+                input_payload={"prompt": prompt},
+                latency=time.time() - start_time,
+            )
+        except Exception as rec_err:
+            logger.error("Failed to record agent failure: %s", rec_err)
         raise e
     finally:
         latency = time.time() - start_time

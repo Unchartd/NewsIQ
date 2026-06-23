@@ -404,6 +404,25 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             await session.commit()
                             failed_count += 1
 
+                            # Record Pipeline Failure
+                            try:
+                                from app.core.failure_recorder import record_pipeline_failure
+                                from app.core.trace import _to_uuid, trace_id_ctx, run_id_ctx
+                                await record_pipeline_failure(
+                                    stage=PipelineStage.EVENT_EXTRACTION,
+                                    exception=e,
+                                    trace_id=_to_uuid(trace_id_ctx.get("")),
+                                    run_id=_to_uuid(run_id_ctx.get("")),
+                                    article_id=article.id,
+                                    input_payload={
+                                        "title": article.title,
+                                        "content": (article.content or article.description or "")[:4000],
+                                        "published_at": article.published_at.isoformat() if article.published_at else None
+                                    }
+                                )
+                            except Exception as rec_err:
+                                logger.error("Failed to record event extraction failure: %s", rec_err)
+
                     span.set_metadata({
                         "batch_size": len(articles),
                         "success_count": success_count,
@@ -493,15 +512,34 @@ def replay_story_task(story_id_str: str) -> None:
 
 
 @celery_app.task(name="app.workers.tasks.replay_story_stage_task")
-def replay_story_stage_task(story_id_str: str, stage_name: str) -> None:
-    """Replay a specific stage for a story."""
-    logger.info("Celery task: Replaying stage %s for story %s", stage_name, story_id_str)
+def replay_story_stage_task(
+    story_id_str: str,
+    stage_name: str,
+    provider_override: str | None = None,
+    model_override: str | None = None,
+    article_id_str: str | None = None,
+) -> None:
+    """Replay a specific stage for a story with optional model/provider overrides."""
+    logger.info(
+        "Celery task: Replaying stage %s for story %s (overrides: provider=%s, model=%s, article=%s)",
+        stage_name, story_id_str, provider_override, model_override, article_id_str
+    )
 
     async def _run():
         import uuid
         from app.services.replay_service import replay_service
+        from app.llm_gateway.request_manager import model_override_ctx, provider_override_ctx
+
+        if provider_override:
+            provider_override_ctx.set(provider_override)
+        if model_override:
+            model_override_ctx.set(model_override)
+
+        sid = uuid.UUID(story_id_str)
+        aid = uuid.UUID(article_id_str) if article_id_str else None
+
         async with async_session_factory() as session:
-            await replay_service.replay_story_stage(uuid.UUID(story_id_str), stage_name, session)
+            await replay_service.replay_story_stage(sid, stage_name, session, article_id=aid)
 
     run_async(_run())
 
