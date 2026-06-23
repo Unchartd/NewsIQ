@@ -1,10 +1,11 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import { useState } from "react";
-import { Layers, Search, ArrowUpRight, ExternalLink } from "lucide-react";
+import { Layers, Search, ArrowUpRight, Check, X } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 interface Story {
   id: string;
@@ -13,12 +14,27 @@ interface Story {
   article_count: number;
   created_at: string;
   cluster_confidence: number;
+  story_status: string;
 }
 
 export default function StoriesPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const limit = 20;
+  const queryClient = useQueryClient();
+
+  const reviewMutation = useMutation({
+    mutationFn: async ({ storyId, action }: { storyId: string; action: "approve" | "reject" }) => {
+      await apiClient.post(`/admin/review/${storyId}/action`, { action, notes: "Quick action via stories list" });
+    },
+    onSuccess: () => {
+      toast.success("Story status updated!");
+      queryClient.invalidateQueries({ queryKey: ["admin-stories"] });
+    },
+    onError: () => {
+      toast.error("Failed to update story status.");
+    }
+  });
 
   const { data, isLoading } = useQuery<{ stories: Story[]; total: number }>({
     queryKey: ["admin-stories", search, page],
@@ -34,6 +50,7 @@ export default function StoriesPage() {
         article_count: s.article_count,
         created_at: s.first_seen_at || s.updated_at || "",
         cluster_confidence: 0.95,
+        story_status: s.story_status || "active",
       }));
       return { stories: mapped, total: mapped.length };
     },
@@ -53,7 +70,7 @@ export default function StoriesPage() {
             Story Clusters
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Browse and inspect all clustered news stories
+            Browse, inspect, and moderate all clustered news stories
           </p>
         </div>
         <span className="text-xs text-slate-550 px-3 py-1.5 glass rounded-xl border border-border">
@@ -82,24 +99,25 @@ export default function StoriesPage() {
             <thead className="border-b border-border">
               <tr>
                 <th className="text-left px-5 py-3 text-slate-500 font-semibold">Headline</th>
+                <th className="text-center px-4 py-3 text-slate-500 font-semibold">Status</th>
                 <th className="text-center px-4 py-3 text-slate-500 font-semibold">Articles</th>
                 <th className="text-center px-4 py-3 text-slate-500 font-semibold">Confidence</th>
                 <th className="text-left px-4 py-3 text-slate-500 font-semibold">Created</th>
-                <th className="px-4 py-3" />
+                <th className="px-4 py-3 text-right pr-6">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    <td className="px-5 py-3" colSpan={5}>
+                    <td className="px-5 py-3" colSpan={6}>
                       <div className="h-3 shimmer rounded-full" />
                     </td>
                   </tr>
                 ))
               ) : stories.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-slate-600">
+                  <td colSpan={6} className="px-5 py-12 text-center text-slate-600">
                     No stories found.
                   </td>
                 </tr>
@@ -118,6 +136,15 @@ export default function StoriesPage() {
                           {story.summary}
                         </p>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`badge ${
+                        story.story_status === "approved" ? "badge-success" :
+                        story.story_status === "rejected" ? "badge-danger" :
+                        "badge-neutral"
+                      }`}>
+                        {story.story_status}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-center text-slate-400 font-mono">
                       {story.article_count ?? "—"}
@@ -144,14 +171,38 @@ export default function StoriesPage() {
                         ? new Date(story.created_at).toLocaleDateString()
                         : "—"}
                     </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/stories/${story.id}`}
-                        id={`story-inspect-${story.id}`}
-                        className="flex items-center gap-1 text-primary hover:text-primary/80 transition-colors whitespace-nowrap"
-                      >
-                        Inspect <ArrowUpRight className="w-3 h-3" />
-                      </Link>
+                    <td className="px-4 py-3 text-right pr-6">
+                      <div className="flex items-center justify-end gap-2">
+                        {story.story_status === "active" && (
+                          <>
+                            <button
+                              title="Approve"
+                              id={`approve-btn-${story.id}`}
+                              onClick={() => reviewMutation.mutate({ storyId: story.id, action: "approve" })}
+                              disabled={reviewMutation.isPending}
+                              className="p-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-all disabled:opacity-50"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              title="Reject"
+                              id={`reject-btn-${story.id}`}
+                              onClick={() => reviewMutation.mutate({ storyId: story.id, action: "reject" })}
+                              disabled={reviewMutation.isPending}
+                              className="p-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all disabled:opacity-50"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                        <Link
+                          href={`/admin/stories/${story.id}`}
+                          id={`story-inspect-${story.id}`}
+                          className="flex items-center gap-1 text-primary hover:text-primary/80 transition-colors whitespace-nowrap ml-1 text-xs"
+                        >
+                          Inspect <ArrowUpRight className="w-3 h-3" />
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))

@@ -76,6 +76,7 @@ def _build_story_list_response(story: Story) -> StoryListResponse:
         article_count=len(story.articles),
         source_count=len(source_ids),
         source_logos=logos[:5],
+        story_status=story.story_status or "active",
     )
 
 
@@ -86,6 +87,7 @@ async def list_stories(
     state: str | None = None,
     city: str | None = None,
     q: str | None = Query(None, max_length=200),
+    status: str | None = Query(None, description="active, approved, rejected, all"),
     trending: bool = False,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -102,6 +104,9 @@ async def list_stories(
         )
         .where(Story.headline.not_like("[Mock]%"))
     )
+
+    if status and status != "all":
+        stmt = stmt.where(Story.story_status == status)
 
     if category:
         stmt = stmt.join(Category, Story.category_id == Category.id).where(

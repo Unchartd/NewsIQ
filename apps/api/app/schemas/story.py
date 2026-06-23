@@ -136,6 +136,7 @@ class StoryListResponse(BaseModel):
     source_logos: list[str] = Field(
         default_factory=list, description="URLs of logos for reporting sources"
     )
+    story_status: str | None = "active"
 
     class Config:
         from_attributes = True

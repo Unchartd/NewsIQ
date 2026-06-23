@@ -66,6 +66,7 @@ class StoryInspectorResponse(BaseModel):
     llm_traces: list[AdminLLMTraceSchema]
     stage_runs: list[AdminStageRunSchema]
     total_cost_usd: float
+    story_status: str = "active"
 
     model_config = ConfigDict(from_attributes=True)
 
