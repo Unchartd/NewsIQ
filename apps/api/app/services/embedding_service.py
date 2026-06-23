@@ -103,7 +103,7 @@ class EmbeddingService:
     # ── Gemini embedding (new google.genai SDK) ────────────────────────────────
 
     async def _embed_with_gemini(self, texts: list[str]) -> list[list[float]]:
-        """Embed a list of texts using gemini-embedding-001 (3072 dims).
+        """Embed a list of texts using gemini-embedding-001 (3072 dims), truncating to EMBEDDING_DIM.
 
         The new google.genai SDK's embed_content is synchronous — we run it in
         a thread pool to avoid blocking the event loop.
@@ -118,15 +118,43 @@ class EmbeddingService:
         model = settings.EMBEDDING_MODEL or "gemini-embedding-001"
 
         def _call_sync() -> list[list[float]]:
+            import time
             results = []
             for text in texts:
-                response = client.models.embed_content(
-                    model=model,
-                    contents=text,
-                    config={"task_type": "RETRIEVAL_DOCUMENT"},
-                )
-                # New SDK: response.embeddings[0].values
-                results.append(response.embeddings[0].values)
+                max_retries = 5
+                backoff = 2.0
+                raw_val = None
+                for attempt in range(max_retries):
+                    try:
+                        response = client.models.embed_content(
+                            model=model,
+                            contents=text,
+                            config={"task_type": "RETRIEVAL_DOCUMENT"},
+                        )
+                        raw_val = response.embeddings[0].values
+                        break
+                    except Exception as err:
+                        err_str = str(err).lower()
+                        is_rate_limit = "429" in err_str or "quota" in err_str or "exhausted" in err_str or "resource_exhausted" in err_str
+                        if is_rate_limit and attempt < max_retries - 1:
+                            logger.warning(
+                                "Gemini embedding hit rate limit. Retrying in %.1fs (attempt %d/%d). Error: %s",
+                                backoff, attempt + 1, max_retries, err
+                            )
+                            time.sleep(backoff)
+                            backoff *= 2.0
+                        else:
+                            raise err
+                
+                if raw_val is None:
+                    raise RuntimeError("Failed to retrieve embedding values after retries.")
+
+                # Truncate and normalize to EMBEDDING_DIM (768)
+                vec = np.array(raw_val[:EMBEDDING_DIM], dtype=np.float32)
+                norm = np.linalg.norm(vec)
+                if norm > 0:
+                    vec /= norm
+                results.append(vec.tolist())
             return results
 
         # Use get_running_loop() — safe in both FastAPI and Celery worker contexts
