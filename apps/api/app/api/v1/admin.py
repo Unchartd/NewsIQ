@@ -7,13 +7,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import require_admin
 from app.models.models import Article, Source, Story, User, CanonicalEntity, StoryArticle
-from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel
+from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel, PipelineFailureModel
 from app.schemas.admin_schemas import (
     ClusterDebuggerResponse,
     CostAnalyticsResponse,
@@ -736,3 +736,329 @@ async def split_cluster(
             pass
             
     return MessageResponse(message=f"Story cluster split into {len(sub_clusters)} clusters successfully.")
+
+
+# Helper to serialize PipelineFailureModel to camelCase
+def serialize_failure(f: PipelineFailureModel) -> dict[str, Any]:
+    return {
+        "failureId": str(f.id),
+        "traceId": str(f.trace_id) if f.trace_id else None,
+        "runId": str(f.run_id) if f.run_id else None,
+        "storyId": str(f.story_id) if f.story_id else None,
+        "articleId": str(f.article_id) if f.article_id else None,
+        "stage": f.stage,
+        "provider": f.provider,
+        "model": f.model,
+        "status": f.status,
+        "inputPayload": f.input_payload,
+        "outputPayload": f.output_payload,
+        "rawResponse": f.raw_response,
+        "exception": f.exception,
+        "stackTrace": f.stack_trace,
+        "errorCategory": f.error_category,
+        "errorCode": f.error_code,
+        "retryCount": f.retry_count,
+        "latency": f.latency,
+        "timestamp": f.timestamp.isoformat() if f.timestamp else None,
+        "resolved": f.resolved,
+        "resolutionNotes": f.resolution_notes,
+    }
+
+
+class ResolveFailureRequest(BaseModel):
+    resolution_notes: str = Field(..., description="Developer resolution notes")
+
+
+class ReplayFailureRequest(BaseModel):
+    provider: str | None = Field(None, description="Optional override for LLM provider")
+    model: str | None = Field(None, description="Optional override for LLM model")
+
+
+@router.get("/failures")
+async def list_failures(
+    limit: int = 50,
+    offset: int = 0,
+    stage: str | None = None,
+    category: str | None = None,
+    resolved: bool | None = None,
+    trace_id: uuid.UUID | None = None,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List and search pipeline failures."""
+    stmt = select(PipelineFailureModel)
+    if stage:
+        stmt = stmt.where(PipelineFailureModel.stage == stage)
+    if category:
+        stmt = stmt.where(PipelineFailureModel.error_category == category)
+    if resolved is not None:
+        stmt = stmt.where(PipelineFailureModel.resolved == resolved)
+    if trace_id:
+        stmt = stmt.where(PipelineFailureModel.trace_id == trace_id)
+
+    stmt = stmt.order_by(PipelineFailureModel.timestamp.desc()).limit(limit).offset(offset)
+    res = await db.execute(stmt)
+    failures = res.scalars().all()
+
+    # Count query for pagination
+    count_stmt = select(func.count(PipelineFailureModel.id))
+    if stage:
+        count_stmt = count_stmt.where(PipelineFailureModel.stage == stage)
+    if category:
+        count_stmt = count_stmt.where(PipelineFailureModel.error_category == category)
+    if resolved is not None:
+        count_stmt = count_stmt.where(PipelineFailureModel.resolved == resolved)
+    if trace_id:
+        count_stmt = count_stmt.where(PipelineFailureModel.trace_id == trace_id)
+
+    count_res = await db.execute(count_stmt)
+    total = count_res.scalar() or 0
+
+    return {
+        "failures": [serialize_failure(f) for f in failures],
+        "total": total
+    }
+
+
+@router.get("/failures/{failure_id}")
+async def get_failure_detail(
+    failure_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve detailed pipeline failure details."""
+    stmt = select(PipelineFailureModel).where(PipelineFailureModel.id == failure_id)
+    res = await db.execute(stmt)
+    failure = res.scalar_one_or_none()
+    if not failure:
+        raise HTTPException(status_code=404, detail="Failure record not found")
+    return serialize_failure(failure)
+
+
+@router.post("/failures/{failure_id}/resolve")
+async def resolve_failure(
+    failure_id: uuid.UUID,
+    body: ResolveFailureRequest,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a pipeline failure as resolved with resolution notes."""
+    stmt = select(PipelineFailureModel).where(PipelineFailureModel.id == failure_id)
+    res = await db.execute(stmt)
+    failure = res.scalar_one_or_none()
+    if not failure:
+        raise HTTPException(status_code=404, detail="Failure record not found")
+
+    failure.resolved = True
+    failure.resolution_notes = body.resolution_notes
+    await db.commit()
+    return serialize_failure(failure)
+
+
+@router.post("/failures/{failure_id}/replay")
+async def replay_failure(
+    failure_id: uuid.UUID,
+    body: ReplayFailureRequest,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replay a failed pipeline stage with optional provider/model overrides."""
+    stmt = select(PipelineFailureModel).where(PipelineFailureModel.id == failure_id)
+    res = await db.execute(stmt)
+    failure = res.scalar_one_or_none()
+    if not failure:
+        raise HTTPException(status_code=404, detail="Failure record not found")
+
+    # If it's an agent stage, execute it inline/synchronously for immediate developer feedback
+    agent_stages = ("cluster_verification", "summary_reflection", "judge_arbitration", "entity_disambiguation")
+    if failure.stage in agent_stages:
+        from app.llm_gateway.request_manager import model_override_ctx, provider_override_ctx
+        
+        # Set overrides
+        p_token = provider_override_ctx.set(body.provider) if body.provider else None
+        m_token = model_override_ctx.set(body.model) if body.model else None
+
+        try:
+            agent_obj = None
+            if failure.stage == "cluster_verification":
+                from app.agents.cluster_verification_agent import cluster_verification_agent
+                agent_obj = cluster_verification_agent
+            elif failure.stage == "summary_reflection":
+                from app.agents.reflection_agent import reflection_agent
+                agent_obj = reflection_agent
+            elif failure.stage == "judge_arbitration":
+                from app.agents.judge_agent import judge_agent
+                agent_obj = judge_agent
+
+            if not agent_obj:
+                raise HTTPException(status_code=400, detail=f"Replay not supported for agent stage {failure.stage}")
+
+            from app.agents.base_agent import run_agent_with_observability
+            prompt = (failure.input_payload or {}).get("prompt", "")
+            
+            run_output = await run_agent_with_observability(
+                agent=agent_obj,
+                prompt=prompt,
+                stage=failure.stage,
+                story_id=str(failure.story_id) if failure.story_id else "",
+                article_id=str(failure.article_id) if failure.article_id else "",
+            )
+            
+            # Auto-resolve original failure on successful replay
+            failure.resolved = True
+            failure.resolution_notes = f"Auto-resolved by successful manual replay on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            await db.commit()
+
+            content = run_output.content.model_dump() if hasattr(run_output.content, "model_dump") else run_output.content
+            return {
+                "success": True,
+                "message": f"Agent stage {failure.stage} replayed successfully.",
+                "output": content
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Replay failed: {str(e)}")
+        finally:
+            if p_token:
+                provider_override_ctx.reset(p_token)
+            if m_token:
+                model_override_ctx.reset(m_token)
+
+    # For other stages (pipelines, summaries), trigger Celery task
+    else:
+        from app.workers.tasks import replay_story_stage_task
+        
+        # If there's no story_id, we need to resolve it (e.g. if it's event_extraction with article_id)
+        story_id = failure.story_id
+        if not story_id and failure.article_id:
+            # Look up story containing this article
+            stmt_link = select(StoryArticle.story_id).where(StoryArticle.article_id == failure.article_id).limit(1)
+            res_link = await db.execute(stmt_link)
+            story_id = res_link.scalar()
+
+        if not story_id:
+            # Fallback/last-resort: search if this article is in any story, or return error
+            raise HTTPException(status_code=400, detail="Cannot replay stage: No associated story could be resolved for this failure.")
+
+        replay_story_stage_task.delay(
+            story_id_str=str(story_id),
+            stage_name=failure.stage,
+            provider_override=body.provider,
+            model_override=body.model,
+            article_id_str=str(failure.article_id) if failure.article_id else None
+        )
+        
+        # Auto-resolve original failure since task is running
+        failure.resolved = True
+        failure.resolution_notes = f"Replay triggered as background task on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        await db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Background replay task successfully queued for stage: {failure.stage}"
+        }
+
+
+@router.get("/failure-analytics")
+async def get_failure_analytics(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve failure analytics data for Sentry-like charting."""
+    # 1. Total count summaries
+    total_failures = (await db.execute(select(func.count(PipelineFailureModel.id)))).scalar() or 0
+    resolved_failures = (await db.execute(select(func.count(PipelineFailureModel.id)).where(PipelineFailureModel.resolved == True))).scalar() or 0
+    unresolved_failures = total_failures - resolved_failures
+
+    # 2. Top failing stages
+    stmt_stages = select(
+        PipelineFailureModel.stage,
+        func.count(PipelineFailureModel.id).label("count")
+    ).group_by(PipelineFailureModel.stage).order_by(func.count(PipelineFailureModel.id).desc()).limit(10)
+    res_stages = await db.execute(stmt_stages)
+    top_stages = [{"stage": r[0], "count": r[1]} for r in res_stages]
+
+    # 3. Common provider failures
+    stmt_prov = select(
+        PipelineFailureModel.provider,
+        func.count(PipelineFailureModel.id).label("count")
+    ).where(PipelineFailureModel.provider != None).group_by(PipelineFailureModel.provider).order_by(func.count(PipelineFailureModel.id).desc())
+    res_prov = await db.execute(stmt_prov)
+    common_providers = [{"provider": r[0], "count": r[1]} for r in res_prov]
+
+    # 4. Error subtype counts (e.g. Quota & Rate Limit frequency)
+    quota_count = (await db.execute(select(func.count(PipelineFailureModel.id)).where(PipelineFailureModel.error_code == "RESOURCE_EXHAUSTED"))).scalar() or 0
+    rate_limit_count = (await db.execute(select(func.count(PipelineFailureModel.id)).where(PipelineFailureModel.error_code == "RATE_LIMIT_EXCEEDED"))).scalar() or 0
+
+    # 5. Average retry count
+    avg_retries = (await db.execute(select(func.avg(PipelineFailureModel.retry_count)))).scalar() or 0.0
+    avg_retries = round(float(avg_retries), 2)
+
+    # 6. Provider health and Success Rate from llm_traces
+    stmt_health = select(
+        LLMTraceModel.provider,
+        func.count(LLMTraceModel.id).label("total_calls"),
+        func.count(LLMTraceModel.id).filter(LLMTraceModel.status == "error").label("failed_calls")
+    ).group_by(LLMTraceModel.provider)
+    res_health = await db.execute(stmt_health)
+    
+    provider_health = []
+    for r in res_health:
+        prov = r[0]
+        total = r[1] or 0
+        failed = r[2] or 0
+        success = total - failed
+        success_rate = round((success / total * 100), 2) if total > 0 else 100.0
+        provider_health.append({
+            "provider": prov,
+            "totalCalls": total,
+            "failedCalls": failed,
+            "successRate": success_rate
+        })
+
+    # 7. Daily Trends (last 14 days)
+    # Failures per day
+    stmt_fail_trend = select(
+        func.date_trunc('day', PipelineFailureModel.timestamp).label("day"),
+        func.count(PipelineFailureModel.id).label("count")
+    ).group_by(text("day")).order_by(text("day"))
+    res_fail_trend = await db.execute(stmt_fail_trend)
+    failures_by_day = {r[0].strftime("%Y-%m-%d") if r[0] else "": r[1] for r in res_fail_trend}
+
+    # Successes per day (from stage_runs)
+    stmt_succ_trend = select(
+        func.date_trunc('day', StageRunModel.started_at).label("day"),
+        func.count(StageRunModel.id).label("count")
+    ).where(StageRunModel.status == "success").group_by(text("day")).order_by(text("day"))
+    res_succ_trend = await db.execute(stmt_succ_trend)
+    successes_by_day = {r[0].strftime("%Y-%m-%d") if r[0] else "": r[1] for r in res_succ_trend}
+
+    # Combine trends over last 14 days
+    import datetime
+    daily_trends = []
+    today = datetime.date.today()
+    for i in range(13, -1, -1):
+        day = today - datetime.timedelta(days=i)
+        day_str = day.isoformat()
+        fails = failures_by_day.get(day_str, 0)
+        succs = successes_by_day.get(day_str, 0)
+        total_runs = fails + succs
+        fail_rate = round((fails / total_runs * 100), 2) if total_runs > 0 else 0.0
+        daily_trends.append({
+            "date": day_str,
+            "failures": fails,
+            "successes": succs,
+            "failureRate": fail_rate
+        })
+
+    return {
+        "totalFailures": total_failures,
+        "resolvedFailures": resolved_failures,
+        "unresolvedFailures": unresolved_failures,
+        "topFailingStages": top_stages,
+        "mostCommonProviderFailures": common_providers,
+        "quotaErrorCount": quota_count,
+        "rateLimitErrorCount": rate_limit_count,
+        "avgRetries": avg_retries,
+        "dailyTrends": daily_trends,
+        "providerHealth": provider_health
+    }

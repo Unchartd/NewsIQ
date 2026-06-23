@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
+    BACKEND_SERVICE_ROLE: str = "monolith"
 
     # Database
     DATABASE_URL: str = Field(default="postgresql+asyncpg://newsiq:newsiq@localhost:5432/newsiq")
@@ -43,6 +44,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_API_KEY_EMBEDDING: str = ""
     GEMINI_API_KEY_SYNTH: str = ""
+    GROQ_API_KEY: str = ""
+    CEREBRAS_API_KEY: str = ""
+    NVIDIA_API_KEY: str = ""  # NVIDIA NIM Build API (nvapi-...)
     EMBEDDING_MODEL: str = "text-embedding-004"
     SUMMARIZATION_MODEL: str = "gemini-2.5-flash"       # No daily quota exhaustion, confirmed working
 

@@ -1013,7 +1013,7 @@ class ClusteringService:
                     ArticleEvent.event_fingerprint.isnot(None),
                 )
                 fp_res = await session.execute(fp_stmt)
-                fp = fp_res.scalar_one_or_none()
+                fp = fp_res.scalars().first()
                 if fp:
                     cluster_fps.add(fp)
 

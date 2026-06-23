@@ -19,7 +19,14 @@ from app.llm_gateway.metrics import (
     newsiq_llm_gateway_key_cooldowns
 )
 
+from contextvars import ContextVar
+
 logger = logging.getLogger(__name__)
+
+# Context variables for replaying stages with model/provider overrides
+model_override_ctx: ContextVar[str] = ContextVar("model_override", default="")
+provider_override_ctx: ContextVar[str] = ContextVar("provider_override", default="")
+
 
 class RequestManager:
     """Orchestrates the lifecycle of LLM requests with automatic rate-limiting, key rotation, and fallbacks."""
@@ -65,6 +72,12 @@ class RequestManager:
         """Asynchronously execute LLM requests through the gateway's fallback chain."""
         # 1. Retrieve prioritized list of provider/model fallbacks
         chain = self.fallback_chain.get_fallback_chain(model)
+        
+        provider_override = provider_override_ctx.get("")
+        model_override = model_override_ctx.get("")
+        if provider_override and model_override:
+            chain = [{"provider": provider_override, "model": model_override}]
+            
         system_prompt, user_prompt = self._extract_prompts(messages)
 
         errors_encountered = []
@@ -197,6 +210,12 @@ class RequestManager:
     ) -> GatewayResponse:
         """Synchronously execute LLM requests through the gateway's fallback chain."""
         chain = self.fallback_chain.get_fallback_chain(model)
+        
+        provider_override = provider_override_ctx.get("")
+        model_override = model_override_ctx.get("")
+        if provider_override and model_override:
+            chain = [{"provider": provider_override, "model": model_override}]
+            
         errors_encountered = []
 
         for entry in chain:

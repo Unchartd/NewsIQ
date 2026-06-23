@@ -13,6 +13,9 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3-flash"},
             {"provider": "google", "model": "gemini-2.5-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -21,6 +24,9 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-2.5-pro"},
             {"provider": "google", "model": "gemini-3.5-flash"},
             {"provider": "google", "model": "gemini-3-flash"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -29,6 +35,7 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
             {"provider": "groq", "model": "llama-3.1-8b-instant"},
+            {"provider": "cerebras", "model": "llama3.1-8b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -37,6 +44,8 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -44,6 +53,9 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-2.5-pro"},
             {"provider": "google", "model": "gemini-3.1-pro"},
             {"provider": "google", "model": "gemini-3.5-flash"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -66,6 +78,7 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash"},
             {"provider": "groq", "model": "llama-3.1-8b-instant"},
+            {"provider": "cerebras", "model": "llama3.1-8b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -73,7 +86,9 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-2.5-flash"},
             {"provider": "google", "model": "gemini-3.5-flash"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
             {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ],
@@ -82,6 +97,37 @@ class FallbackChain:
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
             {"provider": "groq", "model": "llama-3.1-8b-instant"},
+            {"provider": "cerebras", "model": "llama3.1-8b"},
+            {"provider": "mock", "model": "mock"},
+        ],
+        # NVIDIA NIM Reasoning Models (agentic stages)
+        "mistralai/mistral-medium-3.5-128b": [
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash"},
+            {"provider": "google", "model": "gemini-3.5-flash"},
+            {"provider": "google", "model": "gemini-2.5-flash"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "mock", "model": "mock"},
+        ],
+        "deepseek-ai/deepseek-v4-flash": [
+            {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "google", "model": "gemini-3.5-flash"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "mock", "model": "mock"},
+        ],
+        "nvidia/nemotron-3-super-120b-a12b": [
+            {"provider": "nvidia", "model": "nvidia/nemotron-3-super-120b-a12b"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "google", "model": "gemini-3.5-flash"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "mock", "model": "mock"},
+        ],
+        "z-ai/glm-5.1": [
+            {"provider": "nvidia", "model": "z-ai/glm-5.1"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "google", "model": "gemini-3.5-flash"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
             {"provider": "mock", "model": "mock"},
         ],
     }
@@ -91,6 +137,10 @@ class FallbackChain:
         # Strip any provider prefix (e.g., "google/gemini-2.5-flash" -> "gemini-2.5-flash")
         model_key = primary_model.split("/")[-1] if "/" in primary_model else primary_model
         
+        # Check full model ID first (for NVIDIA models like "mistralai/mistral-medium-3.5-128b")
+        if primary_model in self.DEFAULT_FALLBACKS:
+            return self.DEFAULT_FALLBACKS[primary_model]
+
         if model_key in self.DEFAULT_FALLBACKS:
             return self.DEFAULT_FALLBACKS[model_key]
 
@@ -100,11 +150,18 @@ class FallbackChain:
             provider = "openai"
         elif "llama" in model_key or "groq" in primary_model:
             provider = "groq"
+        elif "cerebras" in primary_model:
+            provider = "cerebras"
+        elif "nvidia" in primary_model or "mistralai" in model_key or "deepseek" in model_key or "nemotron" in model_key or "glm" in model_key:
+            provider = "nvidia"
 
         return [
             {"provider": provider, "model": primary_model},
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
             {"provider": "google", "model": "gemini-2.5-flash-lite"},
+            {"provider": "nvidia", "model": "mistralai/mistral-medium-3.5-128b"},
+            {"provider": "groq", "model": "llama-3.3-70b-specdec"},
+            {"provider": "cerebras", "model": "llama-3.3-70b"},
             {"provider": "openai", "model": "gpt-4o-mini"},
             {"provider": "mock", "model": "mock"},
         ]

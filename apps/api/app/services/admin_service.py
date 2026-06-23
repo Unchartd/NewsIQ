@@ -178,6 +178,7 @@ class AdminService:
             llm_traces=llm_traces,
             stage_runs=stage_runs,
             total_cost_usd=total_cost,
+            story_status=story.story_status or "active",
         )
 
     async def get_pipeline_status(self, db: AsyncSession) -> PipelineStatusResponse:
@@ -246,18 +247,18 @@ class AdminService:
 
     async def get_cost_analytics(self, db: AsyncSession) -> CostAnalyticsResponse:
         """Aggregate total token cost metrics by provider/model/stage."""
-        # Query cost records
+        # Query cost records from llm_traces
         result = await db.execute(
             select(
-                CostRecordModel.provider,
-                CostRecordModel.model,
-                CostRecordModel.stage,
-                func.sum(CostRecordModel.input_tokens).label("input_tokens"),
-                func.sum(CostRecordModel.output_tokens).label("output_tokens"),
-                func.sum(CostRecordModel.cost_usd).label("cost_usd"),
+                LLMTraceModel.provider,
+                LLMTraceModel.model,
+                LLMTraceModel.stage,
+                func.sum(LLMTraceModel.input_tokens).label("input_tokens"),
+                func.sum(LLMTraceModel.output_tokens).label("output_tokens"),
+                func.sum(LLMTraceModel.cost_usd).label("cost_usd"),
             )
-            .group_by(CostRecordModel.provider, CostRecordModel.model, CostRecordModel.stage)
-            .order_by(func.sum(CostRecordModel.cost_usd).desc())
+            .group_by(LLMTraceModel.provider, LLMTraceModel.model, LLMTraceModel.stage)
+            .order_by(func.sum(LLMTraceModel.cost_usd).desc())
         )
         rows = result.all()
 
@@ -434,23 +435,24 @@ class AdminService:
         )
         db.add(review)
 
+        # Fetch story
+        result = await db.execute(
+            select(Story)
+            .where(Story.id == story_id)
+            .options(
+                selectinload(Story.category),
+                selectinload(Story.tags)
+            )
+        )
+        story = result.scalar_one_or_none()
+
         # 2. Implement the DB updates based on action
-        if action == "approve":
-            result = await db.execute(select(Story).where(Story.id == story_id))
-            story = result.scalar_one_or_none()
-            if story:
+        if story:
+            if action == "approve":
                 story.story_status = "approved"
-
-        elif action == "reject":
-            result = await db.execute(select(Story).where(Story.id == story_id))
-            story = result.scalar_one_or_none()
-            if story:
+            elif action == "reject":
                 story.story_status = "rejected"
-
-        elif action == "correct_summary" and after_value:
-            result = await db.execute(select(Story).where(Story.id == story_id))
-            story = result.scalar_one_or_none()
-            if story:
+            elif action == "correct_summary" and after_value:
                 if "headline" in after_value:
                     story.headline = after_value["headline"]
                 if "short_summary" in after_value:
@@ -459,6 +461,22 @@ class AdminService:
                     story.detailed_summary = after_value["detailed_summary"]
 
         await db.commit()
+
+        # 3. Update search index and caches
+        if story:
+            try:
+                category_slug = story.category.slug if story.category else None
+                tags = [t.tag_name for t in story.tags] if story.tags else []
+
+                from app.services.cache_service import cache_service
+                from app.services.search_service import build_story_document, search_service
+
+                public_tags = [t for t in tags if not t.startswith("fact:")]
+                document = build_story_document(story, category_slug, public_tags)
+                await search_service.index_story(document)
+                await cache_service.invalidate_story(str(story.id))
+            except Exception as e:
+                logger.warning("Failed to update index/cache for reviewed story %s: %s", story.id, e)
 
     async def get_metrics_summary(self, db: AsyncSession) -> MetricsSummaryResponse:
         """Calculate overall cost, tokens, runs, and current queue sizes."""
@@ -470,11 +488,11 @@ class AdminService:
             )
         ).scalar_one() or 0
 
-        # Aggregate cost from CostRecordModel
-        total_cost = (await db.execute(select(func.sum(CostRecordModel.cost_usd)))).scalar_one() or 0.0
+        # Aggregate cost from LLMTraceModel
+        total_cost = (await db.execute(select(func.sum(LLMTraceModel.cost_usd)))).scalar_one() or 0.0
         total_tokens = (
             await db.execute(
-                select(func.sum(CostRecordModel.input_tokens + CostRecordModel.output_tokens))
+                select(func.sum(LLMTraceModel.input_tokens + LLMTraceModel.output_tokens))
             )
         ).scalar_one() or 0
 

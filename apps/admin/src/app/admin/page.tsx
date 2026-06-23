@@ -217,7 +217,7 @@ export default function DashboardHome() {
           sub="Currently running"
           icon={Activity}
           color="bg-primary/15 text-primary"
-          href="/dashboard/pipeline"
+          href="/admin/pipeline"
         />
         <StatCard
           label="Completed Today"
@@ -225,7 +225,7 @@ export default function DashboardHome() {
           sub={`${failureRate}% failure rate`}
           icon={CheckCircle2}
           color="bg-emerald-500/15 text-emerald-400"
-          href="/dashboard/pipeline"
+          href="/admin/pipeline"
         />
         <StatCard
           label="Total Stories"
@@ -233,7 +233,7 @@ export default function DashboardHome() {
           sub="In story cluster database"
           icon={Layers}
           color="bg-primary/15 text-primary"
-          href="/dashboard/stories"
+          href="/admin/stories"
         />
         <StatCard
           label="Cost Today (USD)"
@@ -241,7 +241,7 @@ export default function DashboardHome() {
           sub={`${costs?.total_tokens?.toLocaleString() ?? "—"} tokens`}
           icon={DollarSign}
           color="bg-amber-500/15 text-amber-400"
-          href="/dashboard/costs"
+          href="/admin/costs"
         />
       </div>
 
@@ -252,7 +252,7 @@ export default function DashboardHome() {
           value={pipelineStatus?.failed_today ?? "—"}
           icon={AlertTriangle}
           color="bg-red-500/15 text-red-400"
-          href="/dashboard/pipeline"
+          href="/admin/pipeline"
         />
         <StatCard
           label="Avg Duration"
@@ -271,7 +271,7 @@ export default function DashboardHome() {
           sub="Across all LLM calls"
           icon={Zap}
           color="bg-pink-500/15 text-pink-400"
-          href="/dashboard/costs"
+          href="/admin/costs"
         />
       </div>
 
@@ -290,7 +290,7 @@ export default function DashboardHome() {
               </p>
             </div>
             <Link
-              href="/dashboard/pipeline"
+              href="/admin/pipeline"
               className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
             >
               View DAG <ArrowUpRight className="w-3 h-3" />
@@ -326,7 +326,7 @@ export default function DashboardHome() {
               <p className="text-xs text-slate-500 mt-0.5">Cumulative spend breakdown</p>
             </div>
             <Link
-              href="/dashboard/costs"
+              href="/admin/costs"
               className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
             >
               Full Report <ArrowUpRight className="w-3 h-3" />

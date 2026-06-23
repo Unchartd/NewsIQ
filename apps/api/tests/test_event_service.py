@@ -138,15 +138,14 @@ async def test_extract_events_gateway_json_string_success(mock_execute_request):
 
 @pytest.mark.asyncio
 @patch("app.llm_gateway.request_manager.llm_gateway.execute_request")
-async def test_extract_events_gateway_failure_fallback_to_mock(mock_execute_request):
-    """Verify that event extraction falls back to mock when gateway fails."""
+async def test_extract_events_gateway_failure_propagates_exception(mock_execute_request):
+    """Verify that event extraction raises the exception when gateway fails."""
     mock_execute_request.side_effect = Exception("Gateway Timeout")
 
-    res = await event_service.extract_events(
-        title="Failed API test",
-        content="Some news content.",
-    )
-    assert res.primary_event.event_type == "OTHER"
-    assert "[Mock] Unknown Actor" in res.primary_event.actors
-    assert res.primary_event.confidence == 0.1
+    with pytest.raises(Exception, match="Gateway Timeout"):
+        await event_service.extract_events(
+            title="Failed API test",
+            content="Some news content.",
+        )
     mock_execute_request.assert_called_once()
+

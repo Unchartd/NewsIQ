@@ -127,7 +127,7 @@ function LiveLogViewer({ runId, stage, isRunning }: { runId: string; stage: stri
 
     if (isRunning) {
       const token = typeof window !== "undefined" ? localStorage.getItem("newsiq_admin_token") : null;
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
       const sseUrl = `${apiBase}/admin/pipeline/runs/${runId}/stages/${stage}/logs/stream${token ? `?token=${token}` : ""}`;
 
       eventSource = new EventSource(sseUrl);

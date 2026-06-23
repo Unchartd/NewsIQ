@@ -64,10 +64,10 @@ class ReplayService:
         span.set_metadata({"articles_replayed": len(articles)})
 
   async def replay_story_stage(
-      self, story_id: uuid.UUID, stage_name: str, db: AsyncSession
+      self, story_id: uuid.UUID, stage_name: str, db: AsyncSession, article_id: uuid.UUID | None = None
   ) -> None:
     """Replay a specific stage of the story pipeline."""
-    logger.info("Starting story stage replay for story %s, stage %s", story_id, stage_name)
+    logger.info("Starting story stage replay for story %s, stage %s (article: %s)", story_id, stage_name, article_id)
 
     # Fetch story and articles
     story_result = await db.execute(
@@ -93,6 +93,11 @@ class ReplayService:
           await self._replay_entity_extraction(story, articles, db)
           span.set_metadata({"stage": "entity_extraction", "articles": len(articles)})
 
+      elif stage_name == "event_extraction":
+        async with StageSpan(run, stage=PipelineStage.EVENT_EXTRACTION, story_id=str(story_id), article_id=str(article_id) if article_id else None) as span:
+          await self._replay_event_extraction(story, articles, db, target_article_id=article_id)
+          span.set_metadata({"stage": "event_extraction", "articles": 1 if article_id else len(articles)})
+
       elif stage_name == "contradiction_detection":
         async with StageSpan(run, stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story_id)) as span:
           from app.services.contradiction_service import contradiction_service
@@ -114,6 +119,89 @@ class ReplayService:
 
       else:
         raise ValueError(f"Unsupported replay stage: {stage_name}")
+
+  async def _replay_event_extraction(
+      self, story: Story, articles: list[Article], session: AsyncSession, target_article_id: uuid.UUID | None = None
+  ) -> None:
+    """Internal helper to execute and persist event extraction during replay."""
+    from app.services.event_service import event_service
+    from app.services.event_taxonomy import get_parent_type
+
+    if target_article_id:
+      articles = [a for a in articles if a.id == target_article_id]
+
+    for article in articles:
+      # Clear existing events
+      await session.execute(delete(ArticleEvent).where(ArticleEvent.article_id == article.id))
+      await session.flush()
+
+      content = article.content or article.description or ""
+      pub_at = article.published_at.isoformat() if article.published_at else None
+
+      event_response = await event_service.extract_events(
+          title=article.title or "",
+          content=content,
+          published_at=pub_at,
+      )
+
+      pe = event_response.primary_event
+      parsed_time = self._try_parse_event_time(pe.event_time)
+      fingerprint = event_service.compute_event_fingerprint(pe)
+
+      primary_event = ArticleEvent(
+          id=uuid.uuid4(),
+          article_id=article.id,
+          is_primary=True,
+          event_type=pe.event_type,
+          event_type_canonical=get_parent_type(pe.event_type),
+          actors=pe.actors,
+          targets=pe.targets,
+          objects=pe.objects,
+          location=pe.location,
+          event_time=parsed_time,
+          event_time_raw=pe.event_time,
+          numbers=pe.numbers,
+          confidence=pe.confidence,
+          event_fingerprint=fingerprint,
+      )
+      session.add(primary_event)
+
+      for se in event_response.secondary_events[:3]:
+          parsed_time_s = self._try_parse_event_time(se.event_time)
+          secondary_event = ArticleEvent(
+              id=uuid.uuid4(),
+              article_id=article.id,
+              is_primary=False,
+              event_type=se.event_type,
+              event_type_canonical=get_parent_type(se.event_type),
+              actors=se.actors,
+              targets=se.targets,
+              objects=se.objects,
+              location=se.location,
+              event_time=parsed_time_s,
+              event_time_raw=se.event_time,
+              numbers=se.numbers,
+              confidence=se.confidence,
+          )
+          session.add(secondary_event)
+
+      article.event_extraction_status = "completed"
+
+    await session.commit()
+
+  def _try_parse_event_time(self, raw: str | None) -> datetime | None:
+    """Attempt to parse an event time string to datetime."""
+    if not raw or not raw.strip():
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+    except (ValueError, TypeError):
+        pass
+    try:
+        from dateutil import parser
+        return parser.parse(raw).replace(tzinfo=None)
+    except Exception:
+        return None
 
   async def _replay_entity_extraction(
       self, story: Story, articles: list[Article], session: AsyncSession

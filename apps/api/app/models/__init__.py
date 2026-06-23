@@ -41,6 +41,7 @@ from app.models.observability_models import (
     RetryHistoryModel,
     StageRunModel,
     TokenUsageModel,
+    FunctionRunModel,
 )
 
 
@@ -86,4 +87,6 @@ __all__ = [
     "PromptVersionModel",
     "QueueMetricsModel",
     "HumanReviewModel",
+    "FunctionRunModel",
 ]
+

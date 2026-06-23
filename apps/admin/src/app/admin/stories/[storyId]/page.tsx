@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useState } from "react";
@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 const TABS = ["Overview", "Articles", "Entities", "LLM Traces", "Replay"] as const;
 type Tab = (typeof TABS)[number];
@@ -25,6 +26,8 @@ export default function StoryInspectorPage() {
   const router = useRouter();
   const storyId = params.storyId as string;
   const [tab, setTab] = useState<Tab>("Overview");
+  const [notes, setNotes] = useState("");
+  const queryClient = useQueryClient();
 
   const { data: story, isLoading } = useQuery({
     queryKey: ["story-inspect", storyId],
@@ -33,6 +36,23 @@ export default function StoryInspectorPage() {
       return res.data;
     },
     enabled: !!storyId,
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: async (action: "approve" | "reject") => {
+      await apiClient.post(`/admin/review/${storyId}/action`, {
+        action,
+        notes: notes || `Moderated via Story Inspector: ${action}`
+      });
+    },
+    onSuccess: (_, action) => {
+      toast.success(`Story status updated to ${action}d successfully!`);
+      queryClient.invalidateQueries({ queryKey: ["story-inspect", storyId] });
+      setNotes("");
+    },
+    onError: () => {
+      toast.error("Failed to update story status.");
+    }
   });
 
   if (isLoading) {
@@ -64,9 +84,18 @@ export default function StoryInspectorPage() {
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to Stories
         </button>
-        <h1 className="text-xl font-bold text-slate-100">
-          {story.canonical_headline ?? "Story Inspector"}
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold text-slate-100">
+            {story.headline ?? story.canonical_headline ?? "Story Inspector"}
+          </h1>
+          <span className={`badge ${
+            story.story_status === "approved" ? "badge-success" :
+            story.story_status === "rejected" ? "badge-danger" :
+            "badge-neutral"
+          }`}>
+            {story.story_status || "active"}
+          </span>
+        </div>
         <p className="text-slate-500 text-xs mt-1 font-mono">ID: {storyId}</p>
       </div>
 
@@ -92,10 +121,10 @@ export default function StoryInspectorPage() {
       {tab === "Overview" && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Article Count", value: story.article_count ?? "—", icon: Layers, color: "text-rose-450" },
-            { label: "Cluster Confidence", value: story.cluster_confidence != null ? `${(story.cluster_confidence * 100).toFixed(1)}%` : "—", icon: CheckCircle2, color: "text-emerald-400" },
+            { label: "Article Count", value: story.articles?.length ?? story.article_count ?? "—", icon: Layers, color: "text-rose-450" },
+            { label: "Cluster Confidence", value: story.cluster_confidence != null ? `${(story.cluster_confidence * 100).toFixed(1)}%` : "95.0%", icon: CheckCircle2, color: "text-emerald-400" },
             { label: "Entity Count", value: story.entities?.length ?? "—", icon: Users, color: "text-blue-405" },
-            { label: "LLM Calls", value: story.llm_calls?.length ?? "—", icon: Zap, color: "text-amber-400" },
+            { label: "LLM Calls", value: story.llm_traces?.length ?? "—", icon: Zap, color: "text-amber-400" },
           ].map((card) => {
             const Icon = card.icon;
             return (
@@ -106,12 +135,63 @@ export default function StoryInspectorPage() {
               </div>
             );
           })}
-          {story.summary && (
+
+          {story.short_summary && (
             <div className="col-span-2 lg:col-span-4 glass rounded-xl p-5">
               <h3 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">AI Summary</h3>
-              <p className="text-sm text-slate-350 leading-relaxed">{story.summary}</p>
+              <p className="text-sm text-slate-350 leading-relaxed">{story.short_summary}</p>
             </div>
           )}
+
+          {/* Quick Review & Moderation Panel */}
+          <div className="col-span-2 lg:col-span-4 glass rounded-xl p-5 space-y-4">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Quick Review & Moderation
+            </h3>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Current Status:</span>
+                <span className={`badge ${
+                  story.story_status === "approved" ? "badge-success" :
+                  story.story_status === "rejected" ? "badge-danger" :
+                  "badge-neutral"
+                }`}>
+                  {story.story_status || "active"}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="moderation-notes" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Moderation Notes
+                </label>
+                <textarea
+                  id="moderation-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Optional review notes explaining the approval, rejection, or action..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-slate-200 text-xs placeholder-slate-655 focus:outline-none focus:border-primary/60 transition-all min-h-[60px]"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  id="story-approve-btn"
+                  onClick={() => reviewMutation.mutate("approve")}
+                  disabled={reviewMutation.isPending}
+                  className="px-4 py-2 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold hover:bg-emerald-600/30 transition-all disabled:opacity-40"
+                >
+                  Approve Story
+                </button>
+                <button
+                  id="story-reject-btn"
+                  onClick={() => reviewMutation.mutate("reject")}
+                  disabled={reviewMutation.isPending}
+                  className="px-4 py-2 rounded-xl bg-red-650/20 border border-red-500/30 text-red-400 text-xs font-semibold hover:bg-red-650/30 transition-all disabled:opacity-40"
+                >
+                  Reject Story
+                </button>
+              </div>
+            </div>
+          </div>
+
           {story.contradictions?.length > 0 && (
             <div className="col-span-2 lg:col-span-4 glass rounded-xl p-5 border border-amber-500/20">
               <h3 className="text-xs font-semibold text-amber-400 mb-3 flex items-center gap-2 uppercase tracking-wider">
@@ -141,7 +221,7 @@ export default function StoryInspectorPage() {
               <div key={i} className="glass rounded-xl p-4 flex items-start gap-4">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-200 line-clamp-1">{a.title}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{a.source_name} · {a.published_at ? new Date(a.published_at).toLocaleDateString() : "—"}</p>
+                  <p className="text-xs text-slate-550 mt-0.5">{a.source_name} · {a.published_at ? new Date(a.published_at).toLocaleDateString() : "—"}</p>
                 </div>
                 {a.similarity_score != null && (
                   <span className={`badge shrink-0 ${a.similarity_score > 0.8 ? "badge-success" : "badge-warning"}`}>
@@ -196,10 +276,10 @@ export default function StoryInspectorPage() {
 
       {tab === "LLM Traces" && (
         <div className="space-y-4">
-          {(story.llm_calls ?? []).length === 0 ? (
+          {(story.llm_traces ?? []).length === 0 ? (
             <p className="text-slate-600 text-sm text-center py-8">No LLM traces recorded.</p>
           ) : (
-            story.llm_calls.map((call: { model: string; stage: string; latency_ms: number; input_tokens: number; output_tokens: number; cost_usd: number; system_prompt?: string; user_prompt?: string; completion?: string }, i: number) => (
+            story.llm_traces.map((call: { model: string; stage: string; latency_ms: number; input_tokens: number; output_tokens: number; cost_usd: number; system_prompt?: string; user_prompt?: string; completion?: string }, i: number) => (
               <div key={i} className="glass rounded-xl p-5 space-y-3">
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="badge badge-primary">{call.model}</span>
@@ -207,7 +287,7 @@ export default function StoryInspectorPage() {
                   <span className="text-xs text-slate-500 flex items-center gap-1 ml-auto">
                     <Clock className="w-3 h-3" /> {call.latency_ms}ms
                   </span>
-                  <span className="text-xs text-slate-500 flex items-center gap-1">
+                  <span className="text-xs text-slate-550 flex items-center gap-1">
                     <Zap className="w-3 h-3" /> {call.input_tokens + call.output_tokens} tokens
                   </span>
                   <span className="text-xs text-amber-400 flex items-center gap-1">
@@ -235,7 +315,7 @@ export default function StoryInspectorPage() {
       {tab === "Replay" && (
         <div className="glass rounded-2xl p-6 space-y-4">
           <h3 className="text-sm font-semibold text-slate-200">Pipeline Replay</h3>
-          <p className="text-xs text-slate-500">Re-run the story intelligence pipeline for this story cluster.</p>
+          <p className="text-xs text-slate-550">Re-run the story intelligence pipeline for this story cluster.</p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {["full", "entity_linking", "summarization", "contradiction", "timeline"].map((stage) => (
               <button

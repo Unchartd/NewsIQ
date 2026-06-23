@@ -1,30 +1,70 @@
 # Pipeline Observability Dashboard
 
-This document provides a guide to the NewsIQ Pipeline Observability Dashboard, located at `/dashboard/pipeline`. The dashboard acts as a real-time command center for monitoring and debugging our AI news intelligence pipeline.
+This document provides a guide to the NewsIQ Pipeline Observability Dashboard, located at `/admin/pipeline`. The dashboard acts as a real-time command center for monitoring and debugging our AI news intelligence pipeline.
 
-## Overview
+---
 
-The dashboard visualizes the full execution flow (DAG) of the story intelligence pipeline:
+## 1. Unified Top Metrics Bar
+
+The header of `/admin/pipeline` displays live key performance indicators (KPIs) aggregated over the last 24 hours:
+
+*   **Status:** Connected (SSE Stream Active).
+*   **Active Stage:** Displays the stage currently executing (e.g. `HDBSCAN Clustering`).
+*   **Total Executions:** Count of pipeline runs today.
+*   **Total Tokens consumed:** Live counter of tokens processed today.
+*   **Pipeline Cost:** Real-time computed dollar cost of AI calls today.
+
+---
+
+## 2. Interactive Pipeline DAG
+
+The central area of the dashboard displays the active Directed Acyclic Graph (DAG) representing the 11 processing stages:
+
 ```
-[RSS Ingestion / GNews API] ──> [Deduplication & Embedding] ──> [NLP Analysis & Entity Linking] 
-                                                                             │
-[Search Indexing] <── [AI Summarization] <── [Contradiction Engine] <── [Story Clustering]
+[RSS Ingestion] ──> [Extraction] ──> [Embedding] ──> [Event Extraction] 
+                                                              │
+[Timeline] <── [Clustering] <── [Entity Linking] <── [Entity Extraction]
+    │
+[Summary] ──> [Reflection] ──> [Publishing]
 ```
 
-It behaves similarly to modern platform engineering platforms like Datadog, LangSmith, and Apache Airflow.
+### Stage Card Visual States
+*   **Pending (Gray):** Not yet executed or waiting for parent tasks to complete.
+*   **Running (Pulsing Blue):** Currently processing with an active spinning loader.
+*   **Retrying (Yellow):** Attempt failed and currently scheduling a backoff timer.
+*   **Success (Green):** Completed successfully within latency thresholds.
+*   **Failed (Red):** Executing step raised an exception. Clicking opens the Stage Detail panel containing the traceback logs.
+*   **Skipped (Slate):** Bypassed due to empty inputs (e.g., no new articles found).
 
-## Key Features
+---
 
-1. **Real-time Status Synchronization**: Employs Server-Sent Events (SSE) via `/api/v1/admin/pipeline/stream` to broadcast status updates live, without browser-side polling.
-2. **Interactive Node DAG**: Every card in the pipeline DAG is clickable, serving as an entry point for localized telemetry.
-3. **Execution Trace Inspection**: Allows SREs and developers to inspect any historical run by selecting it from the pipeline history table, changing the DAG to reflect that specific run's state.
-4. **Unified Top Metrics Banner**: Displays connection status, active stage, total executions, total tokens, and overall LLM cost in real-time.
+## 3. Real-Time Status Stream (SSE)
 
-## Stage Node States
+We use Server-Sent Events (SSE) instead of HTTP polling to maintain low server load. The Next.js frontend establishes a single subscription to `/api/v1/admin/pipeline/stream`:
 
-*   **Pending (Gray)**: Not yet executed or waiting for parent tasks to complete.
-*   **Running (Blue)**: Currently processing with an active spinning loading indicator and card pulsing animation.
-*   **Retrying (Yellow)**: Attempt failed and currently scheduling a retry backoff.
-*   **Success (Green)**: Completed successfully within latency thresholds.
-*   **Failed (Red)**: Failed during execution. Clicking reveals errors and stack trace.
-*   **Skipped (Slate)**: Bypassed due to empty inputs (e.g. no new articles to embed).
+```javascript
+// useSSE hook inside apps/web/src/app/admin/pipeline/page.tsx
+useEffect(() => {
+  const eventSource = new EventSource('/api/v1/admin/pipeline/stream');
+  
+  eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    updateDAGNodeState(data.stage, data.status, data.run_id);
+  };
+  
+  return () => eventSource.close();
+}, []);
+```
+
+---
+
+## 4. Stage Detail Panel
+
+Clicking on any stage card in the DAG opens a side drawer displaying detailed telemetry for that specific stage execution:
+
+*   **Overview:** Start time, duration, retry count, status.
+*   **Inputs / Outputs:** Collapsible JSON trees of raw feed text or extracted entity arrays.
+*   **Metrics:** Latency, input/output token counts, estimated cost.
+*   **Logs:** Real-time log stream filtered specifically to `newsiq:logs:{run_id}:{stage}`.
+*   **Error Panel:** Displays error categorization, exception details, and raw tracebacks.
+*   **Model Config:** Version of system prompts, LLM provider, and model configurations used.

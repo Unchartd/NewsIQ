@@ -124,9 +124,9 @@ def test_provider_router():
 def test_fallback_chain():
     chain = FallbackChain()
     fc = chain.get_fallback_chain("gemini-2.5-flash-lite")
-    assert len(fc) == 6
+    assert len(fc) == 7
     assert fc[0] == {"provider": "google", "model": "gemini-2.5-flash-lite"}
-    assert fc[5] == {"provider": "mock", "model": "mock"}
+    assert fc[6] == {"provider": "mock", "model": "mock"}
 
     fc_gpt = chain.get_fallback_chain("gpt-4o-mini")
     assert fc_gpt[0] == {"provider": "openai", "model": "gpt-4o-mini"}
