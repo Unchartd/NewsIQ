@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 from sqlalchemy import delete, func, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import (
@@ -479,8 +480,11 @@ class ClusteringService:
         session.add(link)
         await session.commit()
 
-        # Retrieve the story and all associated articles to update summaries
-        stmt = select(Story).where(Story.id == story_id)
+        # Retrieve the story and all associated articles to update summaries with eagerly loaded relations
+        stmt = select(Story).options(
+            selectinload(Story.category),
+            selectinload(Story.metrics)
+        ).where(Story.id == story_id)
         res = await session.execute(stmt)
         story = res.scalar_one_or_none()
 
@@ -769,8 +773,11 @@ class ClusteringService:
             res = await session.execute(stmt)
             story_id = res.scalar()
             if story_id:
-                # Retrieve the story
-                stmt_story = select(Story).where(Story.id == story_id)
+                # Retrieve the story with eagerly loaded relations to avoid lazy-load MissingGreenlet errors
+                stmt_story = select(Story).options(
+                    selectinload(Story.category),
+                    selectinload(Story.metrics)
+                ).where(Story.id == story_id)
                 res_story = await session.execute(stmt_story)
                 story = res_story.scalar_one_or_none()
 
