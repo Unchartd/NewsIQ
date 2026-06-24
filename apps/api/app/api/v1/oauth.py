@@ -48,7 +48,9 @@ async def google_login():
         "prompt": "consent",
     }
     url = f"{GOOGLE_AUTHORIZE_URL}?{urlencode(params)}"
-    return {"redirect_url": url}
+    
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=url)
 
 
 @router.get("/google/callback")
