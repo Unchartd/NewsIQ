@@ -141,7 +141,12 @@ class ContradictionService:
         res = await session.execute(stmt)
         rows = list(res.all())
 
+        # Delete existing contradictions for this story to avoid duplication or stale data
+        from sqlalchemy import delete
+        await session.execute(delete(StoryContradiction).where(StoryContradiction.story_id == story_id))
+
         if len(rows) < 2:
+            await session.commit()
             return []
 
         # Build full text context for LLM disambiguation
