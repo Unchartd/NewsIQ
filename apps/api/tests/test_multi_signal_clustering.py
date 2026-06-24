@@ -36,7 +36,7 @@ async def test_compute_event_similarity_direct_math():
     score_sym = clustering_service._compute_event_similarity_direct(evt2, evt1)
     assert score == score_sym
 
-    # 2. Defaults for unspecified fields (actors/targets empty -> 1.0, location empty -> 0.5, time empty -> 0.8)
+    # 2. Defaults for unspecified fields (actors/targets empty -> 0.0, location empty -> 0.5, time empty -> 0.5)
     # Type mismatch (0.0)
     evt_empty1 = ArticleEvent(
         event_type_canonical="ATTACK",
@@ -52,17 +52,17 @@ async def test_compute_event_similarity_direct_math():
         location=None,
         event_time=None,
     )
-    # Weights: actor (0.25 * 1.0) + target (0.20 * 1.0) + loc (0.20 * 0.5) + type (0.15 * 0.0) + time (0.10 * 0.8)
-    # Score = 0.25 + 0.20 + 0.10 + 0.0 + 0.08 = 0.63
+    # Weights: actor (0.25 * 0.0) + target (0.20 * 0.0) + loc (0.20 * 0.5) + type (0.15 * 0.0) + time (0.10 * 0.5)
+    # Score = 0.0 + 0.0 + 0.10 + 0.0 + 0.05 = 0.15
     score = clustering_service._compute_event_similarity_direct(evt_empty1, evt_empty2)
-    assert pytest.approx(score) == 0.63
+    assert pytest.approx(score) == 0.15
 
     # 3. Substring location and parent event type match
     # Location: "Kyiv" vs "Kyiv Oblast" (substring -> 0.8)
     # Type: "MISSILE_STRIKE" vs "ATTACK" (same parent "ATTACK" -> 0.5)
     # Actors: ["Russia"] vs ["Russia", "Belarus"] (Jaccard = 1/2 = 0.5)
     # Targets: ["Kyiv"] vs ["Kyiv"] (Jaccard = 1.0)
-    # Time: 2 days diff (diff <= 3 days -> 0.5)
+    # Time: 2 days diff (different days -> 0.0)
     evt3 = ArticleEvent(
         event_type_canonical="MISSILE_STRIKE",
         actors=["Russia"],
@@ -81,10 +81,10 @@ async def test_compute_event_similarity_direct_math():
     # Target: 0.20 * 1.0 = 0.20
     # Location: 0.20 * 0.8 = 0.16
     # Type: 0.15 * 0.5 = 0.075
-    # Time: 0.10 * 0.5 = 0.05
-    # Total = 0.125 + 0.20 + 0.16 + 0.075 + 0.05 = 0.61
+    # Time: 0.10 * 0.0 = 0.0
+    # Total = 0.125 + 0.20 + 0.16 + 0.075 + 0.0 = 0.56
     score = clustering_service._compute_event_similarity_direct(evt3, evt4)
-    assert pytest.approx(score) == 0.61
+    assert pytest.approx(score) == 0.56
 
 
 @pytest.mark.asyncio
