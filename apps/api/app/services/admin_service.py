@@ -318,9 +318,14 @@ class AdminService:
 
         return EntityDebuggerResponse(entities=entities)
 
-    async def get_cluster_debugger_data(self, db: AsyncSession) -> ClusterDebuggerResponse:
-        """Fetch article group sizes and grouping details for active clusters."""
-        # Query stories with articles
+    async def get_cluster_debugger_data(
+        self, db: AsyncSession
+    ) -> ClusterDebuggerResponse:
+        """Fetch article grouping details for active clusters."""
+        from app.services.clustering_service import clustering_service
+        from app.models.models import ArticleEvent
+
+        # Retrieve latest 20 stories with articles and sources
         result = await db.execute(
             select(Story)
             .options(
@@ -330,6 +335,26 @@ class AdminService:
             .limit(20)
         )
         stories = result.scalars().all()
+
+        if not stories:
+            return ClusterDebuggerResponse(clusters=[])
+
+        story_ids = [s.id for s in stories]
+
+        # Fetch all article events for these stories in a single query
+        events_result = await db.execute(
+            select(ArticleEvent, StoryArticle.story_id)
+            .join(StoryArticle, StoryArticle.article_id == ArticleEvent.article_id)
+            .where(StoryArticle.story_id.in_(story_ids))
+        )
+        events_rows = events_result.all()
+
+        # Group events by story_id
+        story_events_map = {}
+        for event, story_id in events_rows:
+            if story_id not in story_events_map:
+                story_events_map[story_id] = []
+            story_events_map[story_id].append(event)
 
         clusters = []
         for s in stories:
@@ -342,12 +367,26 @@ class AdminService:
                 )
                 for sa in s.articles
             ]
+
+            # Calculate dynamic average similarity
+            events = story_events_map.get(s.id, [])
+            if len(events) <= 1:
+                avg_sim = 1.0
+            else:
+                total_sim = 0.0
+                pairs_count = 0
+                for i in range(len(events)):
+                    for j in range(i + 1, len(events)):
+                        total_sim += clustering_service._compute_event_similarity_direct(events[i], events[j])
+                        pairs_count += 1
+                avg_sim = total_sim / pairs_count if pairs_count > 0 else 1.0
+
             clusters.append(
                 ClusterDebuggerItemSchema(
                     story_id=s.id,
                     headline=s.headline or "No Headline",
                     article_count=len(s.articles),
-                    avg_similarity=0.88,  # Hardcoded placeholder
+                    avg_similarity=avg_sim,
                     articles=articles,
                 )
             )

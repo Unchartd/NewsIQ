@@ -51,7 +51,10 @@ async def test_get_entity_timeline_success(mock_db_session):
     mock_res_stories = MagicMock()
     mock_res_stories.scalars.return_value.all.return_value = [story]
 
-    mock_db_session.execute.side_effect = [mock_res_ent, mock_res_stories]
+    mock_res_events = MagicMock()
+    mock_res_events.all.return_value = []
+
+    mock_db_session.execute.side_effect = [mock_res_ent, mock_res_stories, mock_res_events]
 
     response = await get_entity_timeline(
         canonical_entity_id=entity_id, limit=20, offset=0, db=mock_db_session
