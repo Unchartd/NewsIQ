@@ -167,7 +167,7 @@ class FallbackChain:
 
         # Filter out 'mock' provider in production pipelines (not running under test frameworks)
         import sys
-        is_testing = "pytest" in sys.modules or "unittest" in sys.modules
+        is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
         if not is_testing:
             chain = [item for item in chain if item["provider"] != "mock"]
 
