@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token
 from app.models.models import OAuthAccount, User, UserPreference
 from app.services.auth_service import AuthService
+from app.api.v1.auth import _set_access_cookie, _set_refresh_cookie
 
 router = APIRouter()
 
@@ -164,21 +165,14 @@ async def google_callback(
         user_agent=request.headers.get("user-agent"),
     )
 
-    # Set refresh token cookie
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=not settings.DEBUG,
-        samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        path="/",
-    )
-
     # Redirect to frontend with access token
     frontend_url = settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:3000"
     redirect_url = f"{frontend_url}/auth/callback?access_token={access_token}"
 
     from fastapi.responses import RedirectResponse
+    redirect_response = RedirectResponse(url=redirect_url)
+    
+    _set_refresh_cookie(redirect_response, refresh_token)
+    _set_access_cookie(redirect_response, access_token)
 
-    return RedirectResponse(url=redirect_url)
+    return redirect_response
