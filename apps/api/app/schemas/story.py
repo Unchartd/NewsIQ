@@ -137,6 +137,7 @@ class StoryListResponse(BaseModel):
         default_factory=list, description="URLs of logos for reporting sources"
     )
     story_status: str | None = "active"
+    cluster_confidence: float | None = Field(None, description="Dynamic similarity confidence score of the story cluster")
 
     class Config:
         from_attributes = True

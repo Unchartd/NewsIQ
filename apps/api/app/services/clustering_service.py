@@ -5,7 +5,8 @@ import uuid
 from datetime import UTC, datetime
 
 import numpy as np
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import (
@@ -42,6 +43,17 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def uuid_to_advisory_lock_id(u: uuid.UUID) -> int:
+    """Fold a 128-bit UUID into a signed 64-bit integer lock ID."""
+    val = u.int
+    upper = val >> 64
+    lower = val & 0xffffffffffffffff
+    lock_id = (upper ^ lower) & 0xffffffffffffffff
+    if lock_id >= 0x8000000000000000:
+        lock_id -= 0x10000000000000000
+    return lock_id
+
+
 class ClusteringService:
     """Clustering service using HDBSCAN and incremental Qdrant vector lookups."""
 
@@ -67,7 +79,7 @@ class ClusteringService:
             await self.get_or_create_category(slug, slug.replace("-", " ").title(), session)
 
     async def generate_story_content(
-        self, story: Story, articles: list[Article], session: AsyncSession
+        self, story: Story, articles: list[Article], session: AsyncSession, commit: bool = True
     ) -> None:
         """Trigger AI generation and NER extraction to populate a story's sub-tables."""
         # 1. Clear existing sub-table rows explicitly before regenerating
@@ -264,27 +276,6 @@ class ClusteringService:
                 }
             })
 
-        # 5. Build and Serialize Knowledge Graph
-        kg_dict = {}
-        async with StageSpan(stage=PipelineStage.KNOWLEDGE_GRAPH, story_id=str(story.id)) as span:
-            try:
-                kg = build_story_knowledge_graph(
-                    articles=articles,
-                    article_events=article_events,
-                    story_entities=saved_story_entities,
-                    sources=sources_list,
-                )
-                kg_dict = kg.to_dict()
-                story.knowledge_graph = kg_dict
-                logger.info("Knowledge Graph successfully generated and assigned for story %s.", story.id)
-            except Exception as e:
-                logger.error("Failed to generate knowledge graph for story %s: %s", story.id, e)
-            
-            span.set_metadata({
-                "inputs": {"articles_count": len(articles)},
-                "outputs": {"nodes_count": len(kg_dict.get("nodes", [])), "edges_count": len(kg_dict.get("edges", []))}
-            })
-
         # 6. Run Contradiction & Source Comparison Engines
         saved_contras = []
         async with StageSpan(stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)) as span:
@@ -311,6 +302,27 @@ class ClusteringService:
             span.set_metadata({
                 "inputs": {"story_id": str(story.id)},
                 "outputs": {"differences_count": len(saved_differences)}
+            })
+
+        # 5. Build and Serialize Knowledge Graph
+        kg_dict = {}
+        async with StageSpan(stage=PipelineStage.KNOWLEDGE_GRAPH, story_id=str(story.id)) as span:
+            try:
+                kg = build_story_knowledge_graph(
+                    articles=articles,
+                    article_events=article_events,
+                    story_entities=saved_story_entities,
+                    sources=sources_list,
+                )
+                kg_dict = kg.to_dict()
+                story.knowledge_graph = kg_dict
+                logger.info("Knowledge Graph successfully generated and assigned for story %s.", story.id)
+            except Exception as e:
+                logger.error("Failed to generate knowledge graph for story %s: %s", story.id, e)
+            
+            span.set_metadata({
+                "inputs": {"articles_count": len(articles)},
+                "outputs": {"nodes_count": len(kg_dict.get("nodes", [])), "edges_count": len(kg_dict.get("edges", []))}
             })
 
         # Serialize inputs for KG-grounded summarization
@@ -413,10 +425,15 @@ class ClusteringService:
                 logger.info("Story summaries successfully synthesized and updated for story %s.", story.id)
             except Exception as e:
                 logger.error("Failed to summarize story from KG %s: %s", story.id, e)
-                story.headline = story.headline or "Factual Synthesis"
-                story.one_line_summary = story.one_line_summary or "Factual Synthesis of events."
-                story.short_summary = story.short_summary or "Factual Synthesis of events."
-                story.detailed_summary = story.detailed_summary or "Factual Synthesis of events."
+                primary_title = "News Story"
+                primary_desc = "Summary currently unavailable."
+                if articles:
+                    primary_title = articles[0].title or "News Story"
+                    primary_desc = articles[0].description or (articles[0].content[:200] if articles[0].content else "Summary currently unavailable.")
+                story.headline = story.headline or primary_title
+                story.one_line_summary = story.one_line_summary or primary_desc
+                story.short_summary = story.short_summary or primary_desc
+                story.detailed_summary = story.detailed_summary or primary_desc
                 story.key_facts = story.key_facts or []
 
             span.set_metadata({
@@ -434,7 +451,10 @@ class ClusteringService:
                 }
             })
 
-        await session.commit()
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
 
         # 8. Index in Meilisearch and invalidate caches for this story
         async with StageSpan(stage=PipelineStage.INDEXING, story_id=str(story.id)) as span:
@@ -466,6 +486,12 @@ class ClusteringService:
         self, article: Article, story_id: uuid.UUID, session: AsyncSession
     ) -> bool:
         """Merge a new article into an existing story cluster."""
+        # Acquire transaction-bound advisory lock on story_id
+        lock_id = uuid_to_advisory_lock_id(story_id)
+        await session.execute(
+            text(f"SELECT pg_advisory_xact_lock({lock_id})")
+        )
+
         # Check if relation already exists
         stmt = select(StoryArticle).where(
             StoryArticle.story_id == story_id, StoryArticle.article_id == article.id
@@ -477,10 +503,13 @@ class ClusteringService:
         # Create link
         link = StoryArticle(story_id=story_id, article_id=article.id)
         session.add(link)
-        await session.commit()
+        await session.flush()
 
-        # Retrieve the story and all associated articles to update summaries
-        stmt = select(Story).where(Story.id == story_id)
+        # Retrieve the story and all associated articles to update summaries with eagerly loaded relations
+        stmt = select(Story).options(
+            selectinload(Story.category),
+            selectinload(Story.metrics)
+        ).where(Story.id == story_id)
         res = await session.execute(stmt)
         story = res.scalar_one_or_none()
 
@@ -513,19 +542,21 @@ class ClusteringService:
             elif get_parent_type(evt1.event_type_canonical) == get_parent_type(evt2.event_type_canonical):
                 type_sim = 0.5
 
-        # 2. Actor Similarity (30%)
-        actor_sim = 1.0
+        # 2. Actor Similarity (25% components weight)
         a1 = set(evt1.actors or [])
         a2 = set(evt2.actors or [])
-        if a1 or a2:
-            actor_sim = len(a1.intersection(a2)) / len(a1.union(a2)) if a1.union(a2) else 0.0
+        if a1 and a2:
+            actor_sim = len(a1.intersection(a2)) / len(a1.union(a2))
+        else:
+            actor_sim = 0.0
 
-        # 3. Target Similarity (25%)
-        target_sim = 1.0
+        # 3. Target Similarity (20% components weight)
         t1 = set(evt1.targets or [])
         t2 = set(evt2.targets or [])
-        if t1 or t2:
-            target_sim = len(t1.intersection(t2)) / len(t1.union(t2)) if t1.union(t2) else 0.0
+        if t1 and t2:
+            target_sim = len(t1.intersection(t2)) / len(t1.union(t2))
+        else:
+            target_sim = 0.0
 
         # 4. Location Similarity (20%)
         loc_sim = 0.5
@@ -540,17 +571,12 @@ class ClusteringService:
                 loc_sim = 0.0
 
         # 5. Time Similarity (10%)
-        time_sim = 0.8
-        if evt1.event_time and evt2.event_time:
-            diff = abs((evt1.event_time - evt2.event_time).days)
-            if diff <= 1:
-                time_sim = 1.0
-            elif diff <= 3:
-                time_sim = 0.5
-            elif diff <= 7:
-                time_sim = 0.2
-            else:
-                time_sim = 0.0
+        if not evt1.event_time or not evt2.event_time:
+            time_sim = 0.5
+        elif evt1.event_time.date() == evt2.event_time.date():
+            time_sim = 1.0
+        else:
+            time_sim = 0.0
 
         return (
             0.25 * actor_sim
@@ -769,8 +795,25 @@ class ClusteringService:
             res = await session.execute(stmt)
             story_id = res.scalar()
             if story_id:
-                # Retrieve the story
-                stmt_story = select(Story).where(Story.id == story_id)
+                # Acquire transaction-bound advisory lock on story_id
+                lock_id = uuid_to_advisory_lock_id(story_id)
+                await session.execute(
+                    text(f"SELECT pg_advisory_xact_lock({lock_id})")
+                )
+
+                # Check if already merged in another concurrent task
+                stmt_chk = select(StoryArticle).where(
+                    StoryArticle.story_id == story_id, StoryArticle.article_id == article_id
+                )
+                res_chk = await session.execute(stmt_chk)
+                if res_chk.scalar_one_or_none():
+                    return False
+
+                # Retrieve the story with eagerly loaded relations to avoid lazy-load MissingGreenlet errors
+                stmt_story = select(Story).options(
+                    selectinload(Story.category),
+                    selectinload(Story.metrics)
+                ).where(Story.id == story_id)
                 res_story = await session.execute(stmt_story)
                 story = res_story.scalar_one_or_none()
 
@@ -830,6 +873,19 @@ class ClusteringService:
 
     async def run_batch_clustering(self, session: AsyncSession) -> int:
         """Run HDBSCAN clustering on unclustered articles."""
+        GLOBAL_CLUSTERING_LOCK_ID = 888888888
+        await session.execute(
+            text(f"SELECT pg_advisory_lock({GLOBAL_CLUSTERING_LOCK_ID})")
+        )
+        try:
+            return await self._run_batch_clustering_locked(session)
+        finally:
+            await session.execute(
+                text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})")
+            )
+
+    async def _run_batch_clustering_locked(self, session: AsyncSession) -> int:
+        """Internal method running batch clustering under global lock."""
         # Ensure all canonical categories exist
         await self._ensure_all_categories(session)
 
@@ -1108,8 +1164,11 @@ class ClusteringService:
 
         # ── Engagement score ──────────────────────────────────────────────────
         engagement_score = 0.0
-        if story.metrics:
-            m = story.metrics
+        from app.models.models import StoryMetric
+        stmt_metrics = select(StoryMetric).where(StoryMetric.story_id == story.id)
+        res_metrics = await session.execute(stmt_metrics)
+        m = res_metrics.scalar_one_or_none()
+        if m:
             raw = (m.views or 0) * 1 + (m.bookmarks or 0) * 3 + (m.shares or 0) * 5
             engagement_score = min(raw / 500.0, 1.0)
 

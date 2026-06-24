@@ -5,20 +5,25 @@ The **Contradiction Engine** is designed to automatically detect and flag factua
 ## Architecture
 
 Factual contradictions are detected using a **hybrid validation** approach:
-1. **Local Heuristics**: Lightweight, deterministic rules compare extracted events pairwise across publishers to flag candidate conflicts.
-2. **LLM Verification**: A high-precision LLM (Google Gemini or OpenAI) validates candidate contradictions in context to eliminate false positives (e.g. subset relationships, minor wording differences).
-3. **Database Persistence**: Confirmed contradictions are written to the database under the `story_contradictions` table.
+1. **Single-Source Exclusion**: Contradiction checking is bypassed entirely for single-source stories (stories with fewer than 2 unique publishers/sources). Any existing contradictions for the story are deleted.
+2. **Local Heuristics**: Lightweight, deterministic rules compare extracted events pairwise across different publishers to flag candidate conflicts.
+3. **LLM Verification**: A high-precision LLM (Google Gemini or OpenAI) validates candidate contradictions in context to eliminate false positives (e.g. subset relationships, minor wording differences).
+4. **Mock Fallback Guard**: In local development or mock environments, contradiction validation safely defaults to `is_contradiction = False`. This prevents the generation of fake or confusing contradiction alerts on the client UI.
+5. **Database Persistence**: Confirmed contradictions are written to the database under the `story_contradictions` table.
 
 ```mermaid
 flowchart TD
-    E[Article Events] --> H[Pairwise Heuristics]
+    E[Article Events] --> S{Unique Publishers >= 2?}
+    S -->|No| B[Bypass & Clean DB]
+    S -->|Yes| H[Pairwise Heuristics]
     H -->|Actor Conflict| C[Candidate Contradiction]
     H -->|Target Conflict| C
     H -->|Location Conflict| C
     H -->|Time Conflict| C
     H -->|Numerical Conflict| C
-    C --> LLM[LLM Validator]
-    LLM -->|Is Contradiction = True| DB[(PostgreSQL: story_contradictions)]
+    C --> LLM{LLM / Mock Validator}
+    LLM -->|LLM confirms contradiction| DB[(PostgreSQL: story_contradictions)]
+    LLM -->|Mock / Disconfirmed| Skip[Bypass]
 ```
 
 ---

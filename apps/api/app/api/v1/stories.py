@@ -51,7 +51,9 @@ router = APIRouter()
 
 
 
-def _build_story_list_response(story: Story) -> StoryListResponse:
+def _build_story_list_response(
+    story: Story, cluster_confidence: float | None = None
+) -> StoryListResponse:
     """Map a Story ORM object to StoryListResponse."""
     logos: list[str] = []
     source_ids: set[uuid.UUID] = set()
@@ -77,7 +79,53 @@ def _build_story_list_response(story: Story) -> StoryListResponse:
         source_count=len(source_ids),
         source_logos=logos[:5],
         story_status=story.story_status or "active",
+        cluster_confidence=cluster_confidence,
     )
+
+
+async def _build_story_list_responses(
+    stories: list[Story], db: AsyncSession
+) -> list[StoryListResponse]:
+    """Build StoryListResponse list in batch with dynamic similarity calculations."""
+    if not stories:
+        return []
+
+    story_ids = [s.id for s in stories]
+
+    from app.models.models import ArticleEvent
+    from app.services.clustering_service import clustering_service
+
+    events_result = await db.execute(
+        select(ArticleEvent, StoryArticle.story_id)
+        .join(StoryArticle, StoryArticle.article_id == ArticleEvent.article_id)
+        .where(StoryArticle.story_id.in_(story_ids))
+    )
+    events_rows = events_result.all()
+
+    # Group events by story_id
+    story_events_map = {}
+    for event, story_id in events_rows:
+        if story_id not in story_events_map:
+            story_events_map[story_id] = []
+        story_events_map[story_id].append(event)
+
+    response_items = []
+    for s in stories:
+        events = story_events_map.get(s.id, [])
+        if len(events) <= 1:
+            avg_sim = 1.0
+        else:
+            total_sim = 0.0
+            pairs_count = 0
+            for i in range(len(events)):
+                for j in range(i + 1, len(events)):
+                    total_sim += clustering_service._compute_event_similarity_direct(events[i], events[j])
+                    pairs_count += 1
+            avg_sim = total_sim / pairs_count if pairs_count > 0 else 1.0
+
+        response_items.append(_build_story_list_response(s, cluster_confidence=avg_sim))
+    return response_items
+
 
 
 @router.get("", response_model=list[StoryListResponse])
@@ -139,7 +187,7 @@ async def list_stories(
     result = await db.execute(stmt)
     stories = result.scalars().all()
 
-    return [_build_story_list_response(s) for s in stories]
+    return await _build_story_list_responses(stories, db)
 
 
 @router.get("/search", response_model=list[SearchResultResponse])
@@ -268,7 +316,7 @@ async def personalized_feed(
 
     result = await db.execute(stmt)
     stories = result.scalars().all()
-    return [_build_story_list_response(s) for s in stories]
+    return await _build_story_list_responses(stories, db)
 
 
 @router.get("/trending-widgets", response_model=TrendingWidgetsResponse)
@@ -332,7 +380,7 @@ async def list_bookmarked_stories(
     )
     result = await db.execute(stmt)
     stories = result.scalars().all()
-    return [_build_story_list_response(s) for s in stories]
+    return await _build_story_list_responses(stories, db)
 
 
 @router.get("/{story_id}", response_model=StoryDetailResponse)
@@ -564,7 +612,7 @@ async def get_trending_stories(
     stmt = stmt.order_by(Story.trend_score.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
     stories = result.scalars().all()
-    response = [_build_story_list_response(s) for s in stories]
+    response = await _build_story_list_responses(stories, db)
 
     if offset == 0:
         await cache_service.set(
@@ -689,7 +737,7 @@ async def get_entity_timeline(
     result = await db.execute(stmt)
     stories = result.scalars().all()
 
-    return [_build_story_list_response(s) for s in stories]
+    return await _build_story_list_responses(stories, db)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

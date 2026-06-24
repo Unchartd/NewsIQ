@@ -362,3 +362,25 @@ async def test_generate_story_content_redesigned_timeline(
         assert timeline_events[1].event_time == datetime.datetime(2026, 6, 20, 15, 0, 0)
         assert "Detention reported by BBC" in timeline_events[1].description
         assert "Actors: Police" in timeline_events[1].description
+
+
+@pytest.mark.asyncio
+async def test_source_comparison_single_source(mock_db_session):
+    """Verify that source comparison returns empty list and deletes existing coverages/differences for single source story."""
+    story_id = uuid.uuid4()
+    src_id = uuid.uuid4()
+    art = Article(id=uuid.uuid4(), title="Title", source_id=src_id)
+    src = Source(id=src_id, name="BBC News", slug="bbc-news")
+
+    mock_res = MagicMock()
+    mock_res.all.return_value = [(art, src)]
+    mock_db_session.execute.return_value = mock_res
+
+    coverages, differences = await source_comparison_service.compare_sources_and_save(
+        story_id, mock_db_session
+    )
+
+    assert coverages == []
+    assert differences == []
+    # Verify execute calls (delete coverages, delete differences, select articles)
+    assert mock_db_session.execute.call_count >= 3

@@ -154,7 +154,18 @@ class SourceComparisonService:
         res = await session.execute(stmt)
         rows = list(res.all())
 
+        # Delete existing coverages and differences for this story to avoid duplication or stale data
+        from sqlalchemy import delete
+        await session.execute(delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id))
+        await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
+
         if not rows:
+            await session.commit()
+            return [], []
+
+        unique_sources = {src.id for _, src in rows}
+        if len(unique_sources) < 2:
+            await session.commit()
             return [], []
 
         # 2. Fetch article events

@@ -49,7 +49,7 @@ export default function StoriesPage() {
         summary: s.one_line_summary || s.short_summary || "",
         article_count: s.article_count,
         created_at: s.first_seen_at || s.updated_at || "",
-        cluster_confidence: 0.95,
+        cluster_confidence: s.cluster_confidence !== undefined && s.cluster_confidence !== null ? s.cluster_confidence : 1.0,
         story_status: s.story_status || "active",
       }));
       return { stories: mapped, total: mapped.length };

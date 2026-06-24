@@ -43,7 +43,7 @@ def classify_error(exc: Exception, stage: str) -> Tuple[str, str, Optional[str]]
     if is_llm:
         if "quota" in msg_lower or "resource_exhausted" in msg_lower or "billing" in msg_lower or "exhausted" in msg_lower:
             return "llm_error", "QUOTA_EXCEEDED", "RESOURCE_EXHAUSTED"
-        elif "rate" in msg_lower or "429" in msg_lower or "too many requests" in msg_lower:
+        elif "rate" in msg_lower or "429" in msg_lower or "too many requests" in msg_lower or "cooling down" in msg_lower:
             return "llm_error", "RATE_LIMITED", "RATE_LIMIT_EXCEEDED"
         elif "timeout" in msg_lower or "timed out" in msg_lower:
             return "llm_error", "TIMEOUT", "LLM_TIMEOUT"

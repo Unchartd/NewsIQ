@@ -28,6 +28,11 @@ model_override_ctx: ContextVar[str] = ContextVar("model_override", default="")
 provider_override_ctx: ContextVar[str] = ContextVar("provider_override", default="")
 
 
+class KeyCooldownError(RuntimeError):
+    """Raised when an API key is selected but is currently cooling down."""
+    pass
+
+
 class RequestManager:
     """Orchestrates the lifecycle of LLM requests with automatic rate-limiting, key rotation, and fallbacks."""
 
@@ -94,11 +99,27 @@ class RequestManager:
                 
                 # Check key cooldown
                 if selected_key.is_cooling_down():
-                    # Record metric for key cooldown hit
-                    newsiq_llm_gateway_key_cooldowns.labels(
-                        provider=provider_name,
-                        key_hash=selected_key.get_masked()
-                    ).inc()
+                    from datetime import datetime
+                    import asyncio
+                    remaining = (selected_key.cooldown_until - datetime.utcnow()).total_seconds()
+                    if remaining > 0:
+                        is_last_resort = (
+                            entry == chain[-1]
+                            or (len(chain) > 1 and entry == chain[-2] and chain[-1]["provider"] == "mock")
+                        )
+                        if remaining <= 20.0 or is_last_resort:
+                            logger.info(
+                                "API key for %s is cooling down. Sleeping for %.2f seconds before proceeding.",
+                                provider_name, remaining
+                            )
+                            await asyncio.sleep(remaining)
+                        else:
+                            # Record metric for key cooldown hit
+                            newsiq_llm_gateway_key_cooldowns.labels(
+                                provider=provider_name,
+                                key_hash=selected_key.get_masked()
+                            ).inc()
+                            raise KeyCooldownError(f"API key for {provider_name} is cooling down.")
 
                 # Build the request payload
                 request = GatewayRequest(
@@ -173,6 +194,17 @@ class RequestManager:
 
                 return response
 
+            except KeyCooldownError as e:
+                err_msg = str(e)
+                errors_encountered.append(f"{provider_name}/{model_name}: {err_msg}")
+                logger.warning(
+                    "Gateway attempt failed for provider=%s model=%s: %s. Trying next fallback.",
+                    provider_name, model_name, err_msg
+                )
+                newsiq_llm_gateway_calls_total.labels(
+                    provider=provider_name, model=model_name, stage=stage, status="error"
+                ).inc()
+
             except Exception as e:
                 err_msg = str(e)
                 errors_encountered.append(f"{provider_name}/{model_name}: {err_msg}")
@@ -226,6 +258,24 @@ class RequestManager:
             try:
                 selected_key, client = self.router.select_key_and_client(provider_name, model_name)
                 
+                if selected_key.is_cooling_down():
+                    from datetime import datetime
+                    import time
+                    remaining = (selected_key.cooldown_until - datetime.utcnow()).total_seconds()
+                    if remaining > 0:
+                        is_last_resort = (
+                            entry == chain[-1]
+                            or (len(chain) > 1 and entry == chain[-2] and chain[-1]["provider"] == "mock")
+                        )
+                        if remaining <= 20.0 or is_last_resort:
+                            logger.info(
+                                "API key for %s is cooling down. Sleeping for %.2f seconds (sync) before proceeding.",
+                                provider_name, remaining
+                            )
+                            time.sleep(remaining)
+                        else:
+                            raise KeyCooldownError(f"API key for {provider_name} is cooling down.")
+                
                 request = GatewayRequest(
                     model=model_name,
                     messages=messages,
@@ -260,6 +310,13 @@ class RequestManager:
                 ).inc(cost)
 
                 return response
+
+            except KeyCooldownError as e:
+                err_msg = str(e)
+                errors_encountered.append(f"{provider_name}/{model_name}: {err_msg}")
+                newsiq_llm_gateway_calls_total.labels(
+                    provider=provider_name, model=model_name, stage=stage, status="error"
+                ).inc()
 
             except Exception as e:
                 err_msg = str(e)
