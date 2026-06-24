@@ -157,7 +157,7 @@ async def google_callback(
 
     # Create session
     auth_service = AuthService(db)
-    await auth_service.create_session(
+    await auth_service.session_service.create_session(
         user_id=user.id,
         refresh_token=refresh_token,
         ip_address=request.client.host if request.client else None,
