@@ -145,7 +145,9 @@ class ContradictionService:
         from sqlalchemy import delete
         await session.execute(delete(StoryContradiction).where(StoryContradiction.story_id == story_id))
 
-        if len(rows) < 2:
+        # Check unique sources count to avoid contradiction checking on single-source stories
+        unique_sources = {art.source_id for art, _ in rows if art.source_id}
+        if len(unique_sources) < 2:
             await session.commit()
             return []
 

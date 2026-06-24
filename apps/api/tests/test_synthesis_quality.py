@@ -75,7 +75,6 @@ async def test_summarize_story_from_kg_mock_fallback():
         mock_chain.return_value = [{"provider": "mock", "model": "mock"}]
         res = await ai_service.summarize_story_from_kg(kg, [], [], [])
 
-    assert "[mock]" in res.headline.lower()
     assert "protest" in res.headline.lower()
     assert "world" == res.category
     assert len(res.key_facts) > 0

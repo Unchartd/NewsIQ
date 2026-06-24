@@ -49,7 +49,8 @@ graph TD
 ```
 
 - **Daily Quota Handling**: If any Gemini model raises a `RESOURCE_EXHAUSTED` error, the engine logs the error and immediately tries the next model in the chain.
-- **Developer Fallback**: A deterministic mock generator prefixes summaries with `[Mock]` for local development if no API keys are provided.
+- **Developer Fallback & Mock Provider**: If API keys are missing or all providers fail, a realistic mock generator (`MockProvider`) is used for local development. Instead of hardcoded generic strings or `[Mock]` prefixes, the mock provider parses actual headlines, summaries, and event details directly from the input prompts. For comparative modules, it returns safe, clean defaults (e.g., `is_contradiction = False`, empty arrays for unique/missing information) to prevent showing dummy/placeholder content to the client.
+- **Single-Source Bypassing**: Comparative analysis (difference, source comparison, and contradiction engines) is skipped entirely for single-source stories (stories with fewer than 2 unique publishers/sources). Any existing difference or comparison records for single-source stories are deleted from the database.
 
 ---
 

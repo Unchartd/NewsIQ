@@ -47,3 +47,15 @@ The output matches the `StorySummaryResponse` schema:
   "category": "<politics | world | business | technology | sports | entertainment | lifestyle | travel | education | health | science | weather>"
 }
 ```
+
+---
+
+## Fallback Strategies
+
+To handle cases where the LLM Gateway synthesis fails or is unavailable:
+1. **Model Fallback Chain**: If the primary model fails or encounters quota limits, the system tries cheaper/smaller models sequentially (Gemini flash-lite ➡️ Gemini flash ➡️ OpenAI GPT-4o-mini).
+2. **Mock Provider (Local Development)**: In mock environments, the `MockProvider` parses the actual title and content from the prompt payload to construct a clean, realistic headline and summaries without prefixes (e.g. avoiding static dummy headers like `"Factual Synthesis"`).
+3. **Hard Exception Fallback**: If LLM calls fail entirely across all configurations, the summarization engine falls back to using the primary article's metadata:
+   - **Headline**: Set to the title of the first/primary article in the cluster.
+   - **Summaries (One-line, Short, Detailed)**: Populated with the primary article's description or leading content snippet.
+   - **Key Facts**: Safely defaults to an empty list to avoid generating fake bullet points.

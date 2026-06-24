@@ -425,10 +425,15 @@ class ClusteringService:
                 logger.info("Story summaries successfully synthesized and updated for story %s.", story.id)
             except Exception as e:
                 logger.error("Failed to summarize story from KG %s: %s", story.id, e)
-                story.headline = story.headline or "Factual Synthesis"
-                story.one_line_summary = story.one_line_summary or "Factual Synthesis of events."
-                story.short_summary = story.short_summary or "Factual Synthesis of events."
-                story.detailed_summary = story.detailed_summary or "Factual Synthesis of events."
+                primary_title = "News Story"
+                primary_desc = "Summary currently unavailable."
+                if articles:
+                    primary_title = articles[0].title or "News Story"
+                    primary_desc = articles[0].description or (articles[0].content[:200] if articles[0].content else "Summary currently unavailable.")
+                story.headline = story.headline or primary_title
+                story.one_line_summary = story.one_line_summary or primary_desc
+                story.short_summary = story.short_summary or primary_desc
+                story.detailed_summary = story.detailed_summary or primary_desc
                 story.key_facts = story.key_facts or []
 
             span.set_metadata({

@@ -509,7 +509,128 @@ class MockProvider(BaseLLMProvider):
 
         if schema:
             try:
-                fields = self._generate_mock_model_fields(schema, event_name)
+                import re
+                fields = {}
+                if request.stage == "cluster_verification":
+                    fields = {
+                        "verified": True,
+                        "confidence": 1.0,
+                        "reasoning": "Articles report on the same core news event and share matching details."
+                    }
+                elif request.stage == "entity_extraction":
+                    entities = []
+                    words = re.findall(r'\b[A-Z][a-z]{3,15}\b', user_msg)
+                    seen_entities = set()
+                    filter_words = {"You", "Are", "Extract", "The", "Article", "Respond", "Json", "None", "Title", "Content", "Date", "Time", "Person", "Org", "Company", "Country", "City", "State", "Place", "Location", "Event", "Agreement", "Law", "Product", "Technology", "Government", "Military", "Date", "Money", "Percent", "Crypto", "Sports", "Wikidata"}
+                    for w in words:
+                        if w not in filter_words and w not in seen_entities:
+                            seen_entities.add(w)
+                            etype = "ORG" if len(w) > 6 else "PERSON"
+                            entities.append({
+                                "value": w,
+                                "type": etype,
+                                "canonical_name": w,
+                                "confidence": 0.90
+                            })
+                            if len(entities) >= 5:
+                                break
+                    fields = {"entities": entities}
+                elif request.stage == "event_extraction" or request.stage == "event_service":
+                    title_match = re.search(r'Title:\s*([^\n]+)', user_msg)
+                    title = title_match.group(1).strip() if title_match else "News Event"
+                    
+                    actor_match = re.findall(r'\b[A-Z][a-z]{3,15}\b', title)
+                    actors = [a for a in actor_match if a not in {"In", "On", "At", "And", "With", "For", "To", "The", "Of"}]
+                    if not actors:
+                        actors = ["Officials"]
+                    
+                    etype = "LEGAL" if any(x in title.lower() for x in ["arrest", "court", "police", "law", "fake", "racket", "arrested"]) else "POLICY"
+                    
+                    fields = {
+                        "primary_event": {
+                            "event_type": etype,
+                            "actors": actors[:2],
+                            "targets": ["Public interest"],
+                            "objects": [],
+                            "location": "India" if "uttarakhand" in title.lower() or "india" in title.lower() else "United States",
+                            "event_time": None,
+                            "numbers": {},
+                            "confidence": 0.95
+                        },
+                        "secondary_events": []
+                    }
+                elif request.stage == "entity_linking":
+                    name_match = re.search(r"entity name '([^']+)'", user_msg)
+                    ent_name = name_match.group(1) if name_match else "Entity"
+                    fields = {
+                        "canonical_name": ent_name,
+                        "wikidata_search_query": ent_name,
+                        "description": f"Standardized representation of {ent_name}."
+                    }
+                elif request.stage == "source_comparison":
+                    unique_match = re.search(r'Unique facts reported only by [^:]+:\s*([^\n]+)', user_msg)
+                    missing_match = re.search(r'Facts reported by others but omitted by [^:]+:\s*([^\n]+)', user_msg)
+                    contra_match = re.search(r'Factual contradictions involving [^:]+:\s*([^\n]+)', user_msg)
+                    
+                    unique_val = unique_match.group(1).strip() if unique_match else ""
+                    missing_val = missing_match.group(1).strip() if missing_match else ""
+                    contra_val = contra_match.group(1).strip() if contra_match else ""
+                    
+                    if unique_val.lower() == "none": unique_val = ""
+                    if missing_val.lower() == "none": missing_val = ""
+                    if contra_val.lower() == "none": contra_val = ""
+                    
+                    src_match = re.search(r"publisher '([^']+)'", user_msg)
+                    src_name = src_match.group(1) if src_match else "publisher"
+                    
+                    fields = {
+                        "focus_area": f"General reporting of event details by {src_name}.",
+                        "unique_information": unique_val,
+                        "missing_information": missing_val,
+                        "contradictions": contra_val
+                    }
+                elif request.stage == "contradiction_detection":
+                    fields = {
+                        "is_contradiction": False,
+                        "description": "",
+                        "confidence": 0.0
+                    }
+                elif request.stage == "summary_generation":
+                    headline = "Major News Event"
+                    
+                    title_matches = re.findall(r'"title":\s*"([^"]+)"', user_msg)
+                    if not title_matches:
+                        title_matches = re.findall(r'Title:\s*([^\n]+)', user_msg)
+                    if not title_matches:
+                        title_matches = re.findall(r'"label":\s*"([^"]+)"', user_msg)
+                        
+                    real_titles = [t.strip() for t in title_matches if len(t.strip()) >= 5 and not t.strip().lower().startswith("mock")]
+                    if real_titles:
+                        headline = real_titles[0]
+                    
+                    one_line = f"Reports detail developments regarding {headline}."
+                    short_sum = f"Recent media coverage highlights key developments surrounding {headline}. Reporting outlets continue to update their coverage as new details emerge."
+                    detailed_sum = (
+                        f"A synthesis of recent news coverage reveals details regarding {headline}.\n\n"
+                        f"Media organizations have provided reporting on the events, highlighting the key players, "
+                        f"locations, and timelines. Further details are being analyzed as publishers continue "
+                        f"updating their coverage."
+                    )
+                    
+                    fields = {
+                        "headline": headline,
+                        "one_line_summary": one_line,
+                        "short_summary": short_sum,
+                        "detailed_summary": detailed_sum,
+                        "key_facts": [
+                            f"Updates regarding {headline}.",
+                            "Synthesized details compiled from reporting sources."
+                        ],
+                        "category": "world"
+                    }
+                else:
+                    fields = self._generate_mock_model_fields(schema, event_name)
+
                 parsed = schema.model_validate(fields)
                 content = parsed.model_dump_json()
             except Exception as e:

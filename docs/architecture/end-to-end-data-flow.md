@@ -672,8 +672,10 @@ Compares publisher coverage to determine focus areas, omissions, and unique repo
 Story articles, events, and detected contradictions.
 
 #### Processing
-1. Compares actor, target, location, and numbers sets of one publisher against all others.
-2. Invokes LLM (`gemini-2.5-flash-lite`) to clean and compile the structural comparison.
+1. **Single-Source Exclusion**: Bypassed entirely if there are fewer than 2 unique publishers. Any pre-existing coverage or difference records are deleted from the database.
+2. **Local Comparison**: Compares actor, target, location, and numbers sets of one publisher against all others to compute unique/omitted facts.
+3. **LLM Synthesis**: Invokes LLM (`gemini-2.5-flash-lite`) to clean and compile the structural comparison.
+4. **Deterministic Fallback**: If the LLM/Mock Provider fails or is disabled, focus area strings are generated dynamically from parsed event types (e.g. "Focused on legal, policy details.") instead of generic placeholder text, and raw heuristic diffs are formatted into structured lists.
 
 #### Outputs
 Saved `StorySourceCoverage` and `StoryDifference` records:
@@ -701,8 +703,9 @@ Detects opposing factual statements (e.g. casualty counts, timelines) between pu
 Pairwise events within a story cluster.
 
 #### Processing
-1. Runs local heuristics to check for disjoint actors/targets, different locations, temporal shifts $>1$ day, or numerical value deviations $>10\%$.
-2. Invokes **Contradiction Agent** (Agno adapter) to validate conflicts and describe them.
+1. **Single-Source Exclusion**: Bypassed entirely for stories with fewer than 2 unique publishers/sources. Any existing contradiction records are deleted from the database.
+2. **Pairwise Heuristics**: Runs local heuristics to check for disjoint actors/targets, different locations, temporal shifts $>1$ day, or numerical value deviations $>10\%$.
+3. **LLM Verification**: Invokes the **Contradiction Agent** (or LLM Gateway) to validate candidate conflicts. In mock or fallback scenarios, contradiction checking safely returns `is_contradiction = False` to prevent fake contradiction alerts in the UI.
 
 #### Outputs
 Saved `StoryContradiction` entries:
@@ -737,6 +740,12 @@ Generates objective, neutral story headlines and summaries grounded in the story
 
 #### Inputs
 JSON payload of the generated Knowledge Graph, Timeline, Source Comparisons, and Contradictions.
+
+#### Processing
+1. **Knowledge Grounding**: Grounded entirely in the compiled Knowledge Graph, chronological timeline, source comparisons, and contradictions instead of raw unverified article texts.
+2. **LLM Synthesis**: Translates the grounded JSON structured fields into objective headlines, one-sentence, short, and detailed summaries, and a category slug.
+3. **Mock Provider**: In mock or local environments, the mock provider parses the actual titles and content from the prompt payload to construct a clean, realistic headline and summaries without prefixes or dummy templates (e.g. avoiding hardcoded labels like `"Factual Synthesis"`).
+4. **Failure Fallback**: If all LLM gateway models fail, the engine falls back to using the title and description/leading text of the first/primary article in the cluster.
 
 #### Outputs
 Story Summary Object:
