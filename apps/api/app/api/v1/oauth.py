@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token
 from app.models.models import OAuthAccount, User, UserPreference
 from app.services.auth_service import AuthService
+from app.api.v1.auth import _set_access_cookie, _set_refresh_cookie
 
 router = APIRouter()
 
@@ -48,7 +49,9 @@ async def google_login():
         "prompt": "consent",
     }
     url = f"{GOOGLE_AUTHORIZE_URL}?{urlencode(params)}"
-    return {"redirect_url": url}
+    
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=url)
 
 
 @router.get("/google/callback")
@@ -155,22 +158,11 @@ async def google_callback(
 
     # Create session
     auth_service = AuthService(db)
-    await auth_service.create_session(
+    await auth_service.session_service.create_session(
         user_id=user.id,
         refresh_token=refresh_token,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
-    )
-
-    # Set refresh token cookie
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=not settings.DEBUG,
-        samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        path="/",
     )
 
     # Redirect to frontend with access token
@@ -178,5 +170,9 @@ async def google_callback(
     redirect_url = f"{frontend_url}/auth/callback?access_token={access_token}"
 
     from fastapi.responses import RedirectResponse
+    redirect_response = RedirectResponse(url=redirect_url)
+    
+    _set_refresh_cookie(redirect_response, refresh_token)
+    _set_access_cookie(redirect_response, access_token)
 
-    return RedirectResponse(url=redirect_url)
+    return redirect_response
