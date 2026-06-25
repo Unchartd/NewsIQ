@@ -49,7 +49,8 @@ jobs:
           script: |
             set -e
 
-            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
+            IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+            IMAGE="${IMAGE_NAME_LOWER}:${{ steps.tag.outputs.tag }}"
             DEPLOY_DIR="${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}"
 
             echo "=== Deploying $IMAGE ==="
