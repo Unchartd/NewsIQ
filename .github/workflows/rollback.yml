@@ -39,7 +39,8 @@ jobs:
           script: |
             set -e
 
-            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.target_tag }}"
+            IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+            IMAGE="${IMAGE_NAME_LOWER}:${{ github.event.inputs.target_tag }}"
             DEPLOY_DIR="${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}"
 
             echo "=== Rolling back to $IMAGE ==="
