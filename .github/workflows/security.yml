@@ -23,16 +23,17 @@ jobs:
           docker build -t newsiq-api:scan ./apps/api
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "newsiq-api:scan"
+          scan-type: "image"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
           exit-code: "0"  # Don't fail the build, just report
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: "trivy-results.sarif"
@@ -77,7 +78,13 @@ jobs:
         with:
           fetch-depth: 0  # Full history for secret scanning
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION="8.18.2"
+          curl -L -s https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          rm gitleaks.tar.gz
+
+      - name: Run Gitleaks detect
+        run: gitleaks detect --verbose --redact
