@@ -121,6 +121,20 @@ jobs:
                 echo "WARNING: .env.production has CRLF line endings. Converting to LF..."
                 sed -i 's/\r$//' .env.production
               fi
+
+              # Self-heal truncated variables (due to copy-pasting from a 102-column terminal display in nano)
+              if grep -q "ap-southeas>" .env.production; then
+                echo "WARNING: Detected truncated Neon database URL with '>' character. Self-healing..."
+                sed -i 's|ap-southeas>|ap-southeast-1.aws.neon.tech/neondb?sslmode=require\&channel_binding=require|g' .env.production
+              fi
+              if grep -q "assured-inse>" .env.production; then
+                echo "WARNING: Detected truncated Upstash Redis URL with '>' character. Self-healing..."
+                sed -i 's|assured-inse>|assured-insect-93215.upstash.io:6379|g' .env.production
+              fi
+              if grep -q "ingest.us.sentry.io/4511625657581>" .env.production; then
+                echo "WARNING: Detected truncated Sentry DSN with '>' character. Self-healing..."
+                sed -i 's|ingest.us.sentry.io/4511625657581>|ingest.us.sentry.io/4511625657581568|g' .env.production
+              fi
             else
               echo "FATAL: .env.production not found in $(pwd)!"
               exit 1
@@ -132,11 +146,9 @@ jobs:
             # Add Google + Cloudflare DNS as fallback resolvers.
             echo "=== Configuring DNS resolvers ==="
             sudo mkdir -p /etc/systemd/resolved.conf.d
-            cat <<'DNSEOF' | sudo tee /etc/systemd/resolved.conf.d/dns_servers.conf
-[Resolve]
-DNS=8.8.8.8 1.1.1.1 8.8.4.4
-FallbackDNS=1.0.0.1
-DNSEOF
+            echo "[Resolve]" | sudo tee /etc/systemd/resolved.conf.d/dns_servers.conf
+            echo "DNS=8.8.8.8 1.1.1.1 8.8.4.4" | sudo tee -a /etc/systemd/resolved.conf.d/dns_servers.conf
+            echo "FallbackDNS=1.0.0.1" | sudo tee -a /etc/systemd/resolved.conf.d/dns_servers.conf
             sudo systemctl restart systemd-resolved || true
             sleep 2
 
@@ -194,7 +206,7 @@ DNSEOF
             echo "=== Deploy complete ==="
 
       - name: Tag deployment in Sentry
-        if: success() && env.SENTRY_AUTH_TOKEN != ''
+        if: success() && secrets.SENTRY_AUTH_TOKEN != ''
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
