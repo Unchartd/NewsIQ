@@ -114,6 +114,7 @@ jobs:
             # Run migrations against Neon before switching traffic
             echo "=== Running Alembic migrations ==="
             docker run --rm \
+              --network host \
               --env-file .env.production \
               "$IMAGE" \
               alembic upgrade head
