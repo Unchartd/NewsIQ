@@ -111,10 +111,45 @@ jobs:
 
             cd "$DEPLOY_DIR"
 
+            echo "=== Environment Pre-flight ==="
+            pwd
+            ls -la .env.production
+
+            # Self-heal: strip Windows carriage returns from .env.production
+            if [ -f .env.production ]; then
+              if grep -qP '\r' .env.production 2>/dev/null || file .env.production | grep -q CRLF; then
+                echo "WARNING: .env.production has CRLF line endings. Converting to LF..."
+                sed -i 's/\r$//' .env.production
+                echo "Done. Verifying..."
+                file .env.production
+              fi
+            else
+              echo "FATAL: .env.production not found in $(pwd)!"
+              exit 1
+            fi
+
+            # Show masked DB URLs for debugging
+            grep -E "^DATABASE" .env.production | sed 's/:[^@]*@/:***@/g'
+
+            # Test DNS resolution from the host itself
+            echo "=== DNS Pre-check (from host) ==="
+            DB_HOST=$(grep "^DATABASE_DIRECT_URL" .env.production | head -1 | sed -e 's/.*@//' -e 's/[:/].*//')
+            echo "DB Host: [$DB_HOST]"
+            cat /etc/resolv.conf || true
+            getent hosts "$DB_HOST" 2>&1 || nslookup "$DB_HOST" 2>&1 || host "$DB_HOST" 2>&1 || echo "HOST DNS FAILED"
+
+            # Test DNS from inside a container
+            echo "=== DNS Pre-check (from container) ==="
+            docker run --rm --network host --dns 8.8.8.8 "$IMAGE" \
+              python3 -c "import socket; print(socket.getaddrinfo('$DB_HOST', 5432, socket.AF_INET)[:1])" 2>&1 \
+              || echo "CONTAINER DNS FAILED — will retry with explicit DNS servers"
+
             # Run migrations against Neon before switching traffic
             echo "=== Running Alembic migrations ==="
             docker run --rm \
               --network host \
+              --dns 8.8.8.8 \
+              --dns 1.1.1.1 \
               --env-file .env.production \
               "$IMAGE" \
               alembic upgrade head
