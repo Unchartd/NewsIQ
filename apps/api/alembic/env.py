@@ -37,7 +37,12 @@ if config.config_file_name is not None:
 # ── Migration URL ─────────────────────────────────────────────────────────────
 # Use the direct (non-pooled) URL for migrations.
 # Neon's PgBouncer pooled endpoint does not support DDL reliably.
-_migration_url = settings.database_direct_url
+_migration_url = settings.database_direct_url or settings.DATABASE_URL
+if _migration_url.startswith("postgresql://"):
+    _migration_url = _migration_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif _migration_url.startswith("postgres://"):
+    _migration_url = _migration_url.replace("postgres://", "postgresql+asyncpg://", 1)
+
 config.set_main_option("sqlalchemy.url", _migration_url)
 
 target_metadata = Base.metadata
