@@ -19,53 +19,104 @@ from __future__ import annotations
 EVENT_TAXONOMY: dict[str, list[str]] = {
     # ── Conflict & Security ───────────────────────────────────────────────────
     "ATTACK": [
-        "MISSILE_STRIKE", "DRONE_ATTACK", "AIR_STRIKE", "BOMBING",
-        "SHELLING", "SHOOTING", "STABBING", "AMBUSH", "SUICIDE_ATTACK",
-        "CYBER_ATTACK", "TERRORIST_ATTACK",
+        "MISSILE_STRIKE",
+        "DRONE_ATTACK",
+        "AIR_STRIKE",
+        "BOMBING",
+        "SHELLING",
+        "SHOOTING",
+        "STABBING",
+        "AMBUSH",
+        "SUICIDE_ATTACK",
+        "CYBER_ATTACK",
+        "TERRORIST_ATTACK",
     ],
     "MILITARY_OPERATION": [
-        "INVASION", "GROUND_OFFENSIVE", "NAVAL_OPERATION",
-        "BLOCKADE", "CEASEFIRE", "WITHDRAWAL", "DEPLOYMENT",
+        "INVASION",
+        "GROUND_OFFENSIVE",
+        "NAVAL_OPERATION",
+        "BLOCKADE",
+        "CEASEFIRE",
+        "WITHDRAWAL",
+        "DEPLOYMENT",
     ],
     "DETENTION": [
-        "ARREST", "RAID", "IMPRISONMENT", "EXTRADITION",
-        "HOSTAGE_TAKING", "KIDNAPPING",
+        "ARREST",
+        "RAID",
+        "IMPRISONMENT",
+        "EXTRADITION",
+        "HOSTAGE_TAKING",
+        "KIDNAPPING",
     ],
     "PROTEST": [
-        "DEMONSTRATION", "RIOT", "STRIKE_ACTION", "CIVIL_DISOBEDIENCE",
-        "OCCUPATION", "MARCH", "RALLY",
+        "DEMONSTRATION",
+        "RIOT",
+        "STRIKE_ACTION",
+        "CIVIL_DISOBEDIENCE",
+        "OCCUPATION",
+        "MARCH",
+        "RALLY",
     ],
     "VIOLENCE": [
-        "ASSASSINATION", "MURDER", "MASS_SHOOTING", "HATE_CRIME",
-        "POLICE_BRUTALITY", "ETHNIC_VIOLENCE",
+        "ASSASSINATION",
+        "MURDER",
+        "MASS_SHOOTING",
+        "HATE_CRIME",
+        "POLICE_BRUTALITY",
+        "ETHNIC_VIOLENCE",
     ],
-
     # ── Politics & Governance ─────────────────────────────────────────────────
     "ELECTION": [
-        "PRESIDENTIAL_ELECTION", "PARLIAMENTARY_ELECTION", "LOCAL_ELECTION",
-        "REFERENDUM", "PRIMARY", "RUNOFF",
+        "PRESIDENTIAL_ELECTION",
+        "PARLIAMENTARY_ELECTION",
+        "LOCAL_ELECTION",
+        "REFERENDUM",
+        "PRIMARY",
+        "RUNOFF",
     ],
     "LEGISLATION": [
-        "BILL_PASSED", "BILL_PROPOSED", "LAW_ENACTED", "EXECUTIVE_ORDER",
-        "REGULATION", "AMENDMENT", "REPEAL", "VETO",
+        "BILL_PASSED",
+        "BILL_PROPOSED",
+        "LAW_ENACTED",
+        "EXECUTIVE_ORDER",
+        "REGULATION",
+        "AMENDMENT",
+        "REPEAL",
+        "VETO",
     ],
     "POLICY": [
-        "POLICY_ANNOUNCEMENT", "REFORM", "BAN", "TARIFF",
-        "SUBSIDY", "TAX_CHANGE",
+        "POLICY_ANNOUNCEMENT",
+        "REFORM",
+        "BAN",
+        "TARIFF",
+        "SUBSIDY",
+        "TAX_CHANGE",
     ],
     "SANCTIONS": [
-        "ECONOMIC_SANCTIONS", "TRADE_EMBARGO", "ASSET_FREEZE",
-        "TRAVEL_BAN", "ARMS_EMBARGO",
+        "ECONOMIC_SANCTIONS",
+        "TRADE_EMBARGO",
+        "ASSET_FREEZE",
+        "TRAVEL_BAN",
+        "ARMS_EMBARGO",
     ],
     "DIPLOMACY": [
-        "SUMMIT", "STATE_VISIT", "TREATY", "PEACE_TALKS",
-        "MEDIATION", "RECOGNITION", "RECALL_AMBASSADOR",
+        "SUMMIT",
+        "STATE_VISIT",
+        "TREATY",
+        "PEACE_TALKS",
+        "MEDIATION",
+        "RECOGNITION",
+        "RECALL_AMBASSADOR",
     ],
     "AGREEMENT": [
-        "MOU", "TRADE_DEAL", "PEACE_AGREEMENT", "CEASEFIRE_AGREEMENT",
-        "BILATERAL_AGREEMENT", "MULTILATERAL_AGREEMENT", "CONTRACT",
+        "MOU",
+        "TRADE_DEAL",
+        "PEACE_AGREEMENT",
+        "CEASEFIRE_AGREEMENT",
+        "BILATERAL_AGREEMENT",
+        "MULTILATERAL_AGREEMENT",
+        "CONTRACT",
     ],
-
     # ── Business & Economy ────────────────────────────────────────────────────
     "MERGER": ["ACQUISITION", "TAKEOVER", "BUYOUT", "JOINT_VENTURE"],
     "IPO": ["LISTING", "DELISTING", "STOCK_SPLIT"],
@@ -74,49 +125,77 @@ EVENT_TAXONOMY: dict[str, list[str]] = {
     "BANKRUPTCY": ["INSOLVENCY", "LIQUIDATION", "DEBT_DEFAULT"],
     "PRODUCT_LAUNCH": ["ANNOUNCEMENT", "RELEASE", "RECALL"],
     "INVESTMENT": ["FUNDING_ROUND", "VENTURE_CAPITAL", "PRIVATE_EQUITY"],
-
     # ── Disaster & Environment ────────────────────────────────────────────────
     "NATURAL_DISASTER": [
-        "EARTHQUAKE", "TSUNAMI", "HURRICANE", "TORNADO", "FLOOD",
-        "WILDFIRE", "VOLCANIC_ERUPTION", "LANDSLIDE", "DROUGHT",
+        "EARTHQUAKE",
+        "TSUNAMI",
+        "HURRICANE",
+        "TORNADO",
+        "FLOOD",
+        "WILDFIRE",
+        "VOLCANIC_ERUPTION",
+        "LANDSLIDE",
+        "DROUGHT",
     ],
     "WEATHER": [
-        "EXTREME_HEAT", "EXTREME_COLD", "STORM", "BLIZZARD",
-        "HEATWAVE", "CYCLONE",
+        "EXTREME_HEAT",
+        "EXTREME_COLD",
+        "STORM",
+        "BLIZZARD",
+        "HEATWAVE",
+        "CYCLONE",
     ],
     "ACCIDENT": [
-        "PLANE_CRASH", "TRAIN_DERAILMENT", "INDUSTRIAL_ACCIDENT",
-        "BUILDING_COLLAPSE", "EXPLOSION", "SHIPWRECK",
+        "PLANE_CRASH",
+        "TRAIN_DERAILMENT",
+        "INDUSTRIAL_ACCIDENT",
+        "BUILDING_COLLAPSE",
+        "EXPLOSION",
+        "SHIPWRECK",
     ],
     "ENVIRONMENTAL": [
-        "OIL_SPILL", "POLLUTION", "DEFORESTATION",
-        "CLIMATE_REPORT", "EMISSIONS",
+        "OIL_SPILL",
+        "POLLUTION",
+        "DEFORESTATION",
+        "CLIMATE_REPORT",
+        "EMISSIONS",
     ],
-
     # ── Science & Technology ──────────────────────────────────────────────────
     "DISCOVERY": ["SCIENTIFIC_BREAKTHROUGH", "MEDICAL_DISCOVERY", "ARCHAEOLOGICAL_FIND"],
     "SPACE": ["LAUNCH", "LANDING", "SPACE_MISSION", "SATELLITE"],
     "AI_TECH": ["AI_MODEL_RELEASE", "AI_REGULATION", "AI_BREAKTHROUGH"],
     "HEALTH": [
-        "DISEASE_OUTBREAK", "PANDEMIC", "VACCINE", "DRUG_APPROVAL",
-        "HEALTH_ADVISORY", "RECALL_DRUG",
+        "DISEASE_OUTBREAK",
+        "PANDEMIC",
+        "VACCINE",
+        "DRUG_APPROVAL",
+        "HEALTH_ADVISORY",
+        "RECALL_DRUG",
     ],
-
     # ── Sports ────────────────────────────────────────────────────────────────
     "SPORTS": [
-        "MATCH", "TOURNAMENT", "CHAMPIONSHIP", "TRANSFER",
-        "INJURY", "DOPING", "RECORD", "RETIREMENT",
+        "MATCH",
+        "TOURNAMENT",
+        "CHAMPIONSHIP",
+        "TRANSFER",
+        "INJURY",
+        "DOPING",
+        "RECORD",
+        "RETIREMENT",
     ],
-
     # ── Social & Culture ──────────────────────────────────────────────────────
     "DEATH": ["OBITUARY", "EXECUTION"],
     "AWARD": ["PRIZE", "HONOR", "RECOGNITION_AWARD"],
     "SCANDAL": ["CORRUPTION", "FRAUD", "COVER_UP"],
     "LEGAL": [
-        "LAWSUIT", "VERDICT", "INDICTMENT", "SETTLEMENT",
-        "APPEAL", "RULING", "INVESTIGATION",
+        "LAWSUIT",
+        "VERDICT",
+        "INDICTMENT",
+        "SETTLEMENT",
+        "APPEAL",
+        "RULING",
+        "INVESTIGATION",
     ],
-
     # ── Catch-all ─────────────────────────────────────────────────────────────
     "OTHER": [],
 }
@@ -166,7 +245,6 @@ SYNONYM_MAP: dict[str, str] = {
     "killed": "VIOLENCE",
     "mass shooting": "VIOLENCE",
     "lynched": "VIOLENCE",
-
     # Politics
     "elected": "ELECTION",
     "voted": "ELECTION",
@@ -201,7 +279,6 @@ SYNONYM_MAP: dict[str, str] = {
     "march": "PROTEST",
     "rally": "PROTEST",
     "sit-in": "PROTEST",
-
     # Business
     "merged": "MERGER",
     "merger": "MERGER",
@@ -231,7 +308,6 @@ SYNONYM_MAP: dict[str, str] = {
     "quarterly results": "EARNINGS",
     "reported earnings": "EARNINGS",
     "profit warning": "EARNINGS",
-
     # Disaster
     "earthquake": "NATURAL_DISASTER",
     "tsunami": "NATURAL_DISASTER",
@@ -257,7 +333,6 @@ SYNONYM_MAP: dict[str, str] = {
     "explosion": "ACCIDENT",
     "collapsed": "ACCIDENT",
     "building collapse": "ACCIDENT",
-
     # Science & Health
     "outbreak": "HEALTH",
     "pandemic": "HEALTH",
@@ -269,7 +344,6 @@ SYNONYM_MAP: dict[str, str] = {
     "space mission": "SPACE",
     "satellite": "SPACE",
     "landed on": "SPACE",
-
     # Legal
     "sued": "LEGAL",
     "lawsuit": "LEGAL",
@@ -283,7 +357,6 @@ SYNONYM_MAP: dict[str, str] = {
     "appeal": "LEGAL",
     "investigation": "LEGAL",
     "settled": "LEGAL",
-
     # Other
     "died": "DEATH",
     "passed away": "DEATH",

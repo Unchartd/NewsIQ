@@ -16,24 +16,15 @@ Rate limiting:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_combine,
-    wait_exponential,
-    wait_random,
-)
 
 from app.core.config import settings
-from app.services.event_taxonomy import canonicalize_event_type, get_all_canonical_types
+from app.services.event_taxonomy import canonicalize_event_type
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +93,7 @@ class ExtractedArticleEntity(BaseModel):
 class ArticleEventResponse(BaseModel):
     """Response schema for per-article event + entity extraction."""
 
-    primary_event: ExtractedEvent = Field(
-        description="The main event described in the article"
-    )
+    primary_event: ExtractedEvent = Field(description="The main event described in the article")
     secondary_events: list[ExtractedEvent] = Field(
         default_factory=list,
         description="Any secondary events mentioned in the article",
@@ -134,12 +123,36 @@ class EventService:
     ) -> str:
         # Provide a representative sample of canonical types
         sample_types = [
-            "ATTACK", "DETENTION", "ELECTION", "PROTEST", "AGREEMENT",
-            "MERGER", "ACQUISITION", "POLICY", "SANCTIONS", "NATURAL_DISASTER",
-            "WEATHER", "SPORTS", "DEATH", "LEGAL", "HEALTH",
-            "DIPLOMACY", "MILITARY_OPERATION", "LAYOFF", "PRODUCT_LAUNCH",
-            "INVESTMENT", "ACCIDENT", "SCANDAL", "LEGISLATION", "VIOLENCE",
-            "IPO", "EARNINGS", "BANKRUPTCY", "SPACE", "AI_TECH", "DISCOVERY",
+            "ATTACK",
+            "DETENTION",
+            "ELECTION",
+            "PROTEST",
+            "AGREEMENT",
+            "MERGER",
+            "ACQUISITION",
+            "POLICY",
+            "SANCTIONS",
+            "NATURAL_DISASTER",
+            "WEATHER",
+            "SPORTS",
+            "DEATH",
+            "LEGAL",
+            "HEALTH",
+            "DIPLOMACY",
+            "MILITARY_OPERATION",
+            "LAYOFF",
+            "PRODUCT_LAUNCH",
+            "INVESTMENT",
+            "ACCIDENT",
+            "SCANDAL",
+            "LEGISLATION",
+            "VIOLENCE",
+            "IPO",
+            "EARNINGS",
+            "BANKRUPTCY",
+            "SPACE",
+            "AI_TECH",
+            "DISCOVERY",
         ]
 
         return (
@@ -227,9 +240,7 @@ class EventService:
         normalized_secondary = []
         for evt in secondary:
             if isinstance(evt, dict):
-                evt["event_type"] = canonicalize_event_type(
-                    evt.get("event_type", "OTHER")
-                )
+                evt["event_type"] = canonicalize_event_type(evt.get("event_type", "OTHER"))
                 evt.setdefault("actors", [])
                 evt.setdefault("targets", [])
                 evt.setdefault("objects", [])
@@ -249,11 +260,13 @@ class EventService:
                 val = str(ent.get("value", "")).strip()
                 etype = str(ent.get("type", "PERSON")).strip().upper()
                 if val:
-                    normalized_entities.append(ExtractedArticleEntity(
-                        value=val,
-                        type=etype,
-                        canonical_name=ent.get("canonical_name"),
-                    ))
+                    normalized_entities.append(
+                        ExtractedArticleEntity(
+                            value=val,
+                            type=etype,
+                            canonical_name=ent.get("canonical_name"),
+                        )
+                    )
 
         return ArticleEventResponse(
             primary_event=ExtractedEvent(**primary),
@@ -263,9 +276,7 @@ class EventService:
 
     # ── Mock fallback ─────────────────────────────────────────────────────────
 
-    def _mock_extraction(
-        self, title: str, content: str
-    ) -> ArticleEventResponse:
+    def _mock_extraction(self, title: str, content: str) -> ArticleEventResponse:
         """Deterministic mock for local dev — clearly marked."""
         return ArticleEventResponse(
             primary_event=ExtractedEvent(
@@ -300,11 +311,13 @@ class EventService:
             published_at: ISO 8601 publication timestamp (NOT used as event_time)
         """
         if not title and not content:
-            raise ValueError("Cannot extract events from empty article (both title and content are missing).")
+            raise ValueError(
+                "Cannot extract events from empty article (both title and content are missing)."
+            )
 
         prompt = self._build_extraction_prompt(title, content, published_at)
         model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-        
+
         from app.llm_gateway.request_manager import llm_gateway
 
         response = await llm_gateway.execute_request(
@@ -317,8 +330,7 @@ class EventService:
 
         if response.parsed:
             return response.parsed
-        
-        import json
+
         data = json.loads(response.content)
         return self._normalize_response(data)
 
@@ -331,17 +343,13 @@ class EventService:
         This is NOT a contradiction in the journalistic sense — just a signal
         that different sources report different timings for the same event.
         """
-        times = [
-            e.event_time for e in events
-            if e.event_time and e.event_time.strip()
-        ]
+        times = [e.event_time for e in events if e.event_time and e.event_time.strip()]
         if len(times) < 2:
             return False
 
         # Simple heuristic: if we have at least 2 distinct, non-null event times
         unique_times = set(times)
         return len(unique_times) > 1
-
 
     @staticmethod
     def compute_event_fingerprint(event: ExtractedEvent) -> str:

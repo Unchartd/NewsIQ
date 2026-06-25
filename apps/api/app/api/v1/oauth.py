@@ -9,12 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.auth import _set_access_cookie, _set_refresh_cookie
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token
 from app.models.models import OAuthAccount, User, UserPreference
 from app.services.auth_service import AuthService
-from app.api.v1.auth import _set_access_cookie, _set_refresh_cookie
 
 router = APIRouter()
 
@@ -49,8 +49,9 @@ async def google_login():
         "prompt": "consent",
     }
     url = f"{GOOGLE_AUTHORIZE_URL}?{urlencode(params)}"
-    
+
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse(url=url)
 
 
@@ -90,26 +91,26 @@ async def google_callback(
         raise HTTPException(status_code=400, detail="Email not provided by Google.")
 
     # Check if user already exists via OAuth account
-    result = await db.execute(
-        select(OAuthAccount).where(
-            OAuthAccount.provider == "google",
-            OAuthAccount.provider_account_id == google_id,
-        )
+    oauth_stmt = select(OAuthAccount).where(
+        OAuthAccount.provider == "google",
+        OAuthAccount.provider_account_id == google_id,
     )
-    oauth_account = result.scalar_one_or_none()
+    oauth_res = await db.execute(oauth_stmt)
+    oauth_account = oauth_res.scalar_one_or_none()
 
+    user: User | None = None
     if oauth_account:
         # Existing OAuth user — login
-        result = await db.execute(
-            select(User).where(User.id == oauth_account.user_id, User.status == "active")
-        )
-        user = result.scalar_one_or_none()
+        user_stmt = select(User).where(User.id == oauth_account.user_id, User.status == "active")
+        user_res = await db.execute(user_stmt)
+        user = user_res.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=403, detail="Account deactivated.")
     else:
         # Check if user exists by email (registered via email/password)
-        result = await db.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
+        email_stmt = select(User).where(User.email == email)
+        email_res = await db.execute(email_stmt)
+        user = email_res.scalar_one_or_none()
 
         if not user:
             # Create new user
@@ -170,8 +171,9 @@ async def google_callback(
     redirect_url = f"{frontend_url}/auth/callback?access_token={access_token}"
 
     from fastapi.responses import RedirectResponse
+
     redirect_response = RedirectResponse(url=redirect_url)
-    
+
     _set_refresh_cookie(redirect_response, refresh_token)
     _set_access_cookie(redirect_response, access_token)
 

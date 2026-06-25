@@ -12,7 +12,7 @@ data is in PostgreSQL — Qdrant only stores the vectors.
 
 import logging
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
@@ -32,7 +32,7 @@ class VectorService:
         self.client = AsyncQdrantClient(
             host=settings.QDRANT_HOST,
             port=settings.QDRANT_PORT,
-            timeout=30.0,
+            timeout=30,
         )
         self._collection_ready = False
 
@@ -139,8 +139,7 @@ class VectorService:
         await self.init_collection()
         try:
             points = [
-                models.PointStruct(id=str(aid), vector=vec, payload=pl)
-                for aid, vec, pl in items
+                models.PointStruct(id=str(aid), vector=vec, payload=pl) for aid, vec, pl in items
             ]
             await self.client.upsert(
                 collection_name=COLLECTION_NAME,
@@ -216,9 +215,7 @@ class VectorService:
             logger.error("Qdrant similarity search failed: %s", exc)
             return []
 
-    async def retrieve_vectors(
-        self, article_ids: list[str]
-    ) -> dict[str, list[float]]:
+    async def retrieve_vectors(self, article_ids: list[str]) -> dict[str, list[float]]:
         """Retrieve vectors for a list of article IDs.
 
         Returns a dict mapping article_id_str → vector, containing only
@@ -234,11 +231,7 @@ class VectorService:
                 with_vectors=True,
                 with_payload=False,
             )
-            return {
-                str(p.id): p.vector  # type: ignore[index]
-                for p in points
-                if p.vector
-            }
+            return {str(p.id): cast(list[float], p.vector) for p in points if p.vector}
         except Exception as exc:
             logger.error("Qdrant retrieve failed: %s", exc)
             return {}

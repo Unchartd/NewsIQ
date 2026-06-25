@@ -26,7 +26,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    Numeric,
     String,
     Text,
 )
@@ -68,9 +67,7 @@ class PipelineRunModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=_generate_uuid
     )
-    trace_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, index=True
-    )
+    trace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), unique=True, index=True)
     trigger: Mapped[str] = mapped_column(
         String(50), default="manual"
     )  # celery_beat, manual, replay, api
@@ -91,9 +88,7 @@ class PipelineRunModel(Base):
     successful_stages: Mapped[int] = mapped_column(Integer, default=0)
     failed_stages: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_payload: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
-    )
+    metadata_payload: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
     __table_args__ = (
         Index("idx_pipeline_runs_started", "started_at"),
@@ -133,9 +128,7 @@ class StageRunModel(Base):
     article_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
-    metadata_payload: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
-    )
+    metadata_payload: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
     __table_args__ = (
         Index("idx_stage_runs_stage", "stage"),
@@ -162,8 +155,10 @@ class LLMTraceModel(Base):
         UUID(as_uuid=True), primary_key=True, default=_generate_uuid
     )
     run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
-        nullable=True, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     trace_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
@@ -190,7 +185,8 @@ class LLMTraceModel(Base):
         UUID(as_uuid=True), nullable=True, index=True
     )
     prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("prompt_versions.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("prompt_versions.id", ondelete="SET NULL"),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
@@ -248,7 +244,8 @@ class CostRecordModel(Base):
         UUID(as_uuid=True), nullable=True, index=True
     )
     run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
     provider: Mapped[str] = mapped_column(String(50))
@@ -282,24 +279,20 @@ class RetryHistoryModel(Base):
         UUID(as_uuid=True), primary_key=True, default=_generate_uuid
     )
     run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
-        nullable=True, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
-    trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
+    trace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     stage: Mapped[str] = mapped_column(String(100))
     attempt_number: Mapped[int] = mapped_column(Integer)
     error_type: Mapped[str] = mapped_column(String(255))
     error_message: Mapped[str] = mapped_column(Text)
     error_traceback: Mapped[str | None] = mapped_column(Text, nullable=True)
     wait_seconds: Mapped[float] = mapped_column(Float, default=0.0)
-    story_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
-    article_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
+    story_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    article_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
 
 
@@ -315,9 +308,7 @@ class ErrorLogModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=_generate_uuid
     )
-    run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True
-    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     trace_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
@@ -328,15 +319,11 @@ class ErrorLogModel(Base):
     error_type: Mapped[str] = mapped_column(String(255))
     error_message: Mapped[str] = mapped_column(Text)
     error_traceback: Mapped[str | None] = mapped_column(Text, nullable=True)
-    severity: Mapped[str] = mapped_column(
-        String(20), default="error"
-    )  # warning, error, critical
+    severity: Mapped[str] = mapped_column(String(20), default="error")  # warning, error, critical
     story_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
-    article_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     resolved: Mapped[bool] = mapped_column(Boolean, default=False)
     resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
@@ -359,8 +346,10 @@ class PipelineFailureModel(Base):
         UUID(as_uuid=True), nullable=True, index=True
     )
     run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
-        nullable=True, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     story_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
@@ -377,7 +366,9 @@ class PipelineFailureModel(Base):
     raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     exception: Mapped[str] = mapped_column(Text)
     stack_trace: Mapped[str] = mapped_column(Text)
-    error_category: Mapped[str] = mapped_column(String(50))  # system_error, llm_error, data_error, agent_error
+    error_category: Mapped[str] = mapped_column(
+        String(50)
+    )  # system_error, llm_error, data_error, agent_error
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     latency: Mapped[float] = mapped_column(Float, default=0.0)
@@ -420,9 +411,7 @@ class PromptVersionModel(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
 
-    __table_args__ = (
-        Index("idx_prompt_versions_stage", "stage"),
-    )
+    __table_args__ = (Index("idx_prompt_versions_stage", "stage"),)
 
 
 # ──────────────────────────────────────────────
@@ -469,9 +458,7 @@ class HumanReviewModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=_generate_uuid
     )
-    story_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), index=True
-    )
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )  # FK to users — nullable for system reviews
@@ -514,21 +501,18 @@ class FunctionRunModel(Base):
     function_name: Mapped[str] = mapped_column(String(255), index=True)
     caller: Mapped[str] = mapped_column(String(255), default="system")
     run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
-        nullable=True, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     trace_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
-    span_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True
-    )
+    span_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     execution_time_ms: Mapped[float] = mapped_column(Float, default=0.0)
-    status: Mapped[str] = mapped_column(
-        String(30), default="success"
-    )  # success, failed
+    status: Mapped[str] = mapped_column(String(30), default="success")  # success, failed
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     arguments: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
-

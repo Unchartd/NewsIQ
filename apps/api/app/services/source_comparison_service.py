@@ -12,13 +12,11 @@ and an LLM validates and generates readable summaries.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,12 +26,11 @@ from app.core.config import settings
 from app.models.models import (
     Article,
     ArticleEvent,
-    Story,
     Source,
-    StorySourceCoverage,
-    StoryDifference,
-    StoryContradiction,
     StoryArticle,
+    StoryContradiction,
+    StoryDifference,
+    StorySourceCoverage,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,7 +89,7 @@ class SourceComparisonService:
         )
 
         model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-        
+
         from app.llm_gateway.request_manager import llm_gateway
 
         try:
@@ -106,9 +103,10 @@ class SourceComparisonService:
 
             if response.parsed:
                 return response.parsed
-            
+
             try:
                 import json
+
                 data = json.loads(response.content)
                 return SourceComparisonResolution(**data)
             except Exception:
@@ -156,7 +154,10 @@ class SourceComparisonService:
 
         # Delete existing coverages and differences for this story to avoid duplication or stale data
         from sqlalchemy import delete
-        await session.execute(delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id))
+
+        await session.execute(
+            delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
+        )
         await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
 
         if not rows:
@@ -269,9 +270,13 @@ class SourceComparisonService:
             if unique_targets:
                 unique_parts.append(f"unique targets: {', '.join(sorted(list(unique_targets)))}")
             if unique_locations:
-                unique_parts.append(f"unique locations: {', '.join(sorted(list(unique_locations)))}")
+                unique_parts.append(
+                    f"unique locations: {', '.join(sorted(list(unique_locations)))}"
+                )
             if unique_numbers:
-                unique_parts.append(f"unique numerical facts: {', '.join(sorted(list(unique_numbers)))}")
+                unique_parts.append(
+                    f"unique numerical facts: {', '.join(sorted(list(unique_numbers)))}"
+                )
             unique_summary = "; ".join(unique_parts)
 
             missing_parts = []
@@ -280,9 +285,13 @@ class SourceComparisonService:
             if missing_targets:
                 missing_parts.append(f"omitted targets: {', '.join(sorted(list(missing_targets)))}")
             if missing_locations:
-                missing_parts.append(f"omitted locations: {', '.join(sorted(list(missing_locations)))}")
+                missing_parts.append(
+                    f"omitted locations: {', '.join(sorted(list(missing_locations)))}"
+                )
             if missing_numbers:
-                missing_parts.append(f"omitted numerical facts: {', '.join(sorted(list(missing_numbers)))}")
+                missing_parts.append(
+                    f"omitted numerical facts: {', '.join(sorted(list(missing_numbers)))}"
+                )
             missing_summary = "; ".join(missing_parts)
 
             # Contradictions involving this source
@@ -293,7 +302,7 @@ class SourceComparisonService:
             contradictions_summary = "; ".join(src_contras)
 
             # 7. Perform hybrid analysis/synthesis
-            res = await self._analyze_with_llm(
+            resolution = await self._analyze_with_llm(
                 src_name=src_name,
                 unique_summary=unique_summary,
                 missing_summary=missing_summary,
@@ -302,13 +311,13 @@ class SourceComparisonService:
             )
 
             # 8. Override focus_area if empty or default to event types if LLM fallback used
-            focus_area = res.focus_area
+            focus_area = resolution.focus_area
             if not focus_area or focus_area == f"General coverage by {src_name}.":
                 if src_event_types:
                     types_str = ", ".join(sorted(list(src_event_types))).replace("_", " ").lower()
                     focus_area = f"Focused on {types_str} details."
                 else:
-                    focus_area = f"General coverage."
+                    focus_area = "General coverage."
 
             # Max length constraint on focus_area
             focus_area = focus_area[:100]
@@ -319,7 +328,7 @@ class SourceComparisonService:
                 story_id=story_id,
                 source_id=src_id,
                 focus_area=focus_area,
-                published_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                published_at=datetime.now(UTC).replace(tzinfo=None),
             )
             session.add(coverage)
             saved_coverage.append(coverage)
@@ -329,9 +338,9 @@ class SourceComparisonService:
                 id=uuid.uuid4(),
                 story_id=story_id,
                 source_id=src_id,
-                unique_information=res.unique_information or None,
-                missing_information=res.missing_information or None,
-                contradictions=res.contradictions or None,
+                unique_information=resolution.unique_information or None,
+                missing_information=resolution.missing_information or None,
+                contradictions=resolution.contradictions or None,
             )
             session.add(diff)
             saved_differences.append(diff)

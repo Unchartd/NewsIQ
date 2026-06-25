@@ -1,12 +1,19 @@
 """Redis caching service for hot stories, trending feeds, and search results.
 
 Implements the cache key scheme documented in the Backend Schema Document:
-- story:{storyId}        TTL 15 minutes
-- trending:{scope}       TTL 5 minutes
-- search:{hash}          TTL 30 minutes
+  story:{storyId}        TTL 15 minutes
+  trending:{scope}       TTL 5 minutes
+  search:{hash}          TTL 30 minutes
 
 All operations fail open: if Redis is unavailable, cache reads return None
 and writes are silently skipped so the API keeps serving from PostgreSQL.
+
+TLS / Upstash support:
+  When REDIS_URL starts with "rediss://", the client connects over TLS with
+  ssl_cert_reqs disabled (Upstash manages its own certificate).
+
+Migration to self-hosted Redis:
+  Change REDIS_URL to your Redis host (redis://). No code changes needed.
 """
 
 import hashlib
@@ -26,16 +33,38 @@ TTL_TRENDING = 5 * 60
 TTL_SEARCH = 30 * 60
 
 
+def _make_redis_client(url: str) -> aioredis.Redis | None:
+    """Create an async Redis client with automatic TLS detection.
+
+    Handles both:
+      redis://host:port   → plain TCP
+      rediss://host:port  → TLS (Upstash, Redis Cloud, etc.)
+    """
+    if not url:
+        return None
+    try:
+        kwargs: dict = {"decode_responses": True}
+        if url.startswith("rediss://"):
+            import ssl
+
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            kwargs["ssl"] = True
+            kwargs["ssl_cert_reqs"] = None
+        return aioredis.from_url(url, **kwargs)
+    except Exception as e:
+        logger.error("Failed to create Redis client for %s: %s", url.split("@")[-1], e)
+        return None
+
+
 class CacheService:
     """Thin async Redis wrapper with JSON serialization and fail-open semantics."""
 
     def __init__(self) -> None:
-        self._redis: aioredis.Redis | None = None
-        if settings.REDIS_URL:
-            try:
-                self._redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-            except Exception as e:  # pragma: no cover
-                logger.error("Failed to initialize Redis cache client: %s", e)
+        self._redis: aioredis.Redis | None = _make_redis_client(settings.REDIS_URL)
+        if self._redis is None:
+            logger.warning("CacheService: Redis client not initialized. Caching disabled.")
 
     async def get(self, key: str) -> Any | None:
         """Return the cached JSON value for a key, or None on miss/error."""
@@ -75,6 +104,15 @@ class CacheService:
                 await self._redis.delete(key)
         except Exception as e:
             logger.warning("Cache DELETE pattern failed for %s: %s", pattern, e)
+
+    async def ping(self) -> bool:
+        """Return True if Redis is reachable. Used for health checks."""
+        if not self._redis:
+            return False
+        try:
+            return await self._redis.ping()
+        except Exception:
+            return False
 
     # ─────────────────────────────────────────────
     # Key builders

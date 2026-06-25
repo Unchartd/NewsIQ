@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff (lint + format check)
+        run: |
+          ruff check apps/api/app --output-format=github
+          ruff format apps/api/app --check
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: uv pip install --system -e ".[dev]" --no-cache
+
+      - name: Run mypy
+        working-directory: apps/api
+        run: mypy app --ignore-missing-imports --no-strict-optional
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: newsiq_test
+          POSTGRES_PASSWORD: newsiq_test
+          POSTGRES_DB: newsiq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://newsiq_test:newsiq_test@localhost:5432/newsiq_test
+      DATABASE_DIRECT_URL: postgresql+asyncpg://newsiq_test:newsiq_test@localhost:5432/newsiq_test
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+      STORAGE_BACKEND: local
+      SECRET_KEY: test-secret-key-not-for-production-use
+      DEBUG: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies (CPU-only torch)
+        working-directory: apps/api
+        run: |
+          uv pip install --system --no-cache torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --system --no-cache -e ".[dev]"
+
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_sm
+
+      - name: Run Alembic migrations
+        working-directory: apps/api
+        run: alembic upgrade head
+
+      - name: Run tests
+        working-directory: apps/api
+        run: |
+          pytest tests/ -v \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --tb=short
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: apps/api/coverage.xml
+          fail_ci_if_error: false

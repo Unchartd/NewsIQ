@@ -20,6 +20,7 @@ def generate_uuid() -> uuid.UUID:
     """Generate a UUID v7 (time-ordered) if uuid7 is available, else v4."""
     try:
         from uuid7 import uuid7
+
         return uuid7()
     except ImportError:
         return uuid.uuid4()
@@ -36,7 +37,11 @@ class ConsentPreference(Base):
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=True,
+        index=True,
     )
     anonymous_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
 
@@ -49,7 +54,9 @@ class ConsentPreference(Base):
     consent_version: Mapped[str] = mapped_column(String(50), nullable=False)
 
     accepted_at: Mapped[datetime] = mapped_column(DateTime, default=_now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now, nullable=False
+    )
 
     user: Mapped["User"] = relationship(back_populates="consent_preference")
 
@@ -65,8 +72,10 @@ class ConsentAuditLog(Base):
     )
     anonymous_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
-    action: Mapped[str] = mapped_column(String(50), nullable=False)  # accept_all, reject_all, update_settings, withdrawn_consent, reset_consent
-    
+    action: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # accept_all, reject_all, update_settings, withdrawn_consent, reset_consent
+
     old_value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     new_value: Mapped[dict] = mapped_column(JSONB, nullable=False)
 

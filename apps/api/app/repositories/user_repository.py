@@ -26,13 +26,17 @@ class UserRepository:
     async def get_by_verification_token(self, token: str) -> User | None:
         """Fetch a User by email verification token."""
         hashed_token = hashlib.sha256(token.encode()).hexdigest()
-        result = await self.db.execute(select(User).where(User.email_verification_token == hashed_token))
+        result = await self.db.execute(
+            select(User).where(User.email_verification_token == hashed_token)
+        )
         return result.scalar_one_or_none()
 
     async def get_by_password_reset_token(self, token: str) -> User | None:
         """Fetch a User by password reset token."""
         hashed_token = hashlib.sha256(token.encode()).hexdigest()
-        result = await self.db.execute(select(User).where(User.password_reset_token == hashed_token))
+        result = await self.db.execute(
+            select(User).where(User.password_reset_token == hashed_token)
+        )
         return result.scalar_one_or_none()
 
     async def create(self, user: User) -> User:

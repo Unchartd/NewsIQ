@@ -1,9 +1,19 @@
-"""Alembic environment configuration for async SQLAlchemy."""
+"""Alembic environment configuration for async SQLAlchemy.
+
+Migration URL Strategy:
+  - Uses DATABASE_DIRECT_URL (non-pooled, no PgBouncer) for migrations.
+  - PgBouncer (Neon's pooled endpoint) does not support DDL commands reliably.
+  - Falls back to DATABASE_URL if DATABASE_DIRECT_URL is not configured.
+
+This means:
+  - App uses: postgresql+asyncpg://...neon.tech/db?pgbouncer=true  (pooled)
+  - Alembic uses: postgresql+asyncpg://...neon.tech/db             (direct)
+"""
 
 import asyncio
 import sys
-from pathlib import Path
 from logging.config import fileConfig
+from pathlib import Path
 
 # Ensure the project root (apps/api) is on sys.path so 'app' is importable
 # regardless of how alembic is invoked (uv run, venv .exe, or system alembic).
@@ -13,16 +23,22 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from app.core.config import settings
+
+# Import all models so metadata is populated
 from app.core.database import Base
-from app.models import *  # noqa: F401, F403 — import all models so metadata is populated
+from app.models import *  # noqa: F401, F403
 
 config = context.config
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url with the dynamic setting (which handles Docker vs Local envs correctly)
-from app.core.config import settings
-config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
+# ── Migration URL ─────────────────────────────────────────────────────────────
+# Use the direct (non-pooled) URL for migrations.
+# Neon's PgBouncer pooled endpoint does not support DDL reliably.
+_migration_url = settings.database_direct_url
+config.set_main_option("sqlalchemy.url", _migration_url)
 
 target_metadata = Base.metadata
 
@@ -40,14 +56,42 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection):
+def do_run_migrations(connection) -> None:
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    tables = inspector.get_table_names()
+
+    if "alembic_version" not in tables:
+        # Fresh database: create all tables from metadata and stamp head
+        Base.metadata.create_all(bind=connection)
+
+        # Get the head revision ID
+        script = ScriptDirectory.from_config(config)
+        head_revision = script.get_current_head()
+
+        # Create alembic_version table and insert head revision
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+        )
+        connection.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES (:head)"),
+            {"head": head_revision},
+        )
+        return
+
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
 
 
 async def run_async_migrations() -> None:
-    """Run migrations in 'online' mode with an async engine."""
+    """Run migrations in 'online' mode with an async engine.
+
+    Uses NullPool to avoid connection pool overhead during migrations.
+    This is the correct approach for short-lived migration processes.
+    """
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

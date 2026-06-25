@@ -20,12 +20,14 @@ def generate_uuid() -> uuid.UUID:
     """Generate a UUID v7 (time-ordered) if uuid7 is available, else v4."""
     try:
         from uuid7 import uuid7
+
         return uuid7()
     except ImportError:
         return uuid.uuid4()
 
 
 if TYPE_CHECKING:
+    from app.models.consent import ConsentPreference
     from app.models.models import (
         ApiKey,
         Bookmark,
@@ -38,8 +40,6 @@ if TYPE_CHECKING:
         UserLocation,
     )
     from app.models.session import Session
-    from app.models.consent import ConsentPreference
-
 
 
 class User(Base):
@@ -65,7 +65,9 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Email verification support
-    email_verification_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    email_verification_token: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
     email_verification_expiry: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Password reset support

@@ -15,6 +15,7 @@ automatically inherits the trace context via structlog bindings.
 
 from __future__ import annotations
 
+import logging
 import time
 import traceback
 import uuid
@@ -25,8 +26,11 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from app.core.langfuse_client import langfuse_client
 from sqlalchemy import select
+
+from app.core.langfuse_client import langfuse_client
+
+logger = logging.getLogger(__name__)
 
 # ── Context Variables ─────────────────────────────────────────────────────────
 # These propagate trace IDs across async boundaries and Celery workers.
@@ -37,7 +41,10 @@ span_id_ctx: ContextVar[str] = ContextVar("span_id", default="")
 stage_ctx: ContextVar[str] = ContextVar("stage", default="")
 story_id_ctx: ContextVar[str] = ContextVar("story_id", default="")
 article_id_ctx: ContextVar[str] = ContextVar("article_id", default="")
-active_pipeline_run_ctx: ContextVar[PipelineRun | None] = ContextVar("active_pipeline_run", default=None)
+active_pipeline_run_ctx: ContextVar[PipelineRun | None] = ContextVar(
+    "active_pipeline_run", default=None
+)
+
 
 def _to_uuid(val: Any) -> uuid.UUID | None:
     if not val:
@@ -164,9 +171,9 @@ class PipelineRun:
         self.stages: list[SpanData] = []
         self.error: str | None = None
         self._tokens: dict[str, int] = {}
-        self._run_id_token = None
-        self._trace_id_token = None
-        self._active_run_token = None
+        self._run_id_token: Any = None
+        self._trace_id_token: Any = None
+        self._active_run_token: Any = None
 
     async def __aenter__(self) -> PipelineRun:
         self._run_id_token = run_id_ctx.set(self.id)
@@ -184,17 +191,17 @@ class PipelineRun:
                     "pipeline_type": self.pipeline_type,
                     "is_replay": self.is_replay,
                     "parent_run_id": self.parent_run_id,
-                }
+                },
             )
         except Exception:
             pass
-        
+
         # Persist initial status (running)
         try:
             await self._persist()
         except Exception:
             pass
-            
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
@@ -255,7 +262,9 @@ class PipelineRun:
                 run.status = self.status.value
                 run.completed_at = self.completed_at
                 if self.completed_at:
-                    run.total_latency_ms = (self.completed_at - self.started_at).total_seconds() * 1000
+                    run.total_latency_ms = (
+                        self.completed_at - self.started_at
+                    ).total_seconds() * 1000
                 run.error = self.error
 
             for span in self.stages:
@@ -300,6 +309,7 @@ async def publish_pipeline_event(data: dict[str, Any]) -> None:
     import redis.asyncio as aioredis
 
     from app.core.config import settings
+
     try:
         r = aioredis.from_url(settings.REDIS_URL)
         await r.publish("newsiq-pipeline-events", json.dumps(data))
@@ -326,14 +336,14 @@ class StageSpan:
         article_id: str | None = None,
     ) -> None:
         self.span_id = str(uuid.uuid4())
-        
+
         # Look up active run if not explicitly provided
         if pipeline_run is None:
             pipeline_run = active_pipeline_run_ctx.get(None)
         if pipeline_run is None:
             # Create a fallback/orphan run so we have trace IDs
             pipeline_run = PipelineRun(trigger="orphan", pipeline_type="incremental")
-            
+
         self.pipeline_run = pipeline_run
         self.stage = stage.value if isinstance(stage, PipelineStage) else stage
         self.story_id = story_id
@@ -348,10 +358,10 @@ class StageSpan:
         self.error_traceback: str | None = None
         self.metadata: dict[str, Any] = {}
         self._start_time: float = 0.0
-        self._span_token = None
-        self._stage_token = None
-        self._story_token = None
-        self._article_token = None
+        self._span_token: Any = None
+        self._stage_token: Any = None
+        self._story_token: Any = None
+        self._article_token: Any = None
         self.input_payload: dict[str, Any] | None = None
         self.output_payload: dict[str, Any] | None = None
 
@@ -382,20 +392,22 @@ class StageSpan:
                 metadata={
                     "story_id": self.story_id,
                     "article_id": self.article_id,
-                }
+                },
             )
         except Exception:
             self.lf_span = None
 
         # Publish start event to Redis
         try:
-            await publish_pipeline_event({
-                "run_id": self.pipeline_run.id,
-                "trace_id": self.pipeline_run.trace_id,
-                "stage": self.stage,
-                "status": "running",
-                "started_at": self.started_at.isoformat() if self.started_at else None,
-            })
+            await publish_pipeline_event(
+                {
+                    "run_id": self.pipeline_run.id,
+                    "trace_id": self.pipeline_run.trace_id,
+                    "stage": self.stage,
+                    "status": "running",
+                    "started_at": self.started_at.isoformat() if self.started_at else None,
+                }
+            )
         except Exception:
             pass
 
@@ -416,14 +428,13 @@ class StageSpan:
             self.status = StageStatus.FAILED
             self.error = str(exc_val)
             self.error_type = exc_type.__name__
-            self.error_traceback = "".join(
-                traceback.format_exception(exc_type, exc_val, exc_tb)
-            )
+            self.error_traceback = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
             self.metadata["error_traceback"] = self.error_traceback
 
             # Record Pipeline Failure
             try:
                 from app.core.failure_recorder import record_pipeline_failure
+
                 provider = self.metadata.get("provider")
                 model = self.metadata.get("model")
                 await record_pipeline_failure(
@@ -449,11 +460,10 @@ class StageSpan:
         # Record Prometheus metrics
         try:
             from app.core.metrics import newsiq_failure_rate, newsiq_latency_seconds
+
             newsiq_latency_seconds.labels(stage=self.stage).observe(elapsed)
             if exc_type:
-                newsiq_failure_rate.labels(
-                    stage=self.stage, error_type=self.error_type
-                ).inc()
+                newsiq_failure_rate.labels(stage=self.stage, error_type=self.error_type).inc()
         except Exception:
             pass
 
@@ -470,15 +480,17 @@ class StageSpan:
 
         # Publish complete event to Redis
         try:
-            await publish_pipeline_event({
-                "run_id": self.pipeline_run.id,
-                "trace_id": self.pipeline_run.trace_id,
-                "stage": self.stage,
-                "status": self.status.value,
-                "latency_ms": self.latency_ms,
-                "error": self.error,
-                "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            })
+            await publish_pipeline_event(
+                {
+                    "run_id": self.pipeline_run.id,
+                    "trace_id": self.pipeline_run.trace_id,
+                    "stage": self.stage,
+                    "status": self.status.value,
+                    "latency_ms": self.latency_ms,
+                    "error": self.error,
+                    "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+                }
+            )
         except Exception:
             pass
 
@@ -623,9 +635,7 @@ LLM_PRICING: dict[str, dict[str, float]] = {
 }
 
 
-def calculate_llm_cost(
-    model: str, input_tokens: int, output_tokens: int
-) -> float:
+def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Calculate cost in USD for an LLM call."""
     pricing = LLM_PRICING.get(model, {"input": 0.0, "output": 0.0})
     input_cost = (input_tokens / 1_000_000) * pricing["input"]
@@ -684,7 +694,7 @@ async def track_llm_call(
                     "provider": call.provider,
                     "story_id": call.story_id,
                     "article_id": call.article_id,
-                }
+                },
             )
         except Exception:
             lf_generation = None
@@ -700,9 +710,7 @@ async def track_llm_call(
     finally:
         call.latency_ms = round((time.perf_counter() - start) * 1000, 2)
         call.total_tokens = call.input_tokens + call.output_tokens
-        call.cost_usd = calculate_llm_cost(
-            call.model, call.input_tokens, call.output_tokens
-        )
+        call.cost_usd = calculate_llm_cost(call.model, call.input_tokens, call.output_tokens)
 
         # End Langfuse generation
         if lf_generation:
@@ -723,6 +731,7 @@ async def track_llm_call(
                 newsiq_provider_calls_total,
                 newsiq_token_usage_total,
             )
+
             newsiq_token_usage_total.labels(
                 provider=call.provider,
                 model=call.model,
@@ -756,16 +765,17 @@ async def track_llm_call(
 
 async def _persist_llm_call(call: LLMCallData) -> None:
     """Persist an LLM call record to the database."""
+    import hashlib
+
+    from sqlalchemy import func, select, update
+
     from app.core.database import async_session_factory
     from app.models.observability_models import LLMTraceModel, PromptVersionModel
-    from sqlalchemy import select, func, update
-    import hashlib
 
     async with async_session_factory() as session:
         # Find active prompt version for this stage
         stmt = select(PromptVersionModel).where(
-            PromptVersionModel.stage == call.stage,
-            PromptVersionModel.is_active == True
+            PromptVersionModel.stage == call.stage, PromptVersionModel.is_active
         )
         res = await session.execute(stmt)
         pv = res.scalar_one_or_none()
@@ -776,18 +786,22 @@ async def _persist_llm_call(call: LLMCallData) -> None:
             user_tmpl = call.user_prompt or ""
             if len(user_tmpl) > 1000:
                 user_tmpl = user_tmpl[:1000] + "\n... [Dynamic Context] ..."
-            
+
             combined = f"stage:{call.stage}\nsys:{sys_prompt}\nuser:{user_tmpl}"
             prompt_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
             # Check if this prompt hash already exists in DB (maybe it was deactivated)
-            stmt_hash = select(PromptVersionModel).where(PromptVersionModel.prompt_hash == prompt_hash)
+            stmt_hash = select(PromptVersionModel).where(
+                PromptVersionModel.prompt_hash == prompt_hash
+            )
             res_hash = await session.execute(stmt_hash)
             pv = res_hash.scalar_one_or_none()
 
             if not pv:
                 # Find current max version for this stage
-                stmt_max = select(func.max(PromptVersionModel.version)).where(PromptVersionModel.stage == call.stage)
+                stmt_max = select(func.max(PromptVersionModel.version)).where(
+                    PromptVersionModel.stage == call.stage
+                )
                 res_max = await session.execute(stmt_max)
                 max_v = res_max.scalar() or 0
                 new_v = max_v + 1

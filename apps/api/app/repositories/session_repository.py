@@ -50,22 +50,16 @@ class SessionRepository:
 
     async def delete_by_token_hash(self, token_hash: str) -> None:
         """Remove a Session by its token hash."""
-        result = await self.db.execute(
-            select(Session).where(Session.token_hash == token_hash)
-        )
+        result = await self.db.execute(select(Session).where(Session.token_hash == token_hash))
         session = result.scalar_one_or_none()
         if session:
             await self.db.delete(session)
 
     async def delete_all_by_user_id(self, user_id: uuid.UUID) -> None:
         """Remove all Sessions for a user."""
-        await self.db.execute(
-            delete(Session).where(Session.user_id == user_id)
-        )
+        await self.db.execute(delete(Session).where(Session.user_id == user_id))
 
     async def delete_expired_sessions(self, now: datetime) -> int:
         """Remove expired sessions and return the count of deleted sessions."""
-        result = await self.db.execute(
-            delete(Session).where(Session.expires_at < now)
-        )
-        return result.rowcount
+        result = await self.db.execute(delete(Session).where(Session.expires_at < now))
+        return result.rowcount  # type: ignore[attr-defined]

@@ -1,13 +1,13 @@
 import logging
-from typing import Dict
 
 logger = logging.getLogger(__name__)
+
 
 class CostTracker:
     """Calculates LLM consumption costs in USD based on token counts and model pricing."""
 
     # Pricing per million tokens (input/output)
-    PRICING_TABLE: Dict[str, Dict[str, float]] = {
+    PRICING_TABLE: dict[str, dict[str, float]] = {
         "gemini-3.5-flash": {"input": 0.15, "output": 0.60},
         "gemini-3.1-pro": {"input": 1.25, "output": 5.00},
         "gemini-3.1-flash-lite": {"input": 0.075, "output": 0.30},
@@ -43,8 +43,8 @@ class CostTracker:
             # Strip any provider prefix (e.g. "openai/gpt-4o-mini" -> "gpt-4o-mini")
             model_key = model.split("/")[-1] if "/" in model else model
             pricing = self.PRICING_TABLE.get(model_key, {"input": 0.0, "output": 0.0})
-        
+
         input_cost = (input_tokens / 1_000_000) * pricing["input"]
         output_cost = (output_tokens / 1_000_000) * pricing["output"]
-        
+
         return round(input_cost + output_cost, 8)

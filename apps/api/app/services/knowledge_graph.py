@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-import uuid
 
-from app.models.models import Article, ArticleEvent, StoryEntity, Source
+from app.models.models import Article, ArticleEvent, Source, StoryEntity
 
 logger = logging.getLogger(__name__)
 
@@ -150,17 +149,21 @@ def build_story_knowledge_graph(
     for sent in story_entities:
         canonical_id = sent.canonical_entity_id or sent.id
         node_id = f"entity_{canonical_id}"
-        
+
         # Link raw values/aliases to this node_id for easy lookup when building edges
         entity_id_map[sent.entity_value.lower()] = node_id
         if sent.canonical_entity:
             entity_id_map[sent.canonical_entity.canonical_name.lower()] = node_id
-            for alias in (sent.canonical_entity.aliases or []):
+            for alias in sent.canonical_entity.aliases or []:
                 entity_id_map[alias.lower()] = node_id
 
             label = sent.canonical_entity.canonical_name
             wikidata_id = sent.canonical_entity.wikidata_id
-            desc = sent.canonical_entity.metadata_payload.get("description") if sent.canonical_entity.metadata_payload else None
+            desc = (
+                sent.canonical_entity.metadata_payload.get("description")
+                if sent.canonical_entity.metadata_payload
+                else None
+            )
         else:
             label = sent.entity_value
             wikidata_id = None
@@ -182,7 +185,7 @@ def build_story_knowledge_graph(
         event_node_id = f"event_{evt.id}"
 
         # Link actors (e.g. PERSON, ORG)
-        for actor in (evt.actors or []):
+        for actor in evt.actors or []:
             actor_lower = actor.lower()
             if actor_lower in entity_id_map:
                 graph.add_edge(
@@ -193,7 +196,7 @@ def build_story_knowledge_graph(
                 )
 
         # Link targets
-        for target in (evt.targets or []):
+        for target in evt.targets or []:
             target_lower = target.lower()
             if target_lower in entity_id_map:
                 graph.add_edge(
@@ -215,7 +218,7 @@ def build_story_knowledge_graph(
                     if k in loc_lower or loc_lower in k:
                         matched_node_id = v
                         break
-            
+
             if matched_node_id:
                 graph.add_edge(
                     source_id=event_node_id,
