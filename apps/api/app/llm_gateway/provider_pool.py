@@ -1,23 +1,25 @@
-import os
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Type, Union
-from pydantic import BaseModel
+import os
+from datetime import datetime
+from typing import Any, Union, cast
+
 from google import genai as google_genai
 from google.genai import types
 from openai import AsyncOpenAI, OpenAI
+from pydantic import BaseModel
 
 from app.core.config import settings
-from app.llm_gateway.base_provider import BaseLLMProvider, GatewayRequest, GatewayResponse, APIKey
+from app.llm_gateway.base_provider import APIKey, BaseLLMProvider, GatewayRequest, GatewayResponse
 
 logger = logging.getLogger(__name__)
+
 
 class APIKeyPool:
     """Manages rotating and cooling down API keys per provider."""
 
     def __init__(self) -> None:
-        self.pools: Dict[str, List[APIKey]] = {}
+        self.pools: dict[str, list[APIKey]] = {}
         self._load_keys()
 
     def _load_keys(self) -> None:
@@ -27,47 +29,65 @@ class APIKeyPool:
         gemini_env = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY or ""
         # Support comma-separated keys for rotation
         for k in [k.strip() for k in gemini_env.split(",") if k.strip()]:
-            gemini_keys.append(APIKey(key=k, provider="google", requests_per_minute=15, requests_per_day=1500))
+            gemini_keys.append(
+                APIKey(key=k, provider="google", requests_per_minute=15, requests_per_day=1500)
+            )
         self.pools["google"] = gemini_keys
 
         # 2. OpenAI Keys
         openai_keys = []
         openai_env = settings.OPENAI_API_KEY or ""
         for k in [k.strip() for k in openai_env.split(",") if k.strip()]:
-            openai_keys.append(APIKey(key=k, provider="openai", requests_per_minute=3, requests_per_day=200))
+            openai_keys.append(
+                APIKey(key=k, provider="openai", requests_per_minute=3, requests_per_day=200)
+            )
         self.pools["openai"] = openai_keys
 
         # 3. Groq Keys (falls back to OpenAI-compatible environment config or mock)
         groq_keys = []
         groq_env = settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
         for k in [k.strip() for k in groq_env.split(",") if k.strip()]:
-            groq_keys.append(APIKey(key=k, provider="groq", requests_per_minute=30, requests_per_day=14400))
+            groq_keys.append(
+                APIKey(key=k, provider="groq", requests_per_minute=30, requests_per_day=14400)
+            )
         self.pools["groq"] = groq_keys
 
         # 3.5. Cerebras Keys
         cerebras_keys = []
         cerebras_env = settings.CEREBRAS_API_KEY or os.environ.get("CEREBRAS_API_KEY", "")
         for k in [k.strip() for k in cerebras_env.split(",") if k.strip()]:
-            cerebras_keys.append(APIKey(key=k, provider="cerebras", requests_per_minute=30, requests_per_day=14400))
+            cerebras_keys.append(
+                APIKey(key=k, provider="cerebras", requests_per_minute=30, requests_per_day=14400)
+            )
         self.pools["cerebras"] = cerebras_keys
 
         # 4. NVIDIA NIM Keys (OpenAI-compatible, https://integrate.api.nvidia.com/v1)
         nvidia_keys = []
         nvidia_env = settings.NVIDIA_API_KEY or os.environ.get("NVIDIA_API_KEY", "")
         for k in [k.strip() for k in nvidia_env.split(",") if k.strip()]:
-            nvidia_keys.append(APIKey(key=k, provider="nvidia", requests_per_minute=15, requests_per_day=5000))
+            nvidia_keys.append(
+                APIKey(key=k, provider="nvidia", requests_per_minute=15, requests_per_day=5000)
+            )
         self.pools["nvidia"] = nvidia_keys
 
         # 5. Fallbacks / Mock keys
-        self.pools["mock"] = [APIKey(key="mock-key-1", provider="mock", requests_per_minute=1000, requests_per_day=100000)]
+        self.pools["mock"] = [
+            APIKey(
+                key="mock-key-1", provider="mock", requests_per_minute=1000, requests_per_day=100000
+            )
+        ]
 
         logger.info(
             "APIKeyPool loaded: google=%d, openai=%d, groq=%d, cerebras=%d, nvidia=%d, mock=%d keys.",
-            len(self.pools["google"]), len(self.pools["openai"]), len(self.pools["groq"]),
-            len(self.pools["cerebras"]), len(self.pools["nvidia"]), len(self.pools["mock"])
+            len(self.pools["google"]),
+            len(self.pools["openai"]),
+            len(self.pools["groq"]),
+            len(self.pools["cerebras"]),
+            len(self.pools["nvidia"]),
+            len(self.pools["mock"]),
         )
 
-    def get_keys(self, provider: str) -> List[APIKey]:
+    def get_keys(self, provider: str) -> list[APIKey]:
         """Return the key pool for a provider."""
         return self.pools.get(provider, [])
 
@@ -85,7 +105,7 @@ def remove_additional_properties(schema: Any) -> Any:
 class GeminiProvider(BaseLLMProvider):
     """Google Gemini Client Provider using the new google-genai SDK."""
 
-    def _prepare_params(self, request: GatewayRequest) -> Dict[str, Any]:
+    def _prepare_params(self, request: GatewayRequest) -> dict[str, Any]:
         """Convert standard GatewayRequest parameters to Gemini SDK generate_content parameters."""
         contents = []
         system_instruction = None
@@ -96,11 +116,15 @@ class GeminiProvider(BaseLLMProvider):
             if role == "system":
                 system_instruction = content
             elif role == "assistant":
-                contents.append(types.Content(role="model", parts=[types.Part.from_text(text=content)]))
+                contents.append(
+                    types.Content(role="model", parts=[types.Part.from_text(text=content)])
+                )
             else:
-                contents.append(types.Content(role="user", parts=[types.Part.from_text(text=content)]))
+                contents.append(
+                    types.Content(role="user", parts=[types.Part.from_text(text=content)])
+                )
 
-        config_args = {
+        config_args: dict[str, Any] = {
             "temperature": request.temperature,
         }
         if system_instruction:
@@ -108,15 +132,22 @@ class GeminiProvider(BaseLLMProvider):
 
         if request.response_format:
             config_args["response_mime_type"] = "application/json"
-            if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+            if isinstance(request.response_format, type) and issubclass(
+                request.response_format, BaseModel
+            ):
                 schema_dict = request.response_format.model_json_schema()
                 config_args["response_schema"] = remove_additional_properties(schema_dict)
             elif isinstance(request.response_format, dict):
                 # Skip OpenAI-style {"type": "json_object"} parameters
-                if request.response_format.get("type") == "json_object" and len(request.response_format) == 1:
+                if (
+                    request.response_format.get("type") == "json_object"
+                    and len(request.response_format) == 1
+                ):
                     pass
                 else:
-                    config_args["response_schema"] = remove_additional_properties(request.response_format)
+                    config_args["response_schema"] = remove_additional_properties(
+                        request.response_format
+                    )
 
         config = types.GenerateContentConfig(**config_args)
         return {"contents": contents, "config": config}
@@ -128,9 +159,7 @@ class GeminiProvider(BaseLLMProvider):
         start_time = datetime.utcnow()
         try:
             response = await client.aio.models.generate_content(
-                model=request.model,
-                contents=params["contents"],
-                config=params["config"]
+                model=request.model, contents=params["contents"], config=params["config"]
             )
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
@@ -145,7 +174,9 @@ class GeminiProvider(BaseLLMProvider):
             if request.response_format and content:
                 try:
                     data = json.loads(content)
-                    if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+                    if isinstance(request.response_format, type) and issubclass(
+                        request.response_format, BaseModel
+                    ):
                         parsed = request.response_format.model_validate(data)
                     else:
                         parsed = data
@@ -161,7 +192,7 @@ class GeminiProvider(BaseLLMProvider):
                 latency_ms=latency_ms,
                 provider="google",
                 model=request.model,
-                key_used=api_key.get_masked()
+                key_used=api_key.get_masked(),
             )
         except Exception as e:
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -171,7 +202,7 @@ class GeminiProvider(BaseLLMProvider):
                 model=request.model,
                 key_used=api_key.get_masked(),
                 error=str(e),
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
     def execute_sync(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
@@ -181,9 +212,7 @@ class GeminiProvider(BaseLLMProvider):
         start_time = datetime.utcnow()
         try:
             response = client.models.generate_content(
-                model=request.model,
-                contents=params["contents"],
-                config=params["config"]
+                model=request.model, contents=params["contents"], config=params["config"]
             )
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
@@ -198,12 +227,16 @@ class GeminiProvider(BaseLLMProvider):
             if request.response_format and content:
                 try:
                     data = json.loads(content)
-                    if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+                    if isinstance(request.response_format, type) and issubclass(
+                        request.response_format, BaseModel
+                    ):
                         parsed = request.response_format.model_validate(data)
                     else:
                         parsed = data
                 except Exception as parse_err:
-                    logger.warning("Gemini sync parsing failed: %s, raw content: %s", parse_err, content)
+                    logger.warning(
+                        "Gemini sync parsing failed: %s, raw content: %s", parse_err, content
+                    )
 
             return GatewayResponse(
                 content=content,
@@ -214,7 +247,7 @@ class GeminiProvider(BaseLLMProvider):
                 latency_ms=latency_ms,
                 provider="google",
                 model=request.model,
-                key_used=api_key.get_masked()
+                key_used=api_key.get_masked(),
             )
         except Exception as e:
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -224,20 +257,20 @@ class GeminiProvider(BaseLLMProvider):
                 model=request.model,
                 key_used=api_key.get_masked(),
                 error=str(e),
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
 
 class OpenAIProvider(BaseLLMProvider):
     """OpenAI Client Provider, also acts as adapter for generic OpenAI-compatible endpoints."""
 
-    def __init__(self, provider_name: str = "openai", base_url: Optional[str] = None) -> None:
+    def __init__(self, provider_name: str = "openai", base_url: str | None = None) -> None:
         self.provider_name = provider_name
         self.base_url = base_url
 
-    def _prepare_params(self, request: GatewayRequest) -> Dict[str, Any]:
+    def _prepare_params(self, request: GatewayRequest) -> dict[str, Any]:
         """Prepare OpenAI API parameters, accommodating Pydantic structured formats."""
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "model": request.model,
             "messages": request.messages,
             "temperature": request.temperature,
@@ -259,14 +292,13 @@ class OpenAIProvider(BaseLLMProvider):
         try:
             # If Pydantic output schema is requested, use structured output parsing for OpenAI only
             if (
-                request.response_format 
-                and isinstance(request.response_format, type) 
+                request.response_format
+                and isinstance(request.response_format, type)
                 and issubclass(request.response_format, BaseModel)
                 and self.provider_name == "openai"
             ):
                 response = await client.beta.chat.completions.parse(
-                    **params,
-                    response_format=request.response_format
+                    **params, response_format=request.response_format
                 )
                 latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 choice = response.choices[0]
@@ -280,14 +312,17 @@ class OpenAIProvider(BaseLLMProvider):
                     if self.provider_name in ["groq", "cerebras", "nvidia"]:
                         params["response_format"] = {"type": "json_object"}
                         # Ensure 'json' is in the messages for JSON mode compliance
-                        has_json = any("json" in str(msg.get("content", "")).lower() for msg in request.messages)
+                        has_json = any(
+                            "json" in str(msg.get("content", "")).lower()
+                            for msg in request.messages
+                        )
                         if not has_json:
                             params["messages"] = list(request.messages) + [
                                 {"role": "system", "content": "Respond in valid JSON format."}
                             ]
                     else:
                         params["response_format"] = request.response_format
-                
+
                 response = await client.chat.completions.create(**params)
                 latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 choice = response.choices[0]
@@ -299,7 +334,9 @@ class OpenAIProvider(BaseLLMProvider):
 
                 if request.response_format and content:
                     try:
-                        if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+                        if isinstance(request.response_format, type) and issubclass(
+                            request.response_format, BaseModel
+                        ):
                             parsed = request.response_format.model_validate_json(content)
                         else:
                             parsed = json.loads(content)
@@ -315,7 +352,7 @@ class OpenAIProvider(BaseLLMProvider):
                 latency_ms=latency_ms,
                 provider=self.provider_name,
                 model=request.model,
-                key_used=api_key.get_masked()
+                key_used=api_key.get_masked(),
             )
         except Exception as e:
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -325,7 +362,7 @@ class OpenAIProvider(BaseLLMProvider):
                 model=request.model,
                 key_used=api_key.get_masked(),
                 error=str(e),
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
     def execute_sync(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
@@ -335,14 +372,13 @@ class OpenAIProvider(BaseLLMProvider):
         start_time = datetime.utcnow()
         try:
             if (
-                request.response_format 
-                and isinstance(request.response_format, type) 
+                request.response_format
+                and isinstance(request.response_format, type)
                 and issubclass(request.response_format, BaseModel)
                 and self.provider_name == "openai"
             ):
                 response = client.beta.chat.completions.parse(
-                    **params,
-                    response_format=request.response_format
+                    **params, response_format=request.response_format
                 )
                 latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 choice = response.choices[0]
@@ -356,14 +392,17 @@ class OpenAIProvider(BaseLLMProvider):
                     if self.provider_name in ["groq", "cerebras", "nvidia"]:
                         params["response_format"] = {"type": "json_object"}
                         # Ensure 'json' is in the messages for JSON mode compliance
-                        has_json = any("json" in str(msg.get("content", "")).lower() for msg in request.messages)
+                        has_json = any(
+                            "json" in str(msg.get("content", "")).lower()
+                            for msg in request.messages
+                        )
                         if not has_json:
                             params["messages"] = list(request.messages) + [
                                 {"role": "system", "content": "Respond in valid JSON format."}
                             ]
                     else:
                         params["response_format"] = request.response_format
-                
+
                 response = client.chat.completions.create(**params)
                 latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 choice = response.choices[0]
@@ -375,7 +414,9 @@ class OpenAIProvider(BaseLLMProvider):
 
                 if request.response_format and content:
                     try:
-                        if isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+                        if isinstance(request.response_format, type) and issubclass(
+                            request.response_format, BaseModel
+                        ):
                             parsed = request.response_format.model_validate_json(content)
                         else:
                             parsed = json.loads(content)
@@ -391,7 +432,7 @@ class OpenAIProvider(BaseLLMProvider):
                 latency_ms=latency_ms,
                 provider=self.provider_name,
                 model=request.model,
-                key_used=api_key.get_masked()
+                key_used=api_key.get_masked(),
             )
         except Exception as e:
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -401,24 +442,27 @@ class OpenAIProvider(BaseLLMProvider):
                 model=request.model,
                 key_used=api_key.get_masked(),
                 error=str(e),
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
 
 class MockProvider(BaseLLMProvider):
     """Mock Provider that yields deterministic structured or text content based on request configurations."""
 
-    def _generate_mock_model_fields(self, schema: Type[BaseModel], event_name: str) -> Dict[str, Any]:
-        fields = {}
+    def _generate_mock_model_fields(
+        self, schema: type[BaseModel], event_name: str
+    ) -> dict[str, Any]:
+        fields: dict[str, Any] = {}
         for field_name, field_type in schema.model_fields.items():
             annotation = field_type.annotation
-            
+
             # Simple check for Optional / Union / str | None types
             origin = getattr(annotation, "__origin__", annotation)
             # Support UnionType from Python 3.10+ (like str | None) or typing.Union
             is_union = False
             try:
                 import types as python_types
+
                 if origin in (Union, python_types.UnionType):
                     is_union = True
             except AttributeError:
@@ -462,15 +506,15 @@ class MockProvider(BaseLLMProvider):
 
     def _generate_mock_output(self, request: GatewayRequest) -> GatewayResponse:
         content = "Mock response content."
-        parsed = None
-        
+        parsed: Any = None
+
         # Check messages for keywords to return smarter mocks
         user_msg = ""
         for msg in request.messages:
             if msg.get("role") == "user":
                 user_msg += msg.get("content", "") + " "
         user_msg_lower = user_msg.lower()
-        
+
         event_name = "Major News Event"
         if "protest" in user_msg_lower:
             event_name = "Protest"
@@ -479,85 +523,151 @@ class MockProvider(BaseLLMProvider):
 
         # Try to resolve schema from request.response_format or request.stage
         schema = None
-        if request.response_format and isinstance(request.response_format, type) and issubclass(request.response_format, BaseModel):
+        if (
+            request.response_format
+            and isinstance(request.response_format, type)
+            and issubclass(request.response_format, BaseModel)
+        ):
             schema = request.response_format
         elif request.stage:
             try:
                 if request.stage == "cluster_verification":
                     from app.agents.cluster_verification_agent import ClusterVerificationSchema
+
                     schema = ClusterVerificationSchema
                 elif request.stage == "entity_extraction":
                     from app.services.ner_service_v2 import EntityExtractionResponse
+
                     schema = EntityExtractionResponse
                 elif request.stage == "event_extraction" or request.stage == "event_service":
                     from app.services.event_service import ArticleEventResponse
+
                     schema = ArticleEventResponse
                 elif request.stage == "entity_linking":
                     from app.services.entity_linker import EntityResolution
+
                     schema = EntityResolution
                 elif request.stage == "source_comparison":
                     from app.services.source_comparison_service import SourceComparisonResolution
+
                     schema = SourceComparisonResolution
                 elif request.stage == "contradiction_detection":
                     from app.services.contradiction_service import ContradictionResolution
+
                     schema = ContradictionResolution
                 elif request.stage == "summary_generation":
                     from app.services.ai_service import StorySummaryResponse
+
                     schema = StorySummaryResponse
             except Exception as e:
-                logger.warning("Could not resolve schema for stage %s in MockProvider: %s", request.stage, e)
+                logger.warning(
+                    "Could not resolve schema for stage %s in MockProvider: %s", request.stage, e
+                )
 
         if schema:
             try:
                 import re
+
                 fields = {}
                 if request.stage == "cluster_verification":
                     fields = {
                         "verified": True,
                         "confidence": 1.0,
-                        "reasoning": "Articles report on the same core news event and share matching details."
+                        "reasoning": "Articles report on the same core news event and share matching details.",
                     }
                 elif request.stage == "entity_extraction":
                     entities = []
-                    words = re.findall(r'\b[A-Z][a-z]{3,15}\b', user_msg)
+                    words = re.findall(r"\b[A-Z][a-z]{3,15}\b", user_msg)
                     seen_entities = set()
-                    filter_words = {"You", "Are", "Extract", "The", "Article", "Respond", "Json", "None", "Title", "Content", "Date", "Time", "Person", "Org", "Company", "Country", "City", "State", "Place", "Location", "Event", "Agreement", "Law", "Product", "Technology", "Government", "Military", "Date", "Money", "Percent", "Crypto", "Sports", "Wikidata"}
+                    filter_words = {
+                        "You",
+                        "Are",
+                        "Extract",
+                        "The",
+                        "Article",
+                        "Respond",
+                        "Json",
+                        "None",
+                        "Title",
+                        "Content",
+                        "Date",
+                        "Time",
+                        "Person",
+                        "Org",
+                        "Company",
+                        "Country",
+                        "City",
+                        "State",
+                        "Place",
+                        "Location",
+                        "Event",
+                        "Agreement",
+                        "Law",
+                        "Product",
+                        "Technology",
+                        "Government",
+                        "Military",
+                        "Date",
+                        "Money",
+                        "Percent",
+                        "Crypto",
+                        "Sports",
+                        "Wikidata",
+                    }
                     for w in words:
                         if w not in filter_words and w not in seen_entities:
                             seen_entities.add(w)
                             etype = "ORG" if len(w) > 6 else "PERSON"
-                            entities.append({
-                                "value": w,
-                                "type": etype,
-                                "canonical_name": w,
-                                "confidence": 0.90
-                            })
+                            entities.append(
+                                {"value": w, "type": etype, "canonical_name": w, "confidence": 0.90}
+                            )
                             if len(entities) >= 5:
                                 break
                     fields = {"entities": entities}
                 elif request.stage == "event_extraction" or request.stage == "event_service":
-                    title_match = re.search(r'Title:\s*([^\n]+)', user_msg)
+                    title_match = re.search(r"Title:\s*([^\n]+)", user_msg)
                     title = title_match.group(1).strip() if title_match else "News Event"
-                    
-                    actor_match = re.findall(r'\b[A-Z][a-z]{3,15}\b', title)
-                    actors = [a for a in actor_match if a not in {"In", "On", "At", "And", "With", "For", "To", "The", "Of"}]
+
+                    actor_match = re.findall(r"\b[A-Z][a-z]{3,15}\b", title)
+                    actors = [
+                        a
+                        for a in actor_match
+                        if a not in {"In", "On", "At", "And", "With", "For", "To", "The", "Of"}
+                    ]
                     if not actors:
                         actors = ["Officials"]
-                    
-                    etype = "LEGAL" if any(x in title.lower() for x in ["arrest", "court", "police", "law", "fake", "racket", "arrested"]) else "POLICY"
-                    
+
+                    etype = (
+                        "LEGAL"
+                        if any(
+                            x in title.lower()
+                            for x in [
+                                "arrest",
+                                "court",
+                                "police",
+                                "law",
+                                "fake",
+                                "racket",
+                                "arrested",
+                            ]
+                        )
+                        else "POLICY"
+                    )
+
                     fields = {
                         "primary_event": {
                             "event_type": etype,
                             "actors": actors[:2],
                             "targets": ["Public interest"],
                             "objects": [],
-                            "location": "India" if "uttarakhand" in title.lower() or "india" in title.lower() else "United States",
+                            "location": "India"
+                            if "uttarakhand" in title.lower() or "india" in title.lower()
+                            else "United States",
                             "event_time": None,
                             "numbers": {},
-                            "confidence": 0.95
+                            "confidence": 0.95,
                         },
-                        "secondary_events": []
+                        "secondary_events": [],
                     }
                 elif request.stage == "entity_linking":
                     name_match = re.search(r"entity name '([^']+)'", user_msg)
@@ -565,49 +675,58 @@ class MockProvider(BaseLLMProvider):
                     fields = {
                         "canonical_name": ent_name,
                         "wikidata_search_query": ent_name,
-                        "description": f"Standardized representation of {ent_name}."
+                        "description": f"Standardized representation of {ent_name}.",
                     }
                 elif request.stage == "source_comparison":
-                    unique_match = re.search(r'Unique facts reported only by [^:]+:\s*([^\n]+)', user_msg)
-                    missing_match = re.search(r'Facts reported by others but omitted by [^:]+:\s*([^\n]+)', user_msg)
-                    contra_match = re.search(r'Factual contradictions involving [^:]+:\s*([^\n]+)', user_msg)
-                    
+                    unique_match = re.search(
+                        r"Unique facts reported only by [^:]+:\s*([^\n]+)", user_msg
+                    )
+                    missing_match = re.search(
+                        r"Facts reported by others but omitted by [^:]+:\s*([^\n]+)", user_msg
+                    )
+                    contra_match = re.search(
+                        r"Factual contradictions involving [^:]+:\s*([^\n]+)", user_msg
+                    )
+
                     unique_val = unique_match.group(1).strip() if unique_match else ""
                     missing_val = missing_match.group(1).strip() if missing_match else ""
                     contra_val = contra_match.group(1).strip() if contra_match else ""
-                    
-                    if unique_val.lower() == "none": unique_val = ""
-                    if missing_val.lower() == "none": missing_val = ""
-                    if contra_val.lower() == "none": contra_val = ""
-                    
+
+                    if unique_val.lower() == "none":
+                        unique_val = ""
+                    if missing_val.lower() == "none":
+                        missing_val = ""
+                    if contra_val.lower() == "none":
+                        contra_val = ""
+
                     src_match = re.search(r"publisher '([^']+)'", user_msg)
                     src_name = src_match.group(1) if src_match else "publisher"
-                    
+
                     fields = {
                         "focus_area": f"General reporting of event details by {src_name}.",
                         "unique_information": unique_val,
                         "missing_information": missing_val,
-                        "contradictions": contra_val
+                        "contradictions": contra_val,
                     }
                 elif request.stage == "contradiction_detection":
-                    fields = {
-                        "is_contradiction": False,
-                        "description": "",
-                        "confidence": 0.0
-                    }
+                    fields = {"is_contradiction": False, "description": "", "confidence": 0.0}
                 elif request.stage == "summary_generation":
                     headline = "Major News Event"
-                    
+
                     title_matches = re.findall(r'"title":\s*"([^"]+)"', user_msg)
                     if not title_matches:
-                        title_matches = re.findall(r'Title:\s*([^\n]+)', user_msg)
+                        title_matches = re.findall(r"Title:\s*([^\n]+)", user_msg)
                     if not title_matches:
                         title_matches = re.findall(r'"label":\s*"([^"]+)"', user_msg)
-                        
-                    real_titles = [t.strip() for t in title_matches if len(t.strip()) >= 5 and not t.strip().lower().startswith("mock")]
+
+                    real_titles = [
+                        t.strip()
+                        for t in title_matches
+                        if len(t.strip()) >= 5 and not t.strip().lower().startswith("mock")
+                    ]
                     if real_titles:
                         headline = real_titles[0]
-                    
+
                     one_line = f"Reports detail developments regarding {headline}."
                     short_sum = f"Recent media coverage highlights key developments surrounding {headline}. Reporting outlets continue to update their coverage as new details emerge."
                     detailed_sum = (
@@ -616,7 +735,7 @@ class MockProvider(BaseLLMProvider):
                         f"locations, and timelines. Further details are being analyzed as publishers continue "
                         f"updating their coverage."
                     )
-                    
+
                     fields = {
                         "headline": headline,
                         "one_line_summary": one_line,
@@ -624,14 +743,14 @@ class MockProvider(BaseLLMProvider):
                         "detailed_summary": detailed_sum,
                         "key_facts": [
                             f"Updates regarding {headline}.",
-                            "Synthesized details compiled from reporting sources."
+                            "Synthesized details compiled from reporting sources.",
                         ],
-                        "category": "world"
+                        "category": "world",
                     }
                 else:
                     fields = self._generate_mock_model_fields(schema, event_name)
 
-                parsed = schema.model_validate(fields)
+                parsed = cast(Any, schema.model_validate(fields))
                 content = parsed.model_dump_json()
             except Exception as e:
                 logger.error("Failed to generate mock fields for schema %s: %s", schema, e)
@@ -652,7 +771,9 @@ class MockProvider(BaseLLMProvider):
             latency_ms=5.0,
             provider="mock",
             model=request.model,
-            key_used="mock-key"
+            key_used="mock-key",
+            cost_usd=0.0,
+            error=None,
         )
 
     async def execute(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:

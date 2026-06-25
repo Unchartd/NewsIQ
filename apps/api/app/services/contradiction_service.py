@@ -8,20 +8,16 @@ Uses a hybrid approach:
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-from datetime import datetime
 from typing import Any
 
-from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
-from app.models.models import Article, ArticleEvent, Story, StoryContradiction, StoryArticle
+from app.models.models import Article, ArticleEvent, StoryArticle, StoryContradiction
 
 logger = logging.getLogger(__name__)
 
@@ -75,18 +71,19 @@ class ContradictionService:
 
         try:
             from app.agents.contradiction_agent import check_contradiction
+
             agent_res = await check_contradiction(
                 fact_type=fact_type,
                 val1=str(val1),
                 val2=str(val2),
                 source1_name=source1_name,
                 source2_name=source2_name,
-                context=context
+                context=context,
             )
             return ContradictionResolution(
                 is_contradiction=agent_res.contradiction,
                 description=agent_res.explanation,
-                confidence=agent_res.confidence
+                confidence=agent_res.confidence,
             )
         except Exception as e:
             logger.warning("Agno Contradiction Agent failed: %s. Falling back.", e)
@@ -106,9 +103,10 @@ class ContradictionService:
 
             if response.parsed:
                 return response.parsed
-            
+
             try:
                 import json
+
                 data = json.loads(response.content)
                 return ContradictionResolution(**data)
             except Exception:
@@ -143,7 +141,10 @@ class ContradictionService:
 
         # Delete existing contradictions for this story to avoid duplication or stale data
         from sqlalchemy import delete
-        await session.execute(delete(StoryContradiction).where(StoryContradiction.story_id == story_id))
+
+        await session.execute(
+            delete(StoryContradiction).where(StoryContradiction.story_id == story_id)
+        )
 
         # Check unique sources count to avoid contradiction checking on single-source stories
         unique_sources = {art.source_id for art, _ in rows if art.source_id}
@@ -272,7 +273,7 @@ class ContradictionService:
 
         # Validate candidates using hybrid validation pass (LLM)
         validated_contradictions: list[StoryContradiction] = []
-        
+
         # Deduplicate candidates on fact_type + src1_id + src2_id to keep DB clean
         seen_pairs = set()
 

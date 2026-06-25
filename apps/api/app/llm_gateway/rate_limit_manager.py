@@ -1,11 +1,12 @@
-import time
 import logging
-from typing import Dict, List
+import time
+
 import redis
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
 
 class RateLimitManager:
     """Tracks and enforces requests per minute (RPM) and requests per day (RPD) limits."""
@@ -16,15 +17,18 @@ class RateLimitManager:
             self.redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
             logger.info("RateLimitManager configured with Redis backend.")
         except Exception as e:
-            logger.warning("RateLimitManager Redis connection failed (falling back to memory): %s", e)
-        
+            logger.warning(
+                "RateLimitManager Redis connection failed (falling back to memory): %s", e
+            )
+
         # Local memory fallback structure
         # Key: key_hash, Value: list of timestamps of calls made
-        self._memory_runs: Dict[str, List[float]] = {}
+        self._memory_runs: dict[str, list[float]] = {}
 
     def _get_key_hash(self, key: str) -> str:
         """Create a simple hash of the key for caching/storing in Redis."""
         import hashlib
+
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
     def check_rate_limit(self, key: str, rpm: int, rpd: int) -> bool:
@@ -56,7 +60,9 @@ class RateLimitManager:
 
                 return True
             except Exception as e:
-                logger.warning("RateLimitManager Redis check failed, falling back to memory check: %s", e)
+                logger.warning(
+                    "RateLimitManager Redis check failed, falling back to memory check: %s", e
+                )
 
         # Local Memory Fallback
         if key_hash not in self._memory_runs:
@@ -83,7 +89,7 @@ class RateLimitManager:
             try:
                 min_key = f"newsiq:rl:rpm:{key_hash}"
                 day_key = f"newsiq:rl:rpd:{key_hash}"
-                
+
                 pipe = self.redis_client.pipeline()
                 pipe.zadd(min_key, {str(now): now})
                 pipe.expire(min_key, 120)
@@ -92,7 +98,9 @@ class RateLimitManager:
                 pipe.execute()
                 return
             except Exception as e:
-                logger.warning("RateLimitManager Redis record failed, falling back to memory: %s", e)
+                logger.warning(
+                    "RateLimitManager Redis record failed, falling back to memory: %s", e
+                )
 
         # Local Memory Fallback
         if key_hash not in self._memory_runs:

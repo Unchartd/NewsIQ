@@ -19,9 +19,7 @@ from app.models.models import (
     Story,
     StoryArticle,
     StoryContradiction,
-    StoryDifference,
     StoryEntity,
-    StorySourceCoverage,
     StoryTag,
     StoryTimelineEvent,
 )
@@ -30,335 +28,389 @@ logger = logging.getLogger(__name__)
 
 
 class ReplayService:
-  """Orchestrates pipeline execution replays for debug/telemetry profiling."""
+    """Orchestrates pipeline execution replays for debug/telemetry profiling."""
 
-  async def replay_full_story(self, story_id: uuid.UUID, db: AsyncSession) -> None:
-    """Regenerate the entire story intelligence pipeline from original articles."""
-    logger.info("Starting full story pipeline replay for story %s", story_id)
+    async def replay_full_story(self, story_id: uuid.UUID, db: AsyncSession) -> None:
+        """Regenerate the entire story intelligence pipeline from original articles."""
+        logger.info("Starting full story pipeline replay for story %s", story_id)
 
-    # 1. Fetch story and associated articles
-    story_result = await db.execute(
-        select(Story)
-        .where(Story.id == story_id)
-        .options(
-            selectinload(Story.articles).selectinload(StoryArticle.article)
+        # 1. Fetch story and associated articles
+        story_result = await db.execute(
+            select(Story)
+            .where(Story.id == story_id)
+            .options(selectinload(Story.articles).selectinload(StoryArticle.article))
         )
-    )
-    story = story_result.scalar_one_or_none()
-    if not story:
-      raise ValueError(f"Story {story_id} not found")
+        story = story_result.scalar_one_or_none()
+        if not story:
+            raise ValueError(f"Story {story_id} not found")
 
-    articles = [sa.article for sa in story.articles]
-    if not articles:
-      logger.warning("No articles found in story %s cluster. Replay aborted.", story_id)
-      return
+        articles = [sa.article for sa in story.articles]
+        if not articles:
+            logger.warning("No articles found in story %s cluster. Replay aborted.", story_id)
+            return
 
-    # 2. Run the complete pipeline inside a PipelineRun context
-    async with PipelineRun(trigger="manual", pipeline_type="incremental", is_replay=True, parent_run_id=str(story_id)) as run:
-      # We delegate to the clustering service generate method, but wrap it in StageSpans
-      # to ensure telemetry is captured for each sub-stage during the replay.
-      from app.services.clustering_service import clustering_service
+        # 2. Run the complete pipeline inside a PipelineRun context
+        async with PipelineRun(
+            trigger="manual",
+            pipeline_type="incremental",
+            is_replay=True,
+            parent_run_id=str(story_id),
+        ) as run:
+            # We delegate to the clustering service generate method, but wrap it in StageSpans
+            # to ensure telemetry is captured for each sub-stage during the replay.
+            from app.services.clustering_service import clustering_service
 
-      async with StageSpan(run, stage=PipelineStage.DIFFERENCE_ENGINE, story_id=str(story_id)) as span:
-        await clustering_service.generate_story_content(story, articles, db)
-        span.set_metadata({"articles_replayed": len(articles)})
+            async with StageSpan(
+                run, stage=PipelineStage.DIFFERENCE_ENGINE, story_id=str(story_id)
+            ) as span:
+                await clustering_service.generate_story_content(story, articles, db)
+                span.set_metadata({"articles_replayed": len(articles)})
 
-  async def replay_story_stage(
-      self, story_id: uuid.UUID, stage_name: str, db: AsyncSession, article_id: uuid.UUID | None = None
-  ) -> None:
-    """Replay a specific stage of the story pipeline."""
-    logger.info("Starting story stage replay for story %s, stage %s (article: %s)", story_id, stage_name, article_id)
-
-    # Fetch story and articles
-    story_result = await db.execute(
-        select(Story)
-        .where(Story.id == story_id)
-        .options(
-            selectinload(Story.articles).selectinload(StoryArticle.article)
+    async def replay_story_stage(
+        self,
+        story_id: uuid.UUID,
+        stage_name: str,
+        db: AsyncSession,
+        article_id: uuid.UUID | None = None,
+    ) -> None:
+        """Replay a specific stage of the story pipeline."""
+        logger.info(
+            "Starting story stage replay for story %s, stage %s (article: %s)",
+            story_id,
+            stage_name,
+            article_id,
         )
-    )
-    story = story_result.scalar_one_or_none()
-    if not story:
-      raise ValueError(f"Story {story_id} not found")
 
-    articles = [sa.article for sa in story.articles]
-    if not articles:
-      logger.warning("No articles found in story %s. Stage replay aborted.", story_id)
-      return
-
-    async with PipelineRun(trigger="manual", pipeline_type="incremental", is_replay=True, parent_run_id=str(story_id)) as run:
-      # Resolve stage name to canonical stage enum
-      if stage_name == "entity_extraction":
-        async with StageSpan(run, stage=PipelineStage.ENTITY_EXTRACTION, story_id=str(story_id)) as span:
-          await self._replay_entity_extraction(story, articles, db)
-          span.set_metadata({"stage": "entity_extraction", "articles": len(articles)})
-
-      elif stage_name == "event_extraction":
-        async with StageSpan(run, stage=PipelineStage.EVENT_EXTRACTION, story_id=str(story_id), article_id=str(article_id) if article_id else None) as span:
-          await self._replay_event_extraction(story, articles, db, target_article_id=article_id)
-          span.set_metadata({"stage": "event_extraction", "articles": 1 if article_id else len(articles)})
-
-      elif stage_name == "contradiction_detection":
-        async with StageSpan(run, stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story_id)) as span:
-          from app.services.contradiction_service import contradiction_service
-          # Clear old contradictions first
-          await db.execute(delete(StoryContradiction).where(StoryContradiction.story_id == story_id))
-          await db.flush()
-          await contradiction_service.detect_and_save_contradictions(story_id, db)
-          span.set_metadata({"stage": "contradiction_detection"})
-
-      elif stage_name == "timeline_generation":
-        async with StageSpan(run, stage=PipelineStage.TIMELINE_GENERATION, story_id=str(story_id)) as span:
-          await self._replay_timeline_generation(story, articles, db)
-          span.set_metadata({"stage": "timeline_generation"})
-
-      elif stage_name == "summary_generation":
-        async with StageSpan(run, stage=PipelineStage.SUMMARY_GENERATION, story_id=str(story_id)) as span:
-          await self._replay_summary_generation(story, articles, db)
-          span.set_metadata({"stage": "summary_generation"})
-
-      else:
-        raise ValueError(f"Unsupported replay stage: {stage_name}")
-
-  async def _replay_event_extraction(
-      self, story: Story, articles: list[Article], session: AsyncSession, target_article_id: uuid.UUID | None = None
-  ) -> None:
-    """Internal helper to execute and persist event extraction during replay."""
-    from app.services.event_service import event_service
-    from app.services.event_taxonomy import get_parent_type
-
-    if target_article_id:
-      articles = [a for a in articles if a.id == target_article_id]
-
-    for article in articles:
-      # Clear existing events
-      await session.execute(delete(ArticleEvent).where(ArticleEvent.article_id == article.id))
-      await session.flush()
-
-      content = article.content or article.description or ""
-      pub_at = article.published_at.isoformat() if article.published_at else None
-
-      event_response = await event_service.extract_events(
-          title=article.title or "",
-          content=content,
-          published_at=pub_at,
-      )
-
-      pe = event_response.primary_event
-      parsed_time = self._try_parse_event_time(pe.event_time)
-      fingerprint = event_service.compute_event_fingerprint(pe)
-
-      primary_event = ArticleEvent(
-          id=uuid.uuid4(),
-          article_id=article.id,
-          is_primary=True,
-          event_type=pe.event_type,
-          event_type_canonical=get_parent_type(pe.event_type),
-          actors=pe.actors,
-          targets=pe.targets,
-          objects=pe.objects,
-          location=pe.location,
-          event_time=parsed_time,
-          event_time_raw=pe.event_time,
-          numbers=pe.numbers,
-          confidence=pe.confidence,
-          event_fingerprint=fingerprint,
-      )
-      session.add(primary_event)
-
-      for se in event_response.secondary_events[:3]:
-          parsed_time_s = self._try_parse_event_time(se.event_time)
-          secondary_event = ArticleEvent(
-              id=uuid.uuid4(),
-              article_id=article.id,
-              is_primary=False,
-              event_type=se.event_type,
-              event_type_canonical=get_parent_type(se.event_type),
-              actors=se.actors,
-              targets=se.targets,
-              objects=se.objects,
-              location=se.location,
-              event_time=parsed_time_s,
-              event_time_raw=se.event_time,
-              numbers=se.numbers,
-              confidence=se.confidence,
-          )
-          session.add(secondary_event)
-
-      article.event_extraction_status = "completed"
-
-    await session.commit()
-
-  def _try_parse_event_time(self, raw: str | None) -> datetime | None:
-    """Attempt to parse an event time string to datetime."""
-    if not raw or not raw.strip():
-        return None
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
-    except (ValueError, TypeError):
-        pass
-    try:
-        from dateutil import parser
-        return parser.parse(raw).replace(tzinfo=None)
-    except Exception:
-        return None
-
-  async def _replay_entity_extraction(
-      self, story: Story, articles: list[Article], session: AsyncSession
-  ) -> None:
-    """Internal helper to execute and persist entity extraction during replay."""
-    from app.services import entity_linker, ner_service_v2
-
-    # Clear existing entities and tags
-    await session.execute(delete(StoryEntity).where(StoryEntity.story_id == story.id))
-    await session.execute(delete(StoryTag).where(StoryTag.story_id == story.id))
-    await session.flush()
-
-    full_text_corpus = ""
-    for art in articles:
-      full_text_corpus += f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
-
-    entities = await ner_service_v2.extract_entities(full_text_corpus)
-    grouped_entities = entity_linker.group_entities_locally(entities)
-
-    tags_added = set()
-    for rep, grouped_mentions in list(grouped_entities.items())[:15]:
-      etype = grouped_mentions[0]["type"]
-      try:
-        canonical_ent = await entity_linker.link_entity(
-            name=rep,
-            entity_type=etype,
-            context=full_text_corpus,
-            session=session,
+        # Fetch story and articles
+        story_result = await db.execute(
+            select(Story)
+            .where(Story.id == story_id)
+            .options(selectinload(Story.articles).selectinload(StoryArticle.article))
         )
-        canonical_entity_id = canonical_ent.id
-      except Exception:
-        canonical_ent = None
-        canonical_entity_id = None
+        story = story_result.scalar_one_or_none()
+        if not story:
+            raise ValueError(f"Story {story_id} not found")
 
-      for mention in grouped_mentions:
-        story_ent = StoryEntity(
-            id=uuid.uuid4(),
-            story_id=story.id,
-            canonical_entity_id=canonical_entity_id,
-            entity_type=mention["type"],
-            entity_value=mention["value"],
+        articles = [sa.article for sa in story.articles]
+        if not articles:
+            logger.warning("No articles found in story %s. Stage replay aborted.", story_id)
+            return
+
+        async with PipelineRun(
+            trigger="manual",
+            pipeline_type="incremental",
+            is_replay=True,
+            parent_run_id=str(story_id),
+        ) as run:
+            # Resolve stage name to canonical stage enum
+            if stage_name == "entity_extraction":
+                async with StageSpan(
+                    run, stage=PipelineStage.ENTITY_EXTRACTION, story_id=str(story_id)
+                ) as span:
+                    await self._replay_entity_extraction(story, articles, db)
+                    span.set_metadata({"stage": "entity_extraction", "articles": len(articles)})
+
+            elif stage_name == "event_extraction":
+                async with StageSpan(
+                    run,
+                    stage=PipelineStage.EVENT_EXTRACTION,
+                    story_id=str(story_id),
+                    article_id=str(article_id) if article_id else None,
+                ) as span:
+                    await self._replay_event_extraction(
+                        story, articles, db, target_article_id=article_id
+                    )
+                    span.set_metadata(
+                        {
+                            "stage": "event_extraction",
+                            "articles": 1 if article_id else len(articles),
+                        }
+                    )
+
+            elif stage_name == "contradiction_detection":
+                async with StageSpan(
+                    run, stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story_id)
+                ) as span:
+                    from app.services.contradiction_service import contradiction_service
+
+                    # Clear old contradictions first
+                    await db.execute(
+                        delete(StoryContradiction).where(StoryContradiction.story_id == story_id)
+                    )
+                    await db.flush()
+                    await contradiction_service.detect_and_save_contradictions(story_id, db)
+                    span.set_metadata({"stage": "contradiction_detection"})
+
+            elif stage_name == "timeline_generation":
+                async with StageSpan(
+                    run, stage=PipelineStage.TIMELINE_GENERATION, story_id=str(story_id)
+                ) as span:
+                    await self._replay_timeline_generation(story, articles, db)
+                    span.set_metadata({"stage": "timeline_generation"})
+
+            elif stage_name == "summary_generation":
+                async with StageSpan(
+                    run, stage=PipelineStage.SUMMARY_GENERATION, story_id=str(story_id)
+                ) as span:
+                    await self._replay_summary_generation(story, articles, db)
+                    span.set_metadata({"stage": "summary_generation"})
+
+            else:
+                raise ValueError(f"Unsupported replay stage: {stage_name}")
+
+    async def _replay_event_extraction(
+        self,
+        story: Story,
+        articles: list[Article],
+        session: AsyncSession,
+        target_article_id: uuid.UUID | None = None,
+    ) -> None:
+        """Internal helper to execute and persist event extraction during replay."""
+        from app.services.event_service import event_service
+        from app.services.event_taxonomy import get_parent_type
+
+        if target_article_id:
+            articles = [a for a in articles if a.id == target_article_id]
+
+        for article in articles:
+            # Clear existing events
+            await session.execute(delete(ArticleEvent).where(ArticleEvent.article_id == article.id))
+            await session.flush()
+
+            content = article.content or article.description or ""
+            pub_at = article.published_at.isoformat() if article.published_at else None
+
+            event_response = await event_service.extract_events(
+                title=article.title or "",
+                content=content,
+                published_at=pub_at,
+            )
+
+            pe = event_response.primary_event
+            parsed_time = self._try_parse_event_time(pe.event_time)
+            fingerprint = event_service.compute_event_fingerprint(pe)
+
+            primary_event = ArticleEvent(
+                id=uuid.uuid4(),
+                article_id=article.id,
+                is_primary=True,
+                event_type=pe.event_type,
+                event_type_canonical=get_parent_type(pe.event_type),
+                actors=pe.actors,
+                targets=pe.targets,
+                objects=pe.objects,
+                location=pe.location,
+                event_time=parsed_time,
+                event_time_raw=pe.event_time,
+                numbers=pe.numbers,
+                confidence=pe.confidence,
+                event_fingerprint=fingerprint,
+            )
+            session.add(primary_event)
+
+            for se in event_response.secondary_events[:3]:
+                parsed_time_s = self._try_parse_event_time(se.event_time)
+                secondary_event = ArticleEvent(
+                    id=uuid.uuid4(),
+                    article_id=article.id,
+                    is_primary=False,
+                    event_type=se.event_type,
+                    event_type_canonical=get_parent_type(se.event_type),
+                    actors=se.actors,
+                    targets=se.targets,
+                    objects=se.objects,
+                    location=se.location,
+                    event_time=parsed_time_s,
+                    event_time_raw=se.event_time,
+                    numbers=se.numbers,
+                    confidence=se.confidence,
+                )
+                session.add(secondary_event)
+
+            article.event_extraction_status = "completed"
+
+        await session.commit()
+
+    def _try_parse_event_time(self, raw: str | None) -> datetime | None:
+        """Attempt to parse an event time string to datetime."""
+        if not raw or not raw.strip():
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            pass
+        try:
+            from dateutil import parser
+
+            return parser.parse(raw).replace(tzinfo=None)
+        except Exception:
+            return None
+
+    async def _replay_entity_extraction(
+        self, story: Story, articles: list[Article], session: AsyncSession
+    ) -> None:
+        """Internal helper to execute and persist entity extraction during replay."""
+        from app.services.entity_linker import entity_linker
+        from app.services.ner_service_v2 import ner_service_v2
+
+        # Clear existing entities and tags
+        await session.execute(delete(StoryEntity).where(StoryEntity.story_id == story.id))
+        await session.execute(delete(StoryTag).where(StoryTag.story_id == story.id))
+        await session.flush()
+
+        full_text_corpus = ""
+        for art in articles:
+            full_text_corpus += (
+                f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
+            )
+
+        entities = await ner_service_v2.extract_entities(full_text_corpus)
+        grouped_entities = entity_linker.group_entities_locally(entities)
+
+        tags_added = set()
+        for rep, grouped_mentions in list(grouped_entities.items())[:15]:
+            etype = grouped_mentions[0]["type"]
+            try:
+                canonical_ent = await entity_linker.link_entity(
+                    name=rep,
+                    entity_type=etype,
+                    context=full_text_corpus,
+                    session=session,
+                )
+                canonical_entity_id = canonical_ent.id
+            except Exception:
+                canonical_ent = None
+                canonical_entity_id = None
+
+            for mention in grouped_mentions:
+                story_ent = StoryEntity(
+                    id=uuid.uuid4(),
+                    story_id=story.id,
+                    canonical_entity_id=canonical_entity_id,
+                    entity_type=mention["type"],
+                    entity_value=mention["value"],
+                )
+                story_ent.canonical_entity = canonical_ent
+                session.add(story_ent)
+
+            tag = rep.lower().strip()
+            if tag and len(tag) < 30 and tag not in tags_added:
+                tags_added.add(tag)
+
+        for tag in list(tags_added)[:5]:
+            session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
+
+        await session.commit()
+
+    async def _replay_timeline_generation(
+        self, story: Story, articles: list[Article], session: AsyncSession
+    ) -> None:
+        """Internal helper to rebuild story timeline events during replay."""
+        # Clear existing events
+        await session.execute(
+            delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
         )
-        story_ent.canonical_entity = canonical_ent
-        session.add(story_ent)
+        await session.flush()
 
-      tag = rep.lower().strip()
-      if tag and len(tag) < 30 and tag not in tags_added:
-        tags_added.add(tag)
+        article_source_map = {}
+        for art in articles:
+            source_stmt = select(Source).where(Source.id == art.source_id)
+            source_res = await session.execute(source_stmt)
+            source = source_res.scalar_one_or_none()
+            article_source_map[art.id] = source.name if source else "Unknown Source"
 
-    for tag in list(tags_added)[:5]:
-      session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
+        article_ids = [art.id for art in articles]
+        event_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
+        event_res = await session.execute(event_stmt)
+        article_events = list(event_res.scalars().all())
 
-    await session.commit()
+        timeline_entries: list[dict[str, Any]] = []
+        for evt in article_events:
+            t = evt.event_time or evt.created_at or datetime.now(UTC).replace(tzinfo=None)
+            src_name = article_source_map.get(evt.article_id, "Unknown Source")
+            evt_type = (
+                (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
+            )
 
-  async def _replay_timeline_generation(
-      self, story: Story, articles: list[Article], session: AsyncSession
-  ) -> None:
-    """Internal helper to rebuild story timeline events during replay."""
-    # Clear existing events
-    await session.execute(delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id))
-    await session.flush()
+            details = []
+            if evt.actors:
+                details.append(f"Actors: {', '.join(evt.actors)}")
+            if evt.targets:
+                details.append(f"Targets: {', '.join(evt.targets)}")
+            if evt.location:
+                details.append(f"Location: {evt.location}")
 
-    article_source_map = {}
-    for art in articles:
-      stmt = select(Source).where(Source.id == art.source_id)
-      res = await session.execute(stmt)
-      source = res.scalar_one_or_none()
-      article_source_map[art.id] = source.name if source else "Unknown Source"
+            details_str = f" ({'; '.join(details)})" if details else ""
+            desc = f"{evt_type} reported by {src_name}{details_str}."
 
-    article_ids = [art.id for art in articles]
-    stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
-    res = await session.execute(stmt)
-    article_events = list(res.scalars().all())
+            timeline_entries.append(
+                {
+                    "event_time": t.replace(tzinfo=None) if t.tzinfo else t,
+                    "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "description": desc,
+                }
+            )
 
-    timeline_entries = []
-    for evt in article_events:
-      t = evt.event_time or evt.created_at or datetime.now(UTC).replace(tzinfo=None)
-      src_name = article_source_map.get(evt.article_id, "Unknown Source")
-      evt_type = (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
+        timeline_entries.sort(key=lambda x: x["event_time"])
 
-      details = []
-      if evt.actors:
-        details.append(f"Actors: {', '.join(evt.actors)}")
-      if evt.targets:
-        details.append(f"Targets: {', '.join(evt.targets)}")
-      if evt.location:
-        details.append(f"Location: {evt.location}")
+        for entry in timeline_entries:
+            tl_event = StoryTimelineEvent(
+                id=uuid.uuid4(),
+                story_id=story.id,
+                event_time=entry["event_time"],
+                event_time_raw=entry["event_time_raw"],
+                description=entry["description"],
+                created_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+            session.add(tl_event)
 
-      details_str = f" ({'; '.join(details)})" if details else ""
-      desc = f"{evt_type} reported by {src_name}{details_str}."
+        await session.commit()
 
-      timeline_entries.append({
-          "event_time": t.replace(tzinfo=None) if t.tzinfo else t,
-          "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
-          "description": desc,
-      })
+    async def _replay_summary_generation(
+        self, story: Story, articles: list[Article], session: AsyncSession
+    ) -> None:
+        """Internal helper to regenerate AI summaries from the story knowledge graph."""
+        from app.services.ai_service import ai_service
 
-    timeline_entries.sort(key=lambda x: x["event_time"])
+        # Load contradictions and timeline events to feed summary generator
+        stmt_timeline = select(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
+        res_timeline = await session.execute(stmt_timeline)
+        timeline_objects = res_timeline.scalars().all()
 
-    for entry in timeline_entries:
-      tl_event = StoryTimelineEvent(
-          id=uuid.uuid4(),
-          story_id=story.id,
-          event_time=entry["event_time"],
-          event_time_raw=entry["event_time_raw"],
-          description=entry["description"],
-          created_at=datetime.now(UTC).replace(tzinfo=None),
-      )
-      session.add(tl_event)
+        stmt_contras = select(StoryContradiction).where(StoryContradiction.story_id == story.id)
+        res_contras = await session.execute(stmt_contras)
+        contradictions = res_contras.scalars().all()
 
-    await session.commit()
+        timeline_list = [
+            {"date": t.event_time_raw or "Unknown", "description": t.description}
+            for t in timeline_objects
+        ]
 
-  async def _replay_summary_generation(
-      self, story: Story, articles: list[Article], session: AsyncSession
-  ) -> None:
-    """Internal helper to regenerate AI summaries from the story knowledge graph."""
-    from app.services.ai_service import ai_service
+        contradictions_list = [
+            {
+                "fact_type": c.fact_type,
+                "description": c.description,
+                "confidence": float(c.confidence),
+                "source_attribution": c.source_attribution,
+            }
+            for c in contradictions
+        ]
 
-    # Load contradictions and timeline events to feed summary generator
-    stmt_timeline = select(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
-    res_timeline = await session.execute(stmt_timeline)
-    timeline_objects = res_timeline.scalars().all()
+        # Re-run synthesis using current system prompt templates
+        summary_res = await ai_service.summarize_story_from_kg(
+            kg=story.knowledge_graph or {},
+            contradictions=contradictions_list,
+            timeline=timeline_list,
+            source_comparisons=[],
+        )
 
-    stmt_contras = select(StoryContradiction).where(StoryContradiction.story_id == story.id)
-    res_contras = await session.execute(stmt_contras)
-    contradictions = res_contras.scalars().all()
+        story.headline = summary_res.headline
+        story.one_line_summary = summary_res.one_line_summary
+        story.short_summary = summary_res.short_summary
+        story.detailed_summary = summary_res.detailed_summary
+        story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
 
-    timeline_list = [
-        {"date": t.event_time_raw or "Unknown", "description": t.description}
-        for t in timeline_objects
-    ]
-
-    contradictions_list = [
-        {
-            "fact_type": c.fact_type,
-            "description": c.description,
-            "confidence": float(c.confidence),
-            "source_attribution": c.source_attribution,
-        }
-        for c in contradictions
-    ]
-
-    # Re-run synthesis using current system prompt templates
-    summary_res = await ai_service.summarize_story_from_kg(
-        kg=story.knowledge_graph or {},
-        contradictions=contradictions_list,
-        timeline=timeline_list,
-        source_comparisons=[],
-    )
-
-    story.headline = summary_res.headline
-    story.one_line_summary = summary_res.one_line_summary
-    story.short_summary = summary_res.short_summary
-    story.detailed_summary = summary_res.detailed_summary
-    story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
-
-    await session.commit()
+        await session.commit()
 
 
 replay_service = ReplayService()

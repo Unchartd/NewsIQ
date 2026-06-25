@@ -22,8 +22,8 @@ from app.schemas.auth import (
     SessionResponse,
     UserResponse,
 )
-from app.services.auth_service import AuthService
 from app.schemas.user import ChangePasswordRequest
+from app.services.auth_service import AuthService
 
 router = APIRouter()
 
@@ -87,7 +87,6 @@ def _clear_access_cookie(response: Response) -> None:
         secure=not settings.DEBUG,
         samesite="lax",
     )
-
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -334,30 +333,27 @@ async def change_password(
 ):
     """Change the user's password."""
     from datetime import UTC, datetime
-    from app.core.security import verify_password, hash_password, validate_password
-    
+
+    from app.core.security import hash_password, validate_password, verify_password
+
     # 1. Verify current password
     if not user.password_hash or not verify_password(body.current_password, user.password_hash):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Incorrect current password."
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect current password."
         )
-        
+
     # 2. Validate and hash new password
     try:
         validate_password(body.new_password)
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-        
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
     user.password_hash = hash_password(body.new_password)
     user.updated_at = datetime.now(UTC).replace(tzinfo=None)
-    
+
     # 3. Log out of all other devices/sessions for safety
     auth_service = AuthService(db)
     await auth_service.logout_all(user.id)
-    
+
     await db.commit()
     return MessageResponse(message="Password changed successfully.")

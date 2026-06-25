@@ -1,5 +1,6 @@
 """Model package — re-export all models for Alembic discovery."""
 
+from app.models.consent import ConsentAuditLog, ConsentPreference
 from app.models.models import (
     ApiKey,
     Article,
@@ -16,8 +17,8 @@ from app.models.models import (
     Source,
     Story,
     StoryArticle,
-    StoryDifference,
     StoryContradiction,
+    StoryDifference,
     StoryEntity,
     StoryMetric,
     StorySourceCoverage,
@@ -29,10 +30,10 @@ from app.models.models import (
     UserLocation,
     UserPreference,
 )
-from app.models.consent import ConsentPreference, ConsentAuditLog
 from app.models.observability_models import (
     CostRecordModel,
     ErrorLogModel,
+    FunctionRunModel,
     HumanReviewModel,
     LLMTraceModel,
     PipelineRunModel,
@@ -41,9 +42,7 @@ from app.models.observability_models import (
     RetryHistoryModel,
     StageRunModel,
     TokenUsageModel,
-    FunctionRunModel,
 )
-
 
 __all__ = [
     # Core models
@@ -89,4 +88,3 @@ __all__ = [
     "HumanReviewModel",
     "FunctionRunModel",
 ]
-

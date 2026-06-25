@@ -1,0 +1,66 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: "Image tag to roll back to (e.g. v1.2.2 or sha-abc1234)"
+        required: true
+      reason:
+        description: "Reason for rollback (for audit log)"
+        required: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/newsiq-api
+
+jobs:
+  rollback:
+    name: Rollback to ${{ github.event.inputs.target_tag }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log rollback intent
+        run: |
+          echo "ROLLBACK initiated by: ${{ github.actor }}"
+          echo "Target tag: ${{ github.event.inputs.target_tag }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+
+      - name: Rollback on Oracle VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          port: ${{ secrets.ORACLE_VM_PORT || 22 }}
+          script: |
+            set -e
+
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.target_tag }}"
+            DEPLOY_DIR="${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}"
+
+            echo "=== Rolling back to $IMAGE ==="
+            echo "=== Reason: ${{ github.event.inputs.reason }} ==="
+
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker pull "$IMAGE"
+
+            cd "$DEPLOY_DIR"
+
+            # NOTE: We do NOT run alembic downgrade — schema changes are not
+            # automatically reverted. Rollback is application-layer only.
+            # If the schema change is incompatible, a manual DB restore is required.
+
+            NEWSIQ_IMAGE="$IMAGE" docker compose --profile prod up -d --no-build
+
+            sleep 15
+            STATUS=$(curl -sf http://localhost:8000/ready | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['status'])" 2>/dev/null || echo "error")
+            echo "Post-rollback health: $STATUS"
+            if [ "$STATUS" != "ready" ]; then
+              echo "ERROR: Rollback health check failed — manual intervention required"
+              exit 1
+            fi
+            echo "=== Rollback successful ==="

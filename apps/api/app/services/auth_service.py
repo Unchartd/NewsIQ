@@ -14,14 +14,14 @@ from app.core.security import (
     verify_password,
 )
 from app.exceptions.auth import (
-    AuthException,
     AccountLockedException,
+    AuthException,
+    EmailAlreadyVerifiedException,
     EmailNotVerifiedException,
     InvalidCredentialsException,
     InvalidRefreshTokenException,
     SessionExpiredException,
     UserAlreadyExistsException,
-    EmailAlreadyVerifiedException,
 )
 from app.models.models import UserPreference
 from app.models.user import User
@@ -166,7 +166,10 @@ class AuthService:
 
         if not user:
             # Timing attack mitigation: run password verification on dummy hash
-            verify_password(password, "$argon2id$v=19$m=65536,t=3,p=4$7f0fI8Q4p/R+b80ZQ8jZew$KdrOSa66x7LTcC5eNU02LBNKB5iNDk+tHxYsrNPM0JI")
+            verify_password(
+                password,
+                "$argon2id$v=19$m=65536,t=3,p=4$7f0fI8Q4p/R+b80ZQ8jZew$KdrOSa66x7LTcC5eNU02LBNKB5iNDk+tHxYsrNPM0JI",
+            )
             raise InvalidCredentialsException()
 
         # 3. Verify account not locked
@@ -339,13 +342,17 @@ class AuthService:
         if redis_client:
             email_key = f"rate_limit:resend:{email}"
             if await redis_client.get(email_key):
-                raise AuthException("Please wait at least 60 seconds before requesting another verification email.")
-            
+                raise AuthException(
+                    "Please wait at least 60 seconds before requesting another verification email."
+                )
+
             if ip_address:
                 ip_key = f"rate_limit:resend:ip:{ip_address}"
                 ip_count_str = await redis_client.get(ip_key)
                 if ip_count_str and int(ip_count_str) >= 5:
-                    raise AuthException("Too many verification requests from this IP. Please try again later.")
+                    raise AuthException(
+                        "Too many verification requests from this IP. Please try again later."
+                    )
 
         now = datetime.now(UTC).replace(tzinfo=None)
         raw_token = secrets.token_urlsafe(32)

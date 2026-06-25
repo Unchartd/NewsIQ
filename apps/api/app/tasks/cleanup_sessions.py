@@ -22,4 +22,5 @@ async def cleanup_expired_sessions_task_impl() -> int:
 def cleanup_expired_sessions_task() -> int:
     """Celery task wrapper for expired sessions cleanup."""
     from app.workers.tasks import run_async
+
     return run_async(cleanup_expired_sessions_task_impl())

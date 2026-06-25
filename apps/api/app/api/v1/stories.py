@@ -1,10 +1,11 @@
 """API endpoints for news stories, feeds, analytics, search, and categories."""
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,11 +14,13 @@ from app.core.deps import require_user
 from app.models.models import (
     Article,
     Bookmark,
+    CanonicalEntity,
     Category,
     Source,
     Story,
     StoryArticle,
     StoryDifference,
+    StoryEntity,
     StoryMetric,
     StorySourceCoverage,
     StoryTag,
@@ -25,8 +28,6 @@ from app.models.models import (
     UserCategory,
     UserEvent,
     UserLocation,
-    CanonicalEntity,
-    StoryEntity,
 )
 from app.schemas.story import (
     CategoryResponse,
@@ -44,11 +45,10 @@ from app.schemas.story import (
     TrendingTopicWidget,
     TrendingWidgetsResponse,
 )
-from app.services.cache_service import TTL_STORY, TTL_TRENDING, cache_service
+from app.services.cache_service import TTL_STORY, cache_service
 from app.services.search_service import search_service
 
 router = APIRouter()
-
 
 
 def _build_story_list_response(
@@ -84,7 +84,7 @@ def _build_story_list_response(
 
 
 async def _build_story_list_responses(
-    stories: list[Story], db: AsyncSession
+    stories: Sequence[Story], db: AsyncSession
 ) -> list[StoryListResponse]:
     """Build StoryListResponse list in batch with dynamic similarity calculations."""
     if not stories:
@@ -103,7 +103,7 @@ async def _build_story_list_responses(
     events_rows = events_result.all()
 
     # Group events by story_id
-    story_events_map = {}
+    story_events_map: dict[uuid.UUID, list[ArticleEvent]] = {}
     for event, story_id in events_rows:
         if story_id not in story_events_map:
             story_events_map[story_id] = []
@@ -119,13 +119,14 @@ async def _build_story_list_responses(
             pairs_count = 0
             for i in range(len(events)):
                 for j in range(i + 1, len(events)):
-                    total_sim += clustering_service._compute_event_similarity_direct(events[i], events[j])
+                    total_sim += clustering_service._compute_event_similarity_direct(
+                        events[i], events[j]
+                    )
                     pairs_count += 1
             avg_sim = total_sim / pairs_count if pairs_count > 0 else 1.0
 
         response_items.append(_build_story_list_response(s, cluster_confidence=avg_sim))
     return response_items
-
 
 
 @router.get("", response_model=list[StoryListResponse])
@@ -248,7 +249,7 @@ async def search_stories(
             )
         stmt = stmt.order_by(Story.trend_score.desc()).limit(limit).offset(offset)
         result = await db.execute(stmt)
-        stories = result.scalars().all()
+        stories = list(result.scalars().all())
 
     return [
         SearchResultResponse(
@@ -397,7 +398,7 @@ async def get_story_detail(
 
     # Increment the view counter directly (keeps metrics accurate on cache hits)
     await db.execute(
-        StoryMetric.__table__.update()
+        update(StoryMetric)
         .where(StoryMetric.story_id == story_id)
         .values(views=StoryMetric.views + 1)
     )
@@ -768,25 +769,30 @@ async def trigger_fetch_news(
     if request.gnews:
         try:
             from app.services.gnews_service import gnews_service
+
             results = await gnews_service.ingest_all(db)
             gnews_count = sum(results.values())
         except Exception as exc:
             import logging
+
             logging.getLogger(__name__).error("Manual GNews fetch failed: %s", exc)
 
     if request.rss:
         try:
             from app.services.ingestion_service import ingestion_service
+
             results = await ingestion_service.ingest_all_active_sources(db)
             rss_count = sum(results.values())
         except Exception as exc:
             import logging
+
             logging.getLogger(__name__).error("Manual RSS fetch failed: %s", exc)
 
     total = gnews_count + rss_count
     triggered = False
     if total > 0:
         from app.workers.tasks import process_pending_embeddings_task
+
         process_pending_embeddings_task.delay()
         triggered = True
 

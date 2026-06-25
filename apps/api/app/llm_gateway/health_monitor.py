@@ -1,20 +1,21 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any
 
 from app.llm_gateway.base_provider import APIKey
 
 logger = logging.getLogger(__name__)
+
 
 class HealthMonitor:
     """Monitors provider key health, manages cooldowns and failover triggers."""
 
     def __init__(self) -> None:
         # Key: key_hash, Value: count of consecutive errors
-        self._consecutive_failures: Dict[str, int] = {}
+        self._consecutive_failures: dict[str, int] = {}
 
     def _get_key_hash(self, key: str) -> str:
         import hashlib
+
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
     def report_success(self, api_key: APIKey) -> None:
@@ -46,7 +47,9 @@ class HealthMonitor:
             api_key.cooldown_until = datetime.utcnow() + timedelta(seconds=60)
             logger.warning(
                 "APIKey (%s) hit rate limit. Cooling down until %s. Error: %s",
-                api_key.get_masked(), api_key.cooldown_until, error_msg
+                api_key.get_masked(),
+                api_key.cooldown_until,
+                error_msg,
             )
             return
 
@@ -62,7 +65,11 @@ class HealthMonitor:
 
         if is_auth_error:
             api_key.healthy = False
-            logger.critical("APIKey (%s) authentication failed. Disabling key. Error: %s", api_key.get_masked(), error_msg)
+            logger.critical(
+                "APIKey (%s) authentication failed. Disabling key. Error: %s",
+                api_key.get_masked(),
+                error_msg,
+            )
             return
 
         # 3. Repeated other failures (Mark Unhealthy after 3 consecutive failures)
@@ -70,7 +77,8 @@ class HealthMonitor:
             api_key.healthy = False
             logger.error(
                 "APIKey (%s) failed 3 consecutive times. Disabling key. Last error: %s",
-                api_key.get_masked(), error_msg
+                api_key.get_masked(),
+                error_msg,
             )
             return
 
@@ -78,7 +86,8 @@ class HealthMonitor:
         api_key.cooldown_until = datetime.utcnow() + timedelta(seconds=15)
         logger.warning(
             "APIKey (%s) failed once. Cooling down for 15s. Error: %s",
-            api_key.get_masked(), error_msg
+            api_key.get_masked(),
+            error_msg,
         )
 
     def trigger_heartbeat_check(self, api_key: APIKey) -> bool:

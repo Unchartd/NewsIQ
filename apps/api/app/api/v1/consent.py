@@ -2,7 +2,8 @@
 
 import hashlib
 from datetime import UTC, datetime
-from fastapi import APIRouter, Depends, Request, status
+
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,10 +13,10 @@ from app.core.deps import get_current_user, require_user
 from app.models.consent import ConsentAuditLog, ConsentPreference
 from app.models.models import User
 from app.schemas.consent import (
+    ConsentAuditLogResponse,
     ConsentPreferencesResponse,
     ConsentPreferencesSaveRequest,
     RegionDetectionResponse,
-    ConsentAuditLogResponse,
 )
 
 router = APIRouter()
@@ -39,7 +40,9 @@ def _hash_ip(ip: str) -> str:
 def detect_client_region(request: Request) -> str:
     """Detect visitor's compliance region based on edge proxy headers, query, or overrides."""
     # 1. Query parameter override or header override (primarily for local developer testing)
-    override = request.headers.get("x-consent-region-override") or request.query_params.get("region")
+    override = request.headers.get("x-consent-region-override") or request.query_params.get(
+        "region"
+    )
     if override:
         val = override.upper()
         if val in ("EU", "UK", "CA", "IN", "ROW"):
@@ -64,17 +67,43 @@ def detect_client_region(request: Request) -> str:
             return "IN"
         if country in ("US", "USA"):
             # If Vercel region header specifies California
-            state = request.headers.get("x-vercel-ip-country-region") or request.headers.get("x-region")
+            state = request.headers.get("x-vercel-ip-country-region") or request.headers.get(
+                "x-region"
+            )
             if state and state.upper() in ("CA", "CALIFORNIA"):
                 return "CA"
             # Default US to California CCPA/CPRA rules for safety
             return "CA"
-        
+
         # EU Member States
         eu_countries = {
-            "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", 
-            "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", 
-            "SI", "ES", "SE"
+            "AT",
+            "BE",
+            "BG",
+            "HR",
+            "CY",
+            "CZ",
+            "DK",
+            "EE",
+            "FI",
+            "FR",
+            "DE",
+            "GR",
+            "HU",
+            "IE",
+            "IT",
+            "LV",
+            "LT",
+            "LU",
+            "MT",
+            "NL",
+            "PL",
+            "PT",
+            "RO",
+            "SK",
+            "SI",
+            "ES",
+            "SE",
         }
         if country in eu_countries:
             return "EU"
@@ -118,7 +147,7 @@ async def get_region(request: Request):
     """Detect current region and return compliance configuration and default states."""
     region = detect_client_region(request)
     ip = _get_client_ip(request)
-    
+
     # Anonymize IP shown to client (e.g. 192.168.1.5 -> 192.168.1.xxx)
     ip_parts = ip.split(".")
     if len(ip_parts) == 4:
@@ -145,7 +174,6 @@ async def get_region(request: Request):
 async def get_preferences(
     request: Request = None,
     anonymous_id: str | None = None,
-
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_current_user),
 ):
@@ -160,15 +188,14 @@ async def get_preferences(
         # If logged in but no user_id record, check if we can merge an anonymous record
         if anonymous_id:
             stmt = select(ConsentPreference).where(
-                ConsentPreference.anonymous_id == anonymous_id,
-                ConsentPreference.user_id == None
+                ConsentPreference.anonymous_id == anonymous_id, ConsentPreference.user_id.is_(None)
             )
             result = await db.execute(stmt)
             anon_pref = result.scalar_one_or_none()
             if anon_pref:
                 anon_pref.user_id = current_user.id
                 anon_pref.updated_at = datetime.now(UTC).replace(tzinfo=None)
-                
+
                 # Write an audit log for the merge if request info is available
                 ip = _get_client_ip(request) if request else "127.0.0.1"
                 ip_hash = _hash_ip(ip)
@@ -194,14 +221,12 @@ async def get_preferences(
 
     if anonymous_id:
         stmt = select(ConsentPreference).where(
-            ConsentPreference.anonymous_id == anonymous_id,
-            ConsentPreference.user_id == None
+            ConsentPreference.anonymous_id == anonymous_id, ConsentPreference.user_id.is_(None)
         )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     return None
-
 
 
 @router.post("/preferences", response_model=ConsentPreferencesResponse)
@@ -230,7 +255,7 @@ async def save_preferences(
         if not existing_pref:
             stmt = select(ConsentPreference).where(
                 ConsentPreference.anonymous_id == body.anonymous_id,
-                ConsentPreference.user_id == None
+                ConsentPreference.user_id.is_(None),
             )
             result = await db.execute(stmt)
             existing_pref = result.scalar_one_or_none()
@@ -240,8 +265,7 @@ async def save_preferences(
     else:
         # Anonymous visitor
         stmt = select(ConsentPreference).where(
-            ConsentPreference.anonymous_id == body.anonymous_id,
-            ConsentPreference.user_id == None
+            ConsentPreference.anonymous_id == body.anonymous_id, ConsentPreference.user_id.is_(None)
         )
         result = await db.execute(stmt)
         existing_pref = result.scalar_one_or_none()
@@ -283,7 +307,7 @@ async def save_preferences(
     # 3. Determine action type for GDPR audit compliance
     all_enabled = body.functional and body.analytics and body.marketing
     all_disabled = not body.functional and not body.analytics and not body.marketing
-    
+
     if all_enabled:
         action = "accept_all"
     elif all_disabled:
@@ -337,8 +361,7 @@ async def withdraw_consent(
         existing_pref = result.scalar_one_or_none()
     else:
         stmt = select(ConsentPreference).where(
-            ConsentPreference.anonymous_id == anonymous_id,
-            ConsentPreference.user_id == None
+            ConsentPreference.anonymous_id == anonymous_id, ConsentPreference.user_id.is_(None)
         )
         result = await db.execute(stmt)
         existing_pref = result.scalar_one_or_none()

@@ -3,12 +3,14 @@
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import numpy as np
 from sqlalchemy import delete, func, select, text
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.core.trace import PipelineStage, StageSpan
 from app.models.models import (
     Article,
     ArticleEntity,
@@ -26,13 +28,12 @@ from app.models.models import (
     StoryTimelineEvent,
 )
 from app.services.ai_service import CATEGORY_SLUGS, ai_service
-from app.services.ner_service_v2 import ner_service_v2
-from app.services.vector_service import vector_service
+from app.services.contradiction_service import contradiction_service
 from app.services.entity_linker import entity_linker
 from app.services.knowledge_graph import build_story_knowledge_graph
-from app.services.contradiction_service import contradiction_service
+from app.services.ner_service_v2 import ner_service_v2
 from app.services.source_comparison_service import source_comparison_service
-from app.core.trace import StageSpan, PipelineStage
+from app.services.vector_service import vector_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +48,8 @@ def uuid_to_advisory_lock_id(u: uuid.UUID) -> int:
     """Fold a 128-bit UUID into a signed 64-bit integer lock ID."""
     val = u.int
     upper = val >> 64
-    lower = val & 0xffffffffffffffff
-    lock_id = (upper ^ lower) & 0xffffffffffffffff
+    lower = val & 0xFFFFFFFFFFFFFFFF
+    lock_id = (upper ^ lower) & 0xFFFFFFFFFFFFFFFF
     if lock_id >= 0x8000000000000000:
         lock_id -= 0x10000000000000000
     return lock_id
@@ -90,15 +91,9 @@ class ClusteringService:
         await session.execute(
             delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story.id)
         )
-        await session.execute(
-            delete(StoryDifference).where(StoryDifference.story_id == story.id)
-        )
-        await session.execute(
-            delete(StoryEntity).where(StoryEntity.story_id == story.id)
-        )
-        await session.execute(
-            delete(StoryTag).where(StoryTag.story_id == story.id)
-        )
+        await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story.id))
+        await session.execute(delete(StoryEntity).where(StoryEntity.story_id == story.id))
+        await session.execute(delete(StoryTag).where(StoryTag.story_id == story.id))
         await session.execute(
             delete(StoryContradiction).where(StoryContradiction.story_id == story.id)
         )
@@ -131,26 +126,33 @@ class ClusteringService:
         # Resolve and assign location_country from article sources
         if source_countries:
             from collections import Counter
+
             story.location_country = Counter(source_countries).most_common(1)[0][0]
         else:
             story.location_country = None
 
         article_ids = [art.id for art in articles]
-        stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
-        res = await session.execute(stmt)
-        article_events = list(res.scalars().all())
+        event_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
+        event_res = await session.execute(event_stmt)
+        article_events = list(event_res.scalars().all())
 
         # 3. Save Timeline Events (Sorted by parsed event time with UTC normalization)
         saved_timeline_objects = []
-        timeline_entries = []
-        async with StageSpan(stage=PipelineStage.TIMELINE_GENERATION, story_id=str(story.id)) as span:
+        timeline_entries: list[dict[str, Any]] = []
+        async with StageSpan(
+            stage=PipelineStage.TIMELINE_GENERATION, story_id=str(story.id)
+        ) as span:
             for evt in article_events:
                 t = evt.event_time or evt.created_at or _now()
                 if t.tzinfo is not None:
                     t = t.astimezone(UTC).replace(tzinfo=None)
 
                 src_name = article_source_map.get(evt.article_id, "Unknown Source")
-                evt_type = (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
+                evt_type = (
+                    (evt.event_type_canonical or evt.event_type or "Event")
+                    .replace("_", " ")
+                    .title()
+                )
 
                 details = []
                 if evt.actors:
@@ -166,11 +168,13 @@ class ClusteringService:
                 details_str = f" ({'; '.join(details)})" if details else ""
                 desc = f"{evt_type} reported by {src_name}{details_str}."
 
-                timeline_entries.append({
-                    "event_time": t,
-                    "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                    "description": desc,
-                })
+                timeline_entries.append(
+                    {
+                        "event_time": t,
+                        "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        "description": desc,
+                    }
+                )
 
             # Sort timeline entries chronologically
             timeline_entries.sort(key=lambda x: x["event_time"])
@@ -186,11 +190,13 @@ class ClusteringService:
                 )
                 session.add(tl_event)
                 saved_timeline_objects.append(tl_event)
-            
-            span.set_metadata({
-                "inputs": {"article_events_count": len(article_events)},
-                "outputs": {"timeline_events_count": len(saved_timeline_objects)}
-            })
+
+            span.set_metadata(
+                {
+                    "inputs": {"article_events_count": len(article_events)},
+                    "outputs": {"timeline_events_count": len(saved_timeline_objects)},
+                }
+            )
 
         # 4. Extract Named Entities — use pre-extracted ArticleEntities if available
         entities = []
@@ -205,22 +211,25 @@ class ClusteringService:
 
             if pre_entities:
                 # Use pre-extracted article-level entities — no redundant LLM call
-                entities = [
-                    {"type": e.entity_type, "value": e.entity_value}
-                    for e in pre_entities
-                ]
+                entities = [{"type": e.entity_type, "value": e.entity_value} for e in pre_entities]
                 logger.info(
                     "Using %d pre-extracted article entities for story %s.",
-                    len(entities), story.id,
+                    len(entities),
+                    story.id,
                 )
             else:
                 # Fallback: run NER v2 on full corpus (for old articles without pre-extraction)
                 entities = await ner_service_v2.extract_entities(full_text_corpus)
 
-            span.set_metadata({
-                "inputs": {"corpus_length": len(full_text_corpus), "pre_extracted": bool(pre_entities)},
-                "outputs": {"entities_extracted": len(entities)}
-            })
+            span.set_metadata(
+                {
+                    "inputs": {
+                        "corpus_length": len(full_text_corpus),
+                        "pre_extracted": bool(pre_entities),
+                    },
+                    "outputs": {"entities_extracted": len(entities)},
+                }
+            )
 
         # Perform Local Coreference Resolution & Entity Linking
         saved_story_entities = []
@@ -267,42 +276,55 @@ class ClusteringService:
             # Save Story Tags from entities (limit to 5)
             for tag in list(tags_added)[:5]:
                 session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
-                
-            span.set_metadata({
-                "inputs": {"entities_to_link": len(entities)},
-                "outputs": {
-                    "canonical_entities_linked": len(saved_story_entities),
-                    "tags": list(tags_added)
+
+            span.set_metadata(
+                {
+                    "inputs": {"entities_to_link": len(entities)},
+                    "outputs": {
+                        "canonical_entities_linked": len(saved_story_entities),
+                        "tags": list(tags_added),
+                    },
                 }
-            })
+            )
 
         # 6. Run Contradiction & Source Comparison Engines
         saved_contras = []
-        async with StageSpan(stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)) as span:
+        async with StageSpan(
+            stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)
+        ) as span:
             try:
-                saved_contras = await contradiction_service.detect_and_save_contradictions(story.id, session)
+                saved_contras = await contradiction_service.detect_and_save_contradictions(
+                    story.id, session
+                )
                 logger.info("Contradiction detection successfully run for story %s.", story.id)
             except Exception as e:
                 logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
-            
-            span.set_metadata({
-                "inputs": {"story_id": str(story.id)},
-                "outputs": {"contradictions_count": len(saved_contras)}
-            })
 
-        saved_coverage = []
-        saved_differences = []
+            span.set_metadata(
+                {
+                    "inputs": {"story_id": str(story.id)},
+                    "outputs": {"contradictions_count": len(saved_contras)},
+                }
+            )
+
+        saved_coverage: list[StorySourceCoverage] = []
+        saved_differences: list[StoryDifference] = []
         async with StageSpan(stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)) as span:
             try:
-                saved_coverage, saved_differences = await source_comparison_service.compare_sources_and_save(story.id, session)
+                (
+                    saved_coverage,
+                    saved_differences,
+                ) = await source_comparison_service.compare_sources_and_save(story.id, session)
                 logger.info("Source comparison successfully run for story %s.", story.id)
             except Exception as e:
                 logger.error("Failed to run source comparison for story %s: %s", story.id, e)
-            
-            span.set_metadata({
-                "inputs": {"story_id": str(story.id)},
-                "outputs": {"differences_count": len(saved_differences)}
-            })
+
+            span.set_metadata(
+                {
+                    "inputs": {"story_id": str(story.id)},
+                    "outputs": {"differences_count": len(saved_differences)},
+                }
+            )
 
         # 5. Build and Serialize Knowledge Graph
         kg_dict = {}
@@ -316,14 +338,21 @@ class ClusteringService:
                 )
                 kg_dict = kg.to_dict()
                 story.knowledge_graph = kg_dict
-                logger.info("Knowledge Graph successfully generated and assigned for story %s.", story.id)
+                logger.info(
+                    "Knowledge Graph successfully generated and assigned for story %s.", story.id
+                )
             except Exception as e:
                 logger.error("Failed to generate knowledge graph for story %s: %s", story.id, e)
-            
-            span.set_metadata({
-                "inputs": {"articles_count": len(articles)},
-                "outputs": {"nodes_count": len(kg_dict.get("nodes", [])), "edges_count": len(kg_dict.get("edges", []))}
-            })
+
+            span.set_metadata(
+                {
+                    "inputs": {"articles_count": len(articles)},
+                    "outputs": {
+                        "nodes_count": len(kg_dict.get("nodes", [])),
+                        "edges_count": len(kg_dict.get("edges", [])),
+                    },
+                }
+            )
 
         # Serialize inputs for KG-grounded summarization
         contradictions_list = [
@@ -338,7 +367,8 @@ class ClusteringService:
 
         timeline_list = [
             {
-                "date": t.event_time_raw or (t.event_time.isoformat() if t.event_time else "Unknown"),
+                "date": t.event_time_raw
+                or (t.event_time.isoformat() if t.event_time else "Unknown"),
                 "description": t.description,
             }
             for t in saved_timeline_objects
@@ -350,19 +380,23 @@ class ClusteringService:
             focus = cov.focus_area if cov else "General coverage"
             src_name = article_source_map.get(
                 next((art.id for art in articles if art.source_id == diff.source_id), None),
-                "Unknown Source"
+                "Unknown Source",
             )
-            source_comparisons_list.append({
-                "source_name": src_name,
-                "focus_area": focus,
-                "unique_information": diff.unique_information or "",
-                "missing_information": diff.missing_information or "",
-                "contradictions": diff.contradictions or "",
-            })
+            source_comparisons_list.append(
+                {
+                    "source_name": src_name,
+                    "focus_area": focus,
+                    "unique_information": diff.unique_information or "",
+                    "missing_information": diff.missing_information or "",
+                    "contradictions": diff.contradictions or "",
+                }
+            )
 
         # 7. Call Summary Engine (KG-grounded summarization)
         cat_slug = "world"
-        async with StageSpan(stage=PipelineStage.SUMMARY_GENERATION, story_id=str(story.id)) as span:
+        async with StageSpan(
+            stage=PipelineStage.SUMMARY_GENERATION, story_id=str(story.id)
+        ) as span:
             try:
                 summary_res = await ai_service.summarize_story_from_kg(
                     kg=kg_dict,
@@ -376,31 +410,41 @@ class ClusteringService:
                 story.one_line_summary = summary_res.one_line_summary
                 story.short_summary = summary_res.short_summary
                 story.detailed_summary = summary_res.detailed_summary
-                story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+                story.key_facts = (
+                    [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+                )
 
                 # Resolve and assign category
-                cat_slug = summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
+                cat_slug = (
+                    summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
+                )
 
                 # Summary Reflection Verification
-                is_trending_or_high_stakes = (
-                    len(articles) >= 3 
-                    or cat_slug in ("world", "politics", "business")
+                is_trending_or_high_stakes = len(articles) >= 3 or cat_slug in (
+                    "world",
+                    "politics",
+                    "business",
                 )
                 if is_trending_or_high_stakes:
                     try:
                         from app.agents.reflection_agent import reflect_on_summary
+
                         reflection = await reflect_on_summary(
                             summary_text=story.detailed_summary or "",
                             timeline=timeline_list,
                             kg_nodes=kg_dict.get("nodes", []),
-                            source_coverage=source_comparisons_list
+                            source_coverage=source_comparisons_list,
                         )
-                        logger.info("Summary Reflection result for story %s: %s", story.id, reflection.model_dump())
+                        logger.info(
+                            "Summary Reflection result for story %s: %s",
+                            story.id,
+                            reflection.model_dump(),
+                        )
 
                         if reflection.has_hallucinations or reflection.contradicts_graph:
                             logger.warning(
                                 "Reflection Agent detected issues/hallucinations for story %s. Regenerating summary.",
-                                story.id
+                                story.id,
                             )
                             # Regenerate summary
                             summary_res = await ai_service.summarize_story_from_kg(
@@ -413,43 +457,59 @@ class ClusteringService:
                             story.one_line_summary = summary_res.one_line_summary
                             story.short_summary = summary_res.short_summary
                             story.detailed_summary = summary_res.detailed_summary
-                            story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+                            story.key_facts = (
+                                [f for f in summary_res.key_facts if f]
+                                if summary_res.key_facts
+                                else []
+                            )
                     except Exception as reflection_exc:
-                        logger.error("Reflection verification failed for story %s: %s", story.id, reflection_exc)
+                        logger.error(
+                            "Reflection verification failed for story %s: %s",
+                            story.id,
+                            reflection_exc,
+                        )
 
                 cat_id = await self.get_or_create_category(
                     cat_slug, cat_slug.replace("-", " ").title(), session
                 )
                 story.category_id = cat_id
                 story.story_status = "active"
-                logger.info("Story summaries successfully synthesized and updated for story %s.", story.id)
+                logger.info(
+                    "Story summaries successfully synthesized and updated for story %s.", story.id
+                )
             except Exception as e:
                 logger.error("Failed to summarize story from KG %s: %s", story.id, e)
                 primary_title = "News Story"
                 primary_desc = "Summary currently unavailable."
                 if articles:
                     primary_title = articles[0].title or "News Story"
-                    primary_desc = articles[0].description or (articles[0].content[:200] if articles[0].content else "Summary currently unavailable.")
+                    primary_desc = articles[0].description or (
+                        articles[0].content[:200]
+                        if articles[0].content
+                        else "Summary currently unavailable."
+                    )
                 story.headline = story.headline or primary_title
                 story.one_line_summary = story.one_line_summary or primary_desc
                 story.short_summary = story.short_summary or primary_desc
                 story.detailed_summary = story.detailed_summary or primary_desc
                 story.key_facts = story.key_facts or []
 
-            span.set_metadata({
-                "inputs": {
-                    "kg_nodes": len(kg_dict.get("nodes", [])),
-                    "contradictions_count": len(contradictions_list),
-                    "timeline_count": len(timeline_list),
-                },
-                "outputs": {
-                    "headline": story.headline,
-                    "category": cat_slug,
-                    "one_line_summary": story.one_line_summary,
-                    "short_summary": story.short_summary,
-                    "key_facts": story.key_facts
+            span.set_metadata(
+                {
+                    "inputs": {
+                        "kg_nodes": len(kg_dict.get("nodes", [])),
+                        "contradictions_count": len(contradictions_list),
+                        "timeline_count": len(timeline_list),
+                    },
+                    "outputs": {
+                        "headline": story.headline,
+                        "category": cat_slug,
+                        "one_line_summary": story.one_line_summary,
+                        "short_summary": story.short_summary,
+                        "key_facts": story.key_facts,
+                    },
                 }
-            })
+            )
 
         if commit:
             await session.commit()
@@ -459,10 +519,16 @@ class ClusteringService:
         # 8. Index in Meilisearch and invalidate caches for this story
         async with StageSpan(stage=PipelineStage.INDEXING, story_id=str(story.id)) as span:
             await self._index_and_invalidate(story, cat_slug, list(tags_added))
-            span.set_metadata({
-                "inputs": {"story_id": str(story.id), "category": cat_slug, "tags": list(tags_added)},
-                "outputs": {"indexed": True}
-            })
+            span.set_metadata(
+                {
+                    "inputs": {
+                        "story_id": str(story.id),
+                        "category": cat_slug,
+                        "tags": list(tags_added),
+                    },
+                    "outputs": {"indexed": True},
+                }
+            )
 
     async def _index_and_invalidate(
         self,
@@ -488,9 +554,7 @@ class ClusteringService:
         """Merge a new article into an existing story cluster."""
         # Acquire transaction-bound advisory lock on story_id
         lock_id = uuid_to_advisory_lock_id(story_id)
-        await session.execute(
-            text(f"SELECT pg_advisory_xact_lock({lock_id})")
-        )
+        await session.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
 
         # Check if relation already exists
         stmt = select(StoryArticle).where(
@@ -506,18 +570,21 @@ class ClusteringService:
         await session.flush()
 
         # Retrieve the story and all associated articles to update summaries with eagerly loaded relations
-        stmt = select(Story).options(
-            selectinload(Story.category),
-            selectinload(Story.metrics)
-        ).where(Story.id == story_id)
-        res = await session.execute(stmt)
-        story = res.scalar_one_or_none()
+        story_stmt = (
+            select(Story)
+            .options(selectinload(Story.category), selectinload(Story.metrics))
+            .where(Story.id == story_id)
+        )
+        story_res = await session.execute(story_stmt)
+        story = story_res.scalar_one_or_none()
 
         if story:
             # Get all articles in this story
-            stmt = select(Article).join(StoryArticle).where(StoryArticle.story_id == story_id)
-            res = await session.execute(stmt)
-            all_articles = list(res.scalars().all())
+            article_stmt = (
+                select(Article).join(StoryArticle).where(StoryArticle.story_id == story_id)
+            )
+            article_res = await session.execute(article_stmt)
+            all_articles = list(article_res.scalars().all())
 
             logger.info(
                 "Merging article %s into story %s. Total articles: %d",
@@ -539,7 +606,9 @@ class ClusteringService:
         if evt1.event_type_canonical and evt2.event_type_canonical:
             if evt1.event_type_canonical == evt2.event_type_canonical:
                 type_sim = 1.0
-            elif get_parent_type(evt1.event_type_canonical) == get_parent_type(evt2.event_type_canonical):
+            elif get_parent_type(evt1.event_type_canonical) == get_parent_type(
+                evt2.event_type_canonical
+            ):
                 type_sim = 0.5
 
         # 2. Actor Similarity (25% components weight)
@@ -592,7 +661,11 @@ class ClusteringService:
     ) -> float:
         """Compute the average similarity between a new event and all events inside a story (including entity overlap)."""
         # Fetch events of all articles in the story
-        stmt = select(ArticleEvent).join(StoryArticle, StoryArticle.article_id == ArticleEvent.article_id).where(StoryArticle.story_id == story.id)
+        stmt = (
+            select(ArticleEvent)
+            .join(StoryArticle, StoryArticle.article_id == ArticleEvent.article_id)
+            .where(StoryArticle.story_id == story.id)
+        )
         res = await session.execute(stmt)
         story_events = list(res.scalars().all())
 
@@ -632,7 +705,9 @@ class ClusteringService:
                         intersection = art_entity_ids & sub_entity_ids
                         total_entity_sim += len(intersection) / len(union) if union else 0.0
 
-        avg_entity_sim = total_entity_sim / len(story_events) if (story_events and art_entity_ids) else 0.0
+        avg_entity_sim = (
+            total_entity_sim / len(story_events) if (story_events and art_entity_ids) else 0.0
+        )
         return avg_sim + (0.10 * avg_entity_sim)
 
     async def _verify_merge_with_agents(
@@ -654,34 +729,36 @@ class ClusteringService:
             "actors": event_a.actors,
             "targets": event_a.targets,
             "location": event_a.location,
-            "time": str(event_a.event_time) if event_a.event_time else ""
+            "time": str(event_a.event_time) if event_a.event_time else "",
         }
         art_b_evt_dict = {
             "type": event_b.event_type_canonical,
             "actors": event_b.actors,
             "targets": event_b.targets,
             "location": event_b.location,
-            "time": str(event_b.event_time) if event_b.event_time else ""
+            "time": str(event_b.event_time) if event_b.event_time else "",
         }
 
         text_to_check = ((article_a.title or "") + " " + (article_b.title or "")).lower()
         high_stakes = category_slug in ("world", "politics", "business") or any(
-            w in text_to_check for w in ("war", "election", "finance", "military", "police", "arrest", "attack")
+            w in text_to_check
+            for w in ("war", "election", "finance", "military", "police", "arrest", "attack")
         )
 
         if high_stakes and settings.OPENAI_API_KEY:
             try:
                 from agno.agent import Agent
                 from agno.models.openai import OpenAIChat
-                from app.agents.cluster_verification_agent import cluster_verification_agent
+
                 from app.agents.base_agent import run_agent_with_observability
+                from app.agents.cluster_verification_agent import cluster_verification_agent
                 from app.agents.judge_agent import resolve_disagreement
 
                 openai_agent = Agent(
                     name="OpenAI Verification Agent",
                     model=OpenAIChat(id="gpt-4o-mini"),
                     instructions=cluster_verification_agent.instructions,
-                    output_schema=cluster_verification_agent.output_schema
+                    output_schema=cluster_verification_agent.output_schema,
                 )
 
                 prompt = f"""
@@ -696,7 +773,7 @@ class ClusteringService:
                 - Extracted Event: {art_b_evt_dict}
 
                 Determined Similarity Score: {similarity_score:.4f}
-                Knowledge Graph Context: {kg_nodes or 'None'}
+                Knowledge Graph Context: {kg_nodes or "None"}
 
                 Determine if they represent the same event.
                 """
@@ -708,13 +785,11 @@ class ClusteringService:
                     article_b_title=article_b.title or "",
                     article_b_event=art_b_evt_dict,
                     similarity_score=similarity_score,
-                    kg_nodes=kg_nodes
+                    kg_nodes=kg_nodes,
                 )
 
                 run_output_oa = await run_agent_with_observability(
-                    agent=openai_agent,
-                    prompt=prompt,
-                    stage="cluster_verification"
+                    agent=openai_agent, prompt=prompt, stage="cluster_verification"
                 )
                 openai_ver = run_output_oa.content
 
@@ -725,11 +800,14 @@ class ClusteringService:
                         provider_a_output=gemini_ver.model_dump(),
                         provider_b_name="openai",
                         provider_b_output=openai_ver.model_dump(),
-                        context=f"Article A: {article_a.title}\nArticle B: {article_b.title}"
+                        context=f"Article A: {article_a.title}\nArticle B: {article_b.title}",
                     )
                     logger.info(
                         "Judge Agent resolved disagreement between Gemini (%s) and OpenAI (%s) to: %s (explanation: %s)",
-                        gemini_ver.same_event, openai_ver.same_event, judgment.final_decision, judgment.explanation
+                        gemini_ver.same_event,
+                        openai_ver.same_event,
+                        judgment.final_decision,
+                        judgment.explanation,
                     )
                     return judgment.final_decision
                 else:
@@ -745,11 +823,14 @@ class ClusteringService:
                 article_b_title=article_b.title or "",
                 article_b_event=art_b_evt_dict,
                 similarity_score=similarity_score,
-                kg_nodes=kg_nodes
+                kg_nodes=kg_nodes,
             )
             return gemini_ver.same_event
         except Exception as e:
-            logger.error("Gemini cluster verification agent failed, falling back to True/False based on threshold: %s", e)
+            logger.error(
+                "Gemini cluster verification agent failed, falling back to True/False based on threshold: %s",
+                e,
+            )
             return similarity_score >= 0.80
 
     async def add_article_to_existing_story_if_similar(
@@ -777,13 +858,13 @@ class ClusteringService:
             return False
 
         # Fetch the article's event for multi-signal verification
-        stmt = select(ArticleEvent).where(ArticleEvent.article_id == article_id).limit(1)
-        res = await session.execute(stmt)
-        article_event = res.scalar_one_or_none()
+        event_stmt = select(ArticleEvent).where(ArticleEvent.article_id == article_id).limit(1)
+        event_res = await session.execute(event_stmt)
+        article_event = event_res.scalar_one_or_none()
 
         # Search for similar articles
         matches = await vector_service.search_similar(
-            vector, limit=3, score_threshold=SIMILARITY_THRESHOLD
+            cast(list[float], vector), limit=3, score_threshold=SIMILARITY_THRESHOLD
         )
         for match in matches:
             match_id = match["id"]
@@ -791,15 +872,15 @@ class ClusteringService:
                 continue
 
             # Check if this similar article is associated with an existing story
-            stmt = select(StoryArticle.story_id).where(StoryArticle.article_id == match_id).limit(1)
-            res = await session.execute(stmt)
-            story_id = res.scalar()
+            story_stmt = (
+                select(StoryArticle.story_id).where(StoryArticle.article_id == match_id).limit(1)
+            )
+            story_res = await session.execute(story_stmt)
+            story_id = story_res.scalar()
             if story_id:
                 # Acquire transaction-bound advisory lock on story_id
                 lock_id = uuid_to_advisory_lock_id(story_id)
-                await session.execute(
-                    text(f"SELECT pg_advisory_xact_lock({lock_id})")
-                )
+                await session.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
 
                 # Check if already merged in another concurrent task
                 stmt_chk = select(StoryArticle).where(
@@ -810,10 +891,11 @@ class ClusteringService:
                     return False
 
                 # Retrieve the story with eagerly loaded relations to avoid lazy-load MissingGreenlet errors
-                stmt_story = select(Story).options(
-                    selectinload(Story.category),
-                    selectinload(Story.metrics)
-                ).where(Story.id == story_id)
+                stmt_story = (
+                    select(Story)
+                    .options(selectinload(Story.category), selectinload(Story.metrics))
+                    .where(Story.id == story_id)
+                )
                 res_story = await session.execute(stmt_story)
                 story = res_story.scalar_one_or_none()
 
@@ -824,16 +906,30 @@ class ClusteringService:
                     should_merge = False
                     if score >= 0.90:
                         should_merge = True
-                        logger.info("Auto-merging article %s into story %s (similarity: %.2f >= 0.90)", article_id, story_id, score)
+                        logger.info(
+                            "Auto-merging article %s into story %s (similarity: %.2f >= 0.90)",
+                            article_id,
+                            story_id,
+                            score,
+                        )
                     elif score >= 0.70:
                         # Fetch Article B (first article of the story) to compare events
-                        stmt_first_art = select(Article).join(StoryArticle).where(StoryArticle.story_id == story.id).limit(1)
+                        stmt_first_art = (
+                            select(Article)
+                            .join(StoryArticle)
+                            .where(StoryArticle.story_id == story.id)
+                            .limit(1)
+                        )
                         res_first_art = await session.execute(stmt_first_art)
                         first_art = res_first_art.scalar_one_or_none()
 
                         first_evt = None
                         if first_art:
-                            stmt_evt = select(ArticleEvent).where(ArticleEvent.article_id == first_art.id).limit(1)
+                            stmt_evt = (
+                                select(ArticleEvent)
+                                .where(ArticleEvent.article_id == first_art.id)
+                                .limit(1)
+                            )
                             res_evt = await session.execute(stmt_evt)
                             first_evt = res_evt.scalar_one_or_none()
 
@@ -846,7 +942,9 @@ class ClusteringService:
                                 event_b=first_evt,
                                 similarity_score=score,
                                 category_slug=category_slug,
-                                kg_nodes=story.knowledge_graph.get("nodes", []) if story.knowledge_graph else []
+                                kg_nodes=story.knowledge_graph.get("nodes", [])
+                                if story.knowledge_graph
+                                else [],
                             )
                         else:
                             should_merge = score >= 0.80  # fallback
@@ -874,15 +972,11 @@ class ClusteringService:
     async def run_batch_clustering(self, session: AsyncSession) -> int:
         """Run HDBSCAN clustering on unclustered articles."""
         GLOBAL_CLUSTERING_LOCK_ID = 888888888
-        await session.execute(
-            text(f"SELECT pg_advisory_lock({GLOBAL_CLUSTERING_LOCK_ID})")
-        )
+        await session.execute(text(f"SELECT pg_advisory_lock({GLOBAL_CLUSTERING_LOCK_ID})"))
         try:
             return await self._run_batch_clustering_locked(session)
         finally:
-            await session.execute(
-                text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})")
-            )
+            await session.execute(text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})"))
 
     async def _run_batch_clustering_locked(self, session: AsyncSession) -> int:
         """Internal method running batch clustering under global lock."""
@@ -919,7 +1013,7 @@ class ClusteringService:
                 points = await vector_service.client.retrieve(
                     collection_name="articles", ids=article_ids, with_vectors=True
                 )
-                points_dict = {uuid.UUID(p.id): p.vector for p in points if p.vector}
+                points_dict = {uuid.UUID(str(p.id)): p.vector for p in points if p.vector}
 
                 for art in unclustered_articles:
                     if art.id in points_dict:
@@ -964,9 +1058,11 @@ class ClusteringService:
                     sub_clusters: list[list[Article]] = []
                     for art in art_list:
                         matched_sub = None
-                        stmt = select(ArticleEvent).where(ArticleEvent.article_id == art.id).limit(1)
-                        res = await session.execute(stmt)
-                        art_evt = res.scalar_one_or_none()
+                        event_stmt = (
+                            select(ArticleEvent).where(ArticleEvent.article_id == art.id).limit(1)
+                        )
+                        event_res = await session.execute(event_stmt)
+                        art_evt = event_res.scalar_one_or_none()
 
                         # Get canonical entity IDs for this article
                         art_ent_stmt = select(ArticleEntity.canonical_entity_id).where(
@@ -982,17 +1078,25 @@ class ClusteringService:
                                 total_sim = 0.0
                                 total_entity_sim = 0.0
                                 for sub_art in sub:
-                                    stmt_sub = select(ArticleEvent).where(ArticleEvent.article_id == sub_art.id).limit(1)
+                                    stmt_sub = (
+                                        select(ArticleEvent)
+                                        .where(ArticleEvent.article_id == sub_art.id)
+                                        .limit(1)
+                                    )
                                     res_sub = await session.execute(stmt_sub)
                                     sub_evt = res_sub.scalar_one_or_none()
                                     if sub_evt:
-                                        total_sim += self._compute_event_similarity_direct(art_evt, sub_evt)
+                                        total_sim += self._compute_event_similarity_direct(
+                                            art_evt, sub_evt
+                                        )
                                     else:
                                         total_sim += 0.0
 
                                     # Entity overlap for this pair
                                     if art_entity_ids:
-                                        sub_ent_stmt = select(ArticleEntity.canonical_entity_id).where(
+                                        sub_ent_stmt = select(
+                                            ArticleEntity.canonical_entity_id
+                                        ).where(
                                             ArticleEntity.article_id == sub_art.id,
                                             ArticleEntity.canonical_entity_id.isnot(None),
                                         )
@@ -1001,12 +1105,16 @@ class ClusteringService:
                                         if sub_entity_ids or art_entity_ids:
                                             union = art_entity_ids | sub_entity_ids
                                             intersection = art_entity_ids & sub_entity_ids
-                                            total_entity_sim += len(intersection) / len(union) if union else 0.0
+                                            total_entity_sim += (
+                                                len(intersection) / len(union) if union else 0.0
+                                            )
                                         else:
                                             total_entity_sim += 0.0
 
                                 avg_sim = total_sim / len(sub)
-                                avg_entity_sim = total_entity_sim / len(sub) if art_entity_ids else 0.0
+                                avg_entity_sim = (
+                                    total_entity_sim / len(sub) if art_entity_ids else 0.0
+                                )
                                 # Combined: event similarity (90%) + entity overlap (10%)
                                 combined_sim = avg_sim + (0.10 * avg_entity_sim)
 
@@ -1014,7 +1122,11 @@ class ClusteringService:
                                 if combined_sim >= 0.90:
                                     should_merge = True
                                 elif combined_sim >= 0.70:
-                                    stmt_sub_evt = select(ArticleEvent).where(ArticleEvent.article_id == sub[0].id).limit(1)
+                                    stmt_sub_evt = (
+                                        select(ArticleEvent)
+                                        .where(ArticleEvent.article_id == sub[0].id)
+                                        .limit(1)
+                                    )
                                     res_sub_evt = await session.execute(stmt_sub_evt)
                                     sub_evt = res_sub_evt.scalar_one_or_none()
                                     if sub_evt:
@@ -1023,19 +1135,21 @@ class ClusteringService:
                                             event_a=art_evt,
                                             article_b=sub[0],
                                             event_b=sub_evt,
-                                            similarity_score=combined_sim
+                                            similarity_score=combined_sim,
                                         )
 
                                 if should_merge:
                                     matched_sub = sub
-                                    clustering_audit.append({
-                                        "decision": "merge",
-                                        "article_id": str(art.id),
-                                        "sub_cluster_size": len(sub),
-                                        "event_sim": round(avg_sim, 4),
-                                        "entity_sim": round(avg_entity_sim, 4),
-                                        "combined_sim": round(combined_sim, 4),
-                                    })
+                                    clustering_audit.append(
+                                        {
+                                            "decision": "merge",
+                                            "article_id": str(art.id),
+                                            "sub_cluster_size": len(sub),
+                                            "event_sim": round(avg_sim, 4),
+                                            "entity_sim": round(avg_entity_sim, 4),
+                                            "combined_sim": round(combined_sim, 4),
+                                        }
+                                    )
                                     break
 
                         if matched_sub is not None:
@@ -1043,12 +1157,13 @@ class ClusteringService:
                         else:
                             sub_clusters.append([art])
                             if art_evt:
-                                clustering_audit.append({
-                                    "decision": "new_sub_cluster",
-                                    "article_id": str(art.id),
-                                    "reason": "no matching sub-cluster above threshold",
-                                })
-
+                                clustering_audit.append(
+                                    {
+                                        "decision": "new_sub_cluster",
+                                        "article_id": str(art.id),
+                                        "reason": "no matching sub-cluster above threshold",
+                                    }
+                                )
 
                     # Keep all sub-clusters (even size 1)
                     for sub in sub_clusters:
@@ -1165,6 +1280,7 @@ class ClusteringService:
         # ── Engagement score ──────────────────────────────────────────────────
         engagement_score = 0.0
         from app.models.models import StoryMetric
+
         stmt_metrics = select(StoryMetric).where(StoryMetric.story_id == story.id)
         res_metrics = await session.execute(stmt_metrics)
         m = res_metrics.scalar_one_or_none()
@@ -1181,10 +1297,14 @@ class ClusteringService:
         logger.debug(
             "Trending score for story %s: %.4f "
             "(source=%.2f, recency=%.2f, engagement=%.2f, hours=%.1f)",
-            story.id, score, source_score, recency_score, engagement_score, hours_elapsed,
+            story.id,
+            score,
+            source_score,
+            recency_score,
+            engagement_score,
+            hours_elapsed,
         )
         return score
 
 
 clustering_service = ClusteringService()
-

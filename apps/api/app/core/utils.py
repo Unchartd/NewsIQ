@@ -1,7 +1,7 @@
 """Core utility functions, including URL canonicalization."""
 
 import logging
-from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode, unquote
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +22,15 @@ def canonicalize_url(url: str) -> str:
         # Decode percent-encoding first
         url = unquote(url.strip())
         parsed = urlparse(url)
-        
+
         scheme = parsed.scheme.lower()
         netloc = parsed.netloc.lower()
         path = parsed.path
-        
+
         # Remove trailing slash from path (unless it's just '/')
         if path.endswith("/") and len(path) > 1:
             path = path[:-1]
-            
+
         # Filter out common tracking parameters
         q_params = []
         tracking_params = {
@@ -47,10 +47,10 @@ def canonicalize_url(url: str) -> str:
         for k, v in parse_qsl(parsed.query):
             if k.lower() not in tracking_params:
                 q_params.append((k, v))
-                
+
         # Reconstruct query string with sorted parameters for consistency
         query = urlencode(sorted(q_params)) if q_params else ""
-        
+
         # Reconstruct URL (drop fragment)
         return urlunparse((scheme, netloc, path, parsed.params, query, ""))
     except Exception as e:

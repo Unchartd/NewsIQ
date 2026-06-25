@@ -74,7 +74,7 @@ class GNewsClient:
         if not self.enabled:
             return []
 
-        params = {
+        params: dict[str, Any] = {
             "category": category,
             "country": country,
             "lang": language,
@@ -89,9 +89,7 @@ class GNewsClient:
                 response = await client.get(url, params=params)
 
                 if response.status_code == 429:
-                    logger.warning(
-                        "GNews rate limit hit (429). Will retry on next scheduled run."
-                    )
+                    logger.warning("GNews rate limit hit (429). Will retry on next scheduled run.")
                     return []
 
                 if response.status_code == 403:
@@ -116,15 +114,10 @@ class GNewsClient:
 
         articles = data.get("articles", [])
         if not articles:
-            logger.info(
-                "GNews returned 0 articles for category=%s country=%s", category, country
-            )
+            logger.info("GNews returned 0 articles for category=%s country=%s", category, country)
             return []
 
-        normalized = [
-            self._normalize_article(art, category, country)
-            for art in articles
-        ]
+        normalized = [self._normalize_article(art, category, country) for art in articles]
         logger.info(
             "GNews: fetched %d articles for category=%s country=%s",
             len(normalized),
@@ -146,7 +139,7 @@ class GNewsClient:
         if not self.enabled:
             return []
 
-        params = {
+        params: dict[str, Any] = {
             "q": query,
             "lang": language,
             "max": min(max_articles, 10),

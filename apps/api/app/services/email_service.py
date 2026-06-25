@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import logging
 import smtplib
 from datetime import datetime
@@ -15,7 +14,9 @@ logger = logging.getLogger(__name__)
 class EmailService:
     """SMTP-based email service with a console logging fallback for local development."""
 
-    def _get_verification_html(self, name: str, verification_link: str, expiry_hours: int = 24) -> str:
+    def _get_verification_html(
+        self, name: str, verification_link: str, expiry_hours: int = 24
+    ) -> str:
         """Generate a modern, responsive HTML template for email verification."""
         current_year = datetime.now().year
         return f"""<!DOCTYPE html>
@@ -158,19 +159,19 @@ class EmailService:
         <h1>Verify your email address</h1>
         <p>Hello {name},</p>
         <p>Thank you for signing up for NewsIQ! To complete your registration and activate your account, please verify your email address by clicking the button below.</p>
-        
+
         <div class="btn-container">
           <a href="{verification_link}" class="btn" target="_blank">Verify Email</a>
         </div>
-        
+
         <p>This verification link is time-sensitive and will expire in <strong>{expiry_hours} hours</strong>.</p>
-        
+
         <p>If you're having trouble clicking the button, copy and paste the URL below into your web browser:</p>
         <div class="fallback-box">
           <div class="fallback-title">Direct Link</div>
           <a href="{verification_link}" class="fallback-link" target="_blank">{verification_link}</a>
         </div>
-        
+
         <div class="footer">
           <p class="security-notice"><strong>Security Notice:</strong> If you did not sign up for a NewsIQ account, you can safely ignore this email. Someone may have entered your email address by mistake.</p>
           <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
@@ -325,21 +326,21 @@ class EmailService:
         <h1>Reset your password</h1>
         <p>Hello {name},</p>
         <p>We received a request to reset your NewsIQ account password. Click the button below to choose a new password.</p>
-        
+
         <div class="btn-container">
           <a href="{reset_link}" class="btn" target="_blank">Reset Password</a>
         </div>
-        
+
         <p>This password reset link is time-sensitive and will expire in <strong>{expiry_hours} hour</strong>.</p>
-        
+
         <p>If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
-        
+
         <p>If you're having trouble clicking the button, copy and paste the URL below into your web browser:</p>
         <div class="fallback-box">
           <div class="fallback-title">Direct Link</div>
           <a href="{reset_link}" class="fallback-link" target="_blank">{reset_link}</a>
         </div>
-        
+
         <div class="footer">
           <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
         </div>
@@ -355,7 +356,7 @@ class EmailService:
         verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
         name = user.name or "User"
         subject = "Verify your NewsIQ account"
-        
+
         html_content = self._get_verification_html(name, verification_link)
         text_content = f"Hello {name},\n\nPlease verify your email by opening the following link in your browser:\n{verification_link}\n\nThis link will expire in 24 hours."
 
@@ -365,23 +366,21 @@ class EmailService:
         """Send a beautiful password reset HTML email to the user."""
         reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
         name = user.name or "User"
-        subject = "Reset your NewsIQ password"
-        
-        html_content = self._get_password_reset_html(name, reset_link)
-        text_content = f"Hello {name},\n\nPlease reset your password by opening the following link in your browser:\n{reset_link}\n\nThis link will expire in 1 hour."
+
+        self._get_password_reset_html(name, reset_link)
 
     def _get_digest_html(self, name: str, title: str, stories: list[dict]) -> str:
         """Generate a modern, beautiful responsive HTML template for a news digest."""
         current_year = datetime.now().year
         story_cards_html = ""
-        
+
         for index, story in enumerate(stories):
             headline = story.get("headline", "")
             one_line = story.get("one_line_summary", "")
             short_sum = story.get("short_summary", "")
             story_id = story.get("story_id", "")
             link = f"{settings.FRONTEND_URL}/story/{story_id}"
-            
+
             story_cards_html += f"""
             <div class="story-card">
               <div class="story-tag">Story #{index + 1}</div>
@@ -558,11 +557,11 @@ class EmailService:
         <h1>{title}</h1>
         <p class="digest-meta">Personalized Briefing for {name}</p>
       </div>
-      
+
       <div class="content">
         {story_cards_html}
       </div>
-      
+
       <div class="footer">
         <p>You received this email because you are subscribed to the {title}.</p>
         <p><a href="{settings.FRONTEND_URL}/settings?tab=notif">Manage Subscription Settings</a> | <a href="{settings.FRONTEND_URL}/settings?tab=notif">Unsubscribe</a></p>
@@ -578,9 +577,9 @@ class EmailService:
         """Send a beautiful news digest HTML email to the user."""
         name = user.name or "Subscriber"
         subject = f"Your NewsIQ {edition_title}"
-        
+
         html_content = self._get_digest_html(name, edition_title, stories)
-        
+
         # Simple plain text version
         story_texts = []
         for index, story in enumerate(stories):
@@ -588,8 +587,12 @@ class EmailService:
             one_line = story.get("one_line_summary", "")
             story_id = story.get("story_id", "")
             link = f"{settings.FRONTEND_URL}/story/{story_id}"
-            story_texts.append(f"{index + 1}. {headline}\n   \"{one_line}\"\n   Link: {link}")
-        text_content = f"Hello {name},\n\nHere is your NewsIQ {edition_title}:\n\n" + "\n\n".join(story_texts) + f"\n\nManage your settings here: {settings.FRONTEND_URL}/settings?tab=notif"
+            story_texts.append(f'{index + 1}. {headline}\n   "{one_line}"\n   Link: {link}')
+        text_content = (
+            f"Hello {name},\n\nHere is your NewsIQ {edition_title}:\n\n"
+            + "\n\n".join(story_texts)
+            + f"\n\nManage your settings here: {settings.FRONTEND_URL}/settings?tab=notif"
+        )
 
         await self._send(user.email, subject, html_content, text_content, "digest", "")
 
@@ -600,7 +603,7 @@ class EmailService:
         html_content: str,
         text_content: str,
         email_type: str,
-        raw_token: str
+        raw_token: str,
     ) -> None:
         """Sends the email using SMTP or logs to console if unconfigured."""
         if not settings.SMTP_HOST or not settings.SMTP_PORT:
@@ -611,12 +614,12 @@ class EmailService:
                 raw_token,
             )
             # Log full content in local debug mode to capture the token easily
-            print(f"\n==================== MOCK EMAIL START ====================")
+            print("\n==================== MOCK EMAIL START ====================")
             print(f"Recipient: {recipient}")
             print(f"Subject: {subject}")
             print(f"Raw Token: {raw_token}")
             print(f"Text Content:\n{text_content}")
-            print(f"====================  MOCK EMAIL END  ====================\n")
+            print("====================  MOCK EMAIL END  ====================\n")
             return
 
         try:
@@ -632,12 +635,7 @@ class EmailService:
 
             # Send asynchronously in a background thread executor to avoid blocking the event loop
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
-                None,
-                self._send_smtp_sync,
-                recipient,
-                message.as_string()
-            )
+            await loop.run_in_executor(None, self._send_smtp_sync, recipient, message.as_string())
             logger.info("Successfully sent %s email to %s", email_type, recipient)
         except Exception as e:
             logger.error("Failed to send %s email to %s: %s", email_type, recipient, e)

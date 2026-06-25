@@ -1,12 +1,12 @@
 import logging
-from typing import Dict, List
 
 logger = logging.getLogger(__name__)
+
 
 class FallbackChain:
     """Manages the fallback sequences for models when the primary provider fails."""
 
-    DEFAULT_FALLBACKS: Dict[str, List[Dict[str, str]]] = {
+    DEFAULT_FALLBACKS: dict[str, list[dict[str, str]]] = {
         "gemini-3.5-flash": [
             {"provider": "google", "model": "gemini-3.5-flash"},
             {"provider": "google", "model": "gemini-3.1-flash-lite"},
@@ -132,11 +132,11 @@ class FallbackChain:
         ],
     }
 
-    def get_fallback_chain(self, primary_model: str) -> List[Dict[str, str]]:
+    def get_fallback_chain(self, primary_model: str) -> list[dict[str, str]]:
         """Return the fallback sequence of {'provider', 'model'} for the requested model."""
         # Strip any provider prefix (e.g., "google/gemini-2.5-flash" -> "gemini-2.5-flash")
         model_key = primary_model.split("/")[-1] if "/" in primary_model else primary_model
-        
+
         # Check full model ID first (for NVIDIA models like "mistralai/mistral-medium-3.5-128b")
         if primary_model in self.DEFAULT_FALLBACKS:
             chain = self.DEFAULT_FALLBACKS[primary_model]
@@ -151,7 +151,13 @@ class FallbackChain:
                 provider = "groq"
             elif "cerebras" in primary_model:
                 provider = "cerebras"
-            elif "nvidia" in primary_model or "mistralai" in model_key or "deepseek" in model_key or "nemotron" in model_key or "glm" in model_key:
+            elif (
+                "nvidia" in primary_model
+                or "mistralai" in model_key
+                or "deepseek" in model_key
+                or "nemotron" in model_key
+                or "glm" in model_key
+            ):
                 provider = "nvidia"
 
             chain = [
@@ -167,9 +173,11 @@ class FallbackChain:
 
         # Filter out 'mock' provider in production pipelines (not running under test frameworks)
         import sys
-        is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
+
+        is_testing = "pytest" in sys.modules or any(
+            "pytest" in arg or "unittest" in arg for arg in sys.argv
+        )
         if not is_testing:
             chain = [item for item in chain if item["provider"] != "mock"]
 
         return chain
-

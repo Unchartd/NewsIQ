@@ -21,4 +21,3 @@ def setup_logging(debug: bool = False) -> None:
     from app.core.structured_logging import setup_structlog
 
     setup_structlog(debug=debug)
-

@@ -12,8 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import require_admin
-from app.models.models import Article, Source, Story, User, CanonicalEntity, StoryArticle
-from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel, PipelineFailureModel
+from app.models.models import Article, CanonicalEntity, Source, Story, StoryArticle, User
+from app.models.observability_models import (
+    LLMTraceModel,
+    PipelineFailureModel,
+    PipelineRunModel,
+    StageRunModel,
+)
 from app.schemas.admin_schemas import (
     ClusterDebuggerResponse,
     CostAnalyticsResponse,
@@ -62,6 +67,7 @@ async def list_users(
             role=u.role,
             subscription_plan=u.subscription_plan,
             status=u.status,
+            email_verified=u.email_verified,
             created_at=u.created_at.isoformat() if u.created_at else "",
         )
         for u in users
@@ -83,9 +89,7 @@ async def update_user_role(
     if body.role is not None and body.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of {VALID_ROLES}.")
     if body.subscription_plan is not None and body.subscription_plan not in VALID_PLANS:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid plan. Must be one of {VALID_PLANS}."
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid plan. Must be one of {VALID_PLANS}.")
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -107,6 +111,7 @@ async def update_user_role(
         role=user.role,
         subscription_plan=user.subscription_plan,
         status=user.status,
+        email_verified=user.email_verified,
         created_at=user.created_at.isoformat() if user.created_at else "",
     )
 
@@ -184,9 +189,8 @@ async def pipeline_status(
     """Get status of the latest or specified pipeline execution run (admin only)."""
     if run_id:
         from app.schemas.admin_schemas import PipelineStageStatusSchema
-        run_result = await db.execute(
-            select(PipelineRunModel).where(PipelineRunModel.id == run_id)
-        )
+
+        run_result = await db.execute(select(PipelineRunModel).where(PipelineRunModel.id == run_id))
         run = run_result.scalar_one_or_none()
         if not run:
             raise HTTPException(status_code=404, detail="Pipeline run not found")
@@ -278,7 +282,10 @@ async def human_review_queue(
 
 
 class ReviewActionPayload(BaseModel):
-    action: str = Field(..., description="approve, reject, merge, split, correct_entity, mark_hallucination, correct_summary")
+    action: str = Field(
+        ...,
+        description="approve, reject, merge, split, correct_entity, mark_hallucination, correct_summary",
+    )
     target_type: str | None = None
     target_id: uuid.UUID | None = None
     before_value: dict[str, Any] | None = None
@@ -315,6 +322,7 @@ async def replay_story(
 ):
     """Trigger a replay of the full pipeline for a story (admin only)."""
     from app.workers.tasks import replay_story_task
+
     replay_story_task.delay(str(story_id))
     return MessageResponse(message=f"Replay triggered for story {story_id}.")
 
@@ -343,15 +351,23 @@ async def replay_story_stage(
     }
     stage_resolved = mapping.get(stage_norm, stage_norm)
 
-    if stage_resolved not in {"entity_extraction", "contradiction_detection", "timeline_generation", "summary_generation"}:
+    if stage_resolved not in {
+        "entity_extraction",
+        "contradiction_detection",
+        "timeline_generation",
+        "summary_generation",
+    }:
         raise HTTPException(
             status_code=400,
-            detail=f"Stage '{stage}' is not replayable. Replayable stages: NLP Analysis, Contradiction Engine, Timeline Builder, AI Summarization."
+            detail=f"Stage '{stage}' is not replayable. Replayable stages: NLP Analysis, Contradiction Engine, Timeline Builder, AI Summarization.",
         )
 
     from app.workers.tasks import replay_story_stage_task
+
     replay_story_stage_task.delay(str(story_id), stage_resolved)
-    return MessageResponse(message=f"Replay of stage {stage_resolved} triggered for story {story_id}.")
+    return MessageResponse(
+        message=f"Replay of stage {stage_resolved} triggered for story {story_id}."
+    )
 
 
 @router.get("/pipeline/runs")
@@ -362,7 +378,12 @@ async def list_pipeline_runs(
     db: AsyncSession = Depends(get_db),
 ):
     """List historical pipeline executions (admin only)."""
-    stmt = select(PipelineRunModel).order_by(PipelineRunModel.started_at.desc()).limit(limit).offset(offset)
+    stmt = (
+        select(PipelineRunModel)
+        .order_by(PipelineRunModel.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     res = await db.execute(stmt)
     runs = res.scalars().all()
     return [
@@ -391,8 +412,7 @@ async def get_stage_run_details(
     """Retrieve details (inputs, outputs, metrics, errors) of a specific stage run (admin only)."""
     stage_lower = stage.lower().strip()
     stmt = select(StageRunModel).where(
-        StageRunModel.run_id == run_id,
-        StageRunModel.stage == stage_lower
+        StageRunModel.run_id == run_id, StageRunModel.stage == stage_lower
     )
     res = await db.execute(stmt)
     stage_run = res.scalar_one_or_none()
@@ -400,8 +420,7 @@ async def get_stage_run_details(
         raise HTTPException(status_code=404, detail=f"Stage run not found for stage {stage}")
 
     llm_stmt = select(LLMTraceModel).where(
-        LLMTraceModel.run_id == run_id,
-        LLMTraceModel.stage == stage_lower
+        LLMTraceModel.run_id == run_id, LLMTraceModel.stage == stage_lower
     )
     llm_res = await db.execute(llm_stmt)
     llm_traces = llm_res.scalars().all()
@@ -452,7 +471,9 @@ async def get_stage_run_logs(
 ):
     """Retrieve all cached logs for a stage run (admin only)."""
     import redis
+
     from app.core.config import settings
+
     stage_lower = stage.lower().strip()
     r = redis.from_url(settings.REDIS_URL)
     redis_key = f"newsiq:logs:{run_id}:{stage_lower}"
@@ -467,7 +488,9 @@ async def stream_stage_run_logs(
 ):
     """Stream logs live via SSE for a specific stage run."""
     import redis.asyncio as aioredis
+
     from app.core.config import settings
+
     stage_lower = stage.lower().strip()
 
     async def log_generator():
@@ -486,7 +509,11 @@ async def stream_stage_run_logs(
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                 if message:
-                    decoded = message['data'].decode('utf-8') if isinstance(message['data'], bytes) else message['data']
+                    decoded = (
+                        message["data"].decode("utf-8")
+                        if isinstance(message["data"], bytes)
+                        else message["data"]
+                    )
                     yield f"data: {decoded}\n\n"
         finally:
             await pubsub.unsubscribe(redis_channel)
@@ -549,6 +576,7 @@ async def update_entity_wikidata(
     entity = result.scalar_one_or_none()
     if not entity:
         from app.models.models import StoryEntity
+
         result_se = await db.execute(select(StoryEntity).order_by(StoryEntity.id.desc()))
         story_entities = result_se.scalars().all()
         matching_se = None
@@ -571,15 +599,17 @@ async def update_entity_wikidata(
     else:
         entity.wikidata_id = body.wikidata_id
         await db.commit()
-    
+
     try:
-        from app.services.cache_service import cache_service
         import re
+
+        from app.services.cache_service import cache_service
+
         slug = re.sub(r"[^a-z0-9]+", "_", entity.canonical_name.lower())
         await cache_service.delete(f"newsiq:entity_link:{slug}")
     except Exception:
         pass
-        
+
     return MessageResponse(message="Entity Wikidata ID updated successfully.")
 
 
@@ -594,27 +624,26 @@ async def merge_clusters(
     source_story = source_result.scalar_one_or_none()
     target_result = await db.execute(select(Story).where(Story.id == body.target_id))
     target_story = target_result.scalar_one_or_none()
-    
+
     if not source_story or not target_story:
         raise HTTPException(status_code=404, detail="One or both stories not found")
-        
+
     stmt = select(StoryArticle).where(StoryArticle.story_id == body.source_id)
     res = await db.execute(stmt)
     sa_links = res.scalars().all()
-    
+
     for link in sa_links:
         exist_stmt = select(StoryArticle).where(
-            StoryArticle.story_id == body.target_id,
-            StoryArticle.article_id == link.article_id
+            StoryArticle.story_id == body.target_id, StoryArticle.article_id == link.article_id
         )
         exist_res = await db.execute(exist_stmt)
         if not exist_res.scalar_one_or_none():
             link.story_id = body.target_id
         else:
             await db.delete(link)
-            
+
     await db.flush()
-    
+
     await admin_service.apply_review_action(
         story_id=body.target_id,
         action="merge",
@@ -625,18 +654,19 @@ async def merge_clusters(
         notes=f"Merged cluster {body.source_id} into {body.target_id}",
         db=db,
     )
-    
+
     await db.delete(source_story)
     await db.commit()
-    
+
     from app.services.clustering_service import clustering_service
+
     stmt_art = select(Article).join(StoryArticle).where(StoryArticle.story_id == body.target_id)
     res_art = await db.execute(stmt_art)
     all_articles = list(res_art.scalars().all())
-    
+
     await clustering_service.generate_story_content(target_story, all_articles, db)
     await clustering_service.compute_trending_score(target_story, db)
-    
+
     return MessageResponse(message="Story clusters merged successfully.")
 
 
@@ -651,33 +681,39 @@ async def split_cluster(
     story = result.scalar_one_or_none()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
-        
+
     stmt = select(Article).join(StoryArticle).where(StoryArticle.story_id == story_id)
     res = await db.execute(stmt)
     all_articles = list(res.scalars().all())
-    
+
     if len(all_articles) <= 1:
-        raise HTTPException(status_code=400, detail="Cannot split a cluster with 1 or fewer articles")
-        
-    from app.services.clustering_service import clustering_service
+        raise HTTPException(
+            status_code=400, detail="Cannot split a cluster with 1 or fewer articles"
+        )
+
     from app.models.models import ArticleEvent
-    
-    sub_clusters = []
+    from app.services.clustering_service import clustering_service
+
+    sub_clusters: list[list[Article]] = []
     for art in all_articles:
         matched_sub = None
         stmt_evt = select(ArticleEvent).where(ArticleEvent.article_id == art.id).limit(1)
         res_evt = await db.execute(stmt_evt)
         art_evt = res_evt.scalar_one_or_none()
-        
+
         if art_evt:
             for sub in sub_clusters:
                 total_sim = 0.0
                 for sub_art in sub:
-                    stmt_sub = select(ArticleEvent).where(ArticleEvent.article_id == sub_art.id).limit(1)
+                    stmt_sub = (
+                        select(ArticleEvent).where(ArticleEvent.article_id == sub_art.id).limit(1)
+                    )
                     res_sub = await db.execute(stmt_sub)
                     sub_evt = res_sub.scalar_one_or_none()
                     if sub_evt:
-                        total_sim += clustering_service._compute_event_similarity_direct(art_evt, sub_evt)
+                        total_sim += clustering_service._compute_event_similarity_direct(
+                            art_evt, sub_evt
+                        )
                     else:
                         total_sim += 0.0
                 avg_sim = total_sim / len(sub)
@@ -688,10 +724,10 @@ async def split_cluster(
             matched_sub.append(art)
         else:
             sub_clusters.append([art])
-            
+
     if len(sub_clusters) <= 1:
         sub_clusters = [[all_articles[0]], all_articles[1:]]
-        
+
     await admin_service.apply_review_action(
         story_id=story_id,
         action="split",
@@ -702,12 +738,12 @@ async def split_cluster(
         notes=f"Split cluster {story_id} into {len(sub_clusters)} clusters",
         db=db,
     )
-    
+
     await db.delete(story)
     await db.commit()
-    
+
     from app.models.models import StoryMetric
-    
+
     for art_list in sub_clusters:
         new_story_id = uuid.uuid4()
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -720,22 +756,24 @@ async def split_cluster(
             updated_at=now,
         )
         db.add(new_story)
-        
+
         for art in art_list:
             link = StoryArticle(story_id=new_story_id, article_id=art.id)
             db.add(link)
-            
+
         metrics = StoryMetric(story_id=new_story_id, views=0, bookmarks=0, shares=0, clicks=0)
         db.add(metrics)
         await db.commit()
-        
+
         try:
             await clustering_service.generate_story_content(new_story, art_list, db)
             await clustering_service.compute_trending_score(new_story, db)
         except Exception:
             pass
-            
-    return MessageResponse(message=f"Story cluster split into {len(sub_clusters)} clusters successfully.")
+
+    return MessageResponse(
+        message=f"Story cluster split into {len(sub_clusters)} clusters successfully."
+    )
 
 
 # Helper to serialize PipelineFailureModel to camelCase
@@ -814,10 +852,7 @@ async def list_failures(
     count_res = await db.execute(count_stmt)
     total = count_res.scalar() or 0
 
-    return {
-        "failures": [serialize_failure(f) for f in failures],
-        "total": total
-    }
+    return {"failures": [serialize_failure(f) for f in failures], "total": total}
 
 
 @router.get("/failures/{failure_id}")
@@ -870,10 +905,15 @@ async def replay_failure(
         raise HTTPException(status_code=404, detail="Failure record not found")
 
     # If it's an agent stage, execute it inline/synchronously for immediate developer feedback
-    agent_stages = ("cluster_verification", "summary_reflection", "judge_arbitration", "entity_disambiguation")
+    agent_stages = (
+        "cluster_verification",
+        "summary_reflection",
+        "judge_arbitration",
+        "entity_disambiguation",
+    )
     if failure.stage in agent_stages:
         from app.llm_gateway.request_manager import model_override_ctx, provider_override_ctx
-        
+
         # Set overrides
         p_token = provider_override_ctx.set(body.provider) if body.provider else None
         m_token = model_override_ctx.set(body.model) if body.model else None
@@ -882,20 +922,26 @@ async def replay_failure(
             agent_obj = None
             if failure.stage == "cluster_verification":
                 from app.agents.cluster_verification_agent import cluster_verification_agent
+
                 agent_obj = cluster_verification_agent
             elif failure.stage == "summary_reflection":
                 from app.agents.reflection_agent import reflection_agent
+
                 agent_obj = reflection_agent
             elif failure.stage == "judge_arbitration":
                 from app.agents.judge_agent import judge_agent
+
                 agent_obj = judge_agent
 
             if not agent_obj:
-                raise HTTPException(status_code=400, detail=f"Replay not supported for agent stage {failure.stage}")
+                raise HTTPException(
+                    status_code=400, detail=f"Replay not supported for agent stage {failure.stage}"
+                )
 
             from app.agents.base_agent import run_agent_with_observability
+
             prompt = (failure.input_payload or {}).get("prompt", "")
-            
+
             run_output = await run_agent_with_observability(
                 agent=agent_obj,
                 prompt=prompt,
@@ -903,17 +949,21 @@ async def replay_failure(
                 story_id=str(failure.story_id) if failure.story_id else "",
                 article_id=str(failure.article_id) if failure.article_id else "",
             )
-            
+
             # Auto-resolve original failure on successful replay
             failure.resolved = True
             failure.resolution_notes = f"Auto-resolved by successful manual replay on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             await db.commit()
 
-            content = run_output.content.model_dump() if hasattr(run_output.content, "model_dump") else run_output.content
+            content = (
+                run_output.content.model_dump()
+                if hasattr(run_output.content, "model_dump")
+                else run_output.content
+            )
             return {
                 "success": True,
                 "message": f"Agent stage {failure.stage} replayed successfully.",
-                "output": content
+                "output": content,
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Replay failed: {str(e)}")
@@ -926,35 +976,42 @@ async def replay_failure(
     # For other stages (pipelines, summaries), trigger Celery task
     else:
         from app.workers.tasks import replay_story_stage_task
-        
+
         # If there's no story_id, we need to resolve it (e.g. if it's event_extraction with article_id)
         story_id = failure.story_id
         if not story_id and failure.article_id:
             # Look up story containing this article
-            stmt_link = select(StoryArticle.story_id).where(StoryArticle.article_id == failure.article_id).limit(1)
+            stmt_link = (
+                select(StoryArticle.story_id)
+                .where(StoryArticle.article_id == failure.article_id)
+                .limit(1)
+            )
             res_link = await db.execute(stmt_link)
             story_id = res_link.scalar()
 
         if not story_id:
             # Fallback/last-resort: search if this article is in any story, or return error
-            raise HTTPException(status_code=400, detail="Cannot replay stage: No associated story could be resolved for this failure.")
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot replay stage: No associated story could be resolved for this failure.",
+            )
 
         replay_story_stage_task.delay(
             story_id_str=str(story_id),
             stage_name=failure.stage,
             provider_override=body.provider,
             model_override=body.model,
-            article_id_str=str(failure.article_id) if failure.article_id else None
+            article_id_str=str(failure.article_id) if failure.article_id else None,
         )
-        
+
         # Auto-resolve original failure since task is running
         failure.resolved = True
         failure.resolution_notes = f"Replay triggered as background task on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
         await db.commit()
-        
+
         return {
             "success": True,
-            "message": f"Background replay task successfully queued for stage: {failure.stage}"
+            "message": f"Background replay task successfully queued for stage: {failure.stage}",
         }
 
 
@@ -966,41 +1023,63 @@ async def get_failure_analytics(
     """Retrieve failure analytics data for Sentry-like charting."""
     # 1. Total count summaries
     total_failures = (await db.execute(select(func.count(PipelineFailureModel.id)))).scalar() or 0
-    resolved_failures = (await db.execute(select(func.count(PipelineFailureModel.id)).where(PipelineFailureModel.resolved == True))).scalar() or 0
+    resolved_failures = (
+        await db.execute(
+            select(func.count(PipelineFailureModel.id)).where(PipelineFailureModel.resolved)
+        )
+    ).scalar() or 0
     unresolved_failures = total_failures - resolved_failures
 
     # 2. Top failing stages
-    stmt_stages = select(
-        PipelineFailureModel.stage,
-        func.count(PipelineFailureModel.id).label("count")
-    ).group_by(PipelineFailureModel.stage).order_by(func.count(PipelineFailureModel.id).desc()).limit(10)
+    stmt_stages = (
+        select(PipelineFailureModel.stage, func.count(PipelineFailureModel.id).label("count"))
+        .group_by(PipelineFailureModel.stage)
+        .order_by(func.count(PipelineFailureModel.id).desc())
+        .limit(10)
+    )
     res_stages = await db.execute(stmt_stages)
     top_stages = [{"stage": r[0], "count": r[1]} for r in res_stages]
 
     # 3. Common provider failures
-    stmt_prov = select(
-        PipelineFailureModel.provider,
-        func.count(PipelineFailureModel.id).label("count")
-    ).where(PipelineFailureModel.provider != None).group_by(PipelineFailureModel.provider).order_by(func.count(PipelineFailureModel.id).desc())
+    stmt_prov = (
+        select(PipelineFailureModel.provider, func.count(PipelineFailureModel.id).label("count"))
+        .where(PipelineFailureModel.provider.is_not(None))
+        .group_by(PipelineFailureModel.provider)
+        .order_by(func.count(PipelineFailureModel.id).desc())
+    )
     res_prov = await db.execute(stmt_prov)
     common_providers = [{"provider": r[0], "count": r[1]} for r in res_prov]
 
     # 4. Error subtype counts (e.g. Quota & Rate Limit frequency)
-    quota_count = (await db.execute(select(func.count(PipelineFailureModel.id)).where(PipelineFailureModel.error_code == "RESOURCE_EXHAUSTED"))).scalar() or 0
-    rate_limit_count = (await db.execute(select(func.count(PipelineFailureModel.id)).where(PipelineFailureModel.error_code == "RATE_LIMIT_EXCEEDED"))).scalar() or 0
+    quota_count = (
+        await db.execute(
+            select(func.count(PipelineFailureModel.id)).where(
+                PipelineFailureModel.error_code == "RESOURCE_EXHAUSTED"
+            )
+        )
+    ).scalar() or 0
+    rate_limit_count = (
+        await db.execute(
+            select(func.count(PipelineFailureModel.id)).where(
+                PipelineFailureModel.error_code == "RATE_LIMIT_EXCEEDED"
+            )
+        )
+    ).scalar() or 0
 
     # 5. Average retry count
-    avg_retries = (await db.execute(select(func.avg(PipelineFailureModel.retry_count)))).scalar() or 0.0
+    avg_retries = (
+        await db.execute(select(func.avg(PipelineFailureModel.retry_count)))
+    ).scalar() or 0.0
     avg_retries = round(float(avg_retries), 2)
 
     # 6. Provider health and Success Rate from llm_traces
     stmt_health = select(
         LLMTraceModel.provider,
         func.count(LLMTraceModel.id).label("total_calls"),
-        func.count(LLMTraceModel.id).filter(LLMTraceModel.status == "error").label("failed_calls")
+        func.count(LLMTraceModel.id).filter(LLMTraceModel.status == "error").label("failed_calls"),
     ).group_by(LLMTraceModel.provider)
     res_health = await db.execute(stmt_health)
-    
+
     provider_health = []
     for r in res_health:
         prov = r[0]
@@ -1008,32 +1087,44 @@ async def get_failure_analytics(
         failed = r[2] or 0
         success = total - failed
         success_rate = round((success / total * 100), 2) if total > 0 else 100.0
-        provider_health.append({
-            "provider": prov,
-            "totalCalls": total,
-            "failedCalls": failed,
-            "successRate": success_rate
-        })
+        provider_health.append(
+            {
+                "provider": prov,
+                "totalCalls": total,
+                "failedCalls": failed,
+                "successRate": success_rate,
+            }
+        )
 
     # 7. Daily Trends (last 14 days)
     # Failures per day
-    stmt_fail_trend = select(
-        func.date_trunc('day', PipelineFailureModel.timestamp).label("day"),
-        func.count(PipelineFailureModel.id).label("count")
-    ).group_by(text("day")).order_by(text("day"))
+    stmt_fail_trend = (
+        select(
+            func.date_trunc("day", PipelineFailureModel.timestamp).label("day"),
+            func.count(PipelineFailureModel.id).label("count"),
+        )
+        .group_by(text("day"))
+        .order_by(text("day"))
+    )
     res_fail_trend = await db.execute(stmt_fail_trend)
     failures_by_day = {r[0].strftime("%Y-%m-%d") if r[0] else "": r[1] for r in res_fail_trend}
 
     # Successes per day (from stage_runs)
-    stmt_succ_trend = select(
-        func.date_trunc('day', StageRunModel.started_at).label("day"),
-        func.count(StageRunModel.id).label("count")
-    ).where(StageRunModel.status == "success").group_by(text("day")).order_by(text("day"))
+    stmt_succ_trend = (
+        select(
+            func.date_trunc("day", StageRunModel.started_at).label("day"),
+            func.count(StageRunModel.id).label("count"),
+        )
+        .where(StageRunModel.status == "success")
+        .group_by(text("day"))
+        .order_by(text("day"))
+    )
     res_succ_trend = await db.execute(stmt_succ_trend)
     successes_by_day = {r[0].strftime("%Y-%m-%d") if r[0] else "": r[1] for r in res_succ_trend}
 
     # Combine trends over last 14 days
     import datetime
+
     daily_trends = []
     today = datetime.date.today()
     for i in range(13, -1, -1):
@@ -1043,12 +1134,9 @@ async def get_failure_analytics(
         succs = successes_by_day.get(day_str, 0)
         total_runs = fails + succs
         fail_rate = round((fails / total_runs * 100), 2) if total_runs > 0 else 0.0
-        daily_trends.append({
-            "date": day_str,
-            "failures": fails,
-            "successes": succs,
-            "failureRate": fail_rate
-        })
+        daily_trends.append(
+            {"date": day_str, "failures": fails, "successes": succs, "failureRate": fail_rate}
+        )
 
     return {
         "totalFailures": total_failures,
@@ -1060,5 +1148,5 @@ async def get_failure_analytics(
         "rateLimitErrorCount": rate_limit_count,
         "avgRetries": avg_retries,
         "dailyTrends": daily_trends,
-        "providerHealth": provider_health
+        "providerHealth": provider_health,
     }

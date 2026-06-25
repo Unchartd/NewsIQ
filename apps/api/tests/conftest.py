@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Generator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,7 +18,6 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 @pytest.fixture
 def mock_db_session():
     """Mock SQLAlchemy AsyncSession."""
-    from unittest.mock import MagicMock
     session = AsyncMock()
     session.execute = AsyncMock()
     session.commit = AsyncMock()
@@ -35,4 +34,14 @@ def mock_db_session():
     session.begin_nested = MagicMock(return_value=nested_mock)
 
     return session
+
+
+@pytest.fixture(autouse=True)
+def mock_trace_persistence():
+    """Disable database and redis persistence/events for PipelineRun and StageSpan in tests."""
+    with patch("app.core.trace.PipelineRun._persist", new_callable=AsyncMock) as mock_persist_run, \
+         patch("app.core.trace.StageSpan._persist_db_status", new_callable=AsyncMock) as mock_persist_span, \
+         patch("app.core.trace.publish_pipeline_event", new_callable=AsyncMock) as mock_pub_event:
+        yield mock_persist_run, mock_persist_span, mock_pub_event
+
 

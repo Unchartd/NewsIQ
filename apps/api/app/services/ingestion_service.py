@@ -91,9 +91,7 @@ class IngestionService:
         # Crawl concurrently with a semaphore
         sem = asyncio.Semaphore(5)
 
-        async def crawl_with_semaphore(
-            e: Any, u: str
-        ) -> tuple[Any, str, dict[str, Any] | None]:
+        async def crawl_with_semaphore(e: Any, u: str) -> tuple[Any, str, dict[str, Any] | None]:
             async with sem:
                 try:
                     crawled = await crawler_service.crawl_article(u)
@@ -108,12 +106,12 @@ class IngestionService:
         for entry, url, crawled in crawled_results:
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
-            
+
             content_value = self.clean_html(
                 getattr(entry, "content", [{"value": ""}])[0].get("value", "")
             )
             fallback_content = content_value if content_value else description
-            
+
             author = getattr(entry, "author", None)
             published_at = self.parse_pub_date(entry)
 

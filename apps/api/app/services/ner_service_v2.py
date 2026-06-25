@@ -19,17 +19,8 @@ import re
 from typing import Any
 
 from pydantic import BaseModel, Field
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_combine,
-    wait_exponential,
-    wait_random,
-)
 
 from app.core.config import settings
-from app.core.trace import track_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -94,57 +85,169 @@ class EntityExtractionResponse(BaseModel):
 
 # Agreements and legal terms often misclassified
 AGREEMENT_PATTERNS: set[str] = {
-    "mou", "memorandum of understanding", "treaty", "accord", "pact",
-    "convention", "protocol", "charter", "declaration", "framework agreement",
-    "free trade agreement", "fta", "bilateral agreement", "ceasefire agreement",
-    "peace agreement", "arms deal", "nuclear deal", "trade deal",
-    "paris agreement", "geneva convention", "camp david accords",
-    "abraham accords", "oslo accords", "minsk agreement",
+    "mou",
+    "memorandum of understanding",
+    "treaty",
+    "accord",
+    "pact",
+    "convention",
+    "protocol",
+    "charter",
+    "declaration",
+    "framework agreement",
+    "free trade agreement",
+    "fta",
+    "bilateral agreement",
+    "ceasefire agreement",
+    "peace agreement",
+    "arms deal",
+    "nuclear deal",
+    "trade deal",
+    "paris agreement",
+    "geneva convention",
+    "camp david accords",
+    "abraham accords",
+    "oslo accords",
+    "minsk agreement",
 }
 
 LAW_PATTERNS: set[str] = {
-    "act", "bill", "amendment", "statute", "regulation", "ordinance",
-    "executive order", "directive", "resolution", "article",
+    "act",
+    "bill",
+    "amendment",
+    "statute",
+    "regulation",
+    "ordinance",
+    "executive order",
+    "directive",
+    "resolution",
+    "article",
 }
 
 POLITICAL_PARTY_KEYWORDS: set[str] = {
-    "party", "congress", "bjp", "democratic", "republican", "labour",
-    "conservative", "liberal", "green party", "aap", "tmc",
-    "communist", "socialist", "peoples party",
+    "party",
+    "congress",
+    "bjp",
+    "democratic",
+    "republican",
+    "labour",
+    "conservative",
+    "liberal",
+    "green party",
+    "aap",
+    "tmc",
+    "communist",
+    "socialist",
+    "peoples party",
 }
 
 # Indian states — commonly misclassified as PERSON
 INDIAN_STATES: set[str] = {
-    "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
-    "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand",
-    "karnataka", "kerala", "madhya pradesh", "maharashtra", "manipur",
-    "meghalaya", "mizoram", "nagaland", "odisha", "punjab",
-    "rajasthan", "sikkim", "tamil nadu", "telangana", "tripura",
-    "uttar pradesh", "uttarakhand", "west bengal",
-    "jammu and kashmir", "ladakh",
+    "andhra pradesh",
+    "arunachal pradesh",
+    "assam",
+    "bihar",
+    "chhattisgarh",
+    "goa",
+    "gujarat",
+    "haryana",
+    "himachal pradesh",
+    "jharkhand",
+    "karnataka",
+    "kerala",
+    "madhya pradesh",
+    "maharashtra",
+    "manipur",
+    "meghalaya",
+    "mizoram",
+    "nagaland",
+    "odisha",
+    "punjab",
+    "rajasthan",
+    "sikkim",
+    "tamil nadu",
+    "telangana",
+    "tripura",
+    "uttar pradesh",
+    "uttarakhand",
+    "west bengal",
+    "jammu and kashmir",
+    "ladakh",
 }
 
 # US states
 US_STATES: set[str] = {
-    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
-    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
-    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
-    "maine", "maryland", "massachusetts", "michigan", "minnesota",
-    "mississippi", "missouri", "montana", "nebraska", "nevada",
-    "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
-    "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania",
-    "rhode island", "south carolina", "south dakota", "tennessee",
-    "texas", "utah", "vermont", "virginia", "washington",
-    "west virginia", "wisconsin", "wyoming",
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
 }
 
 ALL_STATES: set[str] = INDIAN_STATES | US_STATES
 
 # University indicators
 UNIVERSITY_INDICATORS: set[str] = {
-    "university", "college", "institute", "school of",
-    "academy", "polytechnic", "iit", "iim", "mit", "harvard",
-    "oxford", "cambridge", "stanford", "yale", "princeton",
+    "university",
+    "college",
+    "institute",
+    "school of",
+    "academy",
+    "polytechnic",
+    "iit",
+    "iim",
+    "mit",
+    "harvard",
+    "oxford",
+    "cambridge",
+    "stanford",
+    "yale",
+    "princeton",
 }
 
 
@@ -167,6 +270,7 @@ class NERServiceV2:
         self._nlp = None
         try:
             import spacy
+
             # Try loading larger model first, fall back to small
             for model_name in ("en_core_web_lg", "en_core_web_sm"):
                 try:
@@ -230,12 +334,14 @@ class NERServiceV2:
                 # Enhanced label mapping with rules
                 entity_type = self._reclassify_spacy_entity(val, ent.label_)
                 if entity_type:
-                    entities.append(ExtractedEntity(
-                        value=val,
-                        type=entity_type,
-                        canonical_name=None,
-                        confidence=0.6,
-                    ))
+                    entities.append(
+                        ExtractedEntity(
+                            value=val,
+                            type=entity_type,
+                            canonical_name=None,
+                            confidence=0.6,
+                        )
+                    )
         except Exception as e:
             logger.error("spaCy extraction failed: %s", e)
             return self._extract_with_rules(text)
@@ -332,40 +438,28 @@ class NERServiceV2:
 
             # Apply rules
             if lower in ALL_STATES:
-                entities.append(ExtractedEntity(
-                    value=match, type="STATE", confidence=0.7
-                ))
+                entities.append(ExtractedEntity(value=match, type="STATE", confidence=0.7))
             elif lower in AGREEMENT_PATTERNS:
-                entities.append(ExtractedEntity(
-                    value=match, type="AGREEMENT", confidence=0.6
-                ))
+                entities.append(ExtractedEntity(value=match, type="AGREEMENT", confidence=0.6))
             elif any(ind in lower for ind in UNIVERSITY_INDICATORS):
-                entities.append(ExtractedEntity(
-                    value=match, type="ORG", confidence=0.6
-                ))
+                entities.append(ExtractedEntity(value=match, type="ORG", confidence=0.6))
             elif any(kw in lower for kw in POLITICAL_PARTY_KEYWORDS):
-                entities.append(ExtractedEntity(
-                    value=match, type="POLITICAL_PARTY", confidence=0.5
-                ))
+                entities.append(
+                    ExtractedEntity(value=match, type="POLITICAL_PARTY", confidence=0.5)
+                )
             else:
                 # Don't default to PERSON — leave as ORG if 3+ words, PERSON if 2 words
                 if len(match.split()) >= 3:
-                    entities.append(ExtractedEntity(
-                        value=match, type="ORG", confidence=0.3
-                    ))
+                    entities.append(ExtractedEntity(value=match, type="ORG", confidence=0.3))
                 elif len(match.split()) == 2:
-                    entities.append(ExtractedEntity(
-                        value=match, type="PERSON", confidence=0.3
-                    ))
+                    entities.append(ExtractedEntity(value=match, type="PERSON", confidence=0.3))
                 # Single words: skip (too ambiguous without context)
 
         return entities
 
     # ── Normalization ─────────────────────────────────────────────────────────
 
-    def _normalize_entities(
-        self, entities_raw: list[dict[str, Any]]
-    ) -> list[ExtractedEntity]:
+    def _normalize_entities(self, entities_raw: list[dict[str, Any]]) -> list[ExtractedEntity]:
         """Normalize and deduplicate extracted entities."""
         entities: list[ExtractedEntity] = []
         seen: set[str] = set()
@@ -394,19 +488,19 @@ class NERServiceV2:
             val_lower = value.lower()
             if val_lower in ALL_STATES:
                 entity_type = "STATE"
-            elif val_lower in AGREEMENT_PATTERNS or any(
-                p in val_lower for p in AGREEMENT_PATTERNS
-            ):
+            elif val_lower in AGREEMENT_PATTERNS or any(p in val_lower for p in AGREEMENT_PATTERNS):
                 entity_type = "AGREEMENT"
 
             confidence = max(0.0, min(1.0, float(raw.get("confidence", 0.5))))
 
-            entities.append(ExtractedEntity(
-                value=value,
-                type=entity_type,
-                canonical_name=raw.get("canonical_name"),
-                confidence=confidence,
-            ))
+            entities.append(
+                ExtractedEntity(
+                    value=value,
+                    type=entity_type,
+                    canonical_name=raw.get("canonical_name"),
+                    confidence=confidence,
+                )
+            )
 
         return entities
 
@@ -422,7 +516,7 @@ class NERServiceV2:
 
         prompt = self._build_ner_prompt(text)
         model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-        
+
         from app.llm_gateway.request_manager import llm_gateway
 
         try:
@@ -433,7 +527,7 @@ class NERServiceV2:
                 response_format=EntityExtractionResponse,
                 temperature=0.1,
             )
-            
+
             entities_raw = []
             if response.parsed:
                 entities_raw = [e.model_dump() for e in response.parsed.entities]
@@ -443,7 +537,7 @@ class NERServiceV2:
                     entities_raw = data.get("entities", [])
                 except Exception:
                     pass
-            
+
             if entities_raw:
                 normalized = self._normalize_entities(entities_raw)
                 return [
