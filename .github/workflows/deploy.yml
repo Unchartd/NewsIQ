@@ -101,7 +101,7 @@ jobs:
 
             IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
             IMAGE="${IMAGE_NAME_LOWER}:${{ steps.tag.outputs.tag }}"
-            DEPLOY_DIR="${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}"
+            DEPLOY_DIR=$(echo "${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}" | xargs)
 
             echo "=== Deploying $IMAGE ==="
 
