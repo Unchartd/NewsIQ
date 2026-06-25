@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.models.models import (
     Article,
+    ArticleEvent,
     CanonicalEntity,
     Story,
     StoryArticle,
@@ -21,7 +22,6 @@ from app.models.models import (
     StoryEntity,
 )
 from app.models.observability_models import (
-    CostRecordModel,
     HumanReviewModel,
     LLMTraceModel,
     PipelineRunModel,
@@ -68,7 +68,9 @@ class AdminService:
             select(Story)
             .where(Story.id == story_id)
             .options(
-                selectinload(Story.articles).selectinload(StoryArticle.article).selectinload(Article.source),
+                selectinload(Story.articles)
+                .selectinload(StoryArticle.article)
+                .selectinload(Article.source),
                 selectinload(Story.timeline_events),
                 selectinload(Story.entities).selectinload(StoryEntity.canonical_entity),
             )
@@ -302,7 +304,9 @@ class AdminService:
         for row in rows:
             # Look up a canonical entity matching this value
             ce_result = await db.execute(
-                select(CanonicalEntity).where(CanonicalEntity.canonical_name == row.entity_value).limit(1)
+                select(CanonicalEntity)
+                .where(CanonicalEntity.canonical_name == row.entity_value)
+                .limit(1)
             )
             ce = ce_result.scalar_one_or_none()
             entities.append(
@@ -318,18 +322,18 @@ class AdminService:
 
         return EntityDebuggerResponse(entities=entities)
 
-    async def get_cluster_debugger_data(
-        self, db: AsyncSession
-    ) -> ClusterDebuggerResponse:
+    async def get_cluster_debugger_data(self, db: AsyncSession) -> ClusterDebuggerResponse:
         """Fetch article grouping details for active clusters."""
-        from app.services.clustering_service import clustering_service
         from app.models.models import ArticleEvent
+        from app.services.clustering_service import clustering_service
 
         # Retrieve latest 20 stories with articles and sources
         result = await db.execute(
             select(Story)
             .options(
-                selectinload(Story.articles).selectinload(StoryArticle.article).selectinload(Article.source)
+                selectinload(Story.articles)
+                .selectinload(StoryArticle.article)
+                .selectinload(Article.source)
             )
             .order_by(Story.created_at.desc())
             .limit(20)
@@ -350,7 +354,7 @@ class AdminService:
         events_rows = events_result.all()
 
         # Group events by story_id
-        story_events_map = {}
+        story_events_map: dict[uuid.UUID, list[ArticleEvent]] = {}
         for event, story_id in events_rows:
             if story_id not in story_events_map:
                 story_events_map[story_id] = []
@@ -377,7 +381,9 @@ class AdminService:
                 pairs_count = 0
                 for i in range(len(events)):
                     for j in range(i + 1, len(events)):
-                        total_sim += clustering_service._compute_event_similarity_direct(events[i], events[j])
+                        total_sim += clustering_service._compute_event_similarity_direct(
+                            events[i], events[j]
+                        )
                         pairs_count += 1
                 avg_sim = total_sim / pairs_count if pairs_count > 0 else 1.0
 
@@ -414,7 +420,9 @@ class AdminService:
         timeline = [
             TimelineEventDebuggerSchema(
                 id=te.id,
-                event_date=te.event_time.isoformat() if te.event_time else (te.event_time_raw or ""),
+                event_date=te.event_time.isoformat()
+                if te.event_time
+                else (te.event_time_raw or ""),
                 description=te.description or "",
                 articles_referenced=[],
             )
@@ -478,10 +486,7 @@ class AdminService:
         result = await db.execute(
             select(Story)
             .where(Story.id == story_id)
-            .options(
-                selectinload(Story.category),
-                selectinload(Story.tags)
-            )
+            .options(selectinload(Story.category), selectinload(Story.tags))
         )
         story = result.scalar_one_or_none()
 
@@ -515,7 +520,9 @@ class AdminService:
                 await search_service.index_story(document)
                 await cache_service.invalidate_story(str(story.id))
             except Exception as e:
-                logger.warning("Failed to update index/cache for reviewed story %s: %s", story.id, e)
+                logger.warning(
+                    "Failed to update index/cache for reviewed story %s: %s", story.id, e
+                )
 
     async def get_metrics_summary(self, db: AsyncSession) -> MetricsSummaryResponse:
         """Calculate overall cost, tokens, runs, and current queue sizes."""
@@ -528,7 +535,9 @@ class AdminService:
         ).scalar_one() or 0
 
         # Aggregate cost from LLMTraceModel
-        total_cost = (await db.execute(select(func.sum(LLMTraceModel.cost_usd)))).scalar_one() or 0.0
+        total_cost = (
+            await db.execute(select(func.sum(LLMTraceModel.cost_usd)))
+        ).scalar_one() or 0.0
         total_tokens = (
             await db.execute(
                 select(func.sum(LLMTraceModel.input_tokens + LLMTraceModel.output_tokens))
@@ -537,6 +546,7 @@ class AdminService:
 
         # Query Redis for queue sizes
         import redis.asyncio as aioredis
+
         try:
             r = aioredis.from_url(settings.CELERY_BROKER_URL)
             waiting = await r.llen("celery")
@@ -556,6 +566,7 @@ class AdminService:
 
 def _now() -> datetime:
     from datetime import UTC
+
     return datetime.now(UTC).replace(tzinfo=None)
 
 

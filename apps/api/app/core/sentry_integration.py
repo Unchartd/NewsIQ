@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Literal
 
 import sentry_sdk
 
@@ -14,7 +14,7 @@ from app.core.trace import get_trace_context
 logger = logging.getLogger(__name__)
 
 
-def before_send_handler(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:
+def before_send_handler(event: Any, hint: dict[str, Any]) -> Any | None:
     """Enrich Sentry error events with current pipeline trace context tags."""
     ctx = get_trace_context()
     tags = event.setdefault("tags", {})
@@ -24,9 +24,7 @@ def before_send_handler(event: dict[str, Any], hint: dict[str, Any]) -> dict[str
     return event
 
 
-def before_send_transaction_handler(
-    event: dict[str, Any], hint: dict[str, Any]
-) -> dict[str, Any]:
+def before_send_transaction_handler(event: Any, hint: dict[str, Any]) -> Any | None:
     """Enrich Sentry transactions with current pipeline trace context tags."""
     ctx = get_trace_context()
     tags = event.setdefault("tags", {})
@@ -39,7 +37,7 @@ def before_send_transaction_handler(
 def capture_pipeline_error(
     error: Exception,
     stage: str,
-    severity: str = "error",
+    severity: Literal["fatal", "critical", "error", "warning", "info", "debug"] = "error",
     extra_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Capture a pipeline error with enriched trace context tags and extra metadata."""

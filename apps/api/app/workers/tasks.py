@@ -88,16 +88,20 @@ def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> 
     logger.info("Celery task: Starting RSS news ingestion.")
 
     async def _run():
-        async with PipelineRun(trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
+        async with PipelineRun(
+            trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
+        ) as run:
             async with StageSpan(run, stage=PipelineStage.INGESTION_RSS) as span:
                 async with async_session_factory() as session:
                     results = await ingestion_service.ingest_all_active_sources(session)
                     total_new = sum(results.values())
-                    span.set_metadata({
-                        "articles_ingested": total_new,
-                        "sources_processed": len(results),
-                        "per_source": {str(k): v for k, v in results.items()},
-                    })
+                    span.set_metadata(
+                        {
+                            "articles_ingested": total_new,
+                            "sources_processed": len(results),
+                            "per_source": {str(k): v for k, v in results.items()},
+                        }
+                    )
                     if total_new > 0:
                         logger.info(
                             "RSS ingestion complete",
@@ -123,15 +127,19 @@ def ingest_gnews_task(run_id: str | None = None, trace_id: str | None = None) ->
     async def _run():
         from app.services.gnews_service import gnews_service
 
-        async with PipelineRun(trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
+        async with PipelineRun(
+            trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
+        ) as run:
             async with StageSpan(run, stage=PipelineStage.INGESTION_GNEWS) as span:
                 async with async_session_factory() as session:
                     results = await gnews_service.ingest_all(session)
                     total_new = sum(results.values())
-                    span.set_metadata({
-                        "articles_ingested": total_new,
-                        "categories_fetched": len(results),
-                    })
+                    span.set_metadata(
+                        {
+                            "articles_ingested": total_new,
+                            "categories_fetched": len(results),
+                        }
+                    )
                     if total_new > 0:
                         logger.info(
                             "GNews ingestion complete",
@@ -151,7 +159,9 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
     logger.info("Celery task: Processing pending article embeddings.")
 
     async def _run():
-        async with PipelineRun(trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
+        async with PipelineRun(
+            trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
+        ) as run:
             async with StageSpan(run, stage=PipelineStage.EMBEDDING) as span:
                 async with async_session_factory() as session:
                     # Fetch pending articles
@@ -223,11 +233,13 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                             await session.commit()
                             failed_count += 1
 
-                    span.set_metadata({
-                        "batch_size": len(pending_articles),
-                        "success_count": success_count,
-                        "failed_count": failed_count,
-                    })
+                    span.set_metadata(
+                        {
+                            "batch_size": len(pending_articles),
+                            "success_count": success_count,
+                            "failed_count": failed_count,
+                        }
+                    )
 
                     logger.info(
                         "Embedding batch complete",
@@ -265,7 +277,9 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
         from app.services.event_service import event_service
         from app.services.event_taxonomy import get_parent_type
 
-        async with PipelineRun(trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id) as run:
+        async with PipelineRun(
+            trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
+        ) as run:
             async with StageSpan(run, stage=PipelineStage.EVENT_EXTRACTION) as span:
                 async with async_session_factory() as session:
                     # Find articles that are embedded but not yet event-extracted
@@ -362,7 +376,9 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     canonical_ent = await entity_linker.link_entity(
                                         name=ent.canonical_name or ent.value,
                                         entity_type=ent.type,
-                                        context=(article.title or "") + " " + (article.description or ""),
+                                        context=(article.title or "")
+                                        + " "
+                                        + (article.description or ""),
                                         session=session,
                                     )
                                     canonical_entity_id = canonical_ent.id
@@ -386,8 +402,11 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
 
                             # Try real-time incremental merge into similar story
                             from app.services.clustering_service import clustering_service
-                            merged = await clustering_service.add_article_to_existing_story_if_similar(
-                                article.id, session
+
+                            merged = (
+                                await clustering_service.add_article_to_existing_story_if_similar(
+                                    article.id, session
+                                )
                             )
                             if merged:
                                 merged_count += 1
@@ -407,7 +426,8 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             # Record Pipeline Failure
                             try:
                                 from app.core.failure_recorder import record_pipeline_failure
-                                from app.core.trace import _to_uuid, trace_id_ctx, run_id_ctx
+                                from app.core.trace import _to_uuid, run_id_ctx, trace_id_ctx
+
                                 await record_pipeline_failure(
                                     stage=PipelineStage.EVENT_EXTRACTION,
                                     exception=e,
@@ -416,19 +436,27 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     article_id=article.id,
                                     input_payload={
                                         "title": article.title,
-                                        "content": (article.content or article.description or "")[:4000],
-                                        "published_at": article.published_at.isoformat() if article.published_at else None
-                                    }
+                                        "content": (article.content or article.description or "")[
+                                            :4000
+                                        ],
+                                        "published_at": article.published_at.isoformat()
+                                        if article.published_at
+                                        else None,
+                                    },
                                 )
                             except Exception as rec_err:
-                                logger.error("Failed to record event extraction failure: %s", rec_err)
+                                logger.error(
+                                    "Failed to record event extraction failure: %s", rec_err
+                                )
 
-                    span.set_metadata({
-                        "batch_size": len(articles),
-                        "success_count": success_count,
-                        "failed_count": failed_count,
-                        "merged_count": merged_count,
-                    })
+                    span.set_metadata(
+                        {
+                            "batch_size": len(articles),
+                            "success_count": success_count,
+                            "failed_count": failed_count,
+                            "merged_count": merged_count,
+                        }
+                    )
 
                     logger.info(
                         "Event extraction batch complete",
@@ -459,6 +487,7 @@ def _try_parse_event_time(raw: str | None) -> datetime | None:
         pass
     try:
         from dateutil import parser
+
         return parser.parse(raw).replace(tzinfo=None)
     except Exception:
         return None
@@ -470,15 +499,19 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
     logger.info("Celery task: Running batch clustering.")
 
     async def _run():
-        async with PipelineRun(trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id) as run:
+        async with PipelineRun(
+            trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
+        ) as run:
             async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
                 async with async_session_factory() as session:
                     from app.services.clustering_service import clustering_service
 
                     stories_created = await clustering_service.run_batch_clustering(session)
-                    span.set_metadata({
-                        "stories_created": stories_created,
-                    })
+                    span.set_metadata(
+                        {
+                            "stories_created": stories_created,
+                        }
+                    )
                     if stories_created == 0:
                         span.mark_skipped()
                     logger.info(
@@ -494,6 +527,7 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
 def collect_queue_metrics_task() -> None:
     """Collect queue and worker health metrics."""
     from app.services.queue_metrics_collector import collect_queue_metrics
+
     run_async(collect_queue_metrics())
 
 
@@ -504,7 +538,9 @@ def replay_story_task(story_id_str: str) -> None:
 
     async def _run():
         import uuid
+
         from app.services.replay_service import replay_service
+
         async with async_session_factory() as session:
             await replay_service.replay_full_story(uuid.UUID(story_id_str), session)
 
@@ -522,13 +558,18 @@ def replay_story_stage_task(
     """Replay a specific stage for a story with optional model/provider overrides."""
     logger.info(
         "Celery task: Replaying stage %s for story %s (overrides: provider=%s, model=%s, article=%s)",
-        stage_name, story_id_str, provider_override, model_override, article_id_str
+        stage_name,
+        story_id_str,
+        provider_override,
+        model_override,
+        article_id_str,
     )
 
     async def _run():
         import uuid
-        from app.services.replay_service import replay_service
+
         from app.llm_gateway.request_manager import model_override_ctx, provider_override_ctx
+        from app.services.replay_service import replay_service
 
         if provider_override:
             provider_override_ctx.set(provider_override)
@@ -542,5 +583,3 @@ def replay_story_stage_task(
             await replay_service.replay_story_stage(sid, stage_name, session, article_id=aid)
 
     run_async(_run())
-
-

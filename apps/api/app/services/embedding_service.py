@@ -42,16 +42,21 @@ class EmbeddingService:
 
                 self._genai_client = google_genai.Client(api_key=api_key)
                 self.gemini_enabled = True
-                logger.info("Gemini embedding model configured: %s (%d dims)", settings.EMBEDDING_MODEL, EMBEDDING_DIM)
+                logger.info(
+                    "Gemini embedding model configured: %s (%d dims)",
+                    settings.EMBEDDING_MODEL,
+                    EMBEDDING_DIM,
+                )
             except ImportError:
                 logger.error(
-                    "google-genai package not installed. "
-                    "Run: pip install google-genai>=1.16.0"
+                    "google-genai package not installed. Run: pip install google-genai>=1.16.0"
                 )
             except Exception as exc:
                 logger.error("Failed to configure Gemini embedding client: %s", exc)
         else:
-            logger.warning("GEMINI_API_KEY_EMBEDDING or GEMINI_API_KEY not set — Gemini embeddings disabled.")
+            logger.warning(
+                "GEMINI_API_KEY_EMBEDDING or GEMINI_API_KEY not set — Gemini embeddings disabled."
+            )
 
         # ── OpenAI fallback ────────────────────────────────────────────────────
         self.openai_enabled = False
@@ -119,6 +124,7 @@ class EmbeddingService:
 
         def _call_sync() -> list[list[float]]:
             import time
+
             results = []
             for text in texts:
                 max_retries = 5
@@ -135,17 +141,25 @@ class EmbeddingService:
                         break
                     except Exception as err:
                         err_str = str(err).lower()
-                        is_rate_limit = "429" in err_str or "quota" in err_str or "exhausted" in err_str or "resource_exhausted" in err_str
+                        is_rate_limit = (
+                            "429" in err_str
+                            or "quota" in err_str
+                            or "exhausted" in err_str
+                            or "resource_exhausted" in err_str
+                        )
                         if is_rate_limit and attempt < max_retries - 1:
                             logger.warning(
                                 "Gemini embedding hit rate limit. Retrying in %.1fs (attempt %d/%d). Error: %s",
-                                backoff, attempt + 1, max_retries, err
+                                backoff,
+                                attempt + 1,
+                                max_retries,
+                                err,
                             )
                             time.sleep(backoff)
                             backoff *= 2.0
                         else:
                             raise err
-                
+
                 if raw_val is None:
                     raise RuntimeError("Failed to retrieve embedding values after retries.")
 
@@ -208,7 +222,9 @@ class EmbeddingService:
                 logger.error("OpenAI embedding failed: %s — raising error.", exc)
                 raise exc
 
-        raise RuntimeError("No embedding providers configured or enabled (Gemini and OpenAI are both disabled).")
+        raise RuntimeError(
+            "No embedding providers configured or enabled (Gemini and OpenAI are both disabled)."
+        )
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Return 768-dim embeddings for a batch of texts.
@@ -236,7 +252,9 @@ class EmbeddingService:
                 logger.error("OpenAI batch embedding failed: %s — raising error.", exc)
                 raise exc
 
-        raise RuntimeError("No embedding providers configured or enabled (Gemini and OpenAI are both disabled).")
+        raise RuntimeError(
+            "No embedding providers configured or enabled (Gemini and OpenAI are both disabled)."
+        )
 
 
 embedding_service = EmbeddingService()

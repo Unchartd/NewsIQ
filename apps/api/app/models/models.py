@@ -154,9 +154,7 @@ class Article(Base):
         back_populates="article", cascade="all, delete-orphan"
     )
     # Track event extraction pipeline status
-    event_extraction_status: Mapped[str | None] = mapped_column(
-        String(30), default="pending"
-    )
+    event_extraction_status: Mapped[str | None] = mapped_column(String(30), default="pending")
 
     __table_args__ = (
         Index("idx_articles_published", published_at.desc()),
@@ -357,9 +355,7 @@ class StorySourceCoverage(Base):
     story: Mapped["Story"] = relationship(back_populates="source_coverage")
     source: Mapped["Source"] = relationship()
 
-    __table_args__ = (
-        UniqueConstraint("story_id", "source_id", name="uq_story_source_coverage"),
-    )
+    __table_args__ = (UniqueConstraint("story_id", "source_id", name="uq_story_source_coverage"),)
 
 
 class StoryDifference(Base):
@@ -379,9 +375,7 @@ class StoryDifference(Base):
     story: Mapped["Story"] = relationship(back_populates="differences")
     source: Mapped["Source"] = relationship()
 
-    __table_args__ = (
-        UniqueConstraint("story_id", "source_id", name="uq_story_difference"),
-    )
+    __table_args__ = (UniqueConstraint("story_id", "source_id", name="uq_story_difference"),)
 
 
 class StoryContradiction(Base):

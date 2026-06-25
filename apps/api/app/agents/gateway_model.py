@@ -1,14 +1,16 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Type, Union
-from pydantic import BaseModel
+from typing import Any
 
 from agno.models.base import Model
-from agno.models.response import ModelResponse
 from agno.models.message import Message
+from agno.models.response import ModelResponse
+from pydantic import BaseModel
+
 
 @dataclass
 class GatewayModel(Model):
     """Custom Agno Model adapter that intercepts and routes calls through the NewsIQ LLM Gateway."""
+
     stage: str = "unknown"
     story_id: str = ""
     article_id: str = ""
@@ -20,22 +22,21 @@ class GatewayModel(Model):
 
     async def ainvoke(
         self,
-        messages: List[Message],
+        messages: list[Message],
         assistant_message: Message,
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
-        run_response: Optional[Any] = None,
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        run_response: Any | None = None,
         compress_tool_results: bool = False,
         retry_with_guidance: bool = False,
     ) -> ModelResponse:
         # Format Agno Messages to standard dictionary list
         formatted_messages = []
         for msg in messages:
-            formatted_messages.append({
-                "role": msg.role,
-                "content": str(msg.content) if msg.content is not None else ""
-            })
+            formatted_messages.append(
+                {"role": msg.role, "content": str(msg.content) if msg.content is not None else ""}
+            )
 
         # Dynamically import RequestManager to prevent circular dependencies
         from app.llm_gateway.request_manager import llm_gateway
@@ -50,7 +51,7 @@ class GatewayModel(Model):
             tools=tools,
             tool_choice=tool_choice,
             story_id=self.story_id,
-            article_id=self.article_id
+            article_id=self.article_id,
         )
 
         # Set token metrics on Agno message metrics
@@ -70,21 +71,20 @@ class GatewayModel(Model):
 
     def invoke(
         self,
-        messages: List[Message],
+        messages: list[Message],
         assistant_message: Message,
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
-        run_response: Optional[Any] = None,
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        run_response: Any | None = None,
         compress_tool_results: bool = False,
         retry_with_guidance: bool = False,
     ) -> ModelResponse:
         formatted_messages = []
         for msg in messages:
-            formatted_messages.append({
-                "role": msg.role,
-                "content": str(msg.content) if msg.content is not None else ""
-            })
+            formatted_messages.append(
+                {"role": msg.role, "content": str(msg.content) if msg.content is not None else ""}
+            )
 
         from app.llm_gateway.request_manager import llm_gateway
 
@@ -97,7 +97,7 @@ class GatewayModel(Model):
             tools=tools,
             tool_choice=tool_choice,
             story_id=self.story_id,
-            article_id=self.article_id
+            article_id=self.article_id,
         )
 
         if assistant_message.metrics:
@@ -127,4 +127,3 @@ class GatewayModel(Model):
 
     async def ainvoke_stream(self, *args, **kwargs):
         raise NotImplementedError("Streaming is not supported in GatewayModel")
-

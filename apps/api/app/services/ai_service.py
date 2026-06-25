@@ -1,5 +1,4 @@
-"""AI service — story summarization using unified LLM Gateway.
-"""
+"""AI service — story summarization using unified LLM Gateway."""
 
 import logging
 from typing import Any
@@ -57,20 +56,21 @@ class AIService:
         source_comparisons: list[dict[str, Any]],
     ) -> str:
         import json
+
         kg_str = json.dumps(kg, indent=2)
         contras_str = json.dumps(contradictions, indent=2)
         timeline_str = json.dumps(timeline, indent=2)
         source_comp_str = json.dumps(source_comparisons, indent=2)
 
         schema = (
-            '{\n'
+            "{\n"
             '  "headline": "<neutral headline>",\n'
             '  "one_line_summary": "<1-sentence summary>",\n'
             '  "short_summary": "<1-paragraph summary>",\n'
             '  "detailed_summary": "<multi-paragraph detailed summary>",\n'
             '  "key_facts": ["fact1", "fact2", "fact3"],\n'
             '  "category": "<one of: politics, world, business, technology, sports, entertainment, lifestyle, travel, education, health, science, weather>"\n'
-            '}'
+            "}"
         )
 
         return (
@@ -96,7 +96,7 @@ class AIService:
         """Summarize story from its knowledge graph and analysis inputs through the LLM Gateway."""
         prompt = self._build_summary_prompt(kg, contradictions, timeline, source_comparisons)
         model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-        
+
         from app.llm_gateway.request_manager import llm_gateway
 
         logger.info("Summarizing story from KG via LLM Gateway.")
@@ -112,6 +112,7 @@ class AIService:
             res_data = response.parsed
         else:
             import json
+
             data = json.loads(response.content)
             key_map = {
                 "oneLineSummary": "one_line_summary",
@@ -156,13 +157,15 @@ class AIService:
             if "nodes" in kg:
                 for node in kg["nodes"]:
                     if node.get("type") == "event":
-                        title = node.get("label") or node.get("properties", {}).get("name", "Major News Event")
+                        title = node.get("label") or node.get("properties", {}).get(
+                            "name", "Major News Event"
+                        )
                         break
             elif "event" in kg:
                 title = kg["event"].get("name", "Major News Event")
         return StorySummaryResponse(
             headline=f"[Mock] {title}",
-            one_line_summary=f"[Mock] Story summary based on structured event knowledge graph.",
+            one_line_summary="[Mock] Story summary based on structured event knowledge graph.",
             short_summary=f"[Mock] Short summary of event: {title}.",
             detailed_summary=f"[Mock] Detailed summary covering: {title}.\nTimeline events: {len(timeline)}.\nContradictions: {len(contradictions)}.",
             key_facts=[

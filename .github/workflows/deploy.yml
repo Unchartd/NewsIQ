@@ -1,0 +1,108 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy (e.g. v1.2.3 or sha-abc1234)"
+        required: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/newsiq-api
+
+jobs:
+  deploy:
+    name: Deploy to Oracle VM
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Oracle VM via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          port: ${{ secrets.ORACLE_VM_PORT || 22 }}
+          script: |
+            set -e
+
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
+            DEPLOY_DIR="${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}"
+
+            echo "=== Deploying $IMAGE ==="
+
+            # Pull new image
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker pull "$IMAGE"
+
+            cd "$DEPLOY_DIR"
+
+            # Run migrations against Neon before switching traffic
+            echo "=== Running Alembic migrations ==="
+            docker run --rm \
+              --env-file .env.production \
+              "$IMAGE" \
+              alembic upgrade head
+
+            # Update image tag in .env.production
+            sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${{ steps.tag.outputs.tag }}|" .env.production || true
+
+            # Restart services with new image (prod profile)
+            echo "=== Restarting services ==="
+            NEWSIQ_IMAGE="$IMAGE" docker compose --profile prod up -d --no-build
+
+            # Wait for healthcheck
+            echo "=== Waiting for health check ==="
+            sleep 15
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -sf http://localhost:8000/ready | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['status'])" 2>/dev/null || echo "error")
+              echo "Health check attempt $i: $STATUS"
+              if [ "$STATUS" = "ready" ]; then
+                echo "=== Deployment successful ==="
+                break
+              fi
+              if [ $i -eq 5 ]; then
+                echo "=== Health check failed — initiating rollback ==="
+                exit 1
+              fi
+              sleep 10
+            done
+
+            # Remove old images (keep last 3)
+            docker image prune -f --filter "until=72h"
+            echo "=== Deploy complete ==="
+
+      - name: Tag deployment in Sentry
+        if: success() && env.SENTRY_AUTH_TOKEN != ''
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          npx @sentry/cli releases new ${{ steps.tag.outputs.tag }}
+          npx @sentry/cli releases set-commits ${{ steps.tag.outputs.tag }} --auto
+          npx @sentry/cli releases finalize ${{ steps.tag.outputs.tag }}
+          npx @sentry/cli releases deploys ${{ steps.tag.outputs.tag }} new -e production

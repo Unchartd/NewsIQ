@@ -45,7 +45,7 @@ class LangfuseClientWrapper:
     """Wrapper around Langfuse SDK that fails gracefully when keys are missing."""
 
     def __init__(self) -> None:
-        self.client: Langfuse | None = None
+        self.client: Any = None
         if settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY:
             try:
                 self.client = Langfuse(
@@ -122,6 +122,36 @@ class LangfuseClientWrapper:
         except Exception as e:
             logger.warning(f"Langfuse generation creation failed: {e}")
             return DummySpan()
+
+    def flush(self) -> None:
+        """Flush all pending Langfuse events to the server.
+
+        Call during application shutdown to ensure no traces are lost.
+        Uses a 10-second timeout — safe for Docker graceful shutdown.
+        """
+        if not self.client:
+            return
+        try:
+            self.client.flush()
+            logger.info("Langfuse: all pending traces flushed.")
+        except Exception as e:
+            logger.warning("Langfuse flush failed (traces may be lost): %s", e)
+
+    def health_check(self) -> dict:
+        """Return a health status dict for the Langfuse connection.
+
+        Returns:
+            {"status": "ok"|"degraded"|"disabled", "host": str, "enabled": bool}
+        """
+        from app.core.config import settings
+
+        enabled = bool(settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY)
+        return {
+            "status": "ok" if (not enabled or self.client is not None) else "degraded",
+            "enabled": enabled,
+            "host": settings.LANGFUSE_HOST,
+            "client_ready": self.client is not None,
+        }
 
 
 # Global Langfuse client wrapper instance

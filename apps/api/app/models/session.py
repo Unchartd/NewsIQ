@@ -20,6 +20,7 @@ def generate_uuid() -> uuid.UUID:
     """Generate a UUID v7 (time-ordered) if uuid7 is available, else v4."""
     try:
         from uuid7 import uuid7
+
         return uuid7()
     except ImportError:
         return uuid.uuid4()
@@ -44,6 +45,8 @@ class Session(Base):
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, nullable=False)
-    last_used_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=False)
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now, nullable=False
+    )
 
     user: Mapped["User"] = relationship(back_populates="sessions")

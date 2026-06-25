@@ -4,6 +4,7 @@
 
 # Environment
 .env
+.env.prod
 .env.local
 .env.*.local
 
@@ -53,3 +54,6 @@ celerybeat-schedule
 celerybeat-schedule.*
 apps/api/extract_pdfs.py
 extract_pdfs.py
+apps/api/scratch_*.py
+apps/api/search_admin_endpoints.py
+

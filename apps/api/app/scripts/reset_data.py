@@ -6,13 +6,14 @@ Run with:
 
 import asyncio
 import logging
-from sqlalchemy import text
-import redis
 
-from app.core.database import async_session_factory
+import redis
+from sqlalchemy import text
+
 from app.core.config import settings
-from app.services.search_service import SearchService, INDEX_NAME
-from app.services.vector_service import vector_service, COLLECTION_NAME
+from app.core.database import async_session_factory
+from app.services.search_service import INDEX_NAME, SearchService
+from app.services.vector_service import COLLECTION_NAME, vector_service
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -36,8 +37,9 @@ TABLES_TO_TRUNCATE = [
     "article_entities",
     "canonical_entities",
     "articles",
-    "llm_traces"
+    "llm_traces",
 ]
+
 
 async def reset_database():
     logger.info("Connecting to PostgreSQL and truncating tables...")
@@ -48,6 +50,7 @@ async def reset_database():
         await session.execute(query)
         await session.commit()
     logger.info("PostgreSQL tables truncated successfully.")
+
 
 async def reset_meilisearch():
     logger.info("Connecting to Meilisearch and clearing documents...")
@@ -62,6 +65,7 @@ async def reset_meilisearch():
     else:
         logger.info("Meilisearch not enabled or client not initialized.")
 
+
 async def reset_qdrant():
     logger.info("Connecting to Qdrant and dropping collection...")
     try:
@@ -75,6 +79,7 @@ async def reset_qdrant():
     except Exception as e:
         logger.error("Failed to clear Qdrant: %s", e)
 
+
 def reset_redis():
     logger.info("Connecting to Redis and flushing all caches...")
     try:
@@ -83,6 +88,7 @@ def reset_redis():
         logger.info("Redis flushed successfully (all DBs).")
     except Exception as e:
         logger.error("Failed to flush Redis: %s", e)
+
 
 async def main():
     logger.info("Starting complete data reset...")
@@ -103,6 +109,7 @@ async def main():
 
     reset_redis()
     logger.info("Data reset completed! System is now clean.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

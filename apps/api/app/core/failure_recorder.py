@@ -2,17 +2,18 @@ import logging
 import traceback
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
+
 from sqlalchemy import select
 
 from app.core.database import async_session_factory
-from app.models.observability_models import PipelineFailureModel, LLMTraceModel
 from app.core.trace import _to_uuid
+from app.models.observability_models import LLMTraceModel, PipelineFailureModel
 
 logger = logging.getLogger(__name__)
 
 
-def classify_error(exc: Exception, stage: str) -> Tuple[str, str, Optional[str]]:
+def classify_error(exc: Exception, stage: str) -> tuple[str, str, str | None]:
     """Classify the exception and stage into category, subtype/code, and clean error code.
 
     Returns:
@@ -34,28 +35,71 @@ def classify_error(exc: Exception, stage: str) -> Tuple[str, str, Optional[str]]
 
     # 2. LLM Errors (from Gateway or containing LLM-related issues)
     llm_keywords = [
-        "quota", "rate limit", "rate_limit", "429", "resource_exhausted", "context length",
-        "token limit", "invalid api key", "authentication", "unauthorized", "api_key",
-        "model_not_found", "gemini", "openai", "groq", "cerebras", "nvidia", "providers failed"
+        "quota",
+        "rate limit",
+        "rate_limit",
+        "429",
+        "resource_exhausted",
+        "context length",
+        "token limit",
+        "invalid api key",
+        "authentication",
+        "unauthorized",
+        "api_key",
+        "model_not_found",
+        "gemini",
+        "openai",
+        "groq",
+        "cerebras",
+        "nvidia",
+        "providers failed",
     ]
-    is_llm = any(kw in msg_lower for kw in llm_keywords) or "llm" in exc_type.lower() or "openai" in exc_type.lower()
+    is_llm = (
+        any(kw in msg_lower for kw in llm_keywords)
+        or "llm" in exc_type.lower()
+        or "openai" in exc_type.lower()
+    )
 
     if is_llm:
-        if "quota" in msg_lower or "resource_exhausted" in msg_lower or "billing" in msg_lower or "exhausted" in msg_lower:
+        if (
+            "quota" in msg_lower
+            or "resource_exhausted" in msg_lower
+            or "billing" in msg_lower
+            or "exhausted" in msg_lower
+        ):
             return "llm_error", "QUOTA_EXCEEDED", "RESOURCE_EXHAUSTED"
-        elif "rate" in msg_lower or "429" in msg_lower or "too many requests" in msg_lower or "cooling down" in msg_lower:
+        elif (
+            "rate" in msg_lower
+            or "429" in msg_lower
+            or "too many requests" in msg_lower
+            or "cooling down" in msg_lower
+        ):
             return "llm_error", "RATE_LIMITED", "RATE_LIMIT_EXCEEDED"
         elif "timeout" in msg_lower or "timed out" in msg_lower:
             return "llm_error", "TIMEOUT", "LLM_TIMEOUT"
-        elif "context length" in msg_lower or "token limit" in msg_lower or "context window" in msg_lower:
+        elif (
+            "context length" in msg_lower
+            or "token limit" in msg_lower
+            or "context window" in msg_lower
+        ):
             return "llm_error", "CONTEXT_LENGTH_EXCEEDED", "CONTEXT_LENGTH_EXCEEDED"
         elif "json" in msg_lower or "parse" in msg_lower or "decode" in msg_lower:
             return "llm_error", "MALFORMED_JSON", "MALFORMED_JSON"
         elif "safety" in msg_lower or "block" in msg_lower or "harmful" in msg_lower:
             return "llm_error", "SAFETY_FILTER_BLOCK", "SAFETY_FILTER_BLOCK"
-        elif "503" in msg_lower or "unavailable" in msg_lower or "server error" in msg_lower or "502" in msg_lower:
+        elif (
+            "503" in msg_lower
+            or "unavailable" in msg_lower
+            or "server error" in msg_lower
+            or "502" in msg_lower
+        ):
             return "llm_error", "PROVIDER_UNAVAILABLE", "PROVIDER_UNAVAILABLE"
-        elif "auth" in msg_lower or "api key" in msg_lower or "unauthorized" in msg_lower or "401" in msg_lower:
+        elif (
+            "auth" in msg_lower
+            or "api key" in msg_lower
+            or "unauthorized" in msg_lower
+            or "401" in msg_lower
+        ):
             return "llm_error", "AUTHENTICATION_ERROR", "AUTHENTICATION_ERROR"
         elif "model not found" in msg_lower or "does not exist" in msg_lower:
             return "llm_error", "MODEL_UNAVAILABLE", "MODEL_UNAVAILABLE"
@@ -76,7 +120,13 @@ def classify_error(exc: Exception, stage: str) -> Tuple[str, str, Optional[str]]
         return "data_error", "CORRUPT_TIMELINE", "CORRUPT_TIMELINE"
 
     # 4. System Errors (Default fallback)
-    if "sqlalchemy" in exc_type.lower() or "asyncpg" in exc_type.lower() or "psycopg" in exc_type.lower() or "database" in msg_lower or "cursor" in msg_lower:
+    if (
+        "sqlalchemy" in exc_type.lower()
+        or "asyncpg" in exc_type.lower()
+        or "psycopg" in exc_type.lower()
+        or "database" in msg_lower
+        or "cursor" in msg_lower
+    ):
         return "system_error", "DATABASE_ERROR", "DB_FAILURE"
     elif "redis" in msg_lower or "aioredis" in msg_lower:
         return "system_error", "REDIS_FAILURE", "REDIS_FAILURE"
@@ -88,7 +138,12 @@ def classify_error(exc: Exception, stage: str) -> Tuple[str, str, Optional[str]]
         return "system_error", "SERIALIZATION_ERROR", "SERIALIZATION_ERROR"
     elif "timeout" in msg_lower or "timeouterror" in msg_lower:
         return "system_error", "TIMEOUT", "TIMEOUT"
-    elif "http" in msg_lower or "network" in msg_lower or "connection" in msg_lower or "socket" in msg_lower:
+    elif (
+        "http" in msg_lower
+        or "network" in msg_lower
+        or "connection" in msg_lower
+        or "socket" in msg_lower
+    ):
         return "system_error", "NETWORK_ISSUE", "NETWORK_ISSUE"
     elif "memory" in msg_lower or "oom" in msg_lower:
         return "system_error", "MEMORY_ISSUE", "OOM"
@@ -99,21 +154,21 @@ def classify_error(exc: Exception, stage: str) -> Tuple[str, str, Optional[str]]
 async def record_pipeline_failure(
     stage: str,
     exception: Exception,
-    trace_id: Optional[uuid.UUID] = None,
-    run_id: Optional[uuid.UUID] = None,
-    story_id: Optional[uuid.UUID] = None,
-    article_id: Optional[uuid.UUID] = None,
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    input_payload: Optional[Dict[str, Any]] = None,
-    output_payload: Optional[Dict[str, Any]] = None,
-    raw_response: Optional[str] = None,
+    trace_id: uuid.UUID | None = None,
+    run_id: uuid.UUID | None = None,
+    story_id: uuid.UUID | None = None,
+    article_id: uuid.UUID | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    input_payload: dict[str, Any] | None = None,
+    output_payload: dict[str, Any] | None = None,
+    raw_response: str | None = None,
     retry_count: int = 0,
     latency: float = 0.0,
-    error_code: Optional[str] = None,
+    error_code: str | None = None,
 ) -> uuid.UUID:
     """Record a pipeline failure into the database, performing auto-enrichment via LLM traces."""
-    from app.core.trace import trace_id_ctx, run_id_ctx, story_id_ctx, article_id_ctx
+    from app.core.trace import article_id_ctx, run_id_ctx, story_id_ctx, trace_id_ctx
 
     # Fallback to context variables if not provided
     tid = trace_id or _to_uuid(trace_id_ctx.get(None))
@@ -192,8 +247,7 @@ async def record_pipeline_failure(
         session.add(failure)
         await session.commit()
         logger.info(
-            "Recorded pipeline failure id=%s stage=%s category=%s",
-            failure_id, stage, category
+            "Recorded pipeline failure id=%s stage=%s category=%s", failure_id, stage, category
         )
 
     return failure_id

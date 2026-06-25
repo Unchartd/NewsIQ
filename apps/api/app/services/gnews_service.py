@@ -93,18 +93,14 @@ class GNewsService:
         name_clean = gnews_source_name.strip()
 
         # 1. Exact name match
-        res = await session.execute(
-            select(Source).where(Source.name.ilike(name_clean))
-        )
+        res = await session.execute(select(Source).where(Source.name.ilike(name_clean)))
         source = res.scalar_one_or_none()
         if source:
             return source
 
         # 2. Slug match
         candidate_slug = self._slugify(name_clean)
-        res = await session.execute(
-            select(Source).where(Source.slug == candidate_slug)
-        )
+        res = await session.execute(select(Source).where(Source.slug == candidate_slug))
         source = res.scalar_one_or_none()
         if source:
             return source
@@ -285,7 +281,9 @@ class GNewsService:
                 count = await self.ingest_category(category, country, session)
                 results[key] = count
         total = sum(results.values())
-        logger.info("GNews ingestion complete: %d new articles across %d feeds.", total, len(results))
+        logger.info(
+            "GNews ingestion complete: %d new articles across %d feeds.", total, len(results)
+        )
         return results
 
 

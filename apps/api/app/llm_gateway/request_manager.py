@@ -1,25 +1,24 @@
 import logging
-import time
-from typing import Any, Dict, List, Optional, Type, Union
+from contextvars import ContextVar
+from typing import Any
+
 from pydantic import BaseModel
 
 from app.core.trace import track_llm_call
-from app.llm_gateway.base_provider import GatewayRequest, GatewayResponse, APIKey
-from app.llm_gateway.provider_pool import APIKeyPool
-from app.llm_gateway.provider_router import ProviderRouter
-from app.llm_gateway.rate_limit_manager import RateLimitManager
-from app.llm_gateway.health_monitor import HealthMonitor
+from app.llm_gateway.base_provider import GatewayRequest, GatewayResponse
 from app.llm_gateway.cost_tracker import CostTracker
 from app.llm_gateway.fallback_chain import FallbackChain
+from app.llm_gateway.health_monitor import HealthMonitor
 from app.llm_gateway.metrics import (
     newsiq_llm_gateway_calls_total,
     newsiq_llm_gateway_cost_usd,
-    newsiq_llm_gateway_tokens_total,
+    newsiq_llm_gateway_key_cooldowns,
     newsiq_llm_gateway_latency_seconds,
-    newsiq_llm_gateway_key_cooldowns
+    newsiq_llm_gateway_tokens_total,
 )
-
-from contextvars import ContextVar
+from app.llm_gateway.provider_pool import APIKeyPool
+from app.llm_gateway.provider_router import ProviderRouter
+from app.llm_gateway.rate_limit_manager import RateLimitManager
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +29,7 @@ provider_override_ctx: ContextVar[str] = ContextVar("provider_override", default
 
 class KeyCooldownError(RuntimeError):
     """Raised when an API key is selected but is currently cooling down."""
+
     pass
 
 
@@ -42,14 +42,14 @@ class RequestManager:
         self.health_monitor = HealthMonitor()
         self.cost_tracker = CostTracker()
         self.fallback_chain = FallbackChain()
-        
+
         self.router = ProviderRouter(
             key_pool=self.key_pool,
             rate_limiter=self.rate_limiter,
-            health_monitor=self.health_monitor
+            health_monitor=self.health_monitor,
         )
 
-    def _extract_prompts(self, messages: List[Dict[str, Any]]) -> tuple[str, str]:
+    def _extract_prompts(self, messages: list[dict[str, Any]]) -> tuple[str, str]:
         """Helper to extract system and user prompts for logging and database traces."""
         system_prompt = ""
         user_prompt = ""
@@ -66,23 +66,23 @@ class RequestManager:
         self,
         model: str,
         stage: str,
-        messages: List[Dict[str, Any]],
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
+        messages: list[dict[str, Any]],
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
         temperature: float = 0.0,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         story_id: str = "",
         article_id: str = "",
     ) -> GatewayResponse:
         """Asynchronously execute LLM requests through the gateway's fallback chain."""
         # 1. Retrieve prioritized list of provider/model fallbacks
         chain = self.fallback_chain.get_fallback_chain(model)
-        
+
         provider_override = provider_override_ctx.get("")
         model_override = model_override_ctx.get("")
         if provider_override and model_override:
             chain = [{"provider": provider_override, "model": model_override}]
-            
+
         system_prompt, user_prompt = self._extract_prompts(messages)
 
         errors_encountered = []
@@ -96,28 +96,30 @@ class RequestManager:
             try:
                 # Select client and API Key
                 selected_key, client = self.router.select_key_and_client(provider_name, model_name)
-                
+
                 # Check key cooldown
                 if selected_key.is_cooling_down():
-                    from datetime import datetime
                     import asyncio
+                    from datetime import datetime
+
                     remaining = (selected_key.cooldown_until - datetime.utcnow()).total_seconds()
                     if remaining > 0:
-                        is_last_resort = (
-                            entry == chain[-1]
-                            or (len(chain) > 1 and entry == chain[-2] and chain[-1]["provider"] == "mock")
+                        is_last_resort = entry == chain[-1] or (
+                            len(chain) > 1
+                            and entry == chain[-2]
+                            and chain[-1]["provider"] == "mock"
                         )
                         if remaining <= 20.0 or is_last_resort:
                             logger.info(
                                 "API key for %s is cooling down. Sleeping for %.2f seconds before proceeding.",
-                                provider_name, remaining
+                                provider_name,
+                                remaining,
                             )
                             await asyncio.sleep(remaining)
                         else:
                             # Record metric for key cooldown hit
                             newsiq_llm_gateway_key_cooldowns.labels(
-                                provider=provider_name,
-                                key_hash=selected_key.get_masked()
+                                provider=provider_name, key_hash=selected_key.get_masked()
                             ).inc()
                             raise KeyCooldownError(f"API key for {provider_name} is cooling down.")
 
@@ -131,7 +133,7 @@ class RequestManager:
                     tool_choice=tool_choice,
                     stage=stage,
                     story_id=story_id,
-                    article_id=article_id
+                    article_id=article_id,
                 )
 
                 # Record request hit in rate limit manager
@@ -139,7 +141,9 @@ class RequestManager:
 
                 logger.info(
                     "Executing gateway call to provider=%s model=%s (stage=%s)",
-                    provider_name, model_name, stage
+                    provider_name,
+                    model_name,
+                    stage,
                 )
 
                 # 3. Call within DB distributed tracing span
@@ -153,7 +157,6 @@ class RequestManager:
                     story_id=story_id,
                     article_id=article_id,
                 ) as trace_call:
-                    
                     response = await client.execute(request, selected_key)
 
                     # Update database trace record details
@@ -168,7 +171,9 @@ class RequestManager:
                         raise RuntimeError(response.error)
 
                     # Compute cost and update details
-                    cost = self.cost_tracker.calculate_cost(model_name, response.input_tokens, response.output_tokens)
+                    cost = self.cost_tracker.calculate_cost(
+                        model_name, response.input_tokens, response.output_tokens
+                    )
                     response.cost_usd = cost
                     trace_call.cost_usd = cost
 
@@ -199,7 +204,9 @@ class RequestManager:
                 errors_encountered.append(f"{provider_name}/{model_name}: {err_msg}")
                 logger.warning(
                     "Gateway attempt failed for provider=%s model=%s: %s. Trying next fallback.",
-                    provider_name, model_name, err_msg
+                    provider_name,
+                    model_name,
+                    err_msg,
                 )
                 newsiq_llm_gateway_calls_total.labels(
                     provider=provider_name, model=model_name, stage=stage, status="error"
@@ -210,9 +217,11 @@ class RequestManager:
                 errors_encountered.append(f"{provider_name}/{model_name}: {err_msg}")
                 logger.warning(
                     "Gateway attempt failed for provider=%s model=%s: %s. Trying next fallback.",
-                    provider_name, model_name, err_msg
+                    provider_name,
+                    model_name,
+                    err_msg,
                 )
-                
+
                 # Report key health failure
                 try:
                     if selected_key is not None:
@@ -232,22 +241,22 @@ class RequestManager:
         self,
         model: str,
         stage: str,
-        messages: List[Dict[str, Any]],
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
+        messages: list[dict[str, Any]],
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
         temperature: float = 0.0,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         story_id: str = "",
         article_id: str = "",
     ) -> GatewayResponse:
         """Synchronously execute LLM requests through the gateway's fallback chain."""
         chain = self.fallback_chain.get_fallback_chain(model)
-        
+
         provider_override = provider_override_ctx.get("")
         model_override = model_override_ctx.get("")
         if provider_override and model_override:
             chain = [{"provider": provider_override, "model": model_override}]
-            
+
         errors_encountered = []
 
         for entry in chain:
@@ -257,25 +266,28 @@ class RequestManager:
 
             try:
                 selected_key, client = self.router.select_key_and_client(provider_name, model_name)
-                
+
                 if selected_key.is_cooling_down():
-                    from datetime import datetime
                     import time
+                    from datetime import datetime
+
                     remaining = (selected_key.cooldown_until - datetime.utcnow()).total_seconds()
                     if remaining > 0:
-                        is_last_resort = (
-                            entry == chain[-1]
-                            or (len(chain) > 1 and entry == chain[-2] and chain[-1]["provider"] == "mock")
+                        is_last_resort = entry == chain[-1] or (
+                            len(chain) > 1
+                            and entry == chain[-2]
+                            and chain[-1]["provider"] == "mock"
                         )
                         if remaining <= 20.0 or is_last_resort:
                             logger.info(
                                 "API key for %s is cooling down. Sleeping for %.2f seconds (sync) before proceeding.",
-                                provider_name, remaining
+                                provider_name,
+                                remaining,
                             )
                             time.sleep(remaining)
                         else:
                             raise KeyCooldownError(f"API key for {provider_name} is cooling down.")
-                
+
                 request = GatewayRequest(
                     model=model_name,
                     messages=messages,
@@ -285,7 +297,7 @@ class RequestManager:
                     tool_choice=tool_choice,
                     stage=stage,
                     story_id=story_id,
-                    article_id=article_id
+                    article_id=article_id,
                 )
 
                 self.rate_limiter.record_request(selected_key.key)
@@ -297,7 +309,9 @@ class RequestManager:
                     raise RuntimeError(response.error)
 
                 # Cost and telemetry metrics
-                cost = self.cost_tracker.calculate_cost(model_name, response.input_tokens, response.output_tokens)
+                cost = self.cost_tracker.calculate_cost(
+                    model_name, response.input_tokens, response.output_tokens
+                )
                 response.cost_usd = cost
 
                 self.health_monitor.report_success(selected_key)
@@ -332,6 +346,7 @@ class RequestManager:
 
         combined_errors = " | ".join(errors_encountered)
         raise RuntimeError(f"All LLM Gateway providers failed (sync). Details: {combined_errors}")
+
 
 # Singleton Instance
 llm_gateway = RequestManager()

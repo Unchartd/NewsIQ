@@ -17,7 +17,6 @@ if role_norm in ("monolith", "user", "processing", "admin"):
 
 # User-facing routes
 if role_norm in ("monolith", "user"):
-
     # Google OAuth endpoints
     api_router.include_router(oauth.router, prefix="/auth", tags=["oauth"])
 
@@ -37,4 +36,3 @@ if role_norm in ("monolith", "processing", "admin"):
 async def ping():
     """Simple ping endpoint to verify API v1 is reachable."""
     return {"message": "pong", "api_version": "v1"}
-

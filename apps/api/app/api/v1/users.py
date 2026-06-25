@@ -43,6 +43,7 @@ async def get_profile(user: User = Depends(require_user)):
         role=user.role,
         subscription_plan=user.subscription_plan,
         status=user.status,
+        email_verified=user.email_verified,
         created_at=user.created_at.isoformat() if user.created_at else "",
     )
 
@@ -83,20 +84,23 @@ async def get_preferences(
 ):
     """Get the current user's preferences."""
     # Fetch preferences
-    result = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
-    prefs = result.scalar_one_or_none()
+    pref_stmt = select(UserPreference).where(UserPreference.user_id == user.id)
+    pref_result = await db.execute(pref_stmt)
+    prefs = pref_result.scalar_one_or_none()
 
     # Fetch user categories
-    result = await db.execute(
+    cat_stmt = (
         select(Category.slug)
         .join(UserCategory, UserCategory.category_id == Category.id)
         .where(UserCategory.user_id == user.id)
     )
-    categories = [row[0] for row in result.all()]
+    cat_result = await db.execute(cat_stmt)
+    categories = [row[0] for row in cat_result.all()]
 
     # Fetch user locations
-    result = await db.execute(select(UserLocation).where(UserLocation.user_id == user.id))
-    locations = result.scalars().all()
+    loc_stmt = select(UserLocation).where(UserLocation.user_id == user.id)
+    loc_result = await db.execute(loc_stmt)
+    locations = loc_result.scalars().all()
     countries = list({loc.country_code for loc in locations if loc.country_code})
     cities = list({loc.city_name for loc in locations if loc.city_name})
 
@@ -137,6 +141,7 @@ async def update_preferences(
         prefs.digest_settings = body.digest_settings
     if body.ui_settings is not None:
         from sqlalchemy.orm.attributes import flag_modified
+
         existing = dict(prefs.ui_settings) if prefs.ui_settings else {}
         existing.update(body.ui_settings)
         prefs.ui_settings = existing
@@ -222,7 +227,7 @@ async def delete_account(
 ):
     """Permanently delete the user's account (danger zone) by scrubbing PII."""
     from app.models.models import OAuthAccount
-    
+
     # Anonymize personal identification details
     user.email = f"deleted_user_{uuid.uuid4().hex}@deleted.newsiq.ai"
     user.name = "Deleted User"
@@ -230,34 +235,38 @@ async def delete_account(
     user.password_hash = None
     user.status = "deleted"
     user.updated_at = datetime.now(UTC).replace(tzinfo=None)
-    
+
     # Delete associated OAuth account links (contains provider IDs and tokens)
     await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
-    
+
     # GDPR/DPDPA: Purge preferences, bookmarks, events, search history, and digest subscriptions
-    from app.models.models import UserPreference, Bookmark, SearchHistory, UserEvent, DigestSubscription
-    from app.models.consent import ConsentPreference, ConsentAuditLog
     from sqlalchemy import update
+
+    from app.models.consent import ConsentAuditLog, ConsentPreference
+    from app.models.models import (
+        Bookmark,
+        DigestSubscription,
+        SearchHistory,
+        UserEvent,
+        UserPreference,
+    )
 
     await db.execute(delete(UserPreference).where(UserPreference.user_id == user.id))
     await db.execute(delete(Bookmark).where(Bookmark.user_id == user.id))
     await db.execute(delete(SearchHistory).where(SearchHistory.user_id == user.id))
     await db.execute(delete(UserEvent).where(UserEvent.user_id == user.id))
     await db.execute(delete(DigestSubscription).where(DigestSubscription.user_id == user.id))
-    
+
     # Purge active consent preferences
     await db.execute(delete(ConsentPreference).where(ConsentPreference.user_id == user.id))
-    
+
     # Anonymize consent audit logs (dissociate user_id for GDPR records compliance)
     await db.execute(
-        update(ConsentAuditLog)
-        .where(ConsentAuditLog.user_id == user.id)
-        .values(user_id=None)
+        update(ConsentAuditLog).where(ConsentAuditLog.user_id == user.id).values(user_id=None)
     )
-    
+
     await db.flush()
     return MessageResponse(message="Account deleted.")
-
 
 
 @router.get("/notifications", response_model=list[NotificationResponse])
@@ -420,15 +429,14 @@ async def update_digest_subscriptions(
     # Update the specific edition being toggled (any channel for this edition)
     edition_key = body.frequency  # morning | midday | evening | weekly
     # An edition is "active" if any enabled subscription exists for it
-    edition_enabled_anywhere = any(
-        s.enabled for s in all_subs if s.frequency == edition_key
-    )
+    edition_enabled_anywhere = any(s.enabled for s in all_subs if s.frequency == edition_key)
     editions[edition_key] = edition_enabled_anywhere
     existing["editions"] = editions
 
     # Use flag-based assignment to trigger SQLAlchemy dirty tracking on JSONB
     prefs.digest_settings = existing
     from sqlalchemy.orm.attributes import flag_modified
+
     flag_modified(prefs, "digest_settings")
 
     prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
@@ -584,9 +592,7 @@ async def get_latest_digest(
 
     # Fallback to most recent stories if no category match
     if not stories:
-        fallback_result = await db.execute(
-            select(Story).order_by(Story.created_at.desc()).limit(5)
-        )
+        fallback_result = await db.execute(select(Story).order_by(Story.created_at.desc()).limit(5))
         stories = fallback_result.scalars().all()
 
     digest_items = [
@@ -648,9 +654,11 @@ async def trigger_digest_delivery(
 ):
     """Manually trigger Celery background tasks to generate and deliver news digests."""
     from app.workers.digest_tasks import trigger_digest_delivery_now_task
-    
+
     trigger_digest_delivery_now_task.delay(body.frequency)
-    return MessageResponse(message=f"Digest delivery task triggered for frequency '{body.frequency}'.")
+    return MessageResponse(
+        message=f"Digest delivery task triggered for frequency '{body.frequency}'."
+    )
 
 
 @router.patch("/notifications/read-all", response_model=MessageResponse)
@@ -659,13 +667,12 @@ async def mark_all_notifications_read(
     db: AsyncSession = Depends(get_db),
 ):
     """Mark all notifications of the user as read."""
-    from app.models.models import Notification
     from sqlalchemy import update
 
+    from app.models.models import Notification
+
     await db.execute(
-        update(Notification)
-        .where(Notification.user_id == user.id)
-        .values(is_read=True)
+        update(Notification).where(Notification.user_id == user.id).values(is_read=True)
     )
     await db.flush()
     return MessageResponse(message="All notifications marked as read.")
@@ -677,9 +684,10 @@ async def get_reading_history(
     db: AsyncSession = Depends(get_db),
 ):
     """Get user's recent reading history (view_story events)."""
-    from app.models.models import UserEvent, Story, Category
     from sqlalchemy.orm import selectinload
-    
+
+    from app.models.models import Story, UserEvent
+
     # Query user events of type 'view_story'
     stmt = (
         select(UserEvent)
@@ -689,7 +697,7 @@ async def get_reading_history(
     )
     res = await db.execute(stmt)
     events = res.scalars().all()
-    
+
     # Map category slugs to css classes
     cat_class_map = {
         "politics": "bp",
@@ -705,7 +713,7 @@ async def get_reading_history(
         "travel": "btv",
         "education": "bed",
     }
-    
+
     history_items = []
     for idx, event in enumerate(events):
         if not event.story_id:
@@ -713,35 +721,34 @@ async def get_reading_history(
         # Fetch story details
         story_res = await db.execute(
             select(Story)
-            .options(
-                selectinload(Story.category),
-                selectinload(Story.articles)
-            )
+            .options(selectinload(Story.category), selectinload(Story.articles))
             .where(Story.id == event.story_id)
         )
         story = story_res.scalar_one_or_none()
         if not story:
             continue
-            
+
         cat_name = story.category.name if story.category else "General"
         cat_slug = story.category.slug if story.category else "general"
         cat_class = cat_class_map.get(cat_slug, "bg")
-        
+
         # Check if today
         now = datetime.now(UTC).replace(tzinfo=None)
         is_today = event.created_at.date() == now.date()
-        
-        history_items.append({
-            "id": str(event.id),
-            "num": idx + 1,
-            "title": story.headline,
-            "category": cat_name,
-            "catClass": cat_class,
-            "sources": f"{len(story.articles)} sources",
-            "time": event.created_at.isoformat(),
-            "isToday": is_today,
-        })
-        
+
+        history_items.append(
+            {
+                "id": str(event.id),
+                "num": idx + 1,
+                "title": story.headline,
+                "category": cat_name,
+                "catClass": cat_class,
+                "sources": f"{len(story.articles)} sources",
+                "time": event.created_at.isoformat(),
+                "isToday": is_today,
+            }
+        )
+
     return history_items
 
 
@@ -753,13 +760,13 @@ async def delete_history_item(
 ):
     """Delete a specific history event."""
     from app.models.models import UserEvent
-    
+
     stmt = select(UserEvent).where(UserEvent.id == event_id, UserEvent.user_id == user.id)
     res = await db.execute(stmt)
     event = res.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="History item not found")
-        
+
     await db.delete(event)
     await db.flush()
     return MessageResponse(message="History item removed.")
@@ -772,10 +779,9 @@ async def clear_all_history(
 ):
     """Clear all reading history events."""
     from app.models.models import UserEvent
-    
+
     await db.execute(
-        delete(UserEvent)
-        .where(UserEvent.user_id == user.id, UserEvent.event_type == "view_story")
+        delete(UserEvent).where(UserEvent.user_id == user.id, UserEvent.event_type == "view_story")
     )
     await db.flush()
     return MessageResponse(message="Reading history cleared.")
@@ -831,28 +837,30 @@ async def export_user_data(
     db: AsyncSession = Depends(get_db),
 ):
     """Export all user data as a JSON file."""
-    from app.models.models import Bookmark, Notification, UserEvent, SearchHistory
-    
+    from app.models.models import Bookmark, Notification, SearchHistory, UserEvent
+
     # 1. Fetch preferences
     pref_res = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
     pref = pref_res.scalar_one_or_none()
-    
+
     # 2. Fetch bookmarks
     bookmarks_res = await db.execute(select(Bookmark).where(Bookmark.user_id == user.id))
     bookmarks = bookmarks_res.scalars().all()
-    
+
     # 3. Fetch notifications
-    notifications_res = await db.execute(select(Notification).where(Notification.user_id == user.id))
+    notifications_res = await db.execute(
+        select(Notification).where(Notification.user_id == user.id)
+    )
     notifications = notifications_res.scalars().all()
-    
+
     # 4. Fetch events
     events_res = await db.execute(select(UserEvent).where(UserEvent.user_id == user.id))
     events = events_res.scalars().all()
-    
+
     # 5. Fetch search history
     search_res = await db.execute(select(SearchHistory).where(SearchHistory.user_id == user.id))
     searches = search_res.scalars().all()
-    
+
     export = {
         "profile": {
             "id": str(user.id),
@@ -898,13 +906,14 @@ async def export_user_data(
                 "searched_at": s.searched_at.isoformat() if s.searched_at else None,
             }
             for s in searches
-        ]
+        ],
     }
-    
+
     from fastapi.responses import JSONResponse
+
     return JSONResponse(
         content=export,
-        headers={"Content-Disposition": f"attachment; filename=newsiq_data_export_{user.id}.json"}
+        headers={"Content-Disposition": f"attachment; filename=newsiq_data_export_{user.id}.json"},
     )
 
 
@@ -914,12 +923,12 @@ async def clear_personalisation_data(
     db: AsyncSession = Depends(get_db),
 ):
     """Wipe reading history and search history, and clear personalization settings."""
-    from app.models.models import UserEvent, SearchHistory
-    
+    from app.models.models import SearchHistory, UserEvent
+
     # Delete all user events and search history
     await db.execute(delete(UserEvent).where(UserEvent.user_id == user.id))
     await db.execute(delete(SearchHistory).where(SearchHistory.user_id == user.id))
-    
+
     # Reset personalization settings in preferences
     result = await db.execute(select(UserPreference).where(UserPreference.user_id == user.id))
     prefs = result.scalar_one_or_none()
@@ -933,8 +942,9 @@ async def clear_personalisation_data(
             ui["uxResearch"] = False
             prefs.ui_settings = ui
             from sqlalchemy.orm.attributes import flag_modified
+
             flag_modified(prefs, "ui_settings")
         prefs.updated_at = datetime.now(UTC).replace(tzinfo=None)
-        
+
     await db.flush()
     return MessageResponse(message="Personalisation data successfully cleared.")

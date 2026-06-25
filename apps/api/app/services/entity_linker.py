@@ -9,20 +9,17 @@ Uses a hybrid approach:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any
-import httpx
 
+import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
-from app.core.trace import track_llm_call
-
 from app.models.models import CanonicalEntity
 from app.services.cache_service import cache_service
 
@@ -161,7 +158,9 @@ class EntityLinker:
 
     # ── Local Coreference Resolution ──────────────────────────────────────────
 
-    def group_entities_locally(self, entities: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    def group_entities_locally(
+        self, entities: list[dict[str, str]]
+    ) -> dict[str, list[dict[str, str]]]:
         """Perform local coreference resolution within a story's extracted entities.
 
         Returns a mapping from representative entity string to the list of matched raw entity dicts.
@@ -242,7 +241,7 @@ class EntityLinker:
         """Query LLM to generate a clean search query and description."""
         prompt = self._build_disambiguation_prompt(name, entity_type, context)
         model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-        
+
         from app.llm_gateway.request_manager import llm_gateway
 
         try:
@@ -256,9 +255,10 @@ class EntityLinker:
 
             if response.parsed:
                 return response.parsed
-            
+
             try:
                 import json
+
                 data = json.loads(response.content)
                 return EntityResolution(**data)
             except Exception:
@@ -283,7 +283,7 @@ class EntityLinker:
     async def _query_wikidata(self, query: str) -> dict[str, str | None] | None:
         """Search Wikidata using wbsearchentities API."""
         url = "https://www.wikidata.org/w/api.php"
-        params = {
+        params: dict[str, Any] = {
             "action": "wbsearchentities",
             "search": query,
             "language": "en",
@@ -328,9 +328,7 @@ class EntityLinker:
         cache_key = f"newsiq:entity_link:{slug}"
 
         # ── 1. DB Lookup ──────────────────────────────────────────────────────
-        stmt = select(CanonicalEntity).where(
-            CanonicalEntity.canonical_name.ilike(clean_name)
-        )
+        stmt = select(CanonicalEntity).where(CanonicalEntity.canonical_name.ilike(clean_name))
         res = await session.execute(stmt)
         db_entity = res.scalar_one_or_none()
         if db_entity:
@@ -340,10 +338,10 @@ class EntityLinker:
         cached = await cache_service.get(cache_key)
         if cached:
             # Check DB again by wikidata_id if cached resolution had one
-            wikidata_id = cached.get("wikidata_id")
-            if wikidata_id:
+            cached_wikidata_id = cached.get("wikidata_id")
+            if cached_wikidata_id:
                 stmt = select(CanonicalEntity).where(
-                    CanonicalEntity.wikidata_id == wikidata_id
+                    CanonicalEntity.wikidata_id == cached_wikidata_id
                 )
                 res = await session.execute(stmt)
                 db_entity = res.scalar_one_or_none()
@@ -355,7 +353,7 @@ class EntityLinker:
             new_entity = CanonicalEntity(
                 canonical_name=cached.get("canonical_name", clean_name),
                 entity_type=cached.get("entity_type", entity_type),
-                wikidata_id=wikidata_id,
+                wikidata_id=cached_wikidata_id,
                 aliases=cached.get("aliases", [clean_name]),
                 metadata_payload={"description": cached.get("description")},
             )
@@ -396,13 +394,15 @@ class EntityLinker:
 
         # Agentic fallback if Wikidata did not resolve QID
         if not wikidata_id:
-            logger.info("Wikidata lookup failed to find QID for %s. Invoking EntityDisambiguationAgent.", clean_name)
+            logger.info(
+                "Wikidata lookup failed to find QID for %s. Invoking EntityDisambiguationAgent.",
+                clean_name,
+            )
             try:
                 from app.agents.entity_disambiguation_agent import disambiguate_entity
+
                 agent_res = await disambiguate_entity(
-                    entity_value=clean_name,
-                    entity_type=entity_type,
-                    context=context
+                    entity_value=clean_name, entity_type=entity_type, context=context
                 )
                 if agent_res:
                     resolution.canonical_name = agent_res.canonical_name
@@ -414,9 +414,7 @@ class EntityLinker:
 
         # Check DB by wikidata_id if found
         if wikidata_id:
-            stmt = select(CanonicalEntity).where(
-                CanonicalEntity.wikidata_id == wikidata_id
-            )
+            stmt = select(CanonicalEntity).where(CanonicalEntity.wikidata_id == wikidata_id)
             res = await session.execute(stmt)
             db_entity = res.scalar_one_or_none()
             if db_entity:

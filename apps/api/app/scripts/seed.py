@@ -5,12 +5,11 @@ Run with:
 """
 
 import asyncio
+import hashlib
 import uuid
 from datetime import datetime
 
 from sqlalchemy import select
-
-import hashlib
 
 from app.core.database import async_session_factory
 from app.models.models import Category, Source
@@ -61,17 +60,17 @@ PROMPT_TEMPLATES = [
             "--- END ---\n\n"
             "Respond with ONLY a valid JSON object matching this schema:\n"
             "{\n"
-            "  \"primary_event\": {\n"
-            "    \"event_type\": \"<canonical type>\",\n"
-            "    \"actors\": [\"<actor1>\", \"<actor2>\"],\n"
-            "    \"targets\": [\"<target1>\"],\n"
-            "    \"objects\": [\"<object1>\"],\n"
-            "    \"location\": \"<city, country>\",\n"
-            "    \"event_time\": \"<ISO 8601 or null>\",\n"
-            "    \"numbers\": {\"<key>\": <value>},\n"
-            "    \"confidence\": 0.85\n"
+            '  "primary_event": {\n'
+            '    "event_type": "<canonical type>",\n'
+            '    "actors": ["<actor1>", "<actor2>"],\n'
+            '    "targets": ["<target1>"],\n'
+            '    "objects": ["<object1>"],\n'
+            '    "location": "<city, country>",\n'
+            '    "event_time": "<ISO 8601 or null>",\n'
+            '    "numbers": {"<key>": <value>},\n'
+            '    "confidence": 0.85\n'
             "  },\n"
-            "  \"secondary_events\": []\n"
+            '  "secondary_events": []\n'
             "}"
         ),
         "description": "Per-article structured event extraction",
@@ -102,7 +101,7 @@ PROMPT_TEMPLATES = [
             "10. Do NOT classify organizations, places, or agreements as PERSON.\n\n"
             "--- TEXT ---\n{text}\n--- END ---\n\n"
             "Respond with ONLY valid JSON:\n"
-            "{\"entities\": [{\"value\": \"...\", \"type\": \"...\", \"canonical_name\": \"...\", \"confidence\": 0.9}]}"
+            '{"entities": [{"value": "...", "type": "...", "canonical_name": "...", "confidence": 0.9}]}'
         ),
         "description": "High-accuracy named entity extraction",
     },
@@ -120,7 +119,7 @@ PROMPT_TEMPLATES = [
             "If the entity is already clear (e.g. 'United States'), "
             "canonical name is 'United States' and query is 'United States'.\n\n"
             "Respond in JSON matching this schema:\n"
-            "{\"canonical_name\": \"...\", \"wikidata_search_query\": \"...\", \"description\": \"...\"}"
+            '{"canonical_name": "...", "wikidata_search_query": "...", "description": "..."}'
         ),
         "description": "Entity disambiguation and Wikidata link generation",
     },
@@ -138,7 +137,7 @@ PROMPT_TEMPLATES = [
             "Note: Wording differences, translation variations, or subset relationships (e.g. "
             "'15 police officers' vs '15 people' or '15 dead' vs 'at least 10 dead') are NOT contradictions.\n\n"
             "Respond in JSON matching this schema:\n"
-            "{\"is_contradiction\": true/false, \"description\": \"...\", \"confidence\": 0.0-1.0}"
+            '{"is_contradiction": true/false, "description": "...", "confidence": 0.0-1.0}'
         ),
         "description": "Validator to confirm heuristics-flagged contradictions",
     },
@@ -159,7 +158,7 @@ PROMPT_TEMPLATES = [
             "For 'unique_information', 'missing_information', and 'contradictions', provide "
             "a concise, readable description. If none, return empty string.\n\n"
             "Respond in JSON matching this schema:\n"
-            "{\"focus_area\": \"...\", \"unique_information\": \"...\", \"missing_information\": \"...\", \"contradictions\": \"...\"}"
+            '{"focus_area": "...", "unique_information": "...", "missing_information": "...", "contradictions": "..."}'
         ),
         "description": "Analyze unique/missing info and stance differences per publisher",
     },
@@ -177,14 +176,14 @@ PROMPT_TEMPLATES = [
             "For timeline dates, use ISO 8601 format (YYYY-MM-DD) whenever possible.\n\n"
             "Respond with ONLY a valid JSON object matching this exact schema (no markdown, no code blocks):\n"
             "{\n"
-            "  \"headline\": \"<neutral headline>\",\n"
-            "  \"one_line_summary\": \"<1-sentence summary>\",\n"
-            "  \"short_summary\": \"<1-paragraph 3-4 sentence summary>\",\n"
-            "  \"detailed_summary\": \"<multi-paragraph detailed summary>\",\n"
-            "  \"key_facts\": [\"fact1\", \"fact2\", \"fact3\"],\n"
-            "  \"category\": \"<category>\",\n"
-            "  \"timeline\": [{\"date\": \"YYYY-MM-DD\", \"description\": \"<event>\"}],\n"
-            "  \"differences\": [{\"source_name\": \"<source>\", \"unique_information\": \"<text>\", \"missing_information\": \"<text>\", \"contradictions\": \"<text>\"}]\n"
+            '  "headline": "<neutral headline>",\n'
+            '  "one_line_summary": "<1-sentence summary>",\n'
+            '  "short_summary": "<1-paragraph 3-4 sentence summary>",\n'
+            '  "detailed_summary": "<multi-paragraph detailed summary>",\n'
+            '  "key_facts": ["fact1", "fact2", "fact3"],\n'
+            '  "category": "<category>",\n'
+            '  "timeline": [{"date": "YYYY-MM-DD", "description": "<event>"}],\n'
+            '  "differences": [{"source_name": "<source>", "unique_information": "<text>", "missing_information": "<text>", "contradictions": "<text>"}]\n'
             "}"
         ),
         "description": "Cohesive multi-source story synthesis and categorization",
@@ -205,12 +204,12 @@ PROMPT_TEMPLATES = [
             "technology, sports, entertainment, lifestyle, travel, education, health, science, weather.\n\n"
             "Respond with ONLY a valid JSON object matching this exact schema (no markdown, no code blocks):\n"
             "{\n"
-            "  \"headline\": \"<neutral headline>\",\n"
-            "  \"one_line_summary\": \"<1-sentence summary>\",\n"
-            "  \"short_summary\": \"<1-paragraph summary>\",\n"
-            "  \"detailed_summary\": \"<multi-paragraph detailed summary>\",\n"
-            "  \"key_facts\": [\"fact1\", \"fact2\", \"fact3\"],\n"
-            "  \"category\": \"<category>\"\n"
+            '  "headline": "<neutral headline>",\n'
+            '  "one_line_summary": "<1-sentence summary>",\n'
+            '  "short_summary": "<1-paragraph summary>",\n'
+            '  "detailed_summary": "<multi-paragraph detailed summary>",\n'
+            '  "key_facts": ["fact1", "fact2", "fact3"],\n'
+            '  "category": "<category>"\n'
             "}"
         ),
         "description": "Neutral story summary generation from KG & analysis metrics",
@@ -494,6 +493,7 @@ async def seed():
             if not existing:
                 # Deactivate older prompt versions for this stage
                 from sqlalchemy import update
+
                 await session.execute(
                     update(PromptVersionModel)
                     .where(PromptVersionModel.stage == p_data["stage"])

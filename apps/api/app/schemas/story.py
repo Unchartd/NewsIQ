@@ -6,10 +6,12 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field
 
+
 def _ensure_utc(v: Any) -> Any:
     if isinstance(v, datetime) and v.tzinfo is None:
         return v.replace(tzinfo=UTC)
     return v
+
 
 UTCDateTime = Annotated[datetime, BeforeValidator(_ensure_utc)]
 
@@ -137,7 +139,9 @@ class StoryListResponse(BaseModel):
         default_factory=list, description="URLs of logos for reporting sources"
     )
     story_status: str | None = "active"
-    cluster_confidence: float | None = Field(None, description="Dynamic similarity confidence score of the story cluster")
+    cluster_confidence: float | None = Field(
+        None, description="Dynamic similarity confidence score of the story cluster"
+    )
 
     class Config:
         from_attributes = True
@@ -236,10 +240,10 @@ class SourceComparisonItem(BaseModel):
     """Per-source analysis for the comparison view."""
 
     source: SourceInStory
-    focus_area: str | None = None          # Short label: what this source focused on
+    focus_area: str | None = None  # Short label: what this source focused on
     unique_information: str | None = None  # Details only this source reported
-    missing_information: str | None = None # Key facts this source omitted
-    contradictions: str | None = None      # Claims that conflict with other sources
+    missing_information: str | None = None  # Key facts this source omitted
+    contradictions: str | None = None  # Claims that conflict with other sources
 
     class Config:
         from_attributes = True

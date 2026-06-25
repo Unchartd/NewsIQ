@@ -1,12 +1,103 @@
 
+# ──────────────────────────────────────────────────────────────────────────────
+# NewsIQ Docker Compose — Profile-based environment separation
+#
+# Profiles:
+#   dev      → Local PostgreSQL + Redis + Langfuse (full local stack)
+#   prod     → No local PostgreSQL/Redis (use Neon + Upstash via env vars)
+#   monitor  → Prometheus + Grafana
+#   tools    → Flower + pgAdmin
+#   admin    → Standalone admin dashboard
+#
+# Development (full local stack):
+#   docker compose --profile dev --profile monitor up
+#
+# Production (managed services, compute only):
+#   docker compose --profile prod --profile monitor up
+#
+# Add monitoring to any profile:
+#   docker compose --profile dev --profile monitor up
+# ──────────────────────────────────────────────────────────────────────────────
+
+x-api-env: &api-env
+  DEBUG: ${DEBUG:-true}
+  DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq}
+  DATABASE_DIRECT_URL: ${DATABASE_DIRECT_URL:-}
+  DATABASE_SSL: ${DATABASE_SSL:-false}
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-2}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/1}
+  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+  LOCAL_STORAGE_PATH: /app/data/storage
+  R2_ENDPOINT: ${R2_ENDPOINT:-}
+  R2_BUCKET: ${R2_BUCKET:-newsiq}
+  R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+  R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+  R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_BUCKET: ${S3_BUCKET:-newsiq}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  QDRANT_HOST: qdrant
+  QDRANT_PORT: 6333
+  MEILISEARCH_URL: http://meilisearch:7700
+  MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY:-newsiq-dev-key}
+  SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_API_KEY_EMBEDDING: ${GEMINI_API_KEY_EMBEDDING:-}
+  GEMINI_API_KEY_SYNTH: ${GEMINI_API_KEY_SYNTH:-}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+  NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-004}
+  SUMMARIZATION_MODEL: ${SUMMARIZATION_MODEL:-gemini-2.5-flash}
+  NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+  GNEWS_API_KEY: ${GNEWS_API_KEY:-}
+  PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+  LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000","http://localhost:3002"]}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+  BACKEND_SERVICE_ROLE: ${BACKEND_SERVICE_ROLE:-monolith}
+
+x-api-volumes: &api-volumes
+  - ./apps/api:/app
+  - prometheus_multiproc:/tmp/prometheus_multiproc
+  - local_storage:/app/data/storage
+
+x-dev-watch-api: &dev-watch-api
+  watch:
+    - action: sync
+      path: ./apps/api/app
+      target: /app/app
+      ignore:
+        - __pycache__/
+        - "**/*.pyc"
+        - "**/*.pyo"
+    - action: sync
+      path: ./apps/api/alembic
+      target: /app/alembic
+    - action: rebuild
+      path: ./apps/api/pyproject.toml
+
+
 services:
-  # ──────────────────────────────────────────────
-  # Infrastructure Services
-  # ──────────────────────────────────────────────
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # dev profile — Local stateful infrastructure
+  # ────────────────────────────────────────────────────────────────────────────
+
   postgres:
     image: postgres:17-alpine
     container_name: newsiq-postgres
     restart: unless-stopped
+    profiles: [dev]
     environment:
       POSTGRES_USER: newsiq
       POSTGRES_PASSWORD: newsiq
@@ -21,22 +112,11 @@ services:
       timeout: 5s
       retries: 5
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: newsiq-pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@newsiq.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-
   redis:
     image: redis:7-alpine
     container_name: newsiq-redis
     restart: unless-stopped
+    profiles: [dev]
     ports:
       - "6379:6379"
     volumes:
@@ -46,6 +126,55 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  langfuse-db:
+    image: postgres:17-alpine
+    container_name: newsiq-langfuse-db
+    restart: unless-stopped
+    profiles: [dev]
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: newsiq-langfuse
+    restart: unless-stopped
+    profiles: [dev]
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3100:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-my-secret-key-1234}
+      NEXTAUTH_URL: http://localhost:3100
+      TELEMETRY_ENABLED: "false"
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-7ead3dd24cd258cddee5056b3986ffa56717a188f65fad9997b6ddf1764d1573}
+      SALT: ${LANGFUSE_SALT:-ea8cca740f3bf60376c887b5af8696d9c94e3879c042fd4c2969d1b2add62339}
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: newsiq-pgadmin
+    restart: unless-stopped
+    profiles: [tools]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@newsiq.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Stateful compute services — always local (both dev + prod)
+  # ────────────────────────────────────────────────────────────────────────────
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -67,8 +196,8 @@ services:
     container_name: newsiq-meilisearch
     restart: unless-stopped
     environment:
-      MEILI_ENV: development
-      MEILI_MASTER_KEY: newsiq-dev-key
+      MEILI_ENV: ${MEILI_ENV:-development}
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:-newsiq-dev-key}
     ports:
       - "7700:7700"
     volumes:
@@ -79,51 +208,26 @@ services:
       timeout: 5s
       retries: 5
 
-  # ──────────────────────────────────────────────
-  # Application Services
-  # ──────────────────────────────────────────────
-  user-api:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Application services — dev profile (depends on local postgres + redis)
+  # ────────────────────────────────────────────────────────────────────────────
+
+  user-api-dev:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-user-api
     restart: unless-stopped
+    profiles: [dev]
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"
     ports:
       - "8000:8000"
-    volumes:
-      - ./apps/api:/app
-      - prometheus_multiproc:/tmp/prometheus_multiproc
+    volumes: *api-volumes
     environment:
-      - BACKEND_SERVICE_ROLE=user
-      - DEBUG=${DEBUG:-true}
-      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=newsiq-dev-key
-      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
-      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
-      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
-      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
-      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
-      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
-      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
-      - SENTRY_DSN=${SENTRY_DSN:-}
+      <<: *api-env
+      BACKEND_SERVICE_ROLE: user
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,23 +237,115 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
-    # ── Docker Watch ──────────────────────────────────────────────
-    # uvicorn --reload handles Python file changes automatically.
-    # pyproject.toml changes require a full rebuild (new deps).
+    develop: *dev-watch-api
+
+  processing-api-dev:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-processing-api
+    restart: unless-stopped
+    profiles: [dev]
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir app"
+    ports:
+      - "8001:8001"
+    volumes: *api-volumes
+    environment:
+      <<: *api-env
+      BACKEND_SERVICE_ROLE: processing
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    develop: *dev-watch-api
+
+  celery-worker-dev:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-celery-worker
+    restart: unless-stopped
+    profiles: [dev]
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
+    volumes: *api-volumes
+    environment:
+      <<: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     develop:
       watch:
-        - action: sync
+        - action: sync+restart
           path: ./apps/api/app
           target: /app/app
           ignore:
             - __pycache__/
             - "**/*.pyc"
-            - "**/*.pyo"
-        - action: sync
-          path: ./apps/api/alembic
-          target: /app/alembic
         - action: rebuild
           path: ./apps/api/pyproject.toml
+
+  celery-beat-dev:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-celery-beat
+    restart: unless-stopped
+    profiles: [dev]
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    volumes: *api-volumes
+    environment:
+      <<: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./apps/api/app
+          target: /app/app
+          ignore:
+            - __pycache__/
+            - "**/*.pyc"
+        - action: rebuild
+          path: ./apps/api/pyproject.toml
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Application services — prod profile (uses managed services via env vars)
+  # ────────────────────────────────────────────────────────────────────────────
+
+  user-api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-user-api
+    restart: unless-stopped
+    profiles: [prod]
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+    ports:
+      - "8000:8000"
+    volumes:
+      - prometheus_multiproc:/tmp/prometheus_multiproc
+      - local_storage:/app/data/storage
+    environment:
+      <<: *api-env
+      BACKEND_SERVICE_ROLE: user
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
 
   processing-api:
     build:
@@ -157,184 +353,57 @@ services:
       dockerfile: Dockerfile
     container_name: newsiq-processing-api
     restart: unless-stopped
+    profiles: [prod]
     command: >
-      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir app"
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 2"
     ports:
       - "8001:8001"
     volumes:
-      - ./apps/api:/app
       - prometheus_multiproc:/tmp/prometheus_multiproc
+      - local_storage:/app/data/storage
     environment:
-      - BACKEND_SERVICE_ROLE=processing
-      - DEBUG=${DEBUG:-true}
-      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=newsiq-dev-key
-      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
-      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
-      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
-      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
-      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
-      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
-      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
-      - SENTRY_DSN=${SENTRY_DSN:-}
+      <<: *api-env
+      BACKEND_SERVICE_ROLE: processing
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       qdrant:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
-    # ── Docker Watch ──────────────────────────────────────────────
-    # uvicorn --reload handles Python file changes automatically.
-    # pyproject.toml changes require a full rebuild (new deps).
-    develop:
-      watch:
-        - action: sync
-          path: ./apps/api/app
-          target: /app/app
-          ignore:
-            - __pycache__/
-            - "**/*.pyc"
-            - "**/*.pyo"
-        - action: sync
-          path: ./apps/api/alembic
-          target: /app/alembic
-        - action: rebuild
-          path: ./apps/api/pyproject.toml
 
-  celery_worker:
+  celery-worker:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-worker
-    volumes:
-      - ./apps/api:/app
-      - prometheus_multiproc:/tmp/prometheus_multiproc
-    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
     restart: unless-stopped
+    profiles: [prod]
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - prometheus_multiproc:/tmp/prometheus_multiproc
+      - local_storage:/app/data/storage
     environment:
-      - DEBUG=${DEBUG:-true}
-      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=newsiq-dev-key
-      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
-      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
-      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
-      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
-      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
-      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
-      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
-      - SENTRY_DSN=${SENTRY_DSN:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    # ── Docker Watch ──────────────────────────────────────────────
-    # Celery doesn't auto-reload — sync source then restart the worker.
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./apps/api/app
-          target: /app/app
-          ignore:
-            - __pycache__/
-            - "**/*.pyc"
-            - "**/*.pyo"
-        - action: rebuild
-          path: ./apps/api/pyproject.toml
+      <<: *api-env
 
-  celery_beat:
+  celery-beat:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-beat
-    volumes:
-      - ./apps/api:/app
-      - prometheus_multiproc:/tmp/prometheus_multiproc
-    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
     restart: unless-stopped
+    profiles: [prod]
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    volumes:
+      - prometheus_multiproc:/tmp/prometheus_multiproc
     environment:
-      - DEBUG=${DEBUG:-true}
-      - DATABASE_URL=postgresql+asyncpg://newsiq:newsiq@postgres:5432/newsiq
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=newsiq-dev-key
-      - SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
-      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
-      - GEMINI_API_KEY_EMBEDDING=${GEMINI_API_KEY_EMBEDDING:-}
-      - GEMINI_API_KEY_SYNTH=${GEMINI_API_KEY_SYNTH:-}
-      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
-      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-gemini-3.1-flash-lite}
-      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
-      - SENTRY_DSN=${SENTRY_DSN:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    # ── Docker Watch ──────────────────────────────────────────────
-    # Beat scheduler needs a restart to pick up task schedule changes.
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./apps/api/app
-          target: /app/app
-          ignore:
-            - __pycache__/
-            - "**/*.pyc"
-            - "**/*.pyo"
-        - action: rebuild
-          path: ./apps/api/pyproject.toml
+      <<: *api-env
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Frontend
+  # ────────────────────────────────────────────────────────────────────────────
 
   web:
     build:
       context: ./apps/web
-      # Dockerfile.dev runs "next dev" for HMR — use Dockerfile for production
       dockerfile: Dockerfile.dev
     container_name: newsiq-web
     restart: unless-stopped
@@ -345,15 +414,9 @@ services:
       - /app/node_modules
       - /app/.next
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
-      - INTERNAL_API_URL=http://user-api:8000/api/v1
-      - WATCHPACK_POLLING=true   # needed on Windows/WSL2 for inotify to work
-    depends_on:
-      - user-api
-    # ── Docker Watch ──────────────────────────────────────────────
-    # Source files: sync directly — Next.js HMR picks them up instantly.
-    # package.json / lock file: rebuild so node_modules stays current.
-    # next.config.*: restart to apply config changes.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      INTERNAL_API_URL: http://user-api:8000/api/v1
+      WATCHPACK_POLLING: "true"
     develop:
       watch:
         - action: sync
@@ -373,94 +436,67 @@ services:
           path: ./apps/web/tailwind.config.ts
           target: /app/tailwind.config.ts
 
-  flower:
-    build:
-      context: ./apps/api
-      dockerfile: Dockerfile
-    container_name: newsiq-flower
-    volumes:
-      - ./apps/api:/app
-    command: celery -A app.workers.celery_app.celery_app flower --port=5555
-    ports:
-      - "5555:5555"
-    environment:
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-    depends_on:
-      - redis
-
-  langfuse-db:
-    image: postgres:17-alpine
-    container_name: newsiq-langfuse-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: langfuse
-      POSTGRES_DB: langfuse
-    volumes:
-      - langfuse_db_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
-
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: newsiq-langfuse
-    restart: unless-stopped
-    depends_on:
-      - langfuse-db
-    ports:
-      - "3100:3000"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
-      - NEXTAUTH_SECRET=my-secret-key-1234
-      - NEXTAUTH_URL=http://localhost:3100
-      - TELEMETRY_ENABLED=false
-      - ENCRYPTION_KEY=7ead3dd24cd258cddee5056b3986ffa56717a188f65fad9997b6ddf1764d1573
-      - SALT=ea8cca740f3bf60376c887b5af8696d9c94e3879c042fd4c2969d1b2add62339
+  # ────────────────────────────────────────────────────────────────────────────
+  # Monitoring — profile: monitor
+  # ────────────────────────────────────────────────────────────────────────────
 
   prometheus:
     image: prom/prometheus:latest
     container_name: newsiq-prometheus
     restart: unless-stopped
+    profiles: [monitor]
     volumes:
       - ./apps/api/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
-    depends_on:
-      - user-api
-      - processing-api
 
   grafana:
     image: grafana/grafana:latest
     container_name: newsiq-grafana
     restart: unless-stopped
+    profiles: [monitor]
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
 
-  # ──────────────────────────────────────────────
-  # Standalone Admin Dashboard
-  # ──────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────────────────────
+  # Tools — profile: tools
+  # ────────────────────────────────────────────────────────────────────────────
+
+  flower:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: newsiq-flower
+    restart: unless-stopped
+    profiles: [tools]
+    command: celery -A app.workers.celery_app.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/1}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Admin — profile: admin
+  # ────────────────────────────────────────────────────────────────────────────
+
   admin:
     build:
       context: ./apps/admin
       dockerfile: Dockerfile
     container_name: newsiq-admin
     restart: unless-stopped
+    profiles: [admin]
     ports:
       - "3002:3001"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1
-      - NEXT_PUBLIC_APP_NAME=NewsIQ Admin
-    depends_on:
-      - processing-api
-    profiles:
-      - admin
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001/api/v1}
+      NEXT_PUBLIC_APP_NAME: NewsIQ Admin
 
 volumes:
   postgres_data:
@@ -470,3 +506,4 @@ volumes:
   langfuse_db_data:
   grafana_data:
   prometheus_multiproc:
+  local_storage:
