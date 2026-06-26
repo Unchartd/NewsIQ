@@ -8,8 +8,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for faster, reproducible package management
-RUN pip install --no-cache-dir uv
+# Install uv and upgrade setuptools to patch CVE-2025-47273 path traversal vuln
+RUN pip install --no-cache-dir uv && pip install --no-cache-dir -U "setuptools>=78.1.1"
 
 # ── Dependency layer (cached unless pyproject.toml changes) ──────────────────
 
