@@ -89,6 +89,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Copy docker-compose.yml to Oracle VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          port: ${{ secrets.ORACLE_VM_PORT || 22 }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}
+
       - name: Deploy to Oracle VM via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -113,7 +123,7 @@ jobs:
 
             echo "=== Environment Pre-flight ==="
             pwd
-            ls -la .env.production
+            ls -la
 
             # Self-heal: strip Windows carriage returns from .env.production
             if [ -f .env.production ]; then
