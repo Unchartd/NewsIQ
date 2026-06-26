@@ -13,58 +13,83 @@ jobs:
     name: Trivy Container Scan
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
       actions: read
-      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Build image for scanning
         run: |
+          set -euo pipefail
           docker build -t newsiq-api:scan ./apps/api
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: "newsiq-api:scan"
           scan-type: "image"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
-          exit-code: "0"  # Don't fail the build, just report
+          exit-code: "0"  # Informational reporting only; does not block the build
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always()
+        continue-on-error: true # Safe fallback if Advanced Security is not enabled
         with:
           sarif_file: "trivy-results.sarif"
+
+      - name: Upload Trivy scan results as build artifact
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        if: always()
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          retention-days: 30
 
   dependency-audit:
     name: Python Dependency Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
 
-      - name: Install pip-audit
+      - name: Cache uv dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('apps/api/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install pip-audit and uv
         run: pip install pip-audit uv
 
       - name: Install project dependencies
         working-directory: apps/api
-        run: uv pip install --system -e "." --no-cache
+        run: uv pip install --system -e "."
 
       - name: Run pip-audit
         working-directory: apps/api
-        run: pip-audit --strict --output-format=json 2>&1 | tee pip-audit-results.json || true
+        run: |
+          set -euo pipefail
+          # Enforces security by failing if vulnerabilities are detected
+          pip-audit --strict --output-format=json | tee pip-audit-results.json
 
       - name: Upload audit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         if: always()
         with:
           name: pip-audit-results
@@ -74,19 +99,48 @@ jobs:
   secret-scan:
     name: Secret Detection
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 0  # Full history for secret scanning
+          fetch-depth: 0  # Full history is required for accurate secret scanning
 
       - name: Install Gitleaks
         run: |
+          set -euo pipefail
           GITLEAKS_VERSION="8.18.2"
-          curl -L -s https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz -o gitleaks.tar.gz
+          # SHA256 checksum for gitleaks_8.18.2_linux_x64.tar.gz from official checksums file
+          GITLEAKS_SHA256="6298c9235dfc9278c14b28afd9b7fa4e6f4a289cb1974bd27949fc1e9122bdee"
+          
+          curl -L -s "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          
           tar -xzf gitleaks.tar.gz
           sudo mv gitleaks /usr/local/bin/gitleaks
-          rm gitleaks.tar.gz
+          rm -f gitleaks.tar.gz
 
       - name: Run Gitleaks detect
-        run: gitleaks detect --verbose --redact
+        run: |
+          set -euo pipefail
+          # Scans full git history and outputs results to SARIF format
+          gitleaks detect --verbose --redact --report-format sarif --report-path gitleaks-results.sarif
+
+      - name: Upload Gitleaks report artifact
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        if: always()
+        with:
+          name: gitleaks-results
+          path: gitleaks-results.sarif
+          retention-days: 30
+
+      - name: Upload Gitleaks scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        if: always()
+        continue-on-error: true # Safe fallback if Advanced Security is not enabled
+        with:
+          sarif_file: "gitleaks-results.sarif"
