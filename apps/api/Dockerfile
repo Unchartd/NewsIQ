@@ -18,6 +18,9 @@ COPY pyproject.toml .
 # Pre-install CPU-only PyTorch to avoid massive CUDA dependencies (~5 GB saved)
 RUN uv pip install --system --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
+# Re-upgrade setuptools to prevent it from remaining at the downgraded version 70.2.0
+RUN pip install --no-cache-dir -U "setuptools>=78.1.1"
+
 # Install remaining project dependencies
 RUN uv pip install --system --no-cache-dir -e ".[dev]"
 
