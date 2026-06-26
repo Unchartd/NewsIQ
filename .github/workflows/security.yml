@@ -28,8 +28,20 @@ jobs:
           set -euo pipefail
           docker build -t newsiq-api:scan ./apps/api
 
-      - name: Run Trivy vulnerability scan
+      - name: Run Trivy vulnerability scan (console report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: "newsiq-api:scan"
+          scan-type: "image"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          # Fail (exit-code 1) on PRs to block merging; report only (exit-code 0) on pushes/schedules
+          exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+
+      - name: Generate Trivy SARIF report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        if: always()
         with:
           image-ref: "newsiq-api:scan"
           scan-type: "image"
@@ -37,8 +49,7 @@ jobs:
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
           ignore-unfixed: true
-          # Fail (exit-code 1) on PRs to block merging; report only (exit-code 0) on pushes/schedules
-          exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          exit-code: "0"  # This step only generates the file; do not fail the build
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
