@@ -88,8 +88,9 @@ jobs:
         working-directory: apps/api
         run: |
           set -euo pipefail
-          # Enforces security by failing if vulnerabilities are detected
-          pip-audit --strict --format json | tee pip-audit-results.json
+          # Enforces security by failing if vulnerabilities are detected.
+          # Skip the local project itself which is installed in editable mode.
+          pip-audit --strict --format json --skip-editable | tee pip-audit-results.json
 
       - name: Upload audit results
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
