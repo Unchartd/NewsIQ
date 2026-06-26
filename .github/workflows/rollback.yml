@@ -29,6 +29,16 @@ jobs:
           echo "Target tag: ${{ github.event.inputs.target_tag }}"
           echo "Reason: ${{ github.event.inputs.reason }}"
 
+      - name: Copy docker-compose.yml to Oracle VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          port: ${{ secrets.ORACLE_VM_PORT || 22 }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}
+
       - name: Rollback on Oracle VM
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -50,6 +60,9 @@ jobs:
             docker pull "$IMAGE"
 
             cd "$DEPLOY_DIR"
+            echo "=== Workspace Directory ==="
+            pwd
+            ls -la
 
             # NOTE: We do NOT run alembic downgrade — schema changes are not
             # automatically reverted. Rollback is application-layer only.
