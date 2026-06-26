@@ -216,11 +216,11 @@ jobs:
             echo "=== Deploy complete ==="
 
       - name: Tag deployment in Sentry
-        if: success() && secrets.SENTRY_AUTH_TOKEN != ''
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        if: success() && env.SENTRY_AUTH_TOKEN != ''
         run: |
           npx @sentry/cli releases new ${{ steps.tag.outputs.tag }}
           npx @sentry/cli releases set-commits ${{ steps.tag.outputs.tag }} --auto
