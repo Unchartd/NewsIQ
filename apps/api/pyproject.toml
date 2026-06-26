@@ -56,6 +56,7 @@ dependencies = [
     "trafilatura>=1.12.0",
     "readability-lxml>=0.8.1",
     "lxml_html_clean>=0.1.1",
+    "lxml>=6.1.0",
     "python-multipart>=0.0.18",
     "python-dotenv>=1.0.0",
     "uuid7>=0.1.0",
