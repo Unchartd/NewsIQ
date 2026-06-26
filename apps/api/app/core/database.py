@@ -24,7 +24,9 @@ from app.core.config import settings
 # SSL is required for Neon and most managed PostgreSQL providers.
 # asyncpg passes connect_args directly to the underlying asyncpg.connect() call.
 _connect_args: dict = {}
-if settings.DATABASE_SSL:
+db_url = settings.DATABASE_URL
+
+if settings.DATABASE_SSL or "neon.tech" in db_url:
     import ssl as _ssl
 
     _ssl_ctx = _ssl.create_default_context()
@@ -33,7 +35,10 @@ if settings.DATABASE_SSL:
     _connect_args["ssl"] = _ssl_ctx
 
 # ── Engine ─────────────────────────────────────────────────────────────────────
-db_url = settings.DATABASE_URL
+# Strip query parameters (like ?sslmode=require) that asyncpg doesn't support
+if "?" in db_url:
+    db_url = db_url.split("?")[0]
+
 if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif db_url.startswith("postgres://"):

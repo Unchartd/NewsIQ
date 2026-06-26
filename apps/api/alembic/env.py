@@ -38,6 +38,9 @@ if config.config_file_name is not None:
 # Use the direct (non-pooled) URL for migrations.
 # Neon's PgBouncer pooled endpoint does not support DDL reliably.
 _migration_url = settings.database_direct_url or settings.DATABASE_URL
+if "?" in _migration_url:
+    _migration_url = _migration_url.split("?")[0]
+
 if _migration_url.startswith("postgresql://"):
     _migration_url = _migration_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif _migration_url.startswith("postgres://"):
@@ -97,10 +100,20 @@ async def run_async_migrations() -> None:
     Uses NullPool to avoid connection pool overhead during migrations.
     This is the correct approach for short-lived migration processes.
     """
+    connect_args = {}
+    url = config.get_main_option("sqlalchemy.url")
+    if settings.DATABASE_SSL or (url and "neon.tech" in url):
+        import ssl
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ssl_ctx
+
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
