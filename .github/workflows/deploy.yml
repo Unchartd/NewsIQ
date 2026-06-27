@@ -182,6 +182,7 @@ jobs:
 
             # Show masked DB URLs for debugging
             grep -E "^DATABASE" .env.production | sed 's/:[^@]*@/:***@/g'
+            grep -E "(REDIS_URL|CELERY_BROKER_URL|CELERY_RESULT_BACKEND)" .env.production | sed 's/:[^@]*@/:***@/g'
 
             # Run migrations against Neon before switching traffic
             # Use default bridge network (NOT --network host) so --dns flags are respected
