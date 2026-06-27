@@ -163,6 +163,11 @@ jobs:
             sudo systemctl restart systemd-resolved || true
             sleep 2
 
+            # Stop firewalld to prevent it from blocking DNS and internet routing for custom Docker bridge networks.
+            # Security on OCI VMs is managed via Security Lists/NSGs at the cloud level.
+            sudo systemctl stop firewalld || true
+            sudo systemctl disable firewalld || true
+
             # Also configure Docker daemon to use public DNS
             if [ ! -f /etc/docker/daemon.json ] || ! grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
               echo '{"dns": ["8.8.8.8", "1.1.1.1"]}' | sudo tee /etc/docker/daemon.json
