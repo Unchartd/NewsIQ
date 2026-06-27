@@ -1,0 +1,26 @@
+name: Remote Debug Logs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    name: Fetch Docker Logs
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Fetch logs via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          port: ${{ secrets.ORACLE_VM_PORT || 22 }}
+          script: |
+            DEPLOY_DIR=$(echo "${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}" | xargs)
+            cd "$DEPLOY_DIR"
+            echo "=== Docker Compose PS ==="
+            docker compose --profile prod ps
+            echo "=== Docker Compose Logs ==="
+            docker compose --profile prod logs --tail 200
