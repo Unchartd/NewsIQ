@@ -6,9 +6,11 @@ on:
       target_tag:
         description: "Image tag to roll back to (e.g. v1.2.2 or sha-abc1234)"
         required: true
+        type: string
       reason:
         description: "Reason for rollback (for audit log)"
         required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io

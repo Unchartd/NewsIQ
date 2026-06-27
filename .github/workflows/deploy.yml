@@ -9,6 +9,7 @@ on:
       tag:
         description: "Image tag to deploy (e.g. v1.2.3 or sha-abc1234)"
         required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -133,17 +134,17 @@ jobs:
               fi
 
               # Self-heal truncated variables (due to copy-pasting from a 102-column terminal display in nano)
-              if grep -q "ap-southeas>" .env.production; then
-                echo "WARNING: Detected truncated Neon database URL with '>' character. Self-healing..."
-                sed -i 's|ap-southeas>|ap-southeast-1.aws.neon.tech/neondb?sslmode=require\&channel_binding=require|g' .env.production
+              if grep -q "ap-southeas[>]" .env.production; then
+                echo "WARNING: Detected truncated Neon database URL with truncation character. Self-healing..."
+                sed -i 's|ap-southeas[>]|ap-southeast-1.aws.neon.tech/neondb?sslmode=require\&channel_binding=require|g' .env.production
               fi
-              if grep -q "assured-inse>" .env.production; then
-                echo "WARNING: Detected truncated Upstash Redis URL with '>' character. Self-healing..."
-                sed -i 's|assured-inse>|assured-insect-93215.upstash.io:6379|g' .env.production
+              if grep -q "assured-inse[>]" .env.production; then
+                echo "WARNING: Detected truncated Upstash Redis URL with truncation character. Self-healing..."
+                sed -i 's|assured-inse[>]|assured-insect-93215.upstash.io:6379|g' .env.production
               fi
-              if grep -q "ingest.us.sentry.io/4511625657581>" .env.production; then
-                echo "WARNING: Detected truncated Sentry DSN with '>' character. Self-healing..."
-                sed -i 's|ingest.us.sentry.io/4511625657581>|ingest.us.sentry.io/4511625657581568|g' .env.production
+              if grep -q "ingest.us.sentry.io/4511625657581[>]" .env.production; then
+                echo "WARNING: Detected truncated Sentry DSN with truncation character. Self-healing..."
+                sed -i 's|ingest.us.sentry.io/4511625657581[>]|ingest.us.sentry.io/4511625657581568|g' .env.production
               fi
             else
               echo "FATAL: .env.production not found in $(pwd)!"
