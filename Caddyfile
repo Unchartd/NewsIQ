@@ -1,0 +1,13 @@
+{
+    email {$ACME_EMAIL}
+}
+
+# User API
+{$API_DOMAIN} {
+    reverse_proxy user-api:8000
+}
+
+# Processing API (Admin/Background Tasks API)
+{$ADMIN_API_DOMAIN} {
+    reverse_proxy processing-api:8001
+}
