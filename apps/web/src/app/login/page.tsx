@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Mail, Lock, Zap } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Zap, ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,12 +61,10 @@ export default function LoginPage() {
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-surface">
       {/* Left Column: Form */}
       <div className="flex flex-col justify-center px-6 sm:px-12 lg:px-24 py-12 relative">
-        <div className="absolute top-8 left-6 sm:left-12 lg:hidden">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">NewsIQ</span>
+        <div className="absolute top-8 left-6 sm:left-12">
+          <Link href="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors group">
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            <span className="text-sm font-medium">Back to site</span>
           </Link>
         </div>
 

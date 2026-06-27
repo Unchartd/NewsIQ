@@ -88,6 +88,7 @@ async def test_register_success(mock_db_session, mock_request, mock_response):
             samesite="lax",
             max_age=30 * 24 * 60 * 60,
             path="/",
+            domain=None,
         )
         mock_response.set_cookie.assert_any_call(
             key="access_token",
@@ -97,6 +98,7 @@ async def test_register_success(mock_db_session, mock_request, mock_response):
             samesite="lax",
             max_age=15 * 60,
             path="/",
+            domain=None,
         )
 
 
@@ -284,6 +286,7 @@ async def test_refresh_token_rotation(mock_db_session, mock_request, mock_respon
             samesite="lax",
             max_age=30 * 24 * 60 * 60,
             path="/",
+            domain=None,
         )
         mock_response.set_cookie.assert_any_call(
             key="access_token",
@@ -293,6 +296,7 @@ async def test_refresh_token_rotation(mock_db_session, mock_request, mock_respon
             samesite="lax",
             max_age=15 * 60,
             path="/",
+            domain=None,
         )
 
 
@@ -332,12 +336,14 @@ async def test_logout_current_device(mock_db_session, mock_request, mock_respons
             path="/",
             secure=ANY,
             samesite="lax",
+            domain=None,
         )
         mock_response.delete_cookie.assert_any_call(
             key="access_token",
             path="/",
             secure=ANY,
             samesite="lax",
+            domain=None,
         )
 
 
@@ -355,12 +361,14 @@ async def test_logout_all_devices(mock_db_session, mock_response):
             path="/",
             secure=ANY,
             samesite="lax",
+            domain=None,
         )
         mock_response.delete_cookie.assert_any_call(
             key="access_token",
             path="/",
             secure=ANY,
             samesite="lax",
+            domain=None,
         )
 
 
