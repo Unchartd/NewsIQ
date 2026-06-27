@@ -198,7 +198,7 @@ jobs:
 
             # Restart services with new image (prod profile)
             echo "=== Restarting services ==="
-            NEWSIQ_IMAGE="$IMAGE" docker compose --profile prod up -d --no-build
+            NEWSIQ_IMAGE="$IMAGE" docker compose --env-file .env.production --profile prod up -d --no-build
 
             # Wait for healthcheck
             echo "=== Waiting for health check ==="
@@ -213,9 +213,9 @@ jobs:
               if [ $i -eq 5 ]; then
                 echo "=== Health check failed — initiating rollback ==="
                 echo "=== Container Status ==="
-                docker compose --profile prod ps
+                docker compose --env-file .env.production --profile prod ps
                 echo "=== Container Logs ==="
-                docker compose --profile prod logs
+                docker compose --env-file .env.production --profile prod logs
                 exit 1
               fi
               sleep 10
