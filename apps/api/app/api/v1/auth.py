@@ -53,6 +53,7 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/",
+        domain=settings.COOKIE_DOMAIN,
     )
 
 
@@ -66,6 +67,7 @@ def _set_access_cookie(response: Response, access_token: str) -> None:
         samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
+        domain=settings.COOKIE_DOMAIN,
     )
 
 
@@ -76,6 +78,7 @@ def _clear_refresh_cookie(response: Response) -> None:
         path="/",
         secure=not settings.DEBUG,
         samesite="lax",
+        domain=settings.COOKIE_DOMAIN,
     )
 
 
@@ -86,6 +89,7 @@ def _clear_access_cookie(response: Response) -> None:
         path="/",
         secure=not settings.DEBUG,
         samesite="lax",
+        domain=settings.COOKIE_DOMAIN,
     )
 
 
