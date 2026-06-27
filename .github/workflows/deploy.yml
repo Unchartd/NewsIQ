@@ -138,19 +138,15 @@ jobs:
                 echo "WARNING: Detected truncated Neon database URL with truncation character. Self-healing..."
                 sed -i 's|ap-southeas[>]|ap-southeast-1.aws.neon.tech/neondb?sslmode=require\&channel_binding=require|g' .env.production
               fi
-              if grep -q "rediss://default:" .env.production; then
-                REDIS_PWD=$(grep -o "rediss://default:[^@>]*" .env.production | head -1 | sed 's|rediss://default:||')
-                if [ -n "$REDIS_PWD" ]; then
-                  echo "WARNING: Detected truncated Upstash Redis variables. Self-healing dynamically..."
-                  sed -i "s|^REDIS_URL=.*|REDIS_URL=rediss://default:${REDIS_PWD}@assured-insect-93215.upstash.io:6379/0?ssl_cert_reqs=none|g" .env.production
-                  sed -i "s|^CELERY_BROKER_URL=.*|CELERY_BROKER_URL=rediss://default:${REDIS_PWD}@assured-insect-93215.upstash.io:6379/1?ssl_cert_reqs=none|g" .env.production
-                  sed -i "s|^CELERY_RESULT_BACKEND=.*|CELERY_RESULT_BACKEND=rediss://default:${REDIS_PWD}@assured-insect-93215.upstash.io:6379/2?ssl_cert_reqs=none|g" .env.production
-                fi
-              fi
               if grep -q "ingest.us.sentry.io/4511625657581[>]" .env.production; then
                 echo "WARNING: Detected truncated Sentry DSN with truncation character. Self-healing..."
                 sed -i 's|ingest.us.sentry.io/4511625657581[>]|ingest.us.sentry.io/4511625657581568|g' .env.production
               fi
+              # Always enforce local Redis — Redis runs as a Docker service on the VM (no Upstash)
+              echo "INFO: Enforcing local Redis URLs (redis service on Docker Compose network)..."
+              sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://redis:6379/0|g' .env.production
+              sed -i 's|^CELERY_BROKER_URL=.*|CELERY_BROKER_URL=redis://redis:6379/1|g' .env.production
+              sed -i 's|^CELERY_RESULT_BACKEND=.*|CELERY_RESULT_BACKEND=redis://redis:6379/2|g' .env.production
             else
               echo "FATAL: .env.production not found in $(pwd)!"
               exit 1
