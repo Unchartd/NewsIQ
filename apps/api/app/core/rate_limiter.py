@@ -9,7 +9,6 @@ TLS / Upstash support:
 """
 
 import logging
-import ssl
 import time
 
 import redis.asyncio as aioredis
@@ -46,14 +45,11 @@ def _make_rate_limit_client(url: str) -> aioredis.Redis | None:
     try:
         kwargs: dict = {"decode_responses": True}
         if url.startswith("rediss://"):
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            kwargs["ssl"] = True
-            kwargs["ssl_cert_reqs"] = None
+            kwargs["ssl_check_hostname"] = False
+            kwargs["ssl_cert_reqs"] = "none"
         return aioredis.from_url(url, **kwargs)
-    except Exception as e:
-        logger.error("Failed to initialize Redis for rate limiting: %s", e)
+    except Exception:
+        logger.exception("Failed to initialize Redis for rate limiting")
         return None
 
 

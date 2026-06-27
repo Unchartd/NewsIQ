@@ -4,7 +4,7 @@
 #
 # Profiles:
 #   dev      → Local PostgreSQL + Redis + Langfuse (full local stack)
-#   prod     → No local PostgreSQL/Redis (use Neon + Upstash via env vars)
+#   prod     → Local Redis + Neon PostgreSQL (Redis runs on VM, DB is managed)
 #   monitor  → Prometheus + Grafana
 #   tools    → Flower + pgAdmin
 #   admin    → Standalone admin dashboard
@@ -12,7 +12,7 @@
 # Development (full local stack):
 #   docker compose --profile dev --profile monitor up
 #
-# Production (managed services, compute only):
+# Production (local Redis on VM + Neon managed DB):
 #   docker compose --profile prod --profile monitor up
 #
 # Add monitoring to any profile:
@@ -116,7 +116,7 @@ services:
     image: redis:7-alpine
     container_name: newsiq-redis
     restart: unless-stopped
-    profiles: [dev]
+    profiles: [dev, prod]
     ports:
       - "6379:6379"
     volumes:
@@ -324,10 +324,14 @@ services:
   # ────────────────────────────────────────────────────────────────────────────
 
   user-api:
+    image: ${NEWSIQ_IMAGE:-newsiq-api:latest}
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-user-api
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: >
@@ -342,16 +346,22 @@ services:
       <<: *api-env
       BACKEND_SERVICE_ROLE: user
     depends_on:
+      redis:
+        condition: service_healthy
       qdrant:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
 
   processing-api:
+    image: ${NEWSIQ_IMAGE:-newsiq-api:latest}
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-processing-api
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: >
@@ -371,10 +381,14 @@ services:
         condition: service_healthy
 
   celery-worker:
+    image: ${NEWSIQ_IMAGE:-newsiq-api:latest}
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-worker
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
@@ -383,12 +397,19 @@ services:
       - local_storage:/app/data/storage
     environment:
       <<: *api-env
+    depends_on:
+      redis:
+        condition: service_healthy
 
   celery-beat:
+    image: ${NEWSIQ_IMAGE:-newsiq-api:latest}
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-beat
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
@@ -396,12 +417,16 @@ services:
       - prometheus_multiproc:/tmp/prometheus_multiproc
     environment:
       <<: *api-env
+    depends_on:
+      redis:
+        condition: service_healthy
 
   # ────────────────────────────────────────────────────────────────────────────
   # Frontend
   # ────────────────────────────────────────────────────────────────────────────
 
   web:
+    profiles: [dev]
     build:
       context: ./apps/web
       dockerfile: Dockerfile.dev
