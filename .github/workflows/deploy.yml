@@ -207,6 +207,10 @@ jobs:
               fi
               if [ $i -eq 5 ]; then
                 echo "=== Health check failed — initiating rollback ==="
+                echo "=== Container Status ==="
+                docker compose --profile prod ps
+                echo "=== Container Logs ==="
+                docker compose --profile prod logs
                 exit 1
               fi
               sleep 10
