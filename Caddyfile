@@ -14,10 +14,10 @@
 
 # Admin Dashboard
 admin.newsiq.online {
-    reverse_proxy admin:3001
+    reverse_proxy admin-prod:3001
 }
 
 # Main Frontend
 newsiq.online, www.newsiq.online {
-    reverse_proxy web:3000
+    reverse_proxy web-prod:3000
 }

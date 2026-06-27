@@ -464,6 +464,37 @@ services:
         condition: service_healthy
       processing-api:
         condition: service_healthy
+      web-prod:
+        condition: service_started
+      admin-prod:
+        condition: service_started
+
+  web-prod:
+    image: ${NEWSIQ_WEB_IMAGE:-ghcr.io/unchartd/newsiq/newsiq-web:latest}
+    container_name: newsiq-web-prod
+    restart: unless-stopped
+    profiles: [prod]
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: https://api.newsiq.online/api/v1
+      INTERNAL_API_URL: http://user-api:8000/api/v1
+    depends_on:
+      user-api:
+        condition: service_healthy
+
+  admin-prod:
+    image: ${NEWSIQ_ADMIN_IMAGE:-ghcr.io/unchartd/newsiq/newsiq-admin:latest}
+    container_name: newsiq-admin-prod
+    restart: unless-stopped
+    profiles: [prod]
+    ports:
+      - "3002:3001"
+    environment:
+      NEXT_PUBLIC_API_URL: https://admin-api.newsiq.online/api/v1
+    depends_on:
+      processing-api:
+        condition: service_healthy
 
   # ────────────────────────────────────────────────────────────────────────────
   # Frontend
