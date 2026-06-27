@@ -265,6 +265,12 @@ services:
       meilisearch:
         condition: service_healthy
     develop: *dev-watch-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   celery-worker-dev:
     build:
@@ -282,6 +288,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      disable: true
     develop:
       watch:
         - action: sync+restart
@@ -309,6 +317,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      disable: true
     develop:
       watch:
         - action: sync+restart
@@ -380,6 +390,12 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   celery-worker:
     image: ${NEWSIQ_IMAGE:-newsiq-api:latest}
@@ -401,6 +417,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      disable: true
 
   celery-beat:
     image: ${NEWSIQ_IMAGE:-newsiq-api:latest}
@@ -414,6 +432,8 @@ services:
     restart: unless-stopped
     profiles: [prod]
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    healthcheck:
+      disable: true
     volumes:
       - prometheus_multiproc:/tmp/prometheus_multiproc
     environment:
