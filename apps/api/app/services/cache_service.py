@@ -45,12 +45,8 @@ def _make_redis_client(url: str) -> aioredis.Redis | None:
     try:
         kwargs: dict = {"decode_responses": True}
         if url.startswith("rediss://"):
-            import ssl
-
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            kwargs["ssl_context"] = ctx
+            kwargs["ssl_check_hostname"] = False
+            kwargs["ssl_cert_reqs"] = "none"
         return aioredis.from_url(url, **kwargs)
     except Exception as e:
         logger.error("Failed to create Redis client for %s: %s", url.split("@")[-1], e)
