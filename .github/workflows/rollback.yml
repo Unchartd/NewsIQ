@@ -31,14 +31,14 @@ jobs:
           echo "Target tag: ${{ github.event.inputs.target_tag }}"
           echo "Reason: ${{ github.event.inputs.reason }}"
 
-      - name: Copy docker-compose.yml to Oracle VM
+      - name: Copy docker-compose.yml and Caddyfile to Oracle VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
           username: ${{ secrets.ORACLE_VM_USER }}
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           port: ${{ secrets.ORACLE_VM_PORT || 22 }}
-          source: "docker-compose.yml"
+          source: "docker-compose.yml,Caddyfile"
           target: ${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}
 
       - name: Rollback on Oracle VM
