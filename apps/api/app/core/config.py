@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     CEREBRAS_API_KEY: str = ""
     NVIDIA_API_KEY: str = ""
-    EMBEDDING_MODEL: str = "text-embedding-004"
+    EMBEDDING_MODEL: str = "gemini-embedding-2"
     SUMMARIZATION_MODEL: str = "gemini-2.5-flash"
 
     # ── News APIs ─────────────────────────────────────────────────────────────
