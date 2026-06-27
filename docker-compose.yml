@@ -203,10 +203,11 @@ services:
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 6
+      start_period: 10s
 
   # ────────────────────────────────────────────────────────────────────────────
   # Application services — dev profile (depends on local postgres + redis)
