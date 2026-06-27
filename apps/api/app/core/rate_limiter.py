@@ -50,7 +50,7 @@ def _make_rate_limit_client(url: str) -> aioredis.Redis | None:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             kwargs["ssl"] = True
-            kwargs["ssl_cert_reqs"] = None
+            kwargs["ssl_context"] = ctx
         return aioredis.from_url(url, **kwargs)
     except Exception as e:
         logger.error("Failed to initialize Redis for rate limiting: %s", e)
