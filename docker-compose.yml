@@ -329,6 +329,9 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-user-api
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: >
@@ -354,6 +357,9 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-processing-api
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: >
@@ -378,6 +384,9 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-worker
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
@@ -393,6 +402,9 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: newsiq-celery-beat
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
