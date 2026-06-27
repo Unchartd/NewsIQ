@@ -73,21 +73,21 @@ def do_run_migrations(connection) -> None:
 
     if "alembic_version" not in tables:
         # Fresh database: create all tables from metadata and stamp head
-        with connection.begin():
-            Base.metadata.create_all(bind=connection)
+        Base.metadata.create_all(bind=connection)
 
-            # Get the head revision ID
-            script = ScriptDirectory.from_config(config)
-            head_revision = script.get_current_head()
+        # Get the head revision ID
+        script = ScriptDirectory.from_config(config)
+        head_revision = script.get_current_head()
 
-            # Create alembic_version table and insert head revision
-            connection.execute(
-                text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
-            )
-            connection.execute(
-                text("INSERT INTO alembic_version (version_num) VALUES (:head)"),
-                {"head": head_revision},
-            )
+        # Create alembic_version table and insert head revision
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+        )
+        connection.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES (:head)"),
+            {"head": head_revision},
+        )
+        connection.commit()
         return
 
     context.configure(connection=connection, target_metadata=target_metadata)
