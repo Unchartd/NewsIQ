@@ -11,3 +11,13 @@
 {$ADMIN_API_DOMAIN} {
     reverse_proxy processing-api:8001
 }
+
+# Admin Dashboard
+admin.newsiq.online {
+    reverse_proxy admin:3001
+}
+
+# Main Frontend
+newsiq.online, www.newsiq.online {
+    reverse_proxy web:3000
+}
