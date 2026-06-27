@@ -50,7 +50,6 @@ def _make_redis_client(url: str) -> aioredis.Redis | None:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
-            kwargs["ssl"] = True
             kwargs["ssl_context"] = ctx
         return aioredis.from_url(url, **kwargs)
     except Exception as e:
