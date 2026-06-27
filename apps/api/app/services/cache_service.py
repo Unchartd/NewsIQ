@@ -111,7 +111,8 @@ class CacheService:
             return False
         try:
             return await self._redis.ping()
-        except Exception:
+        except Exception as e:
+            logger.exception("Redis ping failed:")
             return False
 
     # ─────────────────────────────────────────────
