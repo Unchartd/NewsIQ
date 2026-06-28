@@ -194,9 +194,10 @@ export default function DigestSetupPage() {
       await apiClient.post("/users/digests/setup", payload);
       go("success");
       toast.success("Subscribed! First digest arrives tomorrow 🎉");
-    } catch (err: any) {
-      console.error("Failed to subscribe to digest", err);
-      toast.error(err.response?.data?.detail || "Failed to set up digest subscription. Please try again.");
+    } catch (err) {
+      const error = err as { response?: { data?: { detail?: string } } };
+      console.error("Failed to subscribe to digest", error);
+      toast.error(error.response?.data?.detail || "Failed to set up digest subscription. Please try again.");
     } finally {
       setIsSubscribing(false);
     }
@@ -221,7 +222,7 @@ export default function DigestSetupPage() {
       setEmailFormat("html");
 
       go("intro");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to unsubscribe", err);
       toast.error("Failed to unsubscribe. Please try again.");
     }
@@ -562,7 +563,7 @@ export default function DigestSetupPage() {
                       { id: "weekdays", i: "🗓️", n: "Weekdays", d: "Mon – Fri only" },
                       { id: "custom", i: "📆", n: "Custom", d: "Pick specific days" },
                     ].map((f) => (
-                      <div key={f.id} className={`freq-opt ${frequency === f.id ? "sel" : ""}`} onClick={() => setFrequency(f.id as any)}>
+                      <div key={f.id} className={`freq-opt ${frequency === f.id ? "sel" : ""}`} onClick={() => setFrequency(f.id as "daily" | "weekdays" | "custom")}>
                         <div className="freq-icon">{f.i}</div>
                         <div className="freq-name">{f.n}</div>
                         <div className="freq-desc">{f.d}</div>

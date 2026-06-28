@@ -18,16 +18,18 @@ function LegalPageContent() {
   const policyParam = searchParams.get("policy");
 
   const [activePolicyKey, setActivePolicyKey] = useState<string>("tos");
+  const [prevPolicyParam, setPrevPolicyParam] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [activeAnchor, setActiveAnchor] = useState<string>("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
-  // Set active policy based on query param
-  useEffect(() => {
+  // Sync state with policyParam query parameter during render
+  if (policyParam !== prevPolicyParam) {
+    setPrevPolicyParam(policyParam);
     if (policyParam) {
       setActivePolicyKey(policyParam);
     }
-  }, [policyParam]);
+  }
 
   const activePolicy = useMemo<PolicyDocument | null>(() => {
     return normalizedPolicies[activePolicyKey] || null;

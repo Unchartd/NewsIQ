@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { CategoryTabs } from "@/components/layout/category-tabs";
 import { StoryCard } from "@/components/story/story-card";
@@ -38,41 +38,61 @@ function HomeContentInner() {
   const [category, setCategory] = useState<string>(
     () => searchParams.get("category") ?? "all"
   );
+  const [prevCategoryParam, setPrevCategoryParam] = useState<string | null>(null);
   const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
 
   // Sync tab when URL param changes (e.g. back-navigation)
-  useEffect(() => {
-    const param = searchParams.get("category") ?? "all";
-    setCategory(param);
-  }, [searchParams]);
+  const categoryParam = searchParams.get("category") ?? "all";
+  if (categoryParam !== prevCategoryParam) {
+    setPrevCategoryParam(categoryParam);
+    setCategory(categoryParam);
+  }
 
   // Serve personalized feed when authenticated + on the "personalized" tab.
   // We wait for auth initialization to be finished before deciding.
   const isPersonalized = !isAuthLoading && isAuthenticated && category === "personalized";
 
-  const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<Story[]>({
     queryKey: isPersonalized ? ["stories", "personalized"] : ["stories", category],
-    queryFn: async () => {
+    queryFn: async ({ pageParam }) => {
+      const offset = pageParam as number;
+      const limit = 20;
       if (category === "personalized") {
         if (!isAuthenticated) {
           return [];
         }
         try {
-          const res = await apiClient.get("/stories/feed/personalized");
+          const res = await apiClient.get("/stories/feed/personalized", {
+            params: { limit, offset },
+          });
           return res.data;
-        } catch (err: any) {
+        } catch (err) {
+          const error = err as { response?: { status?: number } };
           // If the personalized feed fails with 401 despite our auth state, 
           // we return empty array.
-          if (err.response?.status !== 401) {
+          if (error.response?.status !== 401) {
              throw err;
           }
           return [];
         }
       }
-      const params: Record<string, string> = {};
+      const params: Record<string, string | number> = { limit, offset };
       if (category !== "all") params.category = category;
       const response = await apiClient.get("/stories", { params });
       return response.data;
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage || lastPage.length < 20) return undefined;
+      return allPages.length * 20;
     },
     // Prevent query from running if we are still determining auth state for the personalized feed
     enabled: !isAuthLoading,
@@ -91,9 +111,38 @@ function HomeContentInner() {
     },
   });
 
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
 
-  const hasStories = !isLoading && !error && stories && stories.length > 0;
+  const allStories = data?.pages.flatMap((page) => page) ?? [];
+  // Deduplicate stories by ID to prevent duplicate items from rendering
+  const uniqueStories = Array.from(new Map(allStories.map((s) => [s.id, s])).values());
+  const hasStories = !isLoading && !error && uniqueStories.length > 0;
 
   const handleCategorySelect = (slug: string) => {
     setCategory(slug);
@@ -122,9 +171,9 @@ function HomeContentInner() {
       {/* Breaking News Banner */}
       {hasStories && (
         <BreakingBanner
-          text={`${stories[0].headline} — ${stories[0].source_count} sources covering`}
+          text={`${uniqueStories[0].headline} — ${uniqueStories[0].source_count} sources covering`}
           time="Just now"
-          onClick={() => router.push(`/story/${stories[0].id}`)}
+          onClick={() => router.push(`/story/${uniqueStories[0].id}`)}
         />
       )}
 
@@ -147,7 +196,7 @@ function HomeContentInner() {
           actionLabel="Retry"
           onAction={refetch}
         />
-      ) : !stories || stories.length === 0 ? (
+      ) : !uniqueStories || uniqueStories.length === 0 ? (
         <EmptyState
           icon={Newspaper}
           title={
@@ -186,11 +235,23 @@ function HomeContentInner() {
           }
         />
       ) : (
-        <div className="feed-list">
-          {stories.map((story, index) => (
-            <StoryCard key={story.id} story={story} index={index} />
-          ))}
-        </div>
+        <>
+          <div className="feed-list">
+            {uniqueStories.map((story, index) => (
+              <StoryCard key={story.id} story={story} index={index} />
+            ))}
+          </div>
+          
+          {/* Scroll observer target */}
+          <div ref={observerTarget} style={{ height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {isFetchingNextPage && (
+              <div className="feed-list" style={{ width: "100%", marginTop: 12 }}>
+                <StoryCardSkeleton />
+                <StoryCardSkeleton />
+              </div>
+            )}
+          </div>
+        </>
       )}
     </AppShell>
   );

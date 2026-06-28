@@ -15,6 +15,7 @@ export function LandingClientPage() {
 
   // Avoid hydration mismatch for theme-dependent icons
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -798,7 +799,7 @@ export function LandingClientPage() {
             <h2 className="section-title">Information overload is broken</h2>
             <p className="section-sub">
               The modern news cycle forces you to read the same story ten times
-              from ten different angles. There's a better way.
+              from ten different angles. There&apos;s a better way.
             </p>
           </div>
 
@@ -1162,7 +1163,7 @@ export function LandingClientPage() {
               understand the news
             </h2>
             <p className="section-sub">
-              Built for people who care about what's happening — but can't spend
+              Built for people who care about what&apos;s happening — but can&apos;t spend
               hours finding out.
             </p>
           </div>
@@ -1409,7 +1410,7 @@ export function LandingClientPage() {
               <div className="feat-title">Trending Intelligence</div>
               <div className="feat-desc">
                 Stories are scored by source count, recency, and velocity. See
-                what's gaining coverage right now — not just what's newest.
+                what&apos;s gaining coverage right now — not just what&apos;s newest.
               </div>
             </div>
 
@@ -1504,7 +1505,7 @@ export function LandingClientPage() {
                   </span>
                   <span>2 weeks</span>
                   <span style={{ color: "var(--landing-amber)" }}>
-                    ⚠ "No date"
+                    ⚠ &quot;No date&quot;
                   </span>
                 </div>
                 <div
@@ -1564,7 +1565,7 @@ export function LandingClientPage() {
             <div className="eyebrow">Live example</div>
             <h2 className="section-title">See NewsIQ in action</h2>
             <p className="section-sub">
-              This is a real NewsIQ story — the same layout you'll see every day
+              This is a real NewsIQ story — the same layout you&apos;ll see every day
               in the app.
             </p>
           </div>
@@ -2296,7 +2297,7 @@ export function LandingClientPage() {
                 <i>IQ</i>
               </div>
               <p className="footer-tagline">
-                AI-powered news intelligence. Understand the world's events in
+                AI-powered news intelligence. Understand the world&apos;s events in
                 under 30 seconds.
               </p>
               <div className="footer-social">
