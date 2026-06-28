@@ -272,7 +272,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
           <span>/</span>
           {story.category && (
             <>
-              <Link href={`/category/${story.category.slug}`} style={{ color: "var(--ink3)", textDecoration: "none" }}>
+                        <Link href={`/home?category=${story.category.slug}`} style={{ color: "var(--ink3)", textDecoration: "none" }}>
                 {story.category.name}
               </Link>
               <span>/</span>
@@ -287,7 +287,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
         <div style={{ marginBottom: 28 }}>
           <div className="sd-meta">
             {story.category && (
-              <Link href={`/category/${story.category.slug}`} style={{ textDecoration: "none" }}>
+              <Link href={`/home?category=${story.category.slug}`} style={{ textDecoration: "none" }}>
                 <CategoryBadge category={story.category.name} />
               </Link>
             )}

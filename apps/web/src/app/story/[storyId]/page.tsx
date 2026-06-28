@@ -42,12 +42,12 @@ export default async function StoryDetailPage({ params }: PageProps) {
 
   const breadcrumbSchema = story
     ? buildBreadcrumbSchema([
-        { name: "Home", url: SITE_URL },
+        { name: "Home", url: `${SITE_URL}/home` },
         {
-          name: story.category?.name ? `${story.category.name} News` : "News",
+          name: story.category?.name ? story.category.name : "News",
           url: story.category?.name
-            ? `${SITE_URL}/category/${story.category.name.toLowerCase()}`
-            : `${SITE_URL}/trending`,
+            ? `${SITE_URL}/home?category=${story.category.name.toLowerCase()}`
+            : `${SITE_URL}/home`,
         },
         { name: story.headline, url: `${SITE_URL}/story/${storyId}` },
       ])
