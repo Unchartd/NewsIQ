@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { CategoryTabs } from "@/components/layout/category-tabs";
@@ -32,10 +32,19 @@ const CATEGORIES = [
   { slug: "world", name: "World" },
 ];
 
-export function HomeContent() {
+function HomeContentInner() {
   const router = useRouter();
-  const [category, setCategory] = useState<string>("all");
+  const searchParams = useSearchParams();
+  const [category, setCategory] = useState<string>(
+    () => searchParams.get("category") ?? "all"
+  );
   const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
+
+  // Sync tab when URL param changes (e.g. back-navigation)
+  useEffect(() => {
+    const param = searchParams.get("category") ?? "all";
+    setCategory(param);
+  }, [searchParams]);
 
   // Serve personalized feed when authenticated + on the "personalized" tab.
   // We wait for auth initialization to be finished before deciding.
@@ -86,6 +95,19 @@ export function HomeContent() {
 
   const hasStories = !isLoading && !error && stories && stories.length > 0;
 
+  const handleCategorySelect = (slug: string) => {
+    setCategory(slug);
+    // Keep URL in sync so the browser back button and shareability work
+    const params = new URLSearchParams(searchParams.toString());
+    if (slug === "all") {
+      params.delete("category");
+    } else {
+      params.set("category", slug);
+    }
+    const query = params.toString();
+    router.replace(`/home${query ? `?${query}` : ""}`, { scroll: false });
+  };
+
   return (
     <AppShell
       sidebar={sidebar}
@@ -93,7 +115,7 @@ export function HomeContent() {
         <CategoryTabs
           categories={CATEGORIES}
           activeCategory={category}
-          onSelect={setCategory}
+          onSelect={handleCategorySelect}
         />
       }
     >
@@ -171,5 +193,14 @@ export function HomeContent() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+// Wrap in Suspense because useSearchParams requires it in Next.js App Router
+export function HomeContent() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContentInner />
+    </Suspense>
   );
 }

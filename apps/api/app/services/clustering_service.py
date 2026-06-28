@@ -480,18 +480,31 @@ class ClusteringService:
             except Exception as e:
                 logger.error("Failed to summarize story from KG %s: %s", story.id, e)
                 primary_title = "News Story"
-                primary_desc = "Summary currently unavailable."
+                primary_desc = ""
+                primary_content = ""
                 if articles:
                     primary_title = articles[0].title or "News Story"
-                    primary_desc = articles[0].description or (
-                        articles[0].content[:200]
-                        if articles[0].content
-                        else "Summary currently unavailable."
-                    )
+                    primary_desc = articles[0].description or ""
+                    primary_content = articles[0].content or ""
+
+                # Derive distinct emergency fallback summaries so all three depths
+                # don't show the same text in the UI.
+                fallback_one_line = (
+                    (primary_desc[:120].rstrip() + "…")
+                    if len(primary_desc) > 120
+                    else (primary_desc or "Summary currently unavailable.")
+                )
+                fallback_short = primary_desc or "Summary currently unavailable."
+                fallback_detailed = (
+                    f"{primary_desc}\n\n{primary_content[:600]}".strip()
+                    if primary_content
+                    else primary_desc
+                ) or "Summary currently unavailable."
+
                 story.headline = story.headline or primary_title
-                story.one_line_summary = story.one_line_summary or primary_desc
-                story.short_summary = story.short_summary or primary_desc
-                story.detailed_summary = story.detailed_summary or primary_desc
+                story.one_line_summary = story.one_line_summary or fallback_one_line
+                story.short_summary = story.short_summary or fallback_short
+                story.detailed_summary = story.detailed_summary or fallback_detailed
                 story.key_facts = story.key_facts or []
 
             span.set_metadata(
