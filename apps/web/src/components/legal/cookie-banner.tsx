@@ -96,24 +96,7 @@ export default function CookieBanner() {
             Customize
           </button>
           
-          <button 
-            onClick={handleRejectAll}
-            style={{
-              background: "none",
-              border: "1px solid var(--border)",
-              color: "var(--ink2)",
-              padding: "10px 18px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--surface)")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-          >
-            Reject Non-Essential
-          </button>
+
 
           <button 
             onClick={handleAcceptAll}
