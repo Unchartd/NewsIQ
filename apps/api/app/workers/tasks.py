@@ -251,9 +251,8 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                     )
 
                     if success_count > 0:
-                        # Trigger event extraction for newly embedded articles, then clustering
+                        # Trigger event extraction for newly embedded articles
                         extract_events_task.delay(run.id, run.trace_id)
-                        cluster_news_task.delay(run.id, run.trace_id)
 
                     # If we processed a full batch, check for more
                     if len(pending_articles) == 50:
@@ -471,6 +470,9 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     # If we processed a full batch, check for more
                     if len(articles) == 20:
                         extract_events_task.delay(run.id, run.trace_id)
+                    else:
+                        # Event extraction for this batch is done. Trigger clustering now.
+                        cluster_news_task.delay(run.id, run.trace_id)
 
                     return success_count
 
