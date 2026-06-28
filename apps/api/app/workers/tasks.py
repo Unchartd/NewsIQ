@@ -46,6 +46,31 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
+# Cooldown duration (seconds) when all LLM providers are quota-exhausted
+_QUOTA_COOLDOWN_SECONDS = 3600  # 1 hour
+
+
+async def _pause_pipeline_for_quota_cooldown(stage: str) -> None:
+    """Set the pipeline_paused flag in Redis for _QUOTA_COOLDOWN_SECONDS.
+
+    Called automatically when every provider in the LLM fallback chain returns
+    a quota / rate-limit error so Celery Beat stops firing AI-heavy tasks.
+    The flag has a TTL equal to the cooldown duration and is automatically
+    cleared by the cache expiry — no manual resume needed.
+    """
+    try:
+        from app.services.cache_service import cache_service
+
+        await cache_service.set("pipeline_paused", "True", ttl=_QUOTA_COOLDOWN_SECONDS)
+        logger.warning(
+            "Pipeline auto-paused for %d seconds due to quota exhaustion at stage '%s'. "
+            "Will auto-resume after TTL expires.",
+            _QUOTA_COOLDOWN_SECONDS,
+            stage,
+        )
+    except Exception as cache_err:
+        logger.error("Failed to set pipeline_paused flag: %s", cache_err)
+
 
 def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run an async coroutine from a synchronous Celery prefork worker.
@@ -437,6 +462,19 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 merged_count += 1
 
                         except Exception as e:
+                            from app.llm_gateway.request_manager import QuotaExhaustedError
+
+                            if isinstance(e, QuotaExhaustedError):
+                                # All LLM providers are quota-exhausted — pause the whole
+                                # pipeline for a cooldown period rather than hammering the API.
+                                await _pause_pipeline_for_quota_cooldown("event_extraction")
+                                logger.warning(
+                                    "QuotaExhaustedError: stopping event extraction batch early. "
+                                    "Pipeline paused for %d seconds.",
+                                    _QUOTA_COOLDOWN_SECONDS,
+                                )
+                                break  # exit per-article loop
+
                             logger.error(
                                 "Event extraction failed",
                                 extra={
@@ -531,6 +569,8 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
             logger.info("Pipeline is paused. Skipping batch clustering.")
             return 0
 
+        from app.llm_gateway.request_manager import QuotaExhaustedError
+
         async with PipelineRun(
             trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
         ) as run:
@@ -538,7 +578,17 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
                 async with async_session_factory() as session:
                     from app.services.clustering_service import clustering_service
 
-                    stories_created = await clustering_service.run_batch_clustering(session)
+                    try:
+                        stories_created = await clustering_service.run_batch_clustering(session)
+                    except QuotaExhaustedError:
+                        await _pause_pipeline_for_quota_cooldown("clustering")
+                        logger.warning(
+                            "QuotaExhaustedError during clustering. Pipeline paused for %d seconds.",
+                            _QUOTA_COOLDOWN_SECONDS,
+                        )
+                        span.mark_skipped()
+                        return 0
+
                     span.set_metadata(
                         {
                             "stories_created": stories_created,

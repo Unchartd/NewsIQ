@@ -33,6 +33,16 @@ class KeyCooldownError(RuntimeError):
     pass
 
 
+class QuotaExhaustedError(RuntimeError):
+    """Raised when every provider in the fallback chain hit a quota / rate-limit error.
+
+    Callers can catch this to pause the pipeline for a cooldown period instead of
+    retrying immediately and accumulating more quota errors.
+    """
+
+    pass
+
+
 class RequestManager:
     """Orchestrates the lifecycle of LLM requests with automatic rate-limiting, key rotation, and fallbacks."""
 
@@ -235,6 +245,16 @@ class RequestManager:
 
         # If all fail, raise exception
         combined_errors = " | ".join(errors_encountered)
+
+        # If every failure was a quota / rate-limit error, surface a specific exception
+        # so the pipeline can enter a cooldown instead of hammering the API.
+        _quota_keywords = ("429", "rate limit", "quota", "resource exhausted", "too many requests", "resource_exhausted")
+        all_quota = errors_encountered and all(
+            any(kw in err.lower() for kw in _quota_keywords) for err in errors_encountered
+        )
+        if all_quota:
+            raise QuotaExhaustedError(f"All providers quota-exhausted. Details: {combined_errors}")
+
         raise RuntimeError(f"All LLM Gateway providers failed. Details: {combined_errors}")
 
     def execute_request_sync(
