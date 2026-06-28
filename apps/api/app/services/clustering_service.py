@@ -556,12 +556,13 @@ class ClusteringService:
         lock_id = uuid_to_advisory_lock_id(story_id)
         await session.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
 
-        # Check if relation already exists
+        # Check if relation already exists with any story (prevent duplication)
         stmt = select(StoryArticle).where(
-            StoryArticle.story_id == story_id, StoryArticle.article_id == article.id
-        )
+            StoryArticle.article_id == article.id
+        ).limit(1)
         res = await session.execute(stmt)
         if res.scalar_one_or_none():
+            logger.info("Article %s is already linked to a story. Aborting merge.", article.id)
             return False
 
         # Create link
@@ -837,6 +838,13 @@ class ClusteringService:
         self, article_id: uuid.UUID, session: AsyncSession
     ) -> bool:
         """Incremental similarity check. Merges article into an existing story if highly similar."""
+        # Check if already linked to any story (prevent duplication)
+        chk_stmt = select(StoryArticle).where(StoryArticle.article_id == article_id).limit(1)
+        chk_res = await session.execute(chk_stmt)
+        if chk_res.scalar_one_or_none():
+            logger.info("Article %s is already linked to a story. Skipping incremental merge.", article_id)
+            return False
+
         stmt = select(Article).where(Article.id == article_id)
         res = await session.execute(stmt)
         article = res.scalar_one_or_none()
