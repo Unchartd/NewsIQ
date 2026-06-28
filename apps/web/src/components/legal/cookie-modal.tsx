@@ -301,22 +301,6 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
           
           <div style={{ display: "flex", gap: "10px" }}>
             <button 
-              onClick={handleRejectAll}
-              style={{
-                background: "none",
-                border: "1px solid var(--border)",
-                color: "var(--ink2)",
-                padding: "8px 16px",
-                borderRadius: "8px",
-                fontSize: "13px",
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-            >
-              Reject All
-            </button>
-
-            <button 
               onClick={handleAcceptAll}
               style={{
                 background: "none",
