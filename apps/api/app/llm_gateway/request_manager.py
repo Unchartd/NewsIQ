@@ -248,7 +248,14 @@ class RequestManager:
 
         # If every failure was a quota / rate-limit error, surface a specific exception
         # so the pipeline can enter a cooldown instead of hammering the API.
-        _quota_keywords = ("429", "rate limit", "quota", "resource exhausted", "too many requests", "resource_exhausted")
+        _quota_keywords = (
+            "429",
+            "rate limit",
+            "quota",
+            "resource exhausted",
+            "too many requests",
+            "resource_exhausted",
+        )
         all_quota = errors_encountered and all(
             any(kw in err.lower() for kw in _quota_keywords) for err in errors_encountered
         )
