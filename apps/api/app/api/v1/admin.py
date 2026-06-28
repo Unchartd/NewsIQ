@@ -186,6 +186,7 @@ async def get_pipeline_paused(
 ):
     """Get the current pause/resume status of the ingestion pipeline."""
     from app.services.cache_service import cache_service
+
     paused = await cache_service.get("pipeline_paused")
     return {"paused": bool(paused)}
 
@@ -196,6 +197,7 @@ async def pause_pipeline(
 ):
     """Pause the ingestion pipeline."""
     from app.services.cache_service import cache_service
+
     await cache_service.set("pipeline_paused", True, ttl=86400 * 365)  # 1 year TTL
     return {"message": "Pipeline paused successfully", "paused": True}
 
@@ -206,6 +208,7 @@ async def resume_pipeline(
 ):
     """Resume the ingestion pipeline."""
     from app.services.cache_service import cache_service
+
     await cache_service.delete("pipeline_paused")
     return {"message": "Pipeline resumed successfully", "paused": False}
 

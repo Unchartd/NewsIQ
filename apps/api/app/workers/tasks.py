@@ -85,6 +85,7 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
 async def is_pipeline_paused() -> bool:
     try:
         from app.services.cache_service import cache_service
+
         is_paused = await cache_service.get("pipeline_paused")
         return bool(is_paused)
     except Exception:

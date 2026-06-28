@@ -118,7 +118,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     # ── CORS ─────────────────────────────────────────────────────────────────
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+    ]
 
     # ── Observability — Langfuse ──────────────────────────────────────────────
     # Langfuse Cloud: https://cloud.langfuse.com
