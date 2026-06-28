@@ -9,7 +9,8 @@ import { EmptyState } from "@/components/empty-states";
 import { Search, SearchX } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import type { Story } from "@/types";
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
+import { analytics } from "@/lib/analytics/service";
 
 const RECENT_SEARCHES = [
   "OpenAI GPT-5",
@@ -50,6 +51,10 @@ function SearchResults() {
 
   const handleRecentClick = (term: string) => {
     setSearchInput(term);
+    analytics.track("search_result_click", {
+      search_term: term,
+      clicked_from: "recent_search",
+    });
     router.push(`/search?q=${encodeURIComponent(term)}`);
   };
 
@@ -79,6 +84,29 @@ function SearchResults() {
     },
     enabled: !!urlQuery,
   });
+
+  // Track search lifecycle state transitions
+  useEffect(() => {
+    if (!urlQuery) return;
+
+    if (isLoading) {
+      analytics.track("search_started", { search_term: urlQuery });
+    } else if (error) {
+      analytics.track("api_error", {
+        endpoint: "/stories",
+        error_message: "Search query failed",
+      });
+    } else if (stories) {
+      if (stories.length > 0) {
+        analytics.track("search_completed", {
+          search_term: urlQuery,
+          result_count: stories.length,
+        });
+      } else {
+        analytics.track("search_no_results", { search_term: urlQuery });
+      }
+    }
+  }, [stories, isLoading, error, urlQuery]);
 
   const sidebar = (
     <div className="sticky-p">
@@ -172,7 +200,10 @@ function SearchResults() {
             key={chip.slug}
             type="button"
             className={`fchp ${activeFilter === chip.slug ? "on" : ""}`}
-            onClick={() => setActiveFilter(chip.slug)}
+            onClick={() => {
+              setActiveFilter(chip.slug);
+              analytics.track("search_filter_applied", { filter_name: chip.slug });
+            }}
           >
             {chip.name}
           </button>

@@ -18,6 +18,7 @@ import { CategoryBadge } from "@/components/ui/category-badge";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { StoryDetail, StoryEntity } from "@/types";
+import { analytics } from "@/lib/analytics/service";
 
 interface Props {
   storyId: string;
@@ -110,12 +111,62 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
 
   // Fire reading history event once when story data is first available
   useEffect(() => {
-    if (!story || !isAuthenticated) return;
+    if (!story) return;
+
+    // Track analytics events
+    analytics.track("story_view", {
+      story_id: storyId,
+      headline: story.headline,
+      category: story.category?.name,
+      tags: story.tags,
+      source_count: story.source_count,
+      article_count: story.article_count,
+    });
+
+    analytics.track("story_open", {
+      story_id: storyId,
+      headline: story.headline,
+    });
+
+    // Track presented AI features
+    if (story.timeline && story.timeline.length > 0) {
+      analytics.track("timeline_open", {
+        story_id: storyId,
+        timeline_length: story.timeline.length,
+      });
+    }
+    if (story.differences && story.differences.length > 0) {
+      analytics.track("difference_engine_open", {
+        story_id: storyId,
+        conflict_count: story.differences.filter((d) => d.contradictions).length,
+      });
+    }
+    if (story.key_facts && story.key_facts.length > 0) {
+      analytics.track("key_facts_view", {
+        story_id: storyId,
+        fact_count: story.key_facts.length,
+      });
+    }
+
+    if (!isAuthenticated) return;
     apiClient
       .post("/users/events", null, { params: { event_type: "view_story", story_id: storyId } })
       .catch(() => { /* fire-and-forget */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story?.id]);
+
+  const handleSummaryTypeChange = (type: "one_line" | "short" | "detailed") => {
+    setSummaryType(type);
+    analytics.track("summary_view", {
+      story_id: storyId,
+      summary_type: type,
+    });
+    if (type === "detailed") {
+      analytics.track("summary_expand", {
+        story_id: storyId,
+      });
+    }
+  };
 
   const bookmarkMutation = useMutation({
     mutationFn: async () => {
@@ -127,6 +178,11 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookmarked-stories"] });
+      const action = isBookmarked ? "remove" : "add";
+      analytics.track("story_bookmark", {
+        story_id: storyId,
+        action,
+      });
       toast.success(isBookmarked ? "Bookmark removed." : "Story saved.");
     },
     onError: () => {
@@ -138,6 +194,12 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
     if (typeof window !== "undefined") {
       navigator.clipboard.writeText(window.location.href);
       toast.success("Link copied to clipboard!");
+      
+      analytics.track("story_share", {
+        story_id: storyId,
+        platform: "copy_link",
+      });
+
       if (isAuthenticated) {
         apiClient
           .post("/users/events", null, { params: { event_type: "share_story", story_id: storyId } })
@@ -192,7 +254,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
             <button
               key={key}
               className={`switbtn ${summaryType === key ? "on" : ""}`}
-              onClick={() => setSummaryType(key)}
+              onClick={() => handleSummaryTypeChange(key)}
               style={{ flex: 1, textAlign: "center" }}
             >
               {key === "one_line" ? "1-line" : key === "short" ? "Short" : "Detailed"}
@@ -350,7 +412,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
             <button
               key={key}
               className={`switbtn ${summaryType === key ? "on" : ""}`}
-              onClick={() => setSummaryType(key)}
+              onClick={() => handleSummaryTypeChange(key)}
             >
               {key === "one_line" ? "1-line" : key === "short" ? "Short" : "Detailed"}
             </button>
@@ -457,6 +519,13 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                               key={val}
                               href={`/search?q=${encodeURIComponent(val)}`}
                               className={chipClass}
+                              onClick={() => {
+                                analytics.track("search_result_click", {
+                                  search_term: val,
+                                  clicked_from: "story_entity",
+                                  story_id: storyId,
+                                });
+                              }}
                             >
                               {val}
                             </Link>
@@ -566,6 +635,13 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                               target="_blank"
                               rel="noopener noreferrer"
                               className="slink"
+                              onClick={() => {
+                                analytics.track("citation_click", {
+                                  story_id: storyId,
+                                  source_name: cov.source?.name,
+                                  url: href,
+                                });
+                              }}
                             >
                               Read <ExternalLink size={11} aria-hidden="true" />
                             </a>
@@ -645,6 +721,13 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
                   rel="noopener noreferrer"
                   className="bkcard"
                   style={{ display: "flex", justifyContent: "space-between", textDecoration: "none" }}
+                  onClick={() => {
+                    analytics.track("citation_click", {
+                      story_id: storyId,
+                      source_name: art.source?.name,
+                      url: art.url,
+                    });
+                  }}
                 >
                   <div style={{ flex: 1 }}>
                     <div className="bk-hl">{art.title}</div>

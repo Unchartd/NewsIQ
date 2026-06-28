@@ -172,6 +172,44 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(appSchema) }}
         />
+
+        {/* Google Consent Mode v2 Default Settings */}
+        <script
+          id="google-consent-defaults"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              
+              var storedConsent = null;
+              try {
+                var raw = localStorage.getItem('niq_consent_preferences');
+                if (raw) {
+                  storedConsent = JSON.parse(raw);
+                }
+              } catch(e) {}
+              
+              gtag('consent', 'default', {
+                'ad_storage': storedConsent && storedConsent.marketing ? 'granted' : 'denied',
+                'ad_user_data': storedConsent && storedConsent.marketing ? 'granted' : 'denied',
+                'ad_personalization': storedConsent && storedConsent.marketing ? 'granted' : 'denied',
+                'analytics_storage': storedConsent && storedConsent.analytics ? 'granted' : 'denied',
+                'functionality_storage': storedConsent && storedConsent.functional ? 'granted' : 'denied',
+                'personalization_storage': storedConsent && storedConsent.functional ? 'granted' : 'denied',
+                'security_storage': 'granted',
+                'wait_for_update': 500
+              });
+              
+              gtag('js', new Date());
+            `
+          }}
+        />
+
+        {/* Google Analytics 4 Script */}
+        <script
+          async
+          src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-NEWSIQ"}`}
+        />
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         <Providers>{children}</Providers>

@@ -10,6 +10,10 @@ import apiClient from "@/lib/api-client";
 import { usePathname, useRouter } from "next/navigation";
 import CookieBanner from "@/components/legal/cookie-banner";
 import { ConsentProvider } from "@/components/legal/consent-provider";
+import { AnalyticsTracker } from "@/components/analytics/analytics-tracker";
+import { analytics } from "@/lib/analytics/service";
+
+
 
 
 
@@ -71,6 +75,12 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
       try {
         const res = await apiClient.get("/auth/me");
         setUser(res.data);
+        if (res.data) {
+          analytics.identify(res.data.id, {
+            user_tier: res.data.role,
+            subscription_status: res.data.subscription_plan,
+          });
+        }
       } catch {
         setUser(null);
       } finally {
@@ -162,6 +172,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       >
         <ConsentProvider>
           <TooltipProvider>
+            <AnalyticsTracker />
             <AuthInitializer>{children}</AuthInitializer>
             <Toaster position="bottom-right" richColors closeButton />
             <CookieBanner />
