@@ -180,6 +180,36 @@ async def inspect_story(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/pipeline/paused")
+async def get_pipeline_paused(
+    _admin: User = Depends(require_admin),
+):
+    """Get the current pause/resume status of the ingestion pipeline."""
+    from app.services.cache_service import cache_service
+    paused = await cache_service.get("pipeline_paused")
+    return {"paused": bool(paused)}
+
+
+@router.post("/pipeline/pause")
+async def pause_pipeline(
+    _admin: User = Depends(require_admin),
+):
+    """Pause the ingestion pipeline."""
+    from app.services.cache_service import cache_service
+    await cache_service.set("pipeline_paused", True, ttl=86400 * 365)  # 1 year TTL
+    return {"message": "Pipeline paused successfully", "paused": True}
+
+
+@router.post("/pipeline/resume")
+async def resume_pipeline(
+    _admin: User = Depends(require_admin),
+):
+    """Resume the ingestion pipeline."""
+    from app.services.cache_service import cache_service
+    await cache_service.delete("pipeline_paused")
+    return {"message": "Pipeline resumed successfully", "paused": False}
+
+
 @router.get("/pipeline/status", response_model=PipelineStatusResponse)
 async def pipeline_status(
     run_id: uuid.UUID | None = None,

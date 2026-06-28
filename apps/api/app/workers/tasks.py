@@ -82,12 +82,25 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
         asyncio.set_event_loop(None)
 
 
+async def is_pipeline_paused() -> bool:
+    try:
+        from app.services.cache_service import cache_service
+        is_paused = await cache_service.get("pipeline_paused")
+        return bool(is_paused)
+    except Exception:
+        return False
+
+
 @celery_app.task(name="app.workers.tasks.ingest_news_task")
 def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> dict[str, int]:
     """Ingest articles from all active RSS news sources."""
     logger.info("Celery task: Starting RSS news ingestion.")
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping RSS news ingestion.")
+            return {}
+
         async with PipelineRun(
             trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
@@ -125,6 +138,10 @@ def ingest_gnews_task(run_id: str | None = None, trace_id: str | None = None) ->
     logger.info("Celery task: Starting GNews API ingestion.")
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping GNews API ingestion.")
+            return {}
+
         from app.services.gnews_service import gnews_service
 
         async with PipelineRun(
@@ -159,6 +176,10 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
     logger.info("Celery task: Processing pending article embeddings.")
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping pending article embeddings.")
+            return 0
+
         async with PipelineRun(
             trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
@@ -273,6 +294,10 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
     logger.info("Celery task: Extracting events from pending articles.")
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping event extraction.")
+            return 0
+
         from app.services.event_service import event_service
         from app.services.event_taxonomy import get_parent_type
 
@@ -501,6 +526,10 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
     logger.info("Celery task: Running batch clustering.")
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping batch clustering.")
+            return 0
+
         async with PipelineRun(
             trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
         ) as run:
