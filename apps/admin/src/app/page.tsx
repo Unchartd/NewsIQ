@@ -4,15 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
-import {
-  Shield,
-  Eye,
-  EyeOff,
-  Lock,
-  Mail,
-  Activity,
-  Loader2,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function LoginPage() {
@@ -85,134 +77,375 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-background">
-      {/* Animated background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-background via-card to-background" />
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-primary/5 rounded-full blur-3xl animate-pulse [animation-delay:1s]" />
-      <div className="absolute top-1/2 right-1/3 w-64 h-64 bg-primary/3 rounded-full blur-3xl animate-pulse [animation-delay:2s]" />
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        .page {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #0f0f11;
+          padding: 2rem;
+        }
 
-      {/* Login card */}
-      <div className="relative z-10 w-full max-w-md mx-4 animate-fade-in">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 mb-4 shadow-lg shadow-primary/15">
-            <Shield className="w-8 h-8 text-primary" />
+        .card {
+          width: 100%;
+          max-width: 420px;
+          background: #18181c;
+          border: 0.5px solid #2a2a30;
+          border-radius: 16px;
+          overflow: hidden;
+        }
+
+        .card-header {
+          padding: 2rem 2rem 1.5rem;
+          border-bottom: 0.5px solid #2a2a30;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.75rem;
+          text-align: center;
+        }
+
+        .logo-wrap {
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          background: #2a1a1a;
+          border: 0.5px solid #3d2020;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .logo-wrap svg {
+          width: 22px;
+          height: 22px;
+        }
+
+        .brand-name {
+          font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+          font-size: 18px;
+          font-weight: 600;
+          color: #f5f5f5;
+          letter-spacing: -0.3px;
+        }
+
+        .brand-name span {
+          color: #e05c5c;
+        }
+
+        .console-label {
+          font-size: 12px;
+          font-weight: 500;
+          color: #888;
+          letter-spacing: 0.6px;
+          text-transform: uppercase;
+        }
+
+        .tag-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+          justify-content: center;
+          margin-top: 2px;
+        }
+
+        .tag {
+          font-size: 11px;
+          color: #555;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .tag-dot {
+          width: 3px;
+          height: 3px;
+          border-radius: 50%;
+          background: #3a3a40;
+        }
+
+        .card-body {
+          padding: 1.75rem 2rem 2rem;
+          display: flex;
+          flex-direction: column;
+          gap: 1.1rem;
+        }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .field-label {
+          font-size: 11.5px;
+          font-weight: 500;
+          color: #666;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+        }
+
+        .input-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .input-icon {
+          position: absolute;
+          left: 12px;
+          color: #444;
+          display: flex;
+          align-items: center;
+          pointer-events: none;
+        }
+
+        .input-field {
+          width: 100%;
+          height: 42px;
+          background: #111113;
+          border: 0.5px solid #2a2a30;
+          border-radius: 8px;
+          font-size: 13.5px;
+          color: #d0d0d8;
+          padding: 0 40px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+          transition: border-color 0.15s;
+          outline: none;
+        }
+
+        .input-field:focus {
+          border-color: #e05c5c;
+          box-shadow: 0 0 0 3px rgba(224, 92, 92, 0.08);
+        }
+
+        .input-field::placeholder {
+          color: #3d3d45;
+        }
+
+        .eye-btn {
+          position: absolute;
+          right: 12px;
+          background: none;
+          border: none;
+          color: #444;
+          cursor: pointer;
+          display: flex;
+          padding: 0;
+          transition: color 0.15s;
+        }
+
+        .eye-btn:hover { color: #888; }
+
+        .divider {
+          height: 0.5px;
+          background: #2a2a30;
+          margin: 0.25rem 0;
+        }
+
+        .sign-in-btn {
+          width: 100%;
+          height: 42px;
+          background: #e05c5c;
+          border: none;
+          border-radius: 8px;
+          font-size: 13.5px;
+          font-weight: 600;
+          color: #fff;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          letter-spacing: 0.1px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+          transition: background 0.15s, transform 0.1s;
+        }
+
+        .sign-in-btn:hover { background: #cc4e4e; }
+        .sign-in-btn:active { transform: scale(0.99); }
+        .sign-in-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .restricted-row {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding-top: 0.25rem;
+        }
+
+        .restricted-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: rgba(224, 92, 92, 0.13);
+          border: 1px solid rgba(224, 92, 92, 0.27);
+          flex-shrink: 0;
+        }
+
+        .restricted-text {
+          font-size: 11px;
+          color: #444;
+          letter-spacing: 0.2px;
+        }
+
+        .card-footer {
+          padding: 0.85rem 2rem;
+          border-top: 0.5px solid #1f1f25;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .footer-version {
+          font-size: 11px;
+          color: #333;
+          font-family: 'SF Mono', 'Fira Code', monospace;
+          letter-spacing: 0.3px;
+        }
+
+        .footer-status {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 11px;
+          color: #3a8a4a;
+        }
+
+        .status-dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: #3a8a4a;
+        }
+      ` }} />
+
+      <div className="page">
+        <div className="card">
+
+          <div className="card-header">
+            <div className="logo-wrap">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6L12 2z" fill="#e05c5c" opacity="0.18"/>
+                <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6L12 2z" stroke="#e05c5c" strokeWidth={1.5} strokeLinejoin="round"/>
+                <circle cx={12} cy={11} r={2.5} fill="#e05c5c"/>
+                <path d="M12 13.5V16" stroke="#e05c5c" strokeWidth={1.5} strokeLinecap="round"/>
+              </svg>
+            </div>
+
+            <div>
+              <div className="brand-name">News<span>IQ</span></div>
+            </div>
+
+            <div className="console-label">Admin Console</div>
+
+            <div className="tag-row">
+              <span className="tag">AI Observability</span>
+              <span className="tag-dot"></span>
+              <span className="tag">Pipeline Tracing</span>
+              <span className="tag-dot"></span>
+              <span className="tag">Replay Engine</span>
+            </div>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            <span className="gradient-text">NewsIQ</span>
-          </h1>
-          <p className="text-slate-400 text-sm mt-1.5 font-medium">Admin Console</p>
-          <p className="text-slate-500 text-xs mt-1">
-            AI Observability · Pipeline Tracing · Replay Engine
-          </p>
-        </div>
 
-        {/* Card */}
-        <div className="glass rounded-2xl p-8 shadow-2xl shadow-black/80">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
-            <span className="text-xs text-slate-500 font-medium px-2">SECURE LOGIN</span>
-            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
-          </div>
+          <form onSubmit={handleLogin} className="card-body">
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            {/* Email field */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="admin-email"
-                className="text-xs font-semibold text-slate-400 uppercase tracking-wider"
-              >
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <div className="field">
+              <label htmlFor="admin-email" className="field-label">Email</label>
+              <div className="input-wrap">
+                <span className="input-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/>
+                    <path d="M2 7l10 7 10-7"/>
+                  </svg>
+                </span>
                 <input
                   id="admin-email"
+                  className="input-field"
                   type="email"
+                  placeholder="admin@newsiq.io"
+                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@newsiq.com"
-                  required
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-background border border-border text-foreground text-sm placeholder-slate-600
-                    focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all"
+                  disabled={isLoading}
                 />
               </div>
             </div>
 
-            {/* Password field */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="admin-password"
-                className="text-xs font-semibold text-slate-400 uppercase tracking-wider"
-              >
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <div className="field">
+              <label htmlFor="admin-password" className="field-label">Password</label>
+              <div className="input-wrap">
+                <span className="input-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                </span>
                 <input
                   id="admin-password"
+                  className="input-field"
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••"
                   required
-                  className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-background border border-border text-foreground text-sm placeholder-slate-600
-                    focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="eye-btn"
+                  aria-label="Toggle password visibility"
+                  style={{ opacity: showPassword ? 1 : 0.6 }}
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
                 </button>
               </div>
             </div>
 
-            {/* Submit button */}
-            <button
-              id="admin-login-btn"
-              type="submit"
-              disabled={isLoading || !email || !password}
-              className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm text-white transition-all
-                bg-gradient-to-r from-primary to-rose-600 hover:from-primary/95 hover:to-rose-500
-                disabled:opacity-50 disabled:cursor-not-allowed
-                shadow-lg shadow-primary/20 hover:shadow-primary/30
-                flex items-center justify-center gap-2 mt-2"
-            >
+            <div className="divider"></div>
+
+            <button type="submit" disabled={isLoading} className="sign-in-btn">
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Authenticating…
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Authenticating...
                 </>
               ) : (
                 <>
-                  <Shield className="w-4 h-4" />
-                  Sign In to Admin Console
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                    <polyline points="10 17 15 12 10 7"/>
+                    <line x1="15" y1="12" x2="3" y2="12"/>
+                  </svg>
+                  Sign in to Admin Console
                 </>
               )}
             </button>
+
+            <div className="restricted-row">
+              <div className="restricted-dot"></div>
+              <span className="restricted-text">Access restricted to administrators only</span>
+            </div>
+
           </form>
 
-          {/* Footer */}
-          <div className="mt-6 pt-5 border-t border-border flex items-center justify-center gap-2">
-            <Activity className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="text-xs text-slate-500">
-              Access restricted to administrators only
-            </span>
+          <div className="card-footer">
+            <span className="footer-version">v1.0 · SRE Platform</span>
+            <div className="footer-status">
+              <div className="status-dot"></div>
+              <span>All systems operational</span>
+            </div>
           </div>
-        </div>
 
-        {/* Version badge */}
-        <p className="text-center text-[11px] text-slate-600 mt-4 font-mono">
-          NewsIQ Admin v1.0 · SRE Platform
-        </p>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
