@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { setAccessToken } from "@/lib/token-store";
+import { analytics } from "@/lib/analytics/service";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -49,6 +50,14 @@ export default function SignupPage() {
       });
       setAccessToken(data.access_token);
       setUser(data.user);
+      
+      // Identify user session and track successful signup
+      analytics.identify(data.user.id, {
+        user_tier: data.user.role,
+        subscription_status: data.user.subscription_plan,
+      });
+      analytics.track("user_signup", { method: "email" });
+
       toast.success("Account created!");
       router.push(`/verify-email/confirm?email=${encodeURIComponent(email)}`);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

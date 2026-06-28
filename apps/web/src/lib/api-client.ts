@@ -6,6 +6,7 @@
 import axios from "axios";
 
 import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/token-store";
+import { analytics } from "@/lib/analytics/service";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -118,6 +119,22 @@ apiClient.interceptors.response.use(
         }
         return Promise.reject(refreshError);
       }
+    }
+
+    // Track API and network errors, skipping temporary 401 token refresh challenges
+    if (error.response) {
+      if (error.response.status !== 401) {
+        analytics.track("api_error", {
+          endpoint: originalRequest?.url || "unknown",
+          status_code: error.response.status,
+          error_message: error.response.data?.detail || error.message || "API Error",
+        });
+      }
+    } else if (error.request) {
+      analytics.track("network_error", {
+        endpoint: originalRequest?.url || "unknown",
+        error_message: error.message || "Network Error",
+      });
     }
 
     return Promise.reject(error);

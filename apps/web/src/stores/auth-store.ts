@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { clearAccessToken } from "@/lib/token-store";
+import { analytics } from "@/lib/analytics/service";
 
 export interface User {
   id: string;
@@ -44,6 +45,13 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (loading) => set({ isLoading: loading }),
 
       logout: () => {
+        // Track logout and reset analytics identity
+        try {
+          analytics.track("logout", {});
+          analytics.reset();
+        } catch (err) {
+          console.error("Failed to track logout:", err);
+        }
         clearAccessToken();
         set({ user: null, isAuthenticated: false, isLoading: false });
       },

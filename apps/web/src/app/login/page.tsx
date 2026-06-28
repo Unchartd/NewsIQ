@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { setAccessToken } from "@/lib/token-store";
+import { analytics } from "@/lib/analytics/service";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,9 +39,20 @@ export default function LoginPage() {
       const { data } = await apiClient.post("/auth/login", { email, password });
       setAccessToken(data.access_token);
       setUser(data.user);
+      
+      // Identify user session and track successful login
+      analytics.identify(data.user.id, {
+        user_tier: data.user.role,
+        subscription_status: data.user.subscription_plan,
+      });
+      analytics.track("user_login", { method: "email", success: true });
+
       toast.success("Login successful.");
       router.push("/home");
     } catch (err) {
+      // Track failed login
+      analytics.track("user_login", { method: "email", success: false });
+
       const error = err as { response?: { data?: { detail?: string } } };
       const message =
         error.response?.data?.detail || "Invalid credentials.";

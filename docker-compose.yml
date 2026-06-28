@@ -489,6 +489,9 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: https://api.newsiq.online/api/v1
       INTERNAL_API_URL: http://user-api:8000/api/v1
+      NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-G-NEWSIQ}
+      NEXT_PUBLIC_POSTHOG_TOKEN: ${NEXT_PUBLIC_POSTHOG_TOKEN:-phc_mock_token_newsiq}
+      NEXT_PUBLIC_ANALYTICS_DEBUG: ${NEXT_PUBLIC_ANALYTICS_DEBUG:-false}
     depends_on:
       user-api:
         condition: service_healthy
@@ -527,6 +530,9 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
       INTERNAL_API_URL: http://user-api:8000/api/v1
       WATCHPACK_POLLING: "true"
+      NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-G-NEWSIQ}
+      NEXT_PUBLIC_POSTHOG_TOKEN: ${NEXT_PUBLIC_POSTHOG_TOKEN:-phc_mock_token_newsiq}
+      NEXT_PUBLIC_ANALYTICS_DEBUG: ${NEXT_PUBLIC_ANALYTICS_DEBUG:-true}
     develop:
       watch:
         - action: sync
