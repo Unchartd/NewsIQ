@@ -36,6 +36,20 @@ export default function NotificationsPage() {
     enabled: isAuthenticated,
   });
 
+  // Query trending stories for the sidebar
+  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
+    queryKey: ["stories", "trending-sidebar"],
+    queryFn: async () => {
+      const response = await apiClient.get("/stories", {
+        params: {
+          trending: "true",
+          limit: 4,
+        },
+      });
+      return response.data;
+    },
+  });
+
   // Mark as read mutation
   const markReadMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -92,19 +106,7 @@ export default function NotificationsPage() {
     }
   };
 
-  // Query trending stories for the sidebar
-  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
-    queryKey: ["stories", "trending-sidebar"],
-    queryFn: async () => {
-      const response = await apiClient.get("/stories", {
-        params: {
-          trending: "true",
-          limit: 4,
-        },
-      });
-      return response.data;
-    },
-  });
+
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
