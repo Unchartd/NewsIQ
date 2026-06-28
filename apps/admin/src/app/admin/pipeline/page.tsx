@@ -14,6 +14,7 @@ import {
   SkipForward,
   Loader2,
   Play,
+  Pause,
   AlertTriangle,
   Info,
   Terminal,
@@ -320,6 +321,31 @@ export default function PipelinePage() {
     },
   });
 
+  const { data: pausedData, refetch: refetchPaused } = useQuery({
+    queryKey: ["pipeline-paused"],
+    queryFn: async () => {
+      const res = await apiClient.get("/admin/pipeline/paused");
+      return res.data;
+    },
+    refetchInterval: 10000, // refresh every 10s
+  });
+
+  const togglePauseMutation = useMutation({
+    mutationFn: async () => {
+      const isPaused = !!pausedData?.paused;
+      const endpoint = isPaused ? "/admin/pipeline/resume" : "/admin/pipeline/pause";
+      const res = await apiClient.post(endpoint);
+      return res.data;
+    },
+    onSuccess: (resData) => {
+      toast.success(resData.message);
+      refetchPaused();
+    },
+    onError: () => {
+      toast.error("Failed to update pipeline status.");
+    },
+  });
+
   const triggerMutation = useMutation({
     mutationFn: async () => {
       await apiClient.post("/sources/trigger-ingestion");
@@ -443,9 +469,33 @@ export default function PipelinePage() {
             </button>
           )}
           <button
+            onClick={() => togglePauseMutation.mutate()}
+            disabled={togglePauseMutation.isPending}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border ${
+              pausedData?.paused
+                ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30 animate-pulse"
+                : "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30"
+            }`}
+          >
+            {togglePauseMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : pausedData?.paused ? (
+              <>
+                <Play className="w-3.5 h-3.5" />
+                Resume Pipeline
+              </>
+            ) : (
+              <>
+                <Pause className="w-3.5 h-3.5" />
+                Pause Pipeline
+              </>
+            )}
+          </button>
+          <button
             id="pipeline-refresh-btn"
             onClick={() => {
               refetch();
+              refetchPaused();
               refetchHistory();
             }}
             disabled={isLoading}
@@ -469,6 +519,15 @@ export default function PipelinePage() {
           </button>
         </div>
       </div>
+
+      {pausedData?.paused && (
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+          <div>
+            <span className="font-semibold text-white">Pipeline suspended:</span> Background ingestion, embedding, event extraction, and clustering tasks are currently paused.
+          </div>
+        </div>
+      )}
 
       {/* Top Banner Real-Time Event Stream Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">

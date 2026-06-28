@@ -69,14 +69,51 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-surface">
-      {/* Left Column: Form */}
-      <div className="flex flex-col justify-center px-6 sm:px-12 lg:px-24 py-12 relative overflow-y-auto">
+      {/* Left Column: Editorial Showcase */}
+      <div className="hidden lg:flex flex-col justify-between bg-card border-r border-border p-12 relative overflow-hidden">
+        {/* Subtle decorative background element */}
+        <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-primary/5 to-transparent opacity-50" />
+        
+        <div className="relative z-10">
+          <Link href="/" className="inline-flex items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-sm">
+              <Zap className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-2xl font-bold tracking-tight text-foreground">NewsIQ</span>
+          </Link>
+        </div>
+
+        <div className="relative z-10 max-w-lg">
+          <p className="text-[11px] font-bold tracking-[0.15em] text-primary uppercase mb-6 flex items-center gap-2">
+            <span className="w-6 h-px bg-primary inline-block"></span>
+            Editorial Intelligence
+          </p>
+          <h2 className="text-4xl text-foreground leading-[1.15]" style={{ fontFamily: "var(--font-display)", fontWeight: 500 }}>
+            &quot;Navigate the noise of modern media with clarity, density, and trust.&quot;
+          </h2>
+          <p className="mt-6 text-lg text-muted-foreground" style={{ fontFamily: "var(--font-body)" }}>
+            Join thousands of professionals who use NewsIQ daily to extract signal from the noise.
+          </p>
+        </div>
+
+        <div className="relative z-10 flex items-center gap-4 text-xs text-muted-foreground">
+          <span>&copy; {new Date().getFullYear()} NewsIQ.</span>
+          <Link href="/tos" className="hover:text-foreground transition-colors">Terms of Service</Link>
+          <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
+        </div>
+      </div>
+
+      {/* Right Column: Form */}
+      <div className="flex flex-col justify-between px-6 sm:px-12 lg:px-24 py-12 relative min-h-screen overflow-y-auto">
         <div className="absolute top-8 left-6 sm:left-12">
           <Link href="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors group">
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             <span className="text-sm font-medium">Back to site</span>
           </Link>
         </div>
+
+        {/* Top spacer (since back button is absolute) */}
+        <div className="h-8" />
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -216,36 +253,9 @@ export default function SignupPage() {
             </p>
           </div>
         </motion.div>
-      </div>
 
-      {/* Right Column: Editorial Showcase */}
-      <div className="hidden lg:flex flex-col justify-between bg-card border-l border-border p-12 relative overflow-hidden">
-        {/* Subtle decorative background element */}
-        <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-primary/5 to-transparent opacity-50" />
-        
-        <div className="relative z-10">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-sm">
-              <Zap className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-2xl font-bold tracking-tight text-foreground">NewsIQ</span>
-          </Link>
-        </div>
-
-        <div className="relative z-10 max-w-lg">
-          <p className="text-[11px] font-bold tracking-[0.15em] text-primary uppercase mb-6 flex items-center gap-2">
-            <span className="w-6 h-px bg-primary inline-block"></span>
-            Editorial Intelligence
-          </p>
-          <h2 className="text-4xl text-foreground leading-[1.15]" style={{ fontFamily: "var(--font-display)", fontWeight: 500 }}>
-            &quot;Navigate the noise of modern media with clarity, density, and trust.&quot;
-          </h2>
-          <p className="mt-6 text-lg text-muted-foreground" style={{ fontFamily: "var(--font-body)" }}>
-            Join thousands of professionals who use NewsIQ daily to extract signal from the noise.
-          </p>
-        </div>
-
-        <div className="relative z-10 flex items-center gap-4 text-xs text-muted-foreground">
+        {/* Footer for mobile */}
+        <div className="mt-8 flex items-center justify-center gap-4 text-xs text-muted-foreground lg:hidden">
           <span>&copy; {new Date().getFullYear()} NewsIQ.</span>
           <Link href="/tos" className="hover:text-foreground transition-colors">Terms of Service</Link>
           <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>

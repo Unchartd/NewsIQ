@@ -220,9 +220,7 @@ async def get_preferences(
                 return anon_pref
 
     if anonymous_id:
-        stmt = select(ConsentPreference).where(
-            ConsentPreference.anonymous_id == anonymous_id
-        )
+        stmt = select(ConsentPreference).where(ConsentPreference.anonymous_id == anonymous_id)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -264,9 +262,7 @@ async def save_preferences(
                 existing_pref.user_id = current_user.id
     else:
         # Anonymous visitor
-        stmt = select(ConsentPreference).where(
-            ConsentPreference.anonymous_id == body.anonymous_id
-        )
+        stmt = select(ConsentPreference).where(ConsentPreference.anonymous_id == body.anonymous_id)
         result = await db.execute(stmt)
         existing_pref = result.scalar_one_or_none()
 
@@ -360,9 +356,7 @@ async def withdraw_consent(
         result = await db.execute(stmt)
         existing_pref = result.scalar_one_or_none()
     else:
-        stmt = select(ConsentPreference).where(
-            ConsentPreference.anonymous_id == anonymous_id
-        )
+        stmt = select(ConsentPreference).where(ConsentPreference.anonymous_id == anonymous_id)
         result = await db.execute(stmt)
         existing_pref = result.scalar_one_or_none()
 
