@@ -110,6 +110,9 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.newsiq.online/api/v1
+            NEXT_PUBLIC_GA_MEASUREMENT_ID=${{ secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
+            NEXT_PUBLIC_POSTHOG_TOKEN=${{ secrets.NEXT_PUBLIC_POSTHOG_TOKEN }}
+            NEXT_PUBLIC_ANALYTICS_DEBUG=false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
