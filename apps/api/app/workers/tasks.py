@@ -93,6 +93,7 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
             eta = req.eta
             if eta:
                 from datetime import datetime
+
                 now_utc = datetime.now(UTC)
                 if isinstance(eta, datetime):
                     # Ensure tz-aware comparison
@@ -101,6 +102,7 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
                     queue_delay = (now_utc - eta).total_seconds()
                     if queue_delay > 0:
                         from app.core.metrics import newsiq_task_queue_time_seconds
+
                         newsiq_task_queue_time_seconds.labels(
                             task_name=current_task.name or "unknown"
                         ).observe(queue_delay)
@@ -126,9 +128,10 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
             if current_task and current_task.name:
                 duration = time.perf_counter() - start_perf
                 from app.core.metrics import newsiq_task_worker_time_seconds
-                newsiq_task_worker_time_seconds.labels(
-                    task_name=current_task.name
-                ).observe(duration)
+
+                newsiq_task_worker_time_seconds.labels(task_name=current_task.name).observe(
+                    duration
+                )
         except Exception as e:
             logger.debug("Failed to record task worker duration: %s", e)
 

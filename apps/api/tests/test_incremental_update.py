@@ -92,13 +92,18 @@ async def test_update_story_incrementally_flow(
     mock_summarize_kg.return_value = mock_summary_res
 
     # Mock dependencies
-    with patch.object(contradiction_service, "detect_and_save_contradictions_incremental", AsyncMock(return_value=[])), \
-         patch.object(source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))), \
-         patch.object(clustering_service, "_index_and_invalidate", AsyncMock()):
-
-        await clustering_service.update_story_incrementally(
-            story, art2, [art1], mock_db_session
-        )
+    with (
+        patch.object(
+            contradiction_service,
+            "detect_and_save_contradictions_incremental",
+            AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))
+        ),
+        patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
+    ):
+        await clustering_service.update_story_incrementally(story, art2, [art1], mock_db_session)
 
         # Verify story fields updated
         assert story.headline == "Updated Incremental Headline"

@@ -4,6 +4,7 @@ Revision ID: b4e7a1c3d5f9
 Revises: a8f3c2e1d9b7
 Create Date: 2026-06-20 14:00:00.000000
 """
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
@@ -46,7 +47,9 @@ def upgrade() -> None:
     # ── Add event_extraction_status to articles table ──────────────────────────
     op.add_column(
         "articles",
-        sa.Column("event_extraction_status", sa.String(30), nullable=True, server_default="pending"),
+        sa.Column(
+            "event_extraction_status", sa.String(30), nullable=True, server_default="pending"
+        ),
     )
 
     # ── Widen story_entities.entity_type from VARCHAR(30) to VARCHAR(50) ───────

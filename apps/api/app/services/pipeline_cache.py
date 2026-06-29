@@ -152,7 +152,9 @@ class PipelineCache:
         except Exception as e:
             logger.warning("Pipeline cache invalidation error for stage %s: %s", stage, e)
 
-    async def get_stage_result(self, stage: str, content_hash: str) -> list[dict[str, Any]] | dict[str, Any] | None:
+    async def get_stage_result(
+        self, stage: str, content_hash: str
+    ) -> list[dict[str, Any]] | dict[str, Any] | None:
         """Fetch cached result for a whole pipeline stage based on composite input hash."""
         if not self._is_enabled():
             return None

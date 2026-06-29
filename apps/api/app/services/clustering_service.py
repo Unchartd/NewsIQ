@@ -289,6 +289,7 @@ class ClusteringService:
 
         # Compute input hash for synthesis stages
         from app.services.pipeline_cache import pipeline_cache
+
         article_inputs = [f"{art.id}:{art.title or ''}:{art.description or ''}" for art in articles]
         article_inputs.sort()
         story_input_hash = pipeline_cache.composite_hash(*article_inputs)
@@ -301,7 +302,9 @@ class ClusteringService:
                 stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)
             ) as span:
                 try:
-                    cached_contras = await pipeline_cache.get_stage_result("contradictions", story_input_hash)
+                    cached_contras = await pipeline_cache.get_stage_result(
+                        "contradictions", story_input_hash
+                    )
                     if cached_contras is not None:
                         res = []
                         for c_data in cached_contras:
@@ -315,11 +318,15 @@ class ClusteringService:
                             )
                             session.add(contra)
                             res.append(contra)
-                        logger.info("Contradiction detection stage cache HIT for story %s.", story.id)
-                        span.set_metadata({
-                            "inputs": {"story_id": str(story.id)},
-                            "outputs": {"contradictions_count": len(res)},
-                        })
+                        logger.info(
+                            "Contradiction detection stage cache HIT for story %s.", story.id
+                        )
+                        span.set_metadata(
+                            {
+                                "inputs": {"story_id": str(story.id)},
+                                "outputs": {"contradictions_count": len(res)},
+                            }
+                        )
                         return res
                     else:
                         res = await contradiction_service.detect_and_save_contradictions(
@@ -329,27 +336,41 @@ class ClusteringService:
                             article_events=article_events,
                             article_source_map=article_source_map,
                         )
-                        c_serialized = [{
-                            "fact_type": c.fact_type,
-                            "description": c.description,
-                            "confidence": float(c.confidence),
-                            "source_attribution": c.source_attribution,
-                        } for c in res]
-                        await pipeline_cache.set_stage_result("contradictions", story_input_hash, c_serialized)
-                        logger.info("Contradiction detection successfully run and cached for story %s.", story.id)
-                        span.set_metadata({
-                            "inputs": {"story_id": str(story.id)},
-                            "outputs": {"contradictions_count": len(res)},
-                        })
+                        c_serialized = [
+                            {
+                                "fact_type": c.fact_type,
+                                "description": c.description,
+                                "confidence": float(c.confidence),
+                                "source_attribution": c.source_attribution,
+                            }
+                            for c in res
+                        ]
+                        await pipeline_cache.set_stage_result(
+                            "contradictions", story_input_hash, c_serialized
+                        )
+                        logger.info(
+                            "Contradiction detection successfully run and cached for story %s.",
+                            story.id,
+                        )
+                        span.set_metadata(
+                            {
+                                "inputs": {"story_id": str(story.id)},
+                                "outputs": {"contradictions_count": len(res)},
+                            }
+                        )
                         return res
                 except Exception as e:
                     logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
                     return []
 
         async def run_source_comparison(contras_future):
-            async with StageSpan(stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)) as span:
+            async with StageSpan(
+                stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)
+            ) as span:
                 try:
-                    cached_comp = await pipeline_cache.get_stage_result("source_comparison", story_input_hash)
+                    cached_comp = await pipeline_cache.get_stage_result(
+                        "source_comparison", story_input_hash
+                    )
                     if cached_comp is not None:
                         cov_list = []
                         diff_list = []
@@ -376,15 +397,20 @@ class ClusteringService:
                             session.add(diff)
                             diff_list.append(diff)
                         logger.info("Source comparison stage cache HIT for story %s.", story.id)
-                        span.set_metadata({
-                            "inputs": {"story_id": str(story.id)},
-                            "outputs": {"differences_count": len(diff_list)},
-                        })
+                        span.set_metadata(
+                            {
+                                "inputs": {"story_id": str(story.id)},
+                                "outputs": {"differences_count": len(diff_list)},
+                            }
+                        )
                         return cov_list, diff_list
                     else:
                         # Wait for contradictions to finish before running comparison
                         contras = await contras_future
-                        cov_list, diff_list = await source_comparison_service.compare_sources_and_save(
+                        (
+                            cov_list,
+                            diff_list,
+                        ) = await source_comparison_service.compare_sources_and_save(
                             story_id=story.id,
                             session=session,
                             articles=articles,
@@ -393,25 +419,39 @@ class ClusteringService:
                             sources_list=sources_list,
                             precomputed_contradictions=contras,
                         )
-                        cov_serialized = [{
-                            "source_id": str(c.source_id),
-                            "focus_area": c.focus_area,
-                        } for c in cov_list]
-                        diff_serialized = [{
-                            "source_id": str(d.source_id),
-                            "unique_information": d.unique_information,
-                            "missing_information": d.missing_information,
-                            "contradictions": d.contradictions,
-                        } for d in diff_list]
-                        await pipeline_cache.set_stage_result("source_comparison", story_input_hash, {
-                            "coverage": cov_serialized,
-                            "differences": diff_serialized,
-                        })
-                        logger.info("Source comparison successfully run and cached for story %s.", story.id)
-                        span.set_metadata({
-                            "inputs": {"story_id": str(story.id)},
-                            "outputs": {"differences_count": len(diff_list)},
-                        })
+                        cov_serialized = [
+                            {
+                                "source_id": str(c.source_id),
+                                "focus_area": c.focus_area,
+                            }
+                            for c in cov_list
+                        ]
+                        diff_serialized = [
+                            {
+                                "source_id": str(d.source_id),
+                                "unique_information": d.unique_information,
+                                "missing_information": d.missing_information,
+                                "contradictions": d.contradictions,
+                            }
+                            for d in diff_list
+                        ]
+                        await pipeline_cache.set_stage_result(
+                            "source_comparison",
+                            story_input_hash,
+                            {
+                                "coverage": cov_serialized,
+                                "differences": diff_serialized,
+                            },
+                        )
+                        logger.info(
+                            "Source comparison successfully run and cached for story %s.", story.id
+                        )
+                        span.set_metadata(
+                            {
+                                "inputs": {"story_id": str(story.id)},
+                                "outputs": {"differences_count": len(diff_list)},
+                            }
+                        )
                         return cov_list, diff_list
                 except Exception as e:
                     logger.error("Failed to run source comparison for story %s: %s", story.id, e)
@@ -420,7 +460,9 @@ class ClusteringService:
         contras_task = asyncio.create_task(run_contradictions())
         comp_task = asyncio.create_task(run_source_comparison(contras_task))
 
-        saved_contras, (saved_coverage, saved_differences) = await asyncio.gather(contras_task, comp_task)
+        saved_contras, (saved_coverage, saved_differences) = await asyncio.gather(
+            contras_task, comp_task
+        )
 
         # 5. Build and Serialize Knowledge Graph
         kg_dict = {}
@@ -679,7 +721,11 @@ class ClusteringService:
 
         # 2. High-stakes categories
         if category_slug in ("politics", "business", "health"):
-            logger.info("Reflection triggered by high-stakes category '%s' for story %s.", category_slug, story.id)
+            logger.info(
+                "Reflection triggered by high-stakes category '%s' for story %s.",
+                category_slug,
+                story.id,
+            )
             return True
 
         # 3. High-confidence contradictions
@@ -718,7 +764,11 @@ class ClusteringService:
 
         # 6. Large stories (secondary signal)
         if len(articles) >= 5:
-            logger.info("Reflection triggered by large story (articles: %d) for story %s.", len(articles), story.id)
+            logger.info(
+                "Reflection triggered by large story (articles: %d) for story %s.",
+                len(articles),
+                story.id,
+            )
             return True
 
         logger.info("Reflection skipped for story %s: no significant signals detected.", story.id)
@@ -760,9 +810,7 @@ class ClusteringService:
                 t = t.astimezone(UTC).replace(tzinfo=None)
 
             evt_type = (
-                (evt.event_type_canonical or evt.event_type or "Event")
-                .replace("_", " ")
-                .title()
+                (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
             )
 
             details = []
@@ -791,9 +839,7 @@ class ClusteringService:
             new_timeline_objects.append(tl_event)
 
         # 3. Incremental Entities & Tags
-        pre_extracted_stmt = select(ArticleEntity).where(
-            ArticleEntity.article_id == new_article.id
-        )
+        pre_extracted_stmt = select(ArticleEntity).where(ArticleEntity.article_id == new_article.id)
         pre_result = await session.execute(pre_extracted_stmt)
         pre_entities = list(pre_result.scalars().all())
 
@@ -807,7 +853,9 @@ class ClusteringService:
         grouped_entities = entity_linker.group_entities_locally(entities)
 
         # Retrieve existing entity names to avoid duplicates
-        existing_entities_stmt = select(StoryEntity.entity_value).where(StoryEntity.story_id == story.id)
+        existing_entities_stmt = select(StoryEntity.entity_value).where(
+            StoryEntity.story_id == story.id
+        )
         existing_entities_res = await session.execute(existing_entities_stmt)
         existing_entity_values = set(existing_entities_res.scalars().all())
 
@@ -926,7 +974,8 @@ class ClusteringService:
 
             timeline_list = [
                 {
-                    "date": t.event_time_raw or (t.event_time.isoformat() if t.event_time else "Unknown"),
+                    "date": t.event_time_raw
+                    or (t.event_time.isoformat() if t.event_time else "Unknown"),
                     "description": t.description,
                 }
                 for t in saved_timeline_objects
@@ -976,7 +1025,9 @@ class ClusteringService:
             story.one_line_summary = summary_res.one_line_summary
             story.short_summary = summary_res.short_summary
             story.detailed_summary = summary_res.detailed_summary
-            story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+            story.key_facts = (
+                [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+            )
 
             cat_slug = summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
             cat_id = await self.get_or_create_category(
@@ -1032,7 +1083,9 @@ class ClusteringService:
                 story_id,
                 len(all_articles),
             )
-            await self.update_story_incrementally(story, article, [a for a in all_articles if a.id != article.id], session)
+            await self.update_story_incrementally(
+                story, article, [a for a in all_articles if a.id != article.id], session
+            )
             await self.compute_trending_score(story, session)
 
         return True
@@ -1505,7 +1558,9 @@ class ClusteringService:
                 valid_article_ids = [art.id for art in valid_articles]
 
                 # Fetch ArticleEvents
-                evts_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(valid_article_ids))
+                evts_stmt = select(ArticleEvent).where(
+                    ArticleEvent.article_id.in_(valid_article_ids)
+                )
                 evts_res = await session.execute(evts_stmt)
                 art_evt_map = {}
                 for evt in evts_res.scalars().all():
@@ -1513,12 +1568,14 @@ class ClusteringService:
                         art_evt_map[evt.article_id] = evt
 
                 # Fetch ArticleEntities
-                ents_stmt = select(ArticleEntity.article_id, ArticleEntity.canonical_entity_id).where(
+                ents_stmt = select(
+                    ArticleEntity.article_id, ArticleEntity.canonical_entity_id
+                ).where(
                     ArticleEntity.article_id.in_(valid_article_ids),
-                    ArticleEntity.canonical_entity_id.isnot(None)
+                    ArticleEntity.canonical_entity_id.isnot(None),
                 )
                 ents_res = await session.execute(ents_stmt)
-                art_ent_map = {}
+                art_ent_map: dict[uuid.UUID, set[uuid.UUID]] = {}
                 for row in ents_res.all():
                     art_id, ent_id = row[0], row[1]
                     if art_id not in art_ent_map:

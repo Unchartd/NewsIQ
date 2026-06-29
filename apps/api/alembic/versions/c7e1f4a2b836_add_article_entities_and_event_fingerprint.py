@@ -7,6 +7,7 @@ Revision ID: c7e1f4a2b836
 Revises: obs_001_foundation
 Create Date: 2026-06-22 07:00:00.000000
 """
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -42,18 +43,14 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
     op.create_index("idx_article_entities_article", "article_entities", ["article_id"])
-    op.create_index(
-        "idx_article_entities_canonical", "article_entities", ["canonical_entity_id"]
-    )
+    op.create_index("idx_article_entities_canonical", "article_entities", ["canonical_entity_id"])
 
     # --- New column: article_events.event_fingerprint ---
     op.add_column(
         "article_events",
         sa.Column("event_fingerprint", sa.String(128), nullable=True),
     )
-    op.create_index(
-        "idx_article_events_fingerprint", "article_events", ["event_fingerprint"]
-    )
+    op.create_index("idx_article_events_fingerprint", "article_events", ["event_fingerprint"])
 
 
 def downgrade() -> None:

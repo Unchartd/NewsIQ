@@ -287,7 +287,9 @@ class EntityLinker:
         if len(context) > 10000:
             complexity = "complex"
 
-        model = model_router.select(stage="entity_linking", complexity=complexity, budget_exceeded=budget_exceeded)
+        model = model_router.select(
+            stage="entity_linking", complexity=complexity, budget_exceeded=budget_exceeded
+        )
 
         from app.llm_gateway.request_manager import llm_gateway
 
@@ -375,9 +377,25 @@ class EntityLinker:
 
         # Curated list of known ambiguous entities
         ambiguous_names = {
-            "washington", "mercury", "jordan", "apple", "amazon", "columbia",
-            "georgia", "delta", "china", "turkey", "clinton", "bush", "obama",
-            "trump", "biden", "tesla", "meta", "alphabet", "microsoft"
+            "washington",
+            "mercury",
+            "jordan",
+            "apple",
+            "amazon",
+            "columbia",
+            "georgia",
+            "delta",
+            "china",
+            "turkey",
+            "clinton",
+            "bush",
+            "obama",
+            "trump",
+            "biden",
+            "tesla",
+            "meta",
+            "alphabet",
+            "microsoft",
         }
         if clean in ambiguous_names:
             return True
@@ -405,8 +423,29 @@ class EntityLinker:
 
         # Check type matching in description
         type_keywords: dict[str, list[str]] = {
-            "PERSON": ["person", "politician", "actor", "athlete", "writer", "singer", "officer", "president", "minister", "activist"],
-            "ORG": ["organization", "company", "association", "institution", "agency", "foundation", "union", "party", "club"],
+            "PERSON": [
+                "person",
+                "politician",
+                "actor",
+                "athlete",
+                "writer",
+                "singer",
+                "officer",
+                "president",
+                "minister",
+                "activist",
+            ],
+            "ORG": [
+                "organization",
+                "company",
+                "association",
+                "institution",
+                "agency",
+                "foundation",
+                "union",
+                "party",
+                "club",
+            ],
             "COMPANY": ["company", "corporation", "enterprise", "manufacturer", "firm", "business"],
             "COUNTRY": ["country", "nation", "state", "republic"],
             "CITY": ["city", "town", "municipality", "capital"],
@@ -542,7 +581,11 @@ class EntityLinker:
                     wikidata_search_query=search_query,
                     description=wikidata_desc or f"Extracted {entity_type} entity",
                 )
-                logger.info("Deterministic entity resolution HIGH confidence (%.2f) for %s", confidence, clean_name)
+                logger.info(
+                    "Deterministic entity resolution HIGH confidence (%.2f) for %s",
+                    confidence,
+                    clean_name,
+                )
             else:
                 # Low confidence / ambiguous: fall back to LLM disambiguation
                 logger.info(

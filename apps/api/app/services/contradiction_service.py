@@ -178,6 +178,7 @@ class ContradictionService:
         First runs local heuristics, then validates with LLM.
         """
         # Fetch articles and their events if not provided
+        rows: list[Any] = []
         if articles is None or article_events is None:
             stmt = (
                 select(Article, ArticleEvent)
@@ -198,7 +199,6 @@ class ContradictionService:
                         local_source_map[art.id] = "Unknown Source"
         else:
             # Reconstruct rows mapping Article to its ArticleEvent(s)
-            rows = []
             for art in articles:
                 for evt in article_events:
                     if evt.article_id == art.id:
@@ -442,44 +442,50 @@ class ContradictionService:
                 a1 = set(new_evt.actors or [])
                 a2 = set(ext_evt.actors or [])
                 if a1 and a2 and a1.isdisjoint(a2):
-                    candidates.append({
-                        "fact_type": "actor",
-                        "val1": sorted(list(a1)),
-                        "val2": sorted(list(a2)),
-                        "src1_name": new_src_name,
-                        "src2_name": ext_src_name,
-                        "src1_id": new_src_id,
-                        "src2_id": ext_src_id,
-                    })
+                    candidates.append(
+                        {
+                            "fact_type": "actor",
+                            "val1": sorted(list(a1)),
+                            "val2": sorted(list(a2)),
+                            "src1_name": new_src_name,
+                            "src2_name": ext_src_name,
+                            "src1_id": new_src_id,
+                            "src2_id": ext_src_id,
+                        }
+                    )
 
                 # 2. Targets Conflict
                 t1 = set(new_evt.targets or [])
                 t2 = set(ext_evt.targets or [])
                 if t1 and t2 and t1.isdisjoint(t2):
-                    candidates.append({
-                        "fact_type": "target",
-                        "val1": sorted(list(t1)),
-                        "val2": sorted(list(t2)),
-                        "src1_name": new_src_name,
-                        "src2_name": ext_src_name,
-                        "src1_id": new_src_id,
-                        "src2_id": ext_src_id,
-                    })
+                    candidates.append(
+                        {
+                            "fact_type": "target",
+                            "val1": sorted(list(t1)),
+                            "val2": sorted(list(t2)),
+                            "src1_name": new_src_name,
+                            "src2_name": ext_src_name,
+                            "src1_id": new_src_id,
+                            "src2_id": ext_src_id,
+                        }
+                    )
 
                 # 3. Numbers Conflict
                 num1 = new_evt.numbers or {}
                 num2 = ext_evt.numbers or {}
                 for k in num1.keys():
                     if k in num2 and num1[k] != num2[k]:
-                        candidates.append({
-                            "fact_type": k,
-                            "val1": str(num1[k]),
-                            "val2": str(num2[k]),
-                            "src1_name": new_src_name,
-                            "src2_name": ext_src_name,
-                            "src1_id": new_src_id,
-                            "src2_id": ext_src_id,
-                        })
+                        candidates.append(
+                            {
+                                "fact_type": k,
+                                "val1": str(num1[k]),
+                                "val2": str(num2[k]),
+                                "src1_name": new_src_name,
+                                "src2_name": ext_src_name,
+                                "src1_id": new_src_id,
+                                "src2_id": ext_src_id,
+                            }
+                        )
 
         validated_contradictions = []
         seen_pairs = set()
@@ -492,18 +498,18 @@ class ContradictionService:
 
             # Call LLM to confirm
             res_resolution = await self._validate_with_llm(
-                fact_type=cand["fact_type"],
+                fact_type=str(cand["fact_type"]),
                 val1=cand["val1"],
                 val2=cand["val2"],
-                source1_name=cand["src1_name"],
-                source2_name=cand["src2_name"],
+                source1_name=str(cand["src1_name"]),
+                source2_name=str(cand["src2_name"]),
                 context=full_context,
             )
 
             if res_resolution.is_contradiction:
                 contradiction = StoryContradiction(
                     story_id=story_id,
-                    fact_type=cand["fact_type"],
+                    fact_type=str(cand["fact_type"]),
                     description=res_resolution.description,
                     confidence=res_resolution.confidence,
                     source_attribution={

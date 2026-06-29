@@ -14,7 +14,9 @@ from app.llm_gateway.request_manager import RequestManager
 
 
 def test_api_key_model():
-    key = APIKey(key="test-key-123", provider="google", requests_per_minute=10, requests_per_day=100)
+    key = APIKey(
+        key="test-key-123", provider="google", requests_per_minute=10, requests_per_day=100
+    )
     assert key.is_cooling_down() is False
     assert key.get_masked() == "test...-123"
 
@@ -60,7 +62,9 @@ def test_rate_limit_manager_in_memory():
 
 def test_health_monitor_cooldowns_and_disabling():
     hm = HealthMonitor()
-    key = APIKey(key="test-key-health", provider="google", requests_per_minute=10, requests_per_day=100)
+    key = APIKey(
+        key="test-key-health", provider="google", requests_per_minute=10, requests_per_day=100
+    )
 
     # Success resets everything
     hm.report_success(key)
@@ -167,10 +171,7 @@ async def test_request_manager_fallback_execution(mock_track_call):
     # Mock the providers to fail for Gemini, and succeed for Groq/OpenAI fallback
     gemini_client = AsyncMock()
     gemini_client.execute.return_value = GatewayResponse(
-        content="",
-        provider="google",
-        model="gemini-2.5-flash-lite",
-        error="429 Resource Exhausted"
+        content="", provider="google", model="gemini-2.5-flash-lite", error="429 Resource Exhausted"
     )
 
     groq_client = AsyncMock()
@@ -180,7 +181,7 @@ async def test_request_manager_fallback_execution(mock_track_call):
         model="llama-3.1-8b-instant",
         input_tokens=10,
         output_tokens=20,
-        total_tokens=30
+        total_tokens=30,
     )
 
     manager.router.clients["google"] = gemini_client
@@ -190,7 +191,7 @@ async def test_request_manager_fallback_execution(mock_track_call):
     response = await manager.execute_request(
         model="gemini-2.5-flash-lite",
         stage="test_stage",
-        messages=[{"role": "user", "content": "Hello"}]
+        messages=[{"role": "user", "content": "Hello"}],
     )
 
     # Groq was executed successfully as fallback

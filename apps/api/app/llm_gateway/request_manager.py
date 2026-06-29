@@ -95,7 +95,7 @@ class RequestManager:
 
         system_prompt, user_prompt = self._extract_prompts(messages)
 
-        errors_encountered = []
+        errors_encountered: list[str] = []
 
         # 2. Iterate through the fallback chain
         for entry in chain:
@@ -189,13 +189,17 @@ class RequestManager:
 
                     try:
                         from app.core.trace import story_id_ctx
+
                         story_id = story_id_ctx.get("")
                         if story_id:
                             import asyncio
 
                             from app.services.cost_budget import cost_budget_manager
+
                             if asyncio.get_event_loop().is_running():
-                                asyncio.create_task(cost_budget_manager.add_story_cost(story_id, cost))
+                                asyncio.create_task(
+                                    cost_budget_manager.add_story_cost(story_id, cost)
+                                )
                     except Exception as cost_exc:
                         logger.warning("Failed to record story cost in async execute: %s", cost_exc)
 
@@ -222,6 +226,7 @@ class RequestManager:
                 if len(errors_encountered) > 0:
                     try:
                         from app.core.metrics import newsiq_llm_fallback_attempts
+
                         newsiq_llm_fallback_attempts.labels(
                             stage=stage,
                             final_provider=provider_name,
@@ -307,7 +312,7 @@ class RequestManager:
         if provider_override and model_override:
             chain = [{"provider": provider_override, "model": model_override}]
 
-        errors_encountered = []
+        errors_encountered: list[str] = []
 
         for entry in chain:
             provider_name = entry["provider"]
@@ -366,11 +371,13 @@ class RequestManager:
 
                 try:
                     from app.core.trace import story_id_ctx
+
                     story_id = story_id_ctx.get("")
                     if story_id:
                         import asyncio
 
                         from app.services.cost_budget import cost_budget_manager
+
                         if asyncio.get_event_loop().is_running():
                             asyncio.create_task(cost_budget_manager.add_story_cost(story_id, cost))
                 except Exception as cost_exc:
@@ -388,6 +395,7 @@ class RequestManager:
                 if len(errors_encountered) > 0:
                     try:
                         from app.core.metrics import newsiq_llm_fallback_attempts
+
                         newsiq_llm_fallback_attempts.labels(
                             stage=stage,
                             final_provider=provider_name,

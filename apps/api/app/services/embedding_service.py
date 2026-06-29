@@ -106,6 +106,7 @@ class EmbeddingService:
         if not text:
             return ""
         from app.services.context_extractor import context_extractor
+
         # Extract optimized paragraph-aware context up to 8000 chars first
         optimized = context_extractor.extract(text, max_chars=8000)
         return optimized.replace("\n", " ").replace("\r", " ").strip()
@@ -136,7 +137,7 @@ class EmbeddingService:
                 try:
                     response = client.models.embed_content(
                         model=model,
-                        contents=texts,
+                        contents=texts,  # type: ignore[arg-type]
                         config={"task_type": "RETRIEVAL_DOCUMENT"},
                     )
 
@@ -218,6 +219,7 @@ class EmbeddingService:
         if cache_enabled:
             try:
                 from app.services.cache_service import cache_service
+
                 key = self._cache_key(clean)
                 cached = await cache_service.get(key)
                 if cached:
@@ -254,6 +256,7 @@ class EmbeddingService:
         if cache_enabled:
             try:
                 from app.services.cache_service import cache_service
+
                 key = self._cache_key(clean)
                 await cache_service.set(key, vector, ttl=30 * 24 * 60 * 60)
             except Exception as e:
@@ -280,6 +283,7 @@ class EmbeddingService:
 
         if cache_enabled:
             from app.services.cache_service import cache_service
+
             for idx, text in enumerate(clean_texts):
                 if not text:
                     results[idx] = [0.0] * EMBEDDING_DIM
@@ -306,7 +310,11 @@ class EmbeddingService:
 
         # Fetch cache misses from provider APIs
         if miss_texts:
-            logger.info("Embedding cache miss for %d of %d texts. Fetching from API.", len(miss_texts), len(texts))
+            logger.info(
+                "Embedding cache miss for %d of %d texts. Fetching from API.",
+                len(miss_texts),
+                len(texts),
+            )
             fetched_vectors: list[list[float]] = []
 
             if self.gemini_enabled:
@@ -335,6 +343,7 @@ class EmbeddingService:
                 if cache_enabled:
                     try:
                         from app.services.cache_service import cache_service
+
                         key = self._cache_key(clean_texts[idx])
                         await cache_service.set(key, vec, ttl=30 * 24 * 60 * 60)
                     except Exception as e:

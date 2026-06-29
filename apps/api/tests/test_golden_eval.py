@@ -70,7 +70,9 @@ async def test_golden_stories_evaluation(mock_db_session):
 
         matched_hl = [kw for kw in expected["headline_keywords"] if kw.lower() in headline.lower()]
         hl_precision = len(matched_hl) / len(expected["headline_keywords"])
-        assert hl_precision >= 0.5, f"Headline keyword precision too low ({hl_precision}) for {name}"
+        assert hl_precision >= 0.5, (
+            f"Headline keyword precision too low ({hl_precision}) for {name}"
+        )
 
         # ── 3. Entities Coverage ──
         expected_entities = expected["entities"]
@@ -86,12 +88,16 @@ async def test_golden_stories_evaluation(mock_db_session):
         # If contradiction expected, assert mock behavior or verify detection
         assert isinstance(has_contradiction, bool)
 
-        scores.append({
-            "story": name,
-            "headline_score": hl_precision,
-            "entity_score": ent_recall,
-        })
+        scores.append(
+            {
+                "story": name,
+                "headline_score": hl_precision,
+                "entity_score": ent_recall,
+            }
+        )
 
     print("\n=== Golden Evaluation Summary ===")
     for s in scores:
-        print(f"Story: {s['story']} | Headline Score: {s['headline_score']:.2f} | Entity Score: {s['entity_score']:.2f}")
+        print(
+            f"Story: {s['story']} | Headline Score: {s['headline_score']:.2f} | Entity Score: {s['entity_score']:.2f}"
+        )

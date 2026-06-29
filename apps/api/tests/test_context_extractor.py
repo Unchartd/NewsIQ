@@ -24,9 +24,9 @@ def test_context_extractor_under_limit():
 def test_context_extractor_over_limit():
     paragraphs = [
         "Lead paragraph containing important actors and dates of the event.",  # 67 chars
-        "Middle paragraph one with auxiliary details.",                           # 44 chars
+        "Middle paragraph one with auxiliary details.",  # 44 chars
         "Middle paragraph two is extremely long and verbose and contains a lot of filler details that are not super critical for the primary extraction.",  # 146 chars
-        "Concluding paragraph showing final outcome of the event.",            # 58 chars
+        "Concluding paragraph showing final outcome of the event.",  # 58 chars
     ]
     text = "\n\n".join(paragraphs)
 

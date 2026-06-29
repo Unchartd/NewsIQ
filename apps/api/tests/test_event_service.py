@@ -148,4 +148,3 @@ async def test_extract_events_gateway_failure_propagates_exception(mock_execute_
             content="Some news content.",
         )
     mock_execute_request.assert_called_once()
-

@@ -129,16 +129,14 @@ def test_ambiguity_checking():
 def test_confidence_scoring():
     """Verify confidence score calculations based on Wikidata results."""
     # High confidence: Unambiguous name + keyword match
-    results_high = [
-        {"id": "Q90", "label": "Paris", "description": "Capital city of France"}
-    ]
+    results_high = [{"id": "Q90", "label": "Paris", "description": "Capital city of France"}]
     conf_high = entity_linker._assess_confidence("Paris", "CITY", results_high)
     assert conf_high >= 0.8
 
     # Low confidence: Ambiguous name + multiple competing results
     results_low = [
         {"id": "Q312", "label": "Apple", "description": "American technology company"},
-        {"id": "Q89", "label": "Apple", "description": "Edible fruit produced by an apple tree"}
+        {"id": "Q89", "label": "Apple", "description": "Edible fruit produced by an apple tree"},
     ]
     conf_low = entity_linker._assess_confidence("Apple", "COMPANY", results_low)
     assert conf_low < 0.8
@@ -151,7 +149,12 @@ def test_confidence_scoring():
 @patch("app.services.entity_linker.entity_linker._query_wikidata_multi")
 @patch("app.services.entity_linker.entity_linker._query_wikidata")
 async def test_link_entity_hybrid_high_conf(
-    mock_query_wiki, mock_query_wiki_multi, mock_llm, mock_cache_set, mock_cache_get, mock_db_session
+    mock_query_wiki,
+    mock_query_wiki_multi,
+    mock_llm,
+    mock_cache_set,
+    mock_cache_get,
+    mock_db_session,
 ):
     """Verify that a high-confidence entity skips LLM disambiguation in hybrid mode."""
     # Setup mocks
@@ -195,7 +198,12 @@ async def test_link_entity_hybrid_high_conf(
 @patch("app.services.entity_linker.entity_linker._query_wikidata_multi")
 @patch("app.services.entity_linker.entity_linker._query_wikidata")
 async def test_link_entity_hybrid_low_conf(
-    mock_query_wiki, mock_query_wiki_multi, mock_llm, mock_cache_set, mock_cache_get, mock_db_session
+    mock_query_wiki,
+    mock_query_wiki_multi,
+    mock_llm,
+    mock_cache_set,
+    mock_cache_get,
+    mock_db_session,
 ):
     """Verify that a low-confidence entity falls back to LLM disambiguation in hybrid mode."""
     # Setup mocks
@@ -203,7 +211,7 @@ async def test_link_entity_hybrid_low_conf(
     # Mock Wikidata returning ambiguous results (forces confidence below 0.8)
     mock_query_wiki_multi.return_value = [
         {"id": "Q312", "label": "Apple", "description": "American technology company"},
-        {"id": "Q89", "label": "Apple", "description": "Edible fruit"}
+        {"id": "Q89", "label": "Apple", "description": "Edible fruit"},
     ]
     mock_llm.return_value = EntityResolution(
         canonical_name="Apple Inc.",
@@ -236,4 +244,3 @@ async def test_link_entity_hybrid_low_conf(
     mock_llm.assert_called_once()
     assert res.canonical_name == "Apple Inc."
     assert res.wikidata_id == "Q312"
-

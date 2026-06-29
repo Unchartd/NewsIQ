@@ -15,9 +15,7 @@ from app.services.pipeline_cache import pipeline_cache
 @pytest.mark.asyncio
 @patch("app.services.ai_service.ai_service.summarize_story_from_kg")
 @patch("app.services.ner_service_v2.ner_service_v2.extract_entities")
-async def test_stage_level_caching_flow(
-    mock_extract_entities, mock_summarize_kg, mock_db_session
-):
+async def test_stage_level_caching_flow(mock_extract_entities, mock_summarize_kg, mock_db_session):
     """Verify that stage-level caching intercepts contradiction and source comparison stages."""
     story = Story(id=uuid.uuid4())
     src = Source(id=uuid.uuid4(), name="Bloomberg")
@@ -61,27 +59,34 @@ async def test_stage_level_caching_flow(
 
     async def mock_set(key, value, ttl=None):
         import copy
+
         cache_store[key] = copy.deepcopy(value)
 
     async def mock_delete(*keys):
         for k in keys:
             cache_store.pop(k, None)
 
-    with patch("app.services.cache_service.cache_service.get", side_effect=mock_get), \
-         patch("app.services.cache_service.cache_service.set", side_effect=mock_set), \
-         patch("app.services.cache_service.cache_service.delete", side_effect=mock_delete), \
-         patch.object(contradiction_service, "detect_and_save_contradictions", mock_detect), \
-         patch.object(source_comparison_service, "compare_sources_and_save", mock_compare), \
-         patch.object(clustering_service, "_index_and_invalidate", AsyncMock()):
-
+    with (
+        patch("app.services.cache_service.cache_service.get", side_effect=mock_get),
+        patch("app.services.cache_service.cache_service.set", side_effect=mock_set),
+        patch("app.services.cache_service.cache_service.delete", side_effect=mock_delete),
+        patch.object(contradiction_service, "detect_and_save_contradictions", mock_detect),
+        patch.object(source_comparison_service, "compare_sources_and_save", mock_compare),
+        patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
+    ):
         # Clear Redis keys first to ensure clean state
         article_inputs = [f"{art.id}:{art.title or ''}:{art.description or ''}"]
         story_input_hash = pipeline_cache.composite_hash(*article_inputs)
         pipeline_version = "1.0.0"
 
         from app.services.cache_service import cache_service
-        await cache_service.delete(f"stage_cache:contradictions:{pipeline_version}:{story_input_hash}")
-        await cache_service.delete(f"stage_cache:source_comparison:{pipeline_version}:{story_input_hash}")
+
+        await cache_service.delete(
+            f"stage_cache:contradictions:{pipeline_version}:{story_input_hash}"
+        )
+        await cache_service.delete(
+            f"stage_cache:source_comparison:{pipeline_version}:{story_input_hash}"
+        )
 
         # ── Run 1: Cache Miss ──
         await clustering_service.generate_story_content(story, [art], mock_db_session)

@@ -174,10 +174,15 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
     mock_search_similar.return_value = [{"id": similar_article_id, "score": 0.85}]
 
     # 2. Case A: Event similarity is high (>= 0.80) -> Merge succeeds
-    with patch.object(clustering_service, "update_story_incrementally", AsyncMock()) as mock_incr_update, \
-         patch.object(clustering_service, "compute_trending_score", AsyncMock()) as mock_trend:
-
-        merged = await clustering_service.add_article_to_existing_story_if_similar(article_id, mock_db_session)
+    with (
+        patch.object(
+            clustering_service, "update_story_incrementally", AsyncMock()
+        ) as mock_incr_update,
+        patch.object(clustering_service, "compute_trending_score", AsyncMock()) as mock_trend,
+    ):
+        merged = await clustering_service.add_article_to_existing_story_if_similar(
+            article_id, mock_db_session
+        )
         assert merged is True
         mock_incr_update.assert_called_once()
         mock_trend.assert_called_once()
@@ -194,8 +199,12 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
     current_story_events = [evt_different]
 
     # 3. Case B: Event similarity is low (< 0.80) -> Merge rejected
-    with patch.object(clustering_service, "update_story_incrementally", AsyncMock()) as mock_incr_update:
-        merged = await clustering_service.add_article_to_existing_story_if_similar(article_id, mock_db_session)
+    with patch.object(
+        clustering_service, "update_story_incrementally", AsyncMock()
+    ) as mock_incr_update:
+        merged = await clustering_service.add_article_to_existing_story_if_similar(
+            article_id, mock_db_session
+        )
         assert merged is False
         mock_incr_update.assert_not_called()
 
@@ -275,10 +284,11 @@ async def test_batch_clustering_validation_split(
         mock_hdbscan_cls.return_value = mock_instance
 
         # Bypass generate_story_content and category setups
-        with patch.object(clustering_service, "_ensure_all_categories", AsyncMock()), \
-             patch.object(clustering_service, "generate_story_content", AsyncMock()), \
-             patch.object(clustering_service, "compute_trending_score", AsyncMock()):
-
+        with (
+            patch.object(clustering_service, "_ensure_all_categories", AsyncMock()),
+            patch.object(clustering_service, "generate_story_content", AsyncMock()),
+            patch.object(clustering_service, "compute_trending_score", AsyncMock()),
+        ):
             # Run clustering. Since event similarity is very low, it should split
             # the cluster of size 2 into 2 sub-clusters of size 1.
             # And it should create stories for them (or single articles, depending on implementation).

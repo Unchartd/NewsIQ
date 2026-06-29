@@ -186,7 +186,9 @@ async def test_clear_personalisation_data(mock_db_session):
 @patch("app.core.security.verify_password")
 @patch("app.core.security.hash_password")
 @patch("app.api.v1.auth.AuthService.logout_all")
-async def test_change_password(mock_logout_all, mock_hash_password, mock_verify_password, mock_db_session):
+async def test_change_password(
+    mock_logout_all, mock_hash_password, mock_verify_password, mock_db_session
+):
     """Verify that password can be changed successfully."""
     user = User(
         id=uuid.uuid4(),
@@ -200,7 +202,9 @@ async def test_change_password(mock_logout_all, mock_hash_password, mock_verify_
     mock_hash_password.return_value = "new_hash"
     mock_logout_all.return_value = AsyncMock()
 
-    body = ChangePasswordRequest(current_password="old_password", new_password="NewSecurePassword123!")
+    body = ChangePasswordRequest(
+        current_password="old_password", new_password="NewSecurePassword123!"
+    )
     response = await change_password(body=body, user=user, db=mock_db_session)
 
     assert response.message == "Password changed successfully."

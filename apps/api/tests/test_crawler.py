@@ -105,24 +105,30 @@ async def test_crawl_article_fallback_chain():
             assert result["extractor"] == "trafilatura"
 
         # 2. Both Newspaper and Trafilatura fail, Readability succeeds
-        with patch.object(crawler_service, "_extract_newspaper", return_value=None), \
-            patch.object(crawler_service, "_extract_trafilatura", return_value=None):
+        with (
+            patch.object(crawler_service, "_extract_newspaper", return_value=None),
+            patch.object(crawler_service, "_extract_trafilatura", return_value=None),
+        ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
             assert result["extractor"] == "readability-lxml"
 
         # 3. All primary fail, custom-bs4 succeeds
-        with patch.object(crawler_service, "_extract_newspaper", return_value=None), \
-            patch.object(crawler_service, "_extract_trafilatura", return_value=None), \
-            patch.object(crawler_service, "_extract_readability", return_value=None):
+        with (
+            patch.object(crawler_service, "_extract_newspaper", return_value=None),
+            patch.object(crawler_service, "_extract_trafilatura", return_value=None),
+            patch.object(crawler_service, "_extract_readability", return_value=None),
+        ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
             assert result["extractor"] == "custom-bs4"
 
         # 4. All fail completely (including custom-bs4 length check)
-        with patch.object(crawler_service, "_extract_newspaper", return_value=None), \
-            patch.object(crawler_service, "_extract_trafilatura", return_value=None), \
-            patch.object(crawler_service, "_extract_readability", return_value=None), \
-            patch.object(crawler_service, "_extract_custom_cleaner", return_value=None):
+        with (
+            patch.object(crawler_service, "_extract_newspaper", return_value=None),
+            patch.object(crawler_service, "_extract_trafilatura", return_value=None),
+            patch.object(crawler_service, "_extract_readability", return_value=None),
+            patch.object(crawler_service, "_extract_custom_cleaner", return_value=None),
+        ):
             result = await crawler_service.crawl_article(url)
             assert result is None

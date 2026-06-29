@@ -93,9 +93,10 @@ async def test_track_llm_call_cost_and_logging():
     from app.core.trace import LLMCallData
 
     # Mock the DB persistence helper
-    with patch("app.core.trace._persist_llm_call", AsyncMock()) as mock_persist, \
-         patch("app.core.trace.langfuse_client") as mock_lf:
-
+    with (
+        patch("app.core.trace._persist_llm_call", AsyncMock()) as mock_persist,
+        patch("app.core.trace.langfuse_client") as mock_lf,
+    ):
         mock_lf_generation = MagicMock()
         mock_lf.generation.return_value = mock_lf_generation
 

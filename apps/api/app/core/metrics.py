@@ -106,4 +106,3 @@ newsiq_llm_fallback_attempts = Counter(
     "Number of fallback attempts before a successful LLM call.",
     ["stage", "final_provider", "final_model"],
 )
-

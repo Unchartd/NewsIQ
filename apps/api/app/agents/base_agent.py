@@ -1,4 +1,4 @@
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import structlog
 from agno.agent import Agent, RunOutput
@@ -37,27 +37,31 @@ async def run_agent_with_observability(
     if story_id:
         budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
 
-    routed_model_id = model_router.select(stage=stage, complexity="standard", budget_exceeded=budget_exceeded)
+    routed_model_id = model_router.select(
+        stage=stage, complexity="standard", budget_exceeded=budget_exceeded
+    )
 
     if routed_model_id == "skip":
+
         class MockRunOutput:
             def __init__(self, content):
                 self.content = content
 
         if stage == "summary_reflection":
             from app.agents.reflection_agent import ReflectionSchema
+
             default_content = ReflectionSchema(
                 has_hallucinations=False,
                 invented_facts=[],
                 omitted_critical_facts=[],
                 contradicts_graph=False,
-                explanation="Reflection skipped due to cost budget limits."
+                explanation="Reflection skipped due to cost budget limits.",
             )
         else:
             default_content = None
 
         logger.info("Stage '%s' skipped via model routing.", stage)
-        return MockRunOutput(content=default_content)
+        return cast(RunOutput, MockRunOutput(content=default_content))
 
     agent.model = GatewayModel(id=routed_model_id, stage=stage)
 

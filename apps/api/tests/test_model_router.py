@@ -1,4 +1,3 @@
-
 import pytest
 
 from app.services.cost_budget import cost_budget_manager
@@ -35,12 +34,14 @@ async def test_cost_budget_manager_tracking():
 
     # Clear cost in both Redis and memory
     from app.services.cache_service import cache_service
+
     if cache_service._redis:
         try:
             await cache_service._redis.delete(f"story_cost:{story_id}")
         except Exception:
             pass
     from app.services.cost_budget import _memory_cost_cache
+
     _memory_cost_cache[story_id] = 0.0
 
     # Add cost

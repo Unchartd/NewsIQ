@@ -84,8 +84,11 @@ class SourceComparisonService:
         model = prompt_tmpl.model
 
         content_hash = pipeline_cache.composite_hash(
-            src_name, unique_summary or "", missing_summary or "",
-            contradictions_summary or "", context[:1000],
+            src_name,
+            unique_summary or "",
+            missing_summary or "",
+            contradictions_summary or "",
+            context[:1000],
         )
 
         cached = await pipeline_cache.get(
@@ -188,6 +191,7 @@ class SourceComparisonService:
     ) -> tuple[list[StorySourceCoverage], list[StoryDifference]]:
         """Compare sources in a story cluster, generate coverage/difference data, and save to DB."""
         # 1. Fetch articles and sources in story if not provided
+        rows: list[Any] = []
         if articles is None:
             stmt = (
                 select(Article, Source)
@@ -199,7 +203,6 @@ class SourceComparisonService:
             rows = list(res.all())
         else:
             # Build rows mapping Article to Source
-            rows = []
             for art in articles:
                 src = next((s for s in (sources_list or []) if s.id == art.source_id), None)
                 if src:

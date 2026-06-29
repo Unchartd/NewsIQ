@@ -117,7 +117,9 @@ class AIService:
         if len(kg.get("nodes", [])) > 20 or len(source_comparisons) >= 3:
             complexity = "complex"
 
-        model = model_router.select(stage="summary_generation", complexity=complexity, budget_exceeded=budget_exceeded)
+        model = model_router.select(
+            stage="summary_generation", complexity=complexity, budget_exceeded=budget_exceeded
+        )
 
         kg_str = json.dumps(kg, indent=2, default=str)
         contras_str = json.dumps(contradictions, indent=2, default=str)

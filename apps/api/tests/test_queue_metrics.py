@@ -20,11 +20,14 @@ async def test_collect_queue_metrics(mock_db_session):
     mock_celery_inspect.active.return_value = {"worker1@localhost": [1, 2]}  # 2 active jobs
 
     # 2. Patch connections
-    with patch("redis.asyncio.from_url", return_value=mock_redis) as mock_redis_from_url, \
-         patch("app.workers.celery_app.celery_app.control.inspect", return_value=mock_celery_inspect), \
-         patch("app.services.queue_metrics_collector.async_session_factory") as mock_session_factory, \
-         patch("app.services.queue_metrics_collector.newsiq_queue_depth") as mock_gauge:
-
+    with (
+        patch("redis.asyncio.from_url", return_value=mock_redis) as mock_redis_from_url,
+        patch(
+            "app.workers.celery_app.celery_app.control.inspect", return_value=mock_celery_inspect
+        ),
+        patch("app.services.queue_metrics_collector.async_session_factory") as mock_session_factory,
+        patch("app.services.queue_metrics_collector.newsiq_queue_depth") as mock_gauge,
+    ):
         # Mock the session context manager
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__.return_value = mock_db_session

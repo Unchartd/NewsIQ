@@ -82,6 +82,7 @@ def test_get_failure_detail_endpoint():
     )
 
     from app.core.database import get_db
+
     mock_db = AsyncMock()
     mock_res = MagicMock()
     mock_res.scalar_one_or_none.return_value = mock_failure
@@ -119,6 +120,7 @@ def test_resolve_failure_endpoint():
     )
 
     from app.core.database import get_db
+
     mock_db = AsyncMock()
     mock_res = MagicMock()
     mock_res.scalar_one_or_none.return_value = mock_failure
@@ -145,6 +147,7 @@ def test_resolve_failure_endpoint():
 def test_failure_analytics_endpoint():
     """Verify that GET /admin/failure-analytics returns Sentry-like charting data."""
     from app.core.database import get_db
+
     mock_db = AsyncMock()
 
     # Sequential queries in the endpoint:

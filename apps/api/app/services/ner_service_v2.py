@@ -526,7 +526,9 @@ class NERServiceV2:
         if len(text) > 10000:
             complexity = "complex"
 
-        model = model_router.select(stage="entity_extraction", complexity=complexity, budget_exceeded=budget_exceeded)
+        model = model_router.select(
+            stage="entity_extraction", complexity=complexity, budget_exceeded=budget_exceeded
+        )
 
         from app.llm_gateway.request_manager import llm_gateway
 

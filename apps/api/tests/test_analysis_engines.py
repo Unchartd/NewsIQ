@@ -223,7 +223,9 @@ async def test_source_comparison_heuristics_and_llm(mock_db_session):
         contradictions="Contradicts BBC on casualties.",
     )
 
-    async def mock_analyze_llm(src_name, unique_summary, missing_summary, contradictions_summary, context):
+    async def mock_analyze_llm(
+        src_name, unique_summary, missing_summary, contradictions_summary, context
+    ):
         if "bbc" in src_name.lower():
             # Validate that unique summary for BBC contains Actor A
             assert "actor a" in unique_summary.lower()
@@ -234,9 +236,7 @@ async def test_source_comparison_heuristics_and_llm(mock_db_session):
             assert "actor a" in missing_summary.lower()
             return mock_resolution_reuters
 
-    with patch.object(
-        source_comparison_service, "_analyze_with_llm", side_effect=mock_analyze_llm
-    ):
+    with patch.object(source_comparison_service, "_analyze_with_llm", side_effect=mock_analyze_llm):
         coverages, differences = await source_comparison_service.compare_sources_and_save(
             story_id, mock_db_session
         )
@@ -329,6 +329,7 @@ async def test_generate_story_content_redesigned_timeline(
 
     # Mock AI Synthesis returns
     from app.services.ai_service import StorySummaryResponse
+
     mock_summarize_story.return_value = StorySummaryResponse(
         headline="Headline",
         one_line_summary="One line",
@@ -342,10 +343,15 @@ async def test_generate_story_content_redesigned_timeline(
     mock_extract_entities.return_value = []
 
     # Mock Contradiction & Source Comparison service calls to avoid hitting mock DB again
-    with patch.object(contradiction_service, "detect_and_save_contradictions", AsyncMock(return_value=[])), \
-         patch.object(source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))), \
-         patch.object(clustering_service, "_index_and_invalidate", AsyncMock()):
-
+    with (
+        patch.object(
+            contradiction_service, "detect_and_save_contradictions", AsyncMock(return_value=[])
+        ),
+        patch.object(
+            source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))
+        ),
+        patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
+    ):
         await clustering_service.generate_story_content(story, [art1, art2], mock_db_session)
 
         # Verify added objects

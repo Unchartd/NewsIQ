@@ -82,6 +82,7 @@ async def reflect_on_summary(
     if isinstance(run_output.content, str):
         try:
             import json
+
             data = json.loads(run_output.content)
             return ReflectionSchema.model_validate(data)
         except Exception:
@@ -94,5 +95,7 @@ async def reflect_on_summary(
         invented_facts=[],
         omitted_critical_facts=[],
         contradicts_graph=False,
-        explanation=str(run_output.content) if run_output.content else "No reflection content generated."
+        explanation=str(run_output.content)
+        if run_output.content
+        else "No reflection content generated.",
     )

@@ -60,7 +60,12 @@ async def test_summarize_story_from_kg_mock_fallback():
 
     kg = {
         "nodes": [
-            {"id": "event_1", "label": "PROTEST", "type": "event", "properties": {"event_time_raw": "2026-06-20"}},
+            {
+                "id": "event_1",
+                "label": "PROTEST",
+                "type": "event",
+                "properties": {"event_time_raw": "2026-06-20"},
+            },
             {"id": "entity_1", "label": "Actor A", "type": "entity"},
             {"id": "source_1", "label": "BBC", "type": "source"},
         ],
@@ -133,10 +138,15 @@ async def test_generate_story_content_end_to_end_synthesis(
     mock_summarize_kg.return_value = mock_summary_res
 
     # Mock dependencies
-    with patch.object(contradiction_service, "detect_and_save_contradictions", AsyncMock(return_value=[])), \
-         patch.object(source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))), \
-         patch.object(clustering_service, "_index_and_invalidate", AsyncMock()) as mock_index:
-
+    with (
+        patch.object(
+            contradiction_service, "detect_and_save_contradictions", AsyncMock(return_value=[])
+        ),
+        patch.object(
+            source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))
+        ),
+        patch.object(clustering_service, "_index_and_invalidate", AsyncMock()) as mock_index,
+    ):
         await clustering_service.generate_story_content(story, [art], mock_db_session)
 
         # 1. Verify story summaries got updated with mock_summary_res

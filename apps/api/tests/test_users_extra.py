@@ -136,9 +136,7 @@ async def test_update_digest_subscriptions(mock_db_session):
             res.scalars.return_value.all.return_value = [existing_sub]
         elif "user_preference" in query_str:
             res.scalar_one_or_none.return_value = UserPreference(
-                id=uuid.uuid4(),
-                user_id=user.id,
-                digest_settings={"editions": {}}
+                id=uuid.uuid4(), user_id=user.id, digest_settings={"editions": {}}
             )
         return res
 
@@ -180,9 +178,9 @@ async def test_setup_digest(mock_db_session):
 
     mock_result_pref = MagicMock()
     mock_result_pref.scalar_one_or_none.side_effect = [
-        mock_pref,             # for UserPreference lookup
-        mock_cat_politics,     # for politics Category lookup
-        mock_cat_tech,         # for technology Category lookup
+        mock_pref,  # for UserPreference lookup
+        mock_cat_politics,  # for politics Category lookup
+        mock_cat_tech,  # for technology Category lookup
     ]
     mock_db_session.execute.return_value = mock_result_pref
 
@@ -215,5 +213,3 @@ async def test_unsubscribe_digest(mock_db_session):
     response = await unsubscribe_digest(user=user, db=mock_db_session)
     assert response.message == "Successfully unsubscribed from all digests."
     assert mock_pref.digest_settings is None
-
-

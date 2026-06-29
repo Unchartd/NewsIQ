@@ -15,6 +15,7 @@ def reset_backend_role(monkeypatch):
     monkeypatch.setattr(settings, "BACKEND_SERVICE_ROLE", "monolith")
     import app.api.v1.router
     import app.main
+
     importlib.reload(app.api.v1.router)
     importlib.reload(app.main)
 
@@ -24,6 +25,7 @@ def test_user_backend_routing(monkeypatch):
     monkeypatch.setattr(settings, "BACKEND_SERVICE_ROLE", "user")
     import app.api.v1.router
     import app.main
+
     importlib.reload(app.api.v1.router)
     importlib.reload(app.main)
 
@@ -33,7 +35,10 @@ def test_user_backend_routing(monkeypatch):
     assert client.get("/api/v1/ping").status_code == 200
 
     # User endpoint exists (auth or stories)
-    assert client.post("/api/v1/auth/login").status_code in (400, 422)  # Bad request/missing body but route is found
+    assert client.post("/api/v1/auth/login").status_code in (
+        400,
+        422,
+    )  # Bad request/missing body but route is found
 
     # Admin endpoint must be absent (404)
     assert client.get("/api/v1/admin/stats").status_code == 404
@@ -44,6 +49,7 @@ def test_processing_backend_routing(monkeypatch):
     monkeypatch.setattr(settings, "BACKEND_SERVICE_ROLE", "processing")
     import app.api.v1.router
     import app.main
+
     importlib.reload(app.api.v1.router)
     importlib.reload(app.main)
 
