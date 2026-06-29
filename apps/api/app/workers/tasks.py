@@ -26,7 +26,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Coroutine
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -80,6 +80,33 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
     the parent's loop. Without this, every task raises:
         RuntimeError: Task got Future attached to a different loop
     """
+    import time
+
+    from celery import current_task
+
+    start_perf = time.perf_counter()
+
+    # Try to measure Celery queue latency (lag between ETA/creation and worker execution start)
+    try:
+        if current_task and current_task.request:
+            req = current_task.request
+            eta = req.eta
+            if eta:
+                from datetime import datetime
+                now_utc = datetime.now(UTC)
+                if isinstance(eta, datetime):
+                    # Ensure tz-aware comparison
+                    if eta.tzinfo is None:
+                        eta = eta.replace(tzinfo=UTC)
+                    queue_delay = (now_utc - eta).total_seconds()
+                    if queue_delay > 0:
+                        from app.core.metrics import newsiq_task_queue_time_seconds
+                        newsiq_task_queue_time_seconds.labels(
+                            task_name=current_task.name or "unknown"
+                        ).observe(queue_delay)
+    except Exception as e:
+        logger.debug("Failed to record task queue delay: %s", e)
+
     # 1. Dispose the inherited engine pool — resets pool state in this fork.
     #    New connections will be created on the new event loop below.
     try:
@@ -94,6 +121,17 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
     try:
         return loop.run_until_complete(coro)
     finally:
+        # Measure and record task worker execution latency
+        try:
+            if current_task and current_task.name:
+                duration = time.perf_counter() - start_perf
+                from app.core.metrics import newsiq_task_worker_time_seconds
+                newsiq_task_worker_time_seconds.labels(
+                    task_name=current_task.name
+                ).observe(duration)
+        except Exception as e:
+            logger.debug("Failed to record task worker duration: %s", e)
+
         # 3. Cancel any lingering tasks and close the loop
         try:
             pending = asyncio.all_tasks(loop)
@@ -225,56 +263,77 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                         "Embedding batch started",
                         extra={"batch_size": len(pending_articles)},
                     )
+                    # 1. Update all to "processing" first to avoid double processing
+                    for article in pending_articles:
+                        article.embedding_status = "processing"
+                    await session.commit()
+
+                    # 2. Reconstruct texts to embed
+                    texts_to_embed = []
+                    for article in pending_articles:
+                        text_parts = [
+                            article.title or "",
+                            article.description or "",
+                            (article.content or "")[:4000],
+                        ]
+                        text_to_embed = " ".join(p for p in text_parts if p).strip()
+                        if not text_to_embed:
+                            text_to_embed = "Empty news article"
+                        texts_to_embed.append(text_to_embed)
+
                     success_count = 0
                     failed_count = 0
+                    vectors = []
 
-                    for article in pending_articles:
+                    # 3. Call get_embeddings in batch (handles Redis cache lookups + provider API batch call)
+                    try:
+                        vectors = await embedding_service.get_embeddings(texts_to_embed)
+                    except Exception as e:
+                        logger.error("Failed to generate batch embeddings: %s", e)
+
+                    # 4. Upsert to Qdrant and update status
+                    for i, article in enumerate(pending_articles):
                         bind_article_context(str(article.id))
-                        try:
-                            # Update status to processing to avoid double processing
-                            article.embedding_status = "processing"
-                            await session.commit()
+                        if i < len(vectors):
+                            vector = vectors[i]
+                            try:
+                                # Prepare metadata payload for Qdrant
+                                payload = {
+                                    "title": article.title,
+                                    "url": article.url,
+                                    "source_id": str(article.source_id),
+                                    "published_at": article.published_at.isoformat()
+                                    if article.published_at
+                                    else None,
+                                }
 
-                            # Combine title, description, AND content for quality embeddings
-                            text_parts = [
-                                article.title or "",
-                                article.description or "",
-                                (article.content or "")[:4000],
-                            ]
-                            text_to_embed = " ".join(p for p in text_parts if p).strip()
-                            if not text_to_embed:
-                                text_to_embed = "Empty news article"
+                                # Upsert to Qdrant
+                                await vector_service.upsert_article(
+                                    article_id=article.id,
+                                    vector=vector,
+                                    payload=payload,
+                                )
 
-                            vector = await embedding_service.get_embedding(text_to_embed)
-
-                            # Prepare metadata payload for Qdrant
-                            payload = {
-                                "title": article.title,
-                                "url": article.url,
-                                "source_id": str(article.source_id),
-                                "published_at": article.published_at.isoformat()
-                                if article.published_at
-                                else None,
-                            }
-
-                            # Upsert to Qdrant
-                            await vector_service.upsert_article(
-                                article_id=article.id,
-                                vector=vector,
-                                payload=payload,
-                            )
-
-                            # Mark as completed in PostgreSQL
-                            article.embedding_status = "completed"
-                            await session.commit()
-                            success_count += 1
-                        except Exception as e:
+                                # Mark as completed in PostgreSQL
+                                article.embedding_status = "completed"
+                                await session.commit()
+                                success_count += 1
+                            except Exception as e:
+                                logger.error(
+                                    "Upsert to Qdrant failed",
+                                    extra={
+                                        "article_id": str(article.id),
+                                        "error": str(e),
+                                    },
+                                )
+                                article.embedding_status = "failed"
+                                await session.commit()
+                                failed_count += 1
+                        else:
+                            # Batch embedding did not return a vector for this article
                             logger.error(
-                                "Embedding failed",
-                                extra={
-                                    "article_id": str(article.id),
-                                    "error": str(e),
-                                },
+                                "No embedding returned for article",
+                                extra={"article_id": str(article.id)},
                             )
                             article.embedding_status = "failed"
                             await session.commit()

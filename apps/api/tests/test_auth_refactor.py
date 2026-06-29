@@ -2,39 +2,36 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
 from app.api.v1.auth import (
     forgot_password,
+    get_sessions,
     login,
     logout,
     logout_all,
     refresh_token,
     register,
     reset_password,
-    verify_email,
-    verify_reset_token,
-    get_sessions,
     revoke_session,
+    verify_email,
 )
 from app.exceptions.auth import (
     AccountLockedException,
     EmailNotVerifiedException,
     InvalidCredentialsException,
-    InvalidRefreshTokenException,
-    SessionExpiredException,
     UserAlreadyExistsException,
 )
-from app.models.user import User
 from app.models.session import Session
+from app.models.user import User
 from app.schemas.auth import (
+    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     ResetPasswordRequest,
-    ForgotPasswordRequest,
 )
 
 

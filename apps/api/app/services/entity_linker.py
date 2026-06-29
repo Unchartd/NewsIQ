@@ -218,7 +218,38 @@ class EntityLinker:
 
         return groups
 
-    # ── LLM search query generation ───────────────────────────────────────────
+    # ── Deterministic search query generation ──────────────────────────────────
+
+    def _build_deterministic_search_query(self, name: str, entity_type: str) -> str:
+        """Build a Wikidata search query without LLM.
+
+        Uses entity type to add disambiguation context:
+        - PERSON → "name politician/athlete/etc" (use just the name, it's usually enough)
+        - ORG/COMPANY → "name organization"
+        - COUNTRY/CITY/STATE → name as-is (locations are unambiguous in Wikidata)
+        """
+        clean_name = name.strip()
+
+        # Type-based disambiguation suffix
+        type_suffixes: dict[str, str] = {
+            "POLITICAL_PARTY": "political party",
+            "MILITARY_UNIT": "military",
+            "GOVERNMENT_BODY": "government",
+            "SPORTS_TEAM": "sports team",
+            "WEAPON": "weapon",
+            "TECHNOLOGY": "technology",
+            "PRODUCT": "product",
+            "LAW": "law",
+            "AGREEMENT": "agreement",
+            "DISEASE": "disease",
+        }
+
+        suffix = type_suffixes.get(entity_type, "")
+        if suffix:
+            return f"{clean_name} {suffix}"
+        return clean_name
+
+    # ── LLM search query generation (opt-in fallback) ──────────────────────────
 
     def _build_disambiguation_prompt(self, name: str, entity_type: str, context: str) -> str:
         return (
@@ -238,9 +269,25 @@ class EntityLinker:
     async def _disambiguate_with_llm(
         self, name: str, entity_type: str, context: str
     ) -> EntityResolution:
-        """Query LLM to generate a clean search query and description."""
+        """Query LLM to generate a clean search query and description.
+
+        Only used when ENTITY_LINKING_DETERMINISTIC is False.
+        """
         prompt = self._build_disambiguation_prompt(name, entity_type, context)
-        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        from app.core.trace import story_id_ctx
+        from app.services.cost_budget import cost_budget_manager
+        from app.services.model_router import model_router
+
+        story_id = story_id_ctx.get("")
+        budget_exceeded = False
+        if story_id:
+            budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
+
+        complexity = "standard"
+        if len(context) > 10000:
+            complexity = "complex"
+
+        model = model_router.select(stage="entity_linking", complexity=complexity, budget_exceeded=budget_exceeded)
 
         from app.llm_gateway.request_manager import llm_gateway
 
@@ -280,15 +327,15 @@ class EntityLinker:
         wait=wait_exponential(multiplier=1, min=1, max=5),
         reraise=False,
     )
-    async def _query_wikidata(self, query: str) -> dict[str, str | None] | None:
-        """Search Wikidata using wbsearchentities API."""
+    async def _query_wikidata_multi(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
+        """Search Wikidata using wbsearchentities API and return multiple results."""
         url = "https://www.wikidata.org/w/api.php"
         params: dict[str, Any] = {
             "action": "wbsearchentities",
             "search": query,
             "language": "en",
             "format": "json",
-            "limit": 1,
+            "limit": limit,
         }
         headers = {"User-Agent": "NewsIQ/1.0 (admin@newsiq.com)"}
 
@@ -296,15 +343,98 @@ class EntityLinker:
             response = await client.get(url, params=params, headers=headers)
             if response.status_code == 200:
                 data = response.json()
-                search_results = data.get("search", [])
-                if search_results:
-                    top_result = search_results[0]
-                    return {
-                        "wikidata_id": top_result.get("id"),
-                        "description": top_result.get("description"),
-                        "label": top_result.get("label"),
-                    }
+                return data.get("search", [])
+        return []
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        reraise=False,
+    )
+    async def _query_wikidata(self, query: str) -> dict[str, str | None] | None:
+        """Search Wikidata using wbsearchentities API."""
+        results = await self._query_wikidata_multi(query, limit=1)
+        if results:
+            top_result = results[0]
+            return {
+                "wikidata_id": top_result.get("id"),
+                "description": top_result.get("description"),
+                "label": top_result.get("label"),
+            }
         return None
+
+    # ── Ambiguity & Confidence Gating ──────────────────────────────────────────
+
+    @staticmethod
+    def _is_name_ambiguous(name: str) -> bool:
+        """Check if an entity name is inherently ambiguous (e.g. single words or specific terms)."""
+        clean = name.strip().lower()
+        # Single-word names are often ambiguous (e.g., "Washington", "Jordan", "Apple", "Mercury")
+        if " " not in clean:
+            return True
+
+        # Curated list of known ambiguous entities
+        ambiguous_names = {
+            "washington", "mercury", "jordan", "apple", "amazon", "columbia",
+            "georgia", "delta", "china", "turkey", "clinton", "bush", "obama",
+            "trump", "biden", "tesla", "meta", "alphabet", "microsoft"
+        }
+        if clean in ambiguous_names:
+            return True
+        return False
+
+    def _assess_confidence(
+        self,
+        name: str,
+        entity_type: str,
+        results: list[dict[str, Any]],
+    ) -> float:
+        """Assess the confidence score (0.0 to 1.0) of Wikidata search results."""
+        if not results:
+            return 0.0
+
+        # Inherently ambiguous names start with lower baseline confidence
+        if self._is_name_ambiguous(name):
+            confidence = 0.5
+        else:
+            confidence = 0.8
+
+        top_result = results[0]
+        top_desc = (top_result.get("description") or "").lower()
+        top_label = (top_result.get("label") or "").lower()
+
+        # Check type matching in description
+        type_keywords: dict[str, list[str]] = {
+            "PERSON": ["person", "politician", "actor", "athlete", "writer", "singer", "officer", "president", "minister", "activist"],
+            "ORG": ["organization", "company", "association", "institution", "agency", "foundation", "union", "party", "club"],
+            "COMPANY": ["company", "corporation", "enterprise", "manufacturer", "firm", "business"],
+            "COUNTRY": ["country", "nation", "state", "republic"],
+            "CITY": ["city", "town", "municipality", "capital"],
+            "STATE": ["state", "province", "region", "territory"],
+        }
+
+        keywords = type_keywords.get(entity_type, [])
+        if keywords:
+            has_keyword = any(kw in top_desc for kw in keywords)
+            if has_keyword:
+                confidence += 0.2
+            else:
+                confidence -= 0.3
+
+        # Exactly 1 result indicates low competition / clear match
+        if len(results) == 1:
+            confidence += 0.1
+
+        # If there are multiple results, check if they compete/conflict
+        if len(results) > 1:
+            second_result = results[1]
+            second_label = (second_result.get("label") or "").lower()
+            # If the second result has the exact same name/label but a different description, it's a conflict
+            if second_label == name.strip().lower() or second_label == top_label:
+                confidence -= 0.3
+
+        # Clamp confidence between 0.0 and 1.0 and round to 2 decimal places to prevent float precision issues
+        return round(max(0.0, min(1.0, confidence)), 2)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -374,23 +504,66 @@ class EntityLinker:
                     return db_entity
                 raise
 
-        # ── 3. LLM + Wikidata Call ────────────────────────────────────────────
+        # ── 3. Resolve via Wikidata (hybrid confidence-gated approach) ────────────
         logger.info("Resolving new entity: %s (%s)", clean_name, entity_type)
-        resolution = await self._disambiguate_with_llm(clean_name, entity_type, context)
 
+        linking_mode = getattr(settings, "ENTITY_LINKING_MODE", "hybrid").lower()
+
+        resolution = None
         wikidata_id: str | None = None
-        wikidata_desc: str | None = resolution.description
+        wikidata_desc: str | None = None
 
-        try:
-            wiki_res = await self._query_wikidata(resolution.wikidata_search_query)
-            if wiki_res:
-                wikidata_id = wiki_res["wikidata_id"]
-                wikidata_desc = wiki_res["description"] or resolution.description
-                # If Wikidata returns a better canonical label, use it
-                if wiki_res.get("label"):
-                    resolution.canonical_name = wiki_res["label"]
-        except Exception as e:
-            logger.warning("Wikidata lookup failed for %s: %s", clean_name, e)
+        if linking_mode == "deterministic":
+            # Pure deterministic path (no LLM falls back)
+            search_query = self._build_deterministic_search_query(clean_name, entity_type)
+            resolution = EntityResolution(
+                canonical_name=clean_name,
+                wikidata_search_query=search_query,
+                description=f"Extracted {entity_type} entity",
+            )
+        elif linking_mode == "llm":
+            # Pure LLM path
+            resolution = await self._disambiguate_with_llm(clean_name, entity_type, context)
+        else:
+            # Hybrid path (default): deterministic first, check confidence, run LLM only on low confidence
+            search_query = self._build_deterministic_search_query(clean_name, entity_type)
+            # Query multiple Wikidata results
+            wiki_results = await self._query_wikidata_multi(search_query, limit=3)
+            confidence = self._assess_confidence(clean_name, entity_type, wiki_results)
+
+            if confidence >= 0.8:
+                # High confidence deterministic match
+                top_res = wiki_results[0]
+                wikidata_id = top_res.get("id")
+                wikidata_desc = top_res.get("description")
+                canonical_name = top_res.get("label") or clean_name
+                resolution = EntityResolution(
+                    canonical_name=canonical_name,
+                    wikidata_search_query=search_query,
+                    description=wikidata_desc or f"Extracted {entity_type} entity",
+                )
+                logger.info("Deterministic entity resolution HIGH confidence (%.2f) for %s", confidence, clean_name)
+            else:
+                # Low confidence / ambiguous: fall back to LLM disambiguation
+                logger.info(
+                    "Deterministic entity resolution LOW confidence (%.2f) or ambiguous for %s. Triggering LLM fallback.",
+                    confidence,
+                    clean_name,
+                )
+                resolution = await self._disambiguate_with_llm(clean_name, entity_type, context)
+
+        # Query Wikidata if not resolved yet (e.g. from LLM fallback or deterministic fallback)
+        if not wikidata_id and resolution:
+            wikidata_desc = resolution.description
+            try:
+                wiki_res = await self._query_wikidata(resolution.wikidata_search_query)
+                if wiki_res:
+                    wikidata_id = wiki_res["wikidata_id"]
+                    wikidata_desc = wiki_res["description"] or resolution.description
+                    if wiki_res.get("label"):
+                        resolution.canonical_name = wiki_res["label"]
+            except Exception as e:
+                logger.warning("Wikidata lookup failed for %s: %s", clean_name, e)
 
         # Agentic fallback if Wikidata did not resolve QID
         if not wikidata_id:

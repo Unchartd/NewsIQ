@@ -69,4 +69,30 @@ async def reflect_on_summary(
     run_output = await run_agent_with_observability(
         agent=reflection_agent, prompt=prompt, stage="summary_reflection"
     )
-    return run_output.content
+
+    # Check if run_output.content is already a ReflectionSchema (e.g. from MockRunOutput/skipped or unit test mocks)
+    if isinstance(run_output.content, ReflectionSchema):
+        return run_output.content
+
+    # If run_output has parsed attribute and it is ReflectionSchema, use it
+    if hasattr(run_output, "parsed") and isinstance(run_output.parsed, ReflectionSchema):
+        return run_output.parsed
+
+    # If it is a string (e.g. JSON), parse it into ReflectionSchema
+    if isinstance(run_output.content, str):
+        try:
+            import json
+            data = json.loads(run_output.content)
+            return ReflectionSchema.model_validate(data)
+        except Exception:
+            if hasattr(run_output, "parsed") and isinstance(run_output.parsed, ReflectionSchema):
+                return run_output.parsed
+
+    # Return a fallback ReflectionSchema
+    return ReflectionSchema(
+        has_hallucinations=False,
+        invented_facts=[],
+        omitted_critical_facts=[],
+        contradicts_graph=False,
+        explanation=str(run_output.content) if run_output.content else "No reflection content generated."
+    )

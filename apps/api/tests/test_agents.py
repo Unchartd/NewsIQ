@@ -1,12 +1,14 @@
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, patch
 from agno.run.agent import RunOutput
 
-from app.agents.cluster_verification_agent import verify_cluster_decision, ClusterVerificationSchema
-from app.agents.entity_disambiguation_agent import disambiguate_entity, EntityDisambiguationSchema
-from app.agents.contradiction_agent import check_contradiction, ContradictionSchema
-from app.agents.reflection_agent import reflect_on_summary, ReflectionSchema
-from app.agents.judge_agent import resolve_disagreement, JudgeSchema
+from app.agents.cluster_verification_agent import ClusterVerificationSchema, verify_cluster_decision
+from app.agents.contradiction_agent import ContradictionSchema, check_contradiction
+from app.agents.entity_disambiguation_agent import EntityDisambiguationSchema, disambiguate_entity
+from app.agents.judge_agent import JudgeSchema, resolve_disagreement
+from app.agents.reflection_agent import ReflectionSchema, reflect_on_summary
+
 
 @pytest.mark.asyncio
 @patch("app.agents.cluster_verification_agent.run_agent_with_observability")
@@ -16,13 +18,13 @@ async def test_cluster_verification_agent(mock_run):
         confidence=0.95,
         explanation="Both describe the same event."
     )
-    
+
     mock_run_output = RunOutput(
         content=schema_instance,
         metrics=None
     )
     mock_run.return_value = mock_run_output
-    
+
     res = await verify_cluster_decision(
         article_a_title="Title A",
         article_a_event={"type": "ATTACK"},
@@ -30,7 +32,7 @@ async def test_cluster_verification_agent(mock_run):
         article_b_event={"type": "ATTACK"},
         similarity_score=0.85
     )
-    
+
     assert res.same_event is True
     assert res.confidence == 0.95
     assert "same event" in res.explanation
@@ -45,19 +47,19 @@ async def test_entity_disambiguation_agent(mock_run):
         entity_type="PERSON",
         explanation="Standardized Trump to Donald Trump."
     )
-    
+
     mock_run_output = RunOutput(
         content=schema_instance,
         metrics=None
     )
     mock_run.return_value = mock_run_output
-    
+
     res = await disambiguate_entity(
         entity_value="Trump",
         entity_type="PERSON",
         context="President Trump gave a speech."
     )
-    
+
     assert res.canonical_name == "Donald Trump"
     assert res.wikidata_id == "Q22686"
     assert res.entity_type == "PERSON"
@@ -72,13 +74,13 @@ async def test_contradiction_agent(mock_run):
         confidence=0.95,
         explanation="One source says 2 PM and another says 3 PM."
     )
-    
+
     mock_run_output = RunOutput(
         content=schema_instance,
         metrics=None
     )
     mock_run.return_value = mock_run_output
-    
+
     res = await check_contradiction(
         fact_type="event_time",
         val1="2 PM",
@@ -86,7 +88,7 @@ async def test_contradiction_agent(mock_run):
         source1_name="BBC",
         source2_name="TOI"
     )
-    
+
     assert res.contradiction is True
     assert res.field == "event_time"
     assert res.confidence == 0.95
@@ -102,19 +104,19 @@ async def test_reflection_agent(mock_run):
         contradicts_graph=False,
         explanation="Summary is well grounded."
     )
-    
+
     mock_run_output = RunOutput(
         content=schema_instance,
         metrics=None
     )
     mock_run.return_value = mock_run_output
-    
+
     res = await reflect_on_summary(
         summary_text="Summary text",
         timeline=[{"description": "Event 1"}],
         kg_nodes=[{"id": "node_1"}]
     )
-    
+
     assert res.has_hallucinations is False
     assert res.contradicts_graph is False
     mock_run.assert_called_once()
@@ -127,13 +129,13 @@ async def test_judge_agent(mock_run):
         chosen_provider="gemini",
         explanation="Gemini's reasoning was more detailed."
     )
-    
+
     mock_run_output = RunOutput(
         content=schema_instance,
         metrics=None
     )
     mock_run.return_value = mock_run_output
-    
+
     res = await resolve_disagreement(
         task_description="Verify event merge",
         provider_a_name="gemini",
@@ -141,7 +143,7 @@ async def test_judge_agent(mock_run):
         provider_b_name="openai",
         provider_b_output={"same_event": False}
     )
-    
+
     assert res.final_decision is True
     assert res.chosen_provider == "gemini"
     mock_run.assert_called_once()

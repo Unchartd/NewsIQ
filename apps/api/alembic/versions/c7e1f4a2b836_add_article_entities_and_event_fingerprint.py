@@ -7,9 +7,10 @@ Revision ID: c7e1f4a2b836
 Revises: obs_001_foundation
 Create Date: 2026-06-22 07:00:00.000000
 """
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "c7e1f4a2b836"

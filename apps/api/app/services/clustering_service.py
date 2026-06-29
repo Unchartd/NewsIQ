@@ -287,44 +287,140 @@ class ClusteringService:
                 }
             )
 
-        # 6. Run Contradiction & Source Comparison Engines
-        saved_contras = []
-        async with StageSpan(
-            stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)
-        ) as span:
-            try:
-                saved_contras = await contradiction_service.detect_and_save_contradictions(
-                    story.id, session
-                )
-                logger.info("Contradiction detection successfully run for story %s.", story.id)
-            except Exception as e:
-                logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
+        # Compute input hash for synthesis stages
+        from app.services.pipeline_cache import pipeline_cache
+        article_inputs = [f"{art.id}:{art.title or ''}:{art.description or ''}" for art in articles]
+        article_inputs.sort()
+        story_input_hash = pipeline_cache.composite_hash(*article_inputs)
 
-            span.set_metadata(
-                {
-                    "inputs": {"story_id": str(story.id)},
-                    "outputs": {"contradictions_count": len(saved_contras)},
-                }
-            )
+        # 6. Run Contradiction & Source Comparison Engines Concurrently
+        import asyncio
 
-        saved_coverage: list[StorySourceCoverage] = []
-        saved_differences: list[StoryDifference] = []
-        async with StageSpan(stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)) as span:
-            try:
-                (
-                    saved_coverage,
-                    saved_differences,
-                ) = await source_comparison_service.compare_sources_and_save(story.id, session)
-                logger.info("Source comparison successfully run for story %s.", story.id)
-            except Exception as e:
-                logger.error("Failed to run source comparison for story %s: %s", story.id, e)
+        async def run_contradictions():
+            async with StageSpan(
+                stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)
+            ) as span:
+                try:
+                    cached_contras = await pipeline_cache.get_stage_result("contradictions", story_input_hash)
+                    if cached_contras is not None:
+                        res = []
+                        for c_data in cached_contras:
+                            contra = StoryContradiction(
+                                id=uuid.uuid4(),
+                                story_id=story.id,
+                                fact_type=c_data["fact_type"],
+                                description=c_data["description"],
+                                confidence=c_data["confidence"],
+                                source_attribution=c_data["source_attribution"],
+                            )
+                            session.add(contra)
+                            res.append(contra)
+                        logger.info("Contradiction detection stage cache HIT for story %s.", story.id)
+                        span.set_metadata({
+                            "inputs": {"story_id": str(story.id)},
+                            "outputs": {"contradictions_count": len(res)},
+                        })
+                        return res
+                    else:
+                        res = await contradiction_service.detect_and_save_contradictions(
+                            story_id=story.id,
+                            session=session,
+                            articles=articles,
+                            article_events=article_events,
+                            article_source_map=article_source_map,
+                        )
+                        c_serialized = [{
+                            "fact_type": c.fact_type,
+                            "description": c.description,
+                            "confidence": float(c.confidence),
+                            "source_attribution": c.source_attribution,
+                        } for c in res]
+                        await pipeline_cache.set_stage_result("contradictions", story_input_hash, c_serialized)
+                        logger.info("Contradiction detection successfully run and cached for story %s.", story.id)
+                        span.set_metadata({
+                            "inputs": {"story_id": str(story.id)},
+                            "outputs": {"contradictions_count": len(res)},
+                        })
+                        return res
+                except Exception as e:
+                    logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
+                    return []
 
-            span.set_metadata(
-                {
-                    "inputs": {"story_id": str(story.id)},
-                    "outputs": {"differences_count": len(saved_differences)},
-                }
-            )
+        async def run_source_comparison(contras_future):
+            async with StageSpan(stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)) as span:
+                try:
+                    cached_comp = await pipeline_cache.get_stage_result("source_comparison", story_input_hash)
+                    if cached_comp is not None:
+                        cov_list = []
+                        diff_list = []
+                        for cov_data in cached_comp["coverage"]:
+                            cov = StorySourceCoverage(
+                                id=uuid.uuid4(),
+                                story_id=story.id,
+                                source_id=uuid.UUID(cov_data["source_id"]),
+                                focus_area=cov_data["focus_area"],
+                                created_at=_now(),
+                            )
+                            session.add(cov)
+                            cov_list.append(cov)
+                        for diff_data in cached_comp["differences"]:
+                            diff = StoryDifference(
+                                id=uuid.uuid4(),
+                                story_id=story.id,
+                                source_id=uuid.UUID(diff_data["source_id"]),
+                                unique_information=diff_data["unique_information"],
+                                missing_information=diff_data["missing_information"],
+                                contradictions=diff_data["contradictions"],
+                                created_at=_now(),
+                            )
+                            session.add(diff)
+                            diff_list.append(diff)
+                        logger.info("Source comparison stage cache HIT for story %s.", story.id)
+                        span.set_metadata({
+                            "inputs": {"story_id": str(story.id)},
+                            "outputs": {"differences_count": len(diff_list)},
+                        })
+                        return cov_list, diff_list
+                    else:
+                        # Wait for contradictions to finish before running comparison
+                        contras = await contras_future
+                        cov_list, diff_list = await source_comparison_service.compare_sources_and_save(
+                            story_id=story.id,
+                            session=session,
+                            articles=articles,
+                            article_events=article_events,
+                            article_source_map=article_source_map,
+                            sources_list=sources_list,
+                            precomputed_contradictions=contras,
+                        )
+                        cov_serialized = [{
+                            "source_id": str(c.source_id),
+                            "focus_area": c.focus_area,
+                        } for c in cov_list]
+                        diff_serialized = [{
+                            "source_id": str(d.source_id),
+                            "unique_information": d.unique_information,
+                            "missing_information": d.missing_information,
+                            "contradictions": d.contradictions,
+                        } for d in diff_list]
+                        await pipeline_cache.set_stage_result("source_comparison", story_input_hash, {
+                            "coverage": cov_serialized,
+                            "differences": diff_serialized,
+                        })
+                        logger.info("Source comparison successfully run and cached for story %s.", story.id)
+                        span.set_metadata({
+                            "inputs": {"story_id": str(story.id)},
+                            "outputs": {"differences_count": len(diff_list)},
+                        })
+                        return cov_list, diff_list
+                except Exception as e:
+                    logger.error("Failed to run source comparison for story %s: %s", story.id, e)
+                    return [], []
+
+        contras_task = asyncio.create_task(run_contradictions())
+        comp_task = asyncio.create_task(run_source_comparison(contras_task))
+
+        saved_contras, (saved_coverage, saved_differences) = await asyncio.gather(contras_task, comp_task)
 
         # 5. Build and Serialize Knowledge Graph
         kg_dict = {}
@@ -420,12 +516,16 @@ class ClusteringService:
                 )
 
                 # Summary Reflection Verification
-                is_trending_or_high_stakes = len(articles) >= 3 or cat_slug in (
-                    "world",
-                    "politics",
-                    "business",
+                run_reflection = await self.should_run_reflection(
+                    story=story,
+                    articles=articles,
+                    category_slug=cat_slug,
+                    saved_contras=saved_contras,
+                    saved_differences=saved_differences,
+                    saved_coverage=saved_coverage,
+                    session=session,
                 )
-                if is_trending_or_high_stakes:
+                if run_reflection:
                     try:
                         from app.agents.reflection_agent import reflect_on_summary
 
@@ -561,6 +661,334 @@ class ClusteringService:
         except Exception as e:
             logger.warning("Failed to index/invalidate story %s: %s", story.id, e)
 
+    async def should_run_reflection(
+        self,
+        story: Story,
+        articles: list[Article],
+        category_slug: str,
+        saved_contras: list[StoryContradiction],
+        saved_differences: list[StoryDifference],
+        saved_coverage: list[StorySourceCoverage],
+        session: AsyncSession,
+    ) -> bool:
+        """Determine if summary reflection should be run based on multi-dimensional signal analysis."""
+        # 1. Admin override
+        if getattr(story, "force_reflection", False):
+            logger.info("Reflection triggered by admin force override for story %s.", story.id)
+            return True
+
+        # 2. High-stakes categories
+        if category_slug in ("politics", "business", "health"):
+            logger.info("Reflection triggered by high-stakes category '%s' for story %s.", category_slug, story.id)
+            return True
+
+        # 3. High-confidence contradictions
+        for contra in saved_contras:
+            if contra.confidence and float(contra.confidence) >= 0.8:
+                logger.info(
+                    "Reflection triggered by high-confidence contradiction (confidence: %s) for story %s.",
+                    contra.confidence,
+                    story.id,
+                )
+                return True
+
+        # 4. Source divergence
+        divergent_sources = 0
+        for diff in saved_differences:
+            if diff.unique_information and diff.missing_information:
+                divergent_sources += 1
+        if divergent_sources >= 2:
+            logger.info(
+                "Reflection triggered by source divergence (count: %d) for story %s.",
+                divergent_sources,
+                story.id,
+            )
+            return True
+
+        # 5. Breaking news or fast-moving stories
+        is_breaking = getattr(story, "is_breaking", False)
+        hours_since_creation = 999.0
+        if story.created_at:
+            hours_since_creation = (_now() - story.created_at).total_seconds() / 3600.0
+
+        unique_sources = len({art.source_id for art in articles if art.source_id})
+        if is_breaking or (hours_since_creation < 2.0 and unique_sources >= 3):
+            logger.info("Reflection triggered by breaking news/fast-moving story %s.", story.id)
+            return True
+
+        # 6. Large stories (secondary signal)
+        if len(articles) >= 5:
+            logger.info("Reflection triggered by large story (articles: %d) for story %s.", len(articles), story.id)
+            return True
+
+        logger.info("Reflection skipped for story %s: no significant signals detected.", story.id)
+        return False
+
+    async def update_story_incrementally(
+        self,
+        story: Story,
+        new_article: Article,
+        existing_articles: list[Article],
+        session: AsyncSession,
+    ) -> None:
+        """Incrementally update an existing active story when a new article is merged."""
+        logger.info(
+            "Incrementally updating story %s with new article %s.",
+            story.id,
+            new_article.id,
+        )
+
+        # 1. Load details of the new article
+        stmt = select(Source).where(Source.id == new_article.source_id)
+        res = await session.execute(stmt)
+        new_source = res.scalar_one_or_none()
+        new_src_name = new_source.name if new_source else "Unknown Source"
+
+        # Update country location if empty
+        if new_source and new_source.country_code and not story.location_country:
+            story.location_country = new_source.country_code
+
+        # 2. Incremental Timeline
+        event_stmt = select(ArticleEvent).where(ArticleEvent.article_id == new_article.id)
+        event_res = await session.execute(event_stmt)
+        new_events = list(event_res.scalars().all())
+
+        new_timeline_objects = []
+        for evt in new_events:
+            t = evt.event_time or evt.created_at or _now()
+            if t.tzinfo is not None:
+                t = t.astimezone(UTC).replace(tzinfo=None)
+
+            evt_type = (
+                (evt.event_type_canonical or evt.event_type or "Event")
+                .replace("_", " ")
+                .title()
+            )
+
+            details = []
+            if evt.actors:
+                details.append(f"Actors: {', '.join(evt.actors)}")
+            if evt.targets:
+                details.append(f"Targets: {', '.join(evt.targets)}")
+            if evt.location:
+                details.append(f"Location: {evt.location}")
+            if evt.numbers:
+                num_parts = [f"{k}: {v}" for k, v in evt.numbers.items()]
+                details.append(f"Data: {', '.join(num_parts)}")
+
+            details_str = f" ({'; '.join(details)})" if details else ""
+            desc = f"{evt_type} reported by {new_src_name}{details_str}."
+
+            tl_event = StoryTimelineEvent(
+                id=uuid.uuid4(),
+                story_id=story.id,
+                event_time=t,
+                event_time_raw=evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                description=desc,
+                created_at=_now(),
+            )
+            session.add(tl_event)
+            new_timeline_objects.append(tl_event)
+
+        # 3. Incremental Entities & Tags
+        pre_extracted_stmt = select(ArticleEntity).where(
+            ArticleEntity.article_id == new_article.id
+        )
+        pre_result = await session.execute(pre_extracted_stmt)
+        pre_entities = list(pre_result.scalars().all())
+
+        # Construct corpus context (for fallback NER)
+        full_text_corpus = f"{(new_article.title or '')}\n{(new_article.description or '')}\n{(new_article.content or '')}\n\n"
+        if pre_entities:
+            entities = [{"type": e.entity_type, "value": e.entity_value} for e in pre_entities]
+        else:
+            entities = await ner_service_v2.extract_entities(full_text_corpus)
+
+        grouped_entities = entity_linker.group_entities_locally(entities)
+
+        # Retrieve existing entity names to avoid duplicates
+        existing_entities_stmt = select(StoryEntity.entity_value).where(StoryEntity.story_id == story.id)
+        existing_entities_res = await session.execute(existing_entities_stmt)
+        existing_entity_values = set(existing_entities_res.scalars().all())
+
+        existing_tags_stmt = select(StoryTag.tag_name).where(StoryTag.story_id == story.id)
+        existing_tags_res = await session.execute(existing_tags_stmt)
+        existing_tags = set(existing_tags_res.scalars().all())
+
+        for rep, grouped_mentions in list(grouped_entities.items())[:5]:
+            etype = grouped_mentions[0]["type"]
+            canonical_entity_id = None
+            canonical_ent = None
+
+            # Check if this group already exists in the story
+            if rep not in existing_entity_values:
+                try:
+                    canonical_ent = await entity_linker.link_entity(
+                        name=rep,
+                        entity_type=etype,
+                        context=full_text_corpus,
+                        session=session,
+                    )
+                    canonical_entity_id = canonical_ent.id
+                except Exception as e:
+                    logger.error("Incremental entity link failed for %s: %s", rep, e)
+
+                for mention in grouped_mentions:
+                    if mention["value"] not in existing_entity_values:
+                        story_ent = StoryEntity(
+                            id=uuid.uuid4(),
+                            story_id=story.id,
+                            canonical_entity_id=canonical_entity_id,
+                            entity_type=mention["type"],
+                            entity_value=mention["value"],
+                        )
+                        story_ent.canonical_entity = canonical_ent
+                        session.add(story_ent)
+
+                tag = rep.lower().strip()
+                if tag and len(tag) < 30 and tag not in existing_tags and len(existing_tags) < 5:
+                    session.add(StoryTag(id=uuid.uuid4(), story_id=story.id, tag_name=tag))
+                    existing_tags.add(tag)
+
+        # 4. Incremental Contradictions
+        try:
+            await contradiction_service.detect_and_save_contradictions_incremental(
+                story.id, new_article, existing_articles, session
+            )
+        except Exception as e:
+            logger.error("Incremental contradiction detection failed for story %s: %s", story.id, e)
+
+        # 5. Incremental Source Comparison
+        try:
+            await source_comparison_service.compare_sources_and_save(story.id, session)
+        except Exception as e:
+            logger.error("Incremental source comparison failed for story %s: %s", story.id, e)
+
+        # 6. Update Knowledge Graph
+        try:
+            # Re-fetch all articles including the new one
+            all_articles = existing_articles + [new_article]
+
+            # Fetch all timeline events for this story
+            tl_stmt = select(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
+            tl_res = await session.execute(tl_stmt)
+            saved_timeline_objects = list(tl_res.scalars().all())
+
+            # Fetch all entities for this story
+            ent_stmt = select(StoryEntity).where(StoryEntity.story_id == story.id)
+            ent_res = await session.execute(ent_stmt)
+            saved_story_entities = list(ent_res.scalars().all())
+
+            # Fetch all article events
+            all_art_ids = [art.id for art in all_articles]
+            art_evt_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(all_art_ids))
+            art_evt_res = await session.execute(art_evt_stmt)
+            all_article_events = list(art_evt_res.scalars().all())
+
+            # Get unique sources list
+            sources_list = []
+            seen_sources = set()
+            for art in all_articles:
+                stmt = select(Source).where(Source.id == art.source_id)
+                res = await session.execute(stmt)
+                source = res.scalar_one_or_none()
+                if source and source.id not in seen_sources:
+                    seen_sources.add(source.id)
+                    sources_list.append(source)
+
+            kg = build_story_knowledge_graph(
+                articles=all_articles,
+                article_events=all_article_events,
+                story_entities=saved_story_entities,
+                sources=sources_list,
+            )
+            kg_dict = kg.to_dict()
+            story.knowledge_graph = kg_dict
+        except Exception as e:
+            logger.error("Incremental knowledge graph update failed for story %s: %s", story.id, e)
+            kg_dict = story.knowledge_graph or {}
+
+        # 7. Update Summaries and Category
+        try:
+            contras_stmt = select(StoryContradiction).where(StoryContradiction.story_id == story.id)
+            contras_res = await session.execute(contras_stmt)
+            saved_contras = list(contras_res.scalars().all())
+
+            contradictions_list = [
+                {
+                    "fact_type": c.fact_type,
+                    "description": c.description,
+                    "confidence": float(c.confidence),
+                    "source_attribution": c.source_attribution,
+                }
+                for c in saved_contras
+            ]
+
+            timeline_list = [
+                {
+                    "date": t.event_time_raw or (t.event_time.isoformat() if t.event_time else "Unknown"),
+                    "description": t.description,
+                }
+                for t in saved_timeline_objects
+            ]
+
+            diff_stmt = select(StoryDifference).where(StoryDifference.story_id == story.id)
+            diff_res = await session.execute(diff_stmt)
+            saved_differences = list(diff_res.scalars().all())
+
+            cov_stmt = select(StorySourceCoverage).where(StorySourceCoverage.story_id == story.id)
+            cov_res = await session.execute(cov_stmt)
+            saved_coverage = list(cov_res.scalars().all())
+
+            article_source_map = {}
+            for art in all_articles:
+                stmt = select(Source).where(Source.id == art.source_id)
+                res = await session.execute(stmt)
+                src = res.scalar_one_or_none()
+                article_source_map[art.id] = src.name if src else "Unknown Source"
+
+            source_comparisons_list = []
+            for diff in saved_differences:
+                cov = next((c for c in saved_coverage if c.source_id == diff.source_id), None)
+                focus = cov.focus_area if cov else "General coverage"
+                src_name = article_source_map.get(
+                    next((art.id for art in all_articles if art.source_id == diff.source_id), None),
+                    "Unknown Source",
+                )
+                source_comparisons_list.append(
+                    {
+                        "source_name": src_name,
+                        "focus_area": focus,
+                        "unique_information": diff.unique_information or "",
+                        "missing_information": diff.missing_information or "",
+                        "contradictions": diff.contradictions or "",
+                    }
+                )
+
+            summary_res = await ai_service.summarize_story_from_kg(
+                kg=kg_dict,
+                contradictions=contradictions_list,
+                timeline=timeline_list,
+                source_comparisons=source_comparisons_list,
+            )
+
+            story.headline = summary_res.headline
+            story.one_line_summary = summary_res.one_line_summary
+            story.short_summary = summary_res.short_summary
+            story.detailed_summary = summary_res.detailed_summary
+            story.key_facts = [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
+
+            cat_slug = summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
+            cat_id = await self.get_or_create_category(
+                cat_slug, cat_slug.replace("-", " ").title(), session
+            )
+            story.category_id = cat_id
+
+            # Index and invalidate caches
+            await self._index_and_invalidate(story, cat_slug, list(existing_tags))
+        except Exception as e:
+            logger.error("Incremental summary generation failed for story %s: %s", story.id, e)
+
     async def merge_article_into_existing_story(
         self, article: Article, story_id: uuid.UUID, session: AsyncSession
     ) -> bool:
@@ -604,7 +1032,7 @@ class ClusteringService:
                 story_id,
                 len(all_articles),
             )
-            await self.generate_story_content(story, all_articles, session)
+            await self.update_story_incrementally(story, article, [a for a in all_articles if a.id != article.id], session)
             await self.compute_trending_score(story, session)
 
         return True
@@ -1073,25 +1501,38 @@ class ClusteringService:
                         clusters[label] = []
                     clusters[label].append(valid_articles[idx])
 
+                # Batch fetch ArticleEvents and ArticleEntities for all valid articles to resolve N+1
+                valid_article_ids = [art.id for art in valid_articles]
+
+                # Fetch ArticleEvents
+                evts_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(valid_article_ids))
+                evts_res = await session.execute(evts_stmt)
+                art_evt_map = {}
+                for evt in evts_res.scalars().all():
+                    if evt.article_id not in art_evt_map:
+                        art_evt_map[evt.article_id] = evt
+
+                # Fetch ArticleEntities
+                ents_stmt = select(ArticleEntity.article_id, ArticleEntity.canonical_entity_id).where(
+                    ArticleEntity.article_id.in_(valid_article_ids),
+                    ArticleEntity.canonical_entity_id.isnot(None)
+                )
+                ents_res = await session.execute(ents_stmt)
+                art_ent_map = {}
+                for row in ents_res.all():
+                    art_id, ent_id = row[0], row[1]
+                    if art_id not in art_ent_map:
+                        art_ent_map[art_id] = set()
+                    art_ent_map[art_id].add(ent_id)
+
                 # Verify and split clusters using multi-signal similarity + entity overlap
                 clustering_audit: list[dict] = []
                 for label, art_list in clusters.items():
                     sub_clusters: list[list[Article]] = []
                     for art in art_list:
                         matched_sub = None
-                        event_stmt = (
-                            select(ArticleEvent).where(ArticleEvent.article_id == art.id).limit(1)
-                        )
-                        event_res = await session.execute(event_stmt)
-                        art_evt = event_res.scalar_one_or_none()
-
-                        # Get canonical entity IDs for this article
-                        art_ent_stmt = select(ArticleEntity.canonical_entity_id).where(
-                            ArticleEntity.article_id == art.id,
-                            ArticleEntity.canonical_entity_id.isnot(None),
-                        )
-                        art_ent_res = await session.execute(art_ent_stmt)
-                        art_entity_ids = set(row[0] for row in art_ent_res.all())
+                        art_evt = art_evt_map.get(art.id)
+                        art_entity_ids = art_ent_map.get(art.id, set())
 
                         if art_evt:
                             for sub in sub_clusters:
@@ -1099,13 +1540,7 @@ class ClusteringService:
                                 total_sim = 0.0
                                 total_entity_sim = 0.0
                                 for sub_art in sub:
-                                    stmt_sub = (
-                                        select(ArticleEvent)
-                                        .where(ArticleEvent.article_id == sub_art.id)
-                                        .limit(1)
-                                    )
-                                    res_sub = await session.execute(stmt_sub)
-                                    sub_evt = res_sub.scalar_one_or_none()
+                                    sub_evt = art_evt_map.get(sub_art.id)
                                     if sub_evt:
                                         total_sim += self._compute_event_similarity_direct(
                                             art_evt, sub_evt
@@ -1115,14 +1550,7 @@ class ClusteringService:
 
                                     # Entity overlap for this pair
                                     if art_entity_ids:
-                                        sub_ent_stmt = select(
-                                            ArticleEntity.canonical_entity_id
-                                        ).where(
-                                            ArticleEntity.article_id == sub_art.id,
-                                            ArticleEntity.canonical_entity_id.isnot(None),
-                                        )
-                                        sub_ent_res = await session.execute(sub_ent_stmt)
-                                        sub_entity_ids = set(row[0] for row in sub_ent_res.all())
+                                        sub_entity_ids = art_ent_map.get(sub_art.id, set())
                                         if sub_entity_ids or art_entity_ids:
                                             union = art_entity_ids | sub_entity_ids
                                             intersection = art_entity_ids & sub_entity_ids
@@ -1143,13 +1571,7 @@ class ClusteringService:
                                 if combined_sim >= 0.90:
                                     should_merge = True
                                 elif combined_sim >= 0.70:
-                                    stmt_sub_evt = (
-                                        select(ArticleEvent)
-                                        .where(ArticleEvent.article_id == sub[0].id)
-                                        .limit(1)
-                                    )
-                                    res_sub_evt = await session.execute(stmt_sub_evt)
-                                    sub_evt = res_sub_evt.scalar_one_or_none()
+                                    sub_evt = art_evt_map.get(sub[0].id)
                                     if sub_evt:
                                         should_merge = await self._verify_merge_with_agents(
                                             article_a=art,

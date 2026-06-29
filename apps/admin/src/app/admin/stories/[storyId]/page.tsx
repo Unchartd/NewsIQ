@@ -119,12 +119,13 @@ export default function StoryInspectorPage() {
 
       {/* Tab content */}
       {tab === "Overview" && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
             { label: "Article Count", value: story.articles?.length ?? story.article_count ?? "—", icon: Layers, color: "text-rose-450" },
             { label: "Cluster Confidence", value: story.cluster_confidence != null ? `${(story.cluster_confidence * 100).toFixed(1)}%` : "95.0%", icon: CheckCircle2, color: "text-emerald-400" },
             { label: "Entity Count", value: story.entities?.length ?? "—", icon: Users, color: "text-blue-405" },
             { label: "LLM Calls", value: story.llm_traces?.length ?? "—", icon: Zap, color: "text-amber-400" },
+            { label: "Total Cost", value: story.total_cost_usd != null ? `$${story.total_cost_usd.toFixed(4)}` : "—", icon: DollarSign, color: "text-amber-400" },
           ].map((card) => {
             const Icon = card.icon;
             return (
@@ -137,20 +138,20 @@ export default function StoryInspectorPage() {
           })}
 
           {story.short_summary && (
-            <div className="col-span-2 lg:col-span-4 glass rounded-xl p-5">
+            <div className="col-span-2 lg:col-span-5 glass rounded-xl p-5">
               <h3 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">AI Summary</h3>
               <p className="text-sm text-slate-350 leading-relaxed">{story.short_summary}</p>
             </div>
           )}
 
           {/* Quick Review & Moderation Panel */}
-          <div className="col-span-2 lg:col-span-4 glass rounded-xl p-5 space-y-4">
+          <div className="col-span-2 lg:col-span-5 glass rounded-xl p-5 space-y-4">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               Quick Review & Moderation
             </h3>
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">Current Status:</span>
+                <span className="text-xs text-slate-550">Current Status:</span>
                 <span className={`badge ${
                   story.story_status === "approved" ? "badge-success" :
                   story.story_status === "rejected" ? "badge-danger" :
@@ -193,7 +194,7 @@ export default function StoryInspectorPage() {
           </div>
 
           {story.contradictions?.length > 0 && (
-            <div className="col-span-2 lg:col-span-4 glass rounded-xl p-5 border border-amber-500/20">
+            <div className="col-span-2 lg:col-span-5 glass rounded-xl p-5 border border-amber-500/20">
               <h3 className="text-xs font-semibold text-amber-400 mb-3 flex items-center gap-2 uppercase tracking-wider">
                 <AlertTriangle className="w-3.5 h-3.5" />
                 Contradictions Detected ({story.contradictions.length})

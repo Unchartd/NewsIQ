@@ -12,12 +12,8 @@ from app.models.models import (
     Source,
     Story,
     StoryTimelineEvent,
-    StorySourceCoverage,
-    StoryDifference,
-    StoryContradiction,
-    StoryEntity,
 )
-from app.services.ai_service import ai_service, StorySummaryResponse
+from app.services.ai_service import StorySummaryResponse, ai_service
 from app.services.clustering_service import clustering_service
 from app.services.contradiction_service import contradiction_service
 from app.services.source_comparison_service import source_comparison_service

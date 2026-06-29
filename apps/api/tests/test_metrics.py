@@ -10,10 +10,10 @@ def test_metrics_endpoint(monkeypatch):
     monkeypatch.delenv("PROMETHEUS_MULTIPROC_DIR", raising=False)
     client = TestClient(app)
     response = client.get("/metrics")
-    
+
     assert response.status_code == 200
     assert "text/plain" in response.headers["content-type"]
-    
+
     # Check that our custom metrics are declared in the registry output
     content = response.text
     assert "# HELP newsiq_latency_seconds" in content

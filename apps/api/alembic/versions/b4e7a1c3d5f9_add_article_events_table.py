@@ -4,10 +4,10 @@ Revision ID: b4e7a1c3d5f9
 Revises: a8f3c2e1d9b7
 Create Date: 2026-06-20 14:00:00.000000
 """
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "b4e7a1c3d5f9"

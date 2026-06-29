@@ -22,7 +22,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.core.config import settings
 from app.models.models import (
     Article,
     ArticleEvent,
@@ -72,55 +71,94 @@ class SourceComparisonService:
         contradictions_summary: str,
         context: str,
     ) -> SourceComparisonResolution:
-        """Call LLM to generate a clean, cohesive source comparison analysis."""
-        prompt = (
-            f"You are a professional news intelligence analyst.\n"
-            f"Analyze the coverage of the publisher '{src_name}' for a story.\n\n"
-            f"Here are the differences and coverages detected by our heuristic engines:\n"
-            f"1. Unique facts reported only by {src_name}: {unique_summary or 'None'}\n"
-            f"2. Facts reported by others but omitted by {src_name}: {missing_summary or 'None'}\n"
-            f"3. Factual contradictions involving {src_name}: {contradictions_summary or 'None'}\n\n"
-            f"Context from the story's articles:\n{context[:3000]}\n\n"
-            f"Based on the heuristics and the articles' context, synthesize a clean analysis.\n"
-            f"For 'focus_area', write a concise, professional sentence (max 100 chars, e.g. 'Detailed legal proceedings and arrest details.') summarizing their coverage angle.\n"
-            f"For 'unique_information', 'missing_information', and 'contradictions', provide a concise, readable description. If none, return empty string.\n\n"
-            f"Respond in JSON matching this schema:\n"
-            f'{{"focus_area": "...", "unique_information": "...", "missing_information": "...", "contradictions": "..."}}'
+        """Call LLM to generate a clean, cohesive source comparison analysis.
+
+        Pipeline: cache check → LLM call → cache store.
+        """
+        from app.services.pipeline_cache import pipeline_cache
+        from app.services.prompt_registry import prompt_registry
+
+        # ── Cache check ───────────────────────────────────────────────────────
+        prompt_tmpl = prompt_registry.get("source_comparison")
+        prompt_version = prompt_tmpl.version
+        model = prompt_tmpl.model
+
+        content_hash = pipeline_cache.composite_hash(
+            src_name, unique_summary or "", missing_summary or "",
+            contradictions_summary or "", context[:1000],
         )
 
-        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        cached = await pipeline_cache.get(
+            stage="source_comparison",
+            model=model,
+            prompt_version=prompt_version,
+            content_hash=content_hash,
+            temperature=0.1,
+        )
+        if cached is not None:
+            try:
+                return SourceComparisonResolution(**cached)
+            except Exception as e:
+                logger.warning("Failed to deserialize cached source comparison: %s", e)
+
+        # ── LLM call (cache miss) ─────────────────────────────────────────────
+        result: SourceComparisonResolution | None = None
 
         from app.llm_gateway.request_manager import llm_gateway
 
         try:
+            messages = prompt_tmpl.messages(
+                src_name=src_name,
+                unique_summary=unique_summary or "None",
+                missing_summary=missing_summary or "None",
+                contradictions_summary=contradictions_summary or "None",
+                context=context[:3000],
+            )
+
             response = await llm_gateway.execute_request(
                 model=model,
                 stage="source_comparison",
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 response_format=SourceComparisonResolution,
                 temperature=0.1,
             )
 
             if response.parsed:
-                return response.parsed
+                result = response.parsed
+            else:
+                try:
+                    import json
 
-            try:
-                import json
-
-                data = json.loads(response.content)
-                return SourceComparisonResolution(**data)
-            except Exception:
-                pass
+                    data = json.loads(response.content)
+                    result = SourceComparisonResolution(**data)
+                except Exception:
+                    pass
         except Exception as exc:
             logger.warning("LLM Gateway source comparison failed for %s: %s", src_name, exc)
 
-        # Fallback to deterministic representation
-        return self._generate_deterministic_comparison(
-            src_name=src_name,
-            unique_summary=unique_summary,
-            missing_summary=missing_summary,
-            contradictions_summary=contradictions_summary,
-        )
+        # ── Deterministic fallback ───────────────────────────────────────────
+        if result is None:
+            result = self._generate_deterministic_comparison(
+                src_name=src_name,
+                unique_summary=unique_summary,
+                missing_summary=missing_summary,
+                contradictions_summary=contradictions_summary,
+            )
+
+        # ── Cache store ───────────────────────────────────────────────────────
+        try:
+            await pipeline_cache.set(
+                stage="source_comparison",
+                model=model,
+                prompt_version=prompt_version,
+                content_hash=content_hash,
+                response_data=result.model_dump(mode="json"),
+                temperature=0.1,
+            )
+        except Exception as e:
+            logger.warning("Failed to cache source comparison result: %s", e)
+
+        return result
 
     def _generate_deterministic_comparison(
         self,
@@ -139,18 +177,33 @@ class SourceComparisonService:
         )
 
     async def compare_sources_and_save(
-        self, story_id: Any, session: AsyncSession
+        self,
+        story_id: Any,
+        session: AsyncSession,
+        articles: list[Article] = None,
+        article_events: list[ArticleEvent] = None,
+        article_source_map: dict[uuid.UUID, str] = None,
+        sources_list: list[Source] = None,
+        precomputed_contradictions: list[StoryContradiction] = None,
     ) -> tuple[list[StorySourceCoverage], list[StoryDifference]]:
         """Compare sources in a story cluster, generate coverage/difference data, and save to DB."""
-        # 1. Fetch articles and sources in story
-        stmt = (
-            select(Article, Source)
-            .join(StoryArticle, StoryArticle.article_id == Article.id)
-            .join(Source, Source.id == Article.source_id)
-            .where(StoryArticle.story_id == story_id)
-        )
-        res = await session.execute(stmt)
-        rows = list(res.all())
+        # 1. Fetch articles and sources in story if not provided
+        if articles is None:
+            stmt = (
+                select(Article, Source)
+                .join(StoryArticle, StoryArticle.article_id == Article.id)
+                .join(Source, Source.id == Article.source_id)
+                .where(StoryArticle.story_id == story_id)
+            )
+            res = await session.execute(stmt)
+            rows = list(res.all())
+        else:
+            # Build rows mapping Article to Source
+            rows = []
+            for art in articles:
+                src = next((s for s in (sources_list or []) if s.id == art.source_id), None)
+                if src:
+                    rows.append((art, src))
 
         # Delete existing coverages and differences for this story to avoid duplication or stale data
         from sqlalchemy import delete
@@ -161,19 +214,26 @@ class SourceComparisonService:
         await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
 
         if not rows:
-            await session.commit()
+            if articles is None:
+                await session.commit()
+            else:
+                await session.flush()
             return [], []
 
         unique_sources = {src.id for _, src in rows}
         if len(unique_sources) < 2:
-            await session.commit()
+            if articles is None:
+                await session.commit()
+            else:
+                await session.flush()
             return [], []
 
         # 2. Fetch article events
-        article_ids = [art.id for art, _ in rows]
-        evt_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
-        evt_res = await session.execute(evt_stmt)
-        article_events = list(evt_res.scalars().all())
+        if article_events is None:
+            article_ids = [art.id for art, _ in rows]
+            evt_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
+            evt_res = await session.execute(evt_stmt)
+            article_events = list(evt_res.scalars().all())
 
         # 3. Group events by source ID
         events_by_source: dict[uuid.UUID, list[ArticleEvent]] = {}
@@ -190,15 +250,20 @@ class SourceComparisonService:
                     break
 
         # 4. Fetch contradictions for this story
-        contra_stmt = select(StoryContradiction).where(StoryContradiction.story_id == story_id)
-        contra_res = await session.execute(contra_stmt)
-        story_contradictions = list(contra_res.scalars().all())
+        if precomputed_contradictions is not None:
+            story_contradictions = precomputed_contradictions
+        else:
+            contra_stmt = select(StoryContradiction).where(StoryContradiction.story_id == story_id)
+            contra_res = await session.execute(contra_stmt)
+            story_contradictions = list(contra_res.scalars().all())
 
         # 5. Build context corpus for the LLM
         context_parts = []
+        local_source_map = article_source_map or {}
         for art, src in rows:
+            src_name = local_source_map.get(art.id, src.name)
             context_parts.append(
-                f"Source: {src.name}\nTitle: {art.title}\nContent: {art.description or ''}\n"
+                f"Source: {src_name}\nTitle: {art.title}\nContent: {art.description or ''}\n"
             )
         full_context = "\n".join(context_parts)
 
@@ -346,7 +411,10 @@ class SourceComparisonService:
             saved_differences.append(diff)
 
         if saved_coverage or saved_differences:
-            await session.commit()
+            if articles is None:
+                await session.commit()
+            else:
+                await session.flush()
 
         return saved_coverage, saved_differences
 

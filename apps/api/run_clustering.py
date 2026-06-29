@@ -1,4 +1,5 @@
 import logging
+
 from app.workers.tasks import cluster_news_task
 
 logging.basicConfig(level=logging.INFO)

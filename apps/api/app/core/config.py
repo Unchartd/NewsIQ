@@ -104,6 +104,20 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "gemini-embedding-2"
     SUMMARIZATION_MODEL: str = "gemini-2.5-flash"
 
+    # ── Pipeline Optimization ─────────────────────────────────────────────────
+    PIPELINE_VERSION: str = "1.0.0"
+    PIPELINE_CACHE_ENABLED: bool = True
+    ENTITY_LINKING_MODE: str = "hybrid"  # hybrid | deterministic | llm
+    INCREMENTAL_STORY_UPDATES: bool = True
+    CONTEXT_EXTRACTOR_ENABLED: bool = True
+    EMBEDDING_CACHE_ENABLED: bool = True
+    MODEL_ROUTING_TABLE: dict[str, dict[str, str]] = {}
+
+    # ── Cost Budget ───────────────────────────────────────────────────────────
+    STORY_COST_BUDGET_DEFAULT: float = 0.005
+    STORY_COST_BUDGET_HIGH_STAKES: float = 0.015
+    STORY_COST_BUDGET_BREAKING: float = 0.020
+
     # ── News APIs ─────────────────────────────────────────────────────────────
     NEWSAPI_KEY: str = ""
     GNEWS_API_KEY: str = ""

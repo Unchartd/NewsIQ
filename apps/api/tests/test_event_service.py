@@ -1,15 +1,15 @@
 """Unit tests for the event service and event taxonomy."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
-from app.services.event_service import event_service, ExtractedEvent, ArticleEventResponse
+import pytest
+
+from app.llm_gateway.base_provider import GatewayResponse
+from app.services.event_service import ArticleEventResponse, ExtractedEvent, event_service
 from app.services.event_taxonomy import (
     canonicalize_event_type,
     get_parent_type,
-    get_all_canonical_types,
 )
-from app.llm_gateway.base_provider import GatewayResponse
 
 
 def test_event_taxonomy():

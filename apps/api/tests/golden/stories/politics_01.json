@@ -1,0 +1,30 @@
+{
+  "name": "politics_01",
+  "category": "politics",
+  "articles": [
+    {
+      "title": "Prime Minister Announces New Tax Reform Bill",
+      "description": "The Prime Minister has proposed a sweeping tax reform bill to reduce corporate tax rate to 15%.",
+      "content": "In a press conference today at Downing Street, the Prime Minister announced the new corporate tax reform package. The bill aims to slash corporate taxes from 25% down to 15% starting next fiscal year. Critics claim this will benefit large companies at the expense of public services.",
+      "published_at": "2026-06-25T08:00:00Z",
+      "source_name": "BBC News"
+    },
+    {
+      "title": "Downing Street Proposes Lowering Corporate Taxes to 15 Percent",
+      "description": "A new bill announced by the Prime Minister proposes a 15% corporate tax rate.",
+      "content": "A sweeping reform package announced today proposes a lower corporate tax rate of 15%. According to officials, the reduction is intended to attract foreign investment. The opposition party has vowed to fight the bill in parliament.",
+      "published_at": "2026-06-25T08:15:00Z",
+      "source_name": "Reuters"
+    }
+  ],
+  "expected": {
+    "category": "politics",
+    "headline_keywords": ["tax", "reform", "corporate"],
+    "key_facts_keywords": ["15%"],
+    "entities": [
+      {"value": "Downing Street", "type": "LOCATION"},
+      {"value": "Prime Minister", "type": "PERSON"}
+    ],
+    "contradiction": false
+  }
+}

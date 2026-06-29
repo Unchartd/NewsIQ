@@ -1,13 +1,13 @@
 """Unit tests for the entity timeline endpoint."""
 
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException
 
 from app.api.v1.stories import get_entity_timeline
-from app.models.models import CanonicalEntity, Story, StoryMetric
+from app.models.models import CanonicalEntity, Story
 
 
 @pytest.mark.asyncio

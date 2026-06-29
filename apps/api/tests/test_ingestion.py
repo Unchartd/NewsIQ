@@ -150,10 +150,10 @@ async def test_ingest_rss_with_crawler_success(mock_db_session):
     # Patch both the HTTP client get and crawler_service.crawl_article
     with patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)), \
          patch("app.services.crawler_service.crawler_service.crawl_article", return_value=crawled_mock):
-        
+
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 1
-        
+
         # Verify that article was added to session
         added_objs = [call[0][0] for call in mock_db_session.add.call_args_list]
         assert len(added_objs) == 1
@@ -205,10 +205,10 @@ async def test_ingest_rss_with_crawler_failure_fallback(mock_db_session):
     # Patch both the HTTP client get and crawler_service.crawl_article (returning None)
     with patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)), \
          patch("app.services.crawler_service.crawler_service.crawl_article", return_value=None):
-        
+
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 1
-        
+
         # Verify that article was added to session and has feed summary content
         added_objs = [call[0][0] for call in mock_db_session.add.call_args_list]
         assert len(added_objs) == 1

@@ -11,14 +11,15 @@ from app.models.models import (
     ArticleEvent,
     Source,
     Story,
-    StoryTimelineEvent,
-    StorySourceCoverage,
-    StoryDifference,
     StoryContradiction,
+    StoryTimelineEvent,
 )
-from app.services.contradiction_service import contradiction_service, ContradictionResolution
-from app.services.source_comparison_service import source_comparison_service, SourceComparisonResolution
 from app.services.clustering_service import clustering_service
+from app.services.contradiction_service import ContradictionResolution, contradiction_service
+from app.services.source_comparison_service import (
+    SourceComparisonResolution,
+    source_comparison_service,
+)
 
 
 @pytest.mark.asyncio
@@ -80,7 +81,7 @@ async def test_contradiction_heuristics_candidate_detection(mock_db_session):
 
     with patch.object(
         contradiction_service, "_validate_with_llm", AsyncMock(return_value=mock_resolution)
-    ) as mock_llm:
+    ):
         contradictions = await contradiction_service.detect_and_save_contradictions(
             story_id, mock_db_session
         )

@@ -1,6 +1,5 @@
 """Unit tests for pipeline tracing and Langfuse integration."""
 
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,7 +19,7 @@ async def test_pipeline_run_context_propagation():
     """Verify PipelineRun sets and resets context variables and triggers Langfuse."""
     with patch("app.core.trace.langfuse_client") as mock_lf:
         run = PipelineRun(trigger="manual", pipeline_type="batch")
-        
+
         # Initially empty context
         ctx = get_trace_context()
         assert ctx["run_id"] == ""
@@ -56,7 +55,7 @@ async def test_stage_span_context_propagation():
     """Verify StageSpan sets context vars, appends to PipelineRun, and uses Langfuse."""
     with patch("app.core.trace.langfuse_client") as mock_lf:
         mock_lf.span.return_value = MagicMock()
-        
+
         run = PipelineRun(trigger="celery_beat", pipeline_type="batch")
         async with run:
             async with StageSpan(run, stage="embedding", story_id="story-123") as span:
@@ -96,13 +95,13 @@ async def test_track_llm_call_cost_and_logging():
     # Mock the DB persistence helper
     with patch("app.core.trace._persist_llm_call", AsyncMock()) as mock_persist, \
          patch("app.core.trace.langfuse_client") as mock_lf:
-        
+
         mock_lf_generation = MagicMock()
         mock_lf.generation.return_value = mock_lf_generation
 
         run = PipelineRun(trigger="manual", pipeline_type="batch")
         async with run:
-            async with StageSpan(run, stage="summary") as span:
+            async with StageSpan(run, stage="summary"):
                 async with track_llm_call(
                     provider="gemini",
                     model="gemini-2.5-flash",
@@ -113,7 +112,7 @@ async def test_track_llm_call_cost_and_logging():
                 ) as call:
                     assert isinstance(call, LLMCallData)
                     assert call.system_prompt == "You are a summarizer."
-                    
+
                     # Simulate API response filling tokens
                     call.response_text = "Here is the summary."
                     call.input_tokens = 100
@@ -135,7 +134,7 @@ async def test_track_llm_call_cost_and_logging():
         assert call.cost_usd == 0.000045
         assert call.total_tokens == 150
         assert call.status == "success"
-        
+
         # Verify db persistence was called
         mock_persist.assert_called_once_with(call)
 

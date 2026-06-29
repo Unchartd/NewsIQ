@@ -1,0 +1,30 @@
+{
+  "name": "disaster_01",
+  "category": "world",
+  "articles": [
+    {
+      "title": "Severe 7.2 Magnitude Earthquake Strikes Coast, 50 Dead",
+      "description": "An earthquake has struck the northern coast, with local officials reporting 50 casualties.",
+      "content": "A massive 7.2 magnitude earthquake rocked the northern coastal region early today. The local governor confirmed that 50 people have died and hundreds are injured. Rescue efforts are ongoing to find survivors in the rubble.",
+      "published_at": "2026-06-27T04:00:00Z",
+      "source_name": "BBC News"
+    },
+    {
+      "title": "Death Toll Rises to 120 in Coast Earthquake",
+      "description": "Reuters reports the death toll has reached 120 after the earthquake on the northern coast.",
+      "content": "The death toll from the coastal earthquake has climbed to 120, according to national emergency services. This contradicts earlier reports from the governor of 50 casualties. Infrastructure damage is widespread.",
+      "published_at": "2026-06-27T05:30:00Z",
+      "source_name": "Reuters"
+    }
+  ],
+  "expected": {
+    "category": "world",
+    "headline_keywords": ["earthquake", "coast"],
+    "key_facts_keywords": ["earthquake", "7.2"],
+    "entities": [
+      {"value": "BBC News", "type": "ORG"},
+      {"value": "Reuters", "type": "ORG"}
+    ],
+    "contradiction": true
+  }
+}

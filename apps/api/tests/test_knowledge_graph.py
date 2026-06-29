@@ -1,10 +1,10 @@
 """Unit tests for the StoryKnowledgeGraph builder."""
 
-import uuid
 import datetime
+import uuid
 
-from app.models.models import Article, ArticleEvent, StoryEntity, Source, CanonicalEntity
-from app.services.knowledge_graph import build_story_knowledge_graph, StoryKnowledgeGraph
+from app.models.models import Article, ArticleEvent, CanonicalEntity, Source, StoryEntity
+from app.services.knowledge_graph import build_story_knowledge_graph
 
 
 def test_build_story_knowledge_graph():
@@ -77,7 +77,7 @@ def test_build_story_knowledge_graph():
 
     # Verify node counts (1 source, 1 article, 1 event, 1 entity)
     assert len(nodes) == 4
-    
+
     # Verify nodes
     node_ids = {n["id"] for n in nodes}
     assert f"source_{source_id}" in node_ids

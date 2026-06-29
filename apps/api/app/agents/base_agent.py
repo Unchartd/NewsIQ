@@ -28,10 +28,40 @@ async def run_agent_with_observability(
     import time
 
     from app.agents.agent_metrics import newsiq_agent_runs_latency_seconds, newsiq_agent_runs_total
+    from app.services.cost_budget import cost_budget_manager
 
-    # Bind dynamic run context variables to the GatewayModel
+    # Bind dynamic run context variables and route model dynamically
+    from app.services.model_router import model_router
+
+    budget_exceeded = False
+    if story_id:
+        budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
+
+    routed_model_id = model_router.select(stage=stage, complexity="standard", budget_exceeded=budget_exceeded)
+
+    if routed_model_id == "skip":
+        class MockRunOutput:
+            def __init__(self, content):
+                self.content = content
+
+        if stage == "summary_reflection":
+            from app.agents.reflection_agent import ReflectionSchema
+            default_content = ReflectionSchema(
+                has_hallucinations=False,
+                invented_facts=[],
+                omitted_critical_facts=[],
+                contradicts_graph=False,
+                explanation="Reflection skipped due to cost budget limits."
+            )
+        else:
+            default_content = None
+
+        logger.info("Stage '%s' skipped via model routing.", stage)
+        return MockRunOutput(content=default_content)
+
+    agent.model = GatewayModel(id=routed_model_id, stage=stage)
+
     if isinstance(agent.model, GatewayModel):
-        agent.model.stage = stage
         agent.model.story_id = story_id
         agent.model.article_id = article_id
 

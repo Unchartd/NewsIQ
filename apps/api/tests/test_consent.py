@@ -1,16 +1,21 @@
 """Unit tests for Consent Management Platform (CMP) endpoints."""
 
 import uuid
-import pytest
-from httpx import AsyncClient
-from unittest.mock import AsyncMock, MagicMock
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
-from app.models.consent import ConsentPreference, ConsentAuditLog
+import pytest
+
+from app.api.v1.consent import (
+    detect_client_region,
+    get_preferences,
+    get_region_defaults,
+    save_preferences,
+    withdraw_consent,
+)
+from app.models.consent import ConsentAuditLog, ConsentPreference
 from app.models.models import User
-from app.api.v1.consent import detect_client_region, get_region_defaults, get_preferences, save_preferences, withdraw_consent
 from app.schemas.consent import ConsentPreferencesSaveRequest
-
 
 
 def test_detect_client_region():
@@ -158,7 +163,7 @@ async def test_get_preferences_merges_anonymous_if_logged_in(mock_db_session):
     # Second execute call (finding anonymous pref) returns pref
     mock_result_user = MagicMock()
     mock_result_user.scalar_one_or_none.return_value = None
-    
+
     mock_result_anon = MagicMock()
     mock_result_anon.scalar_one_or_none.return_value = pref
 
@@ -176,7 +181,7 @@ async def test_get_preferences_merges_anonymous_if_logged_in(mock_db_session):
     assert response.user_id == user.id
     assert response.anonymous_id == "anon-123"
     assert response.functional is True
-    
+
     # Check that audit log was inserted
     assert mock_db_session.add.call_count == 1
     # Verify call arguments

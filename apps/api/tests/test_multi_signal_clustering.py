@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.models import Article, ArticleEvent, Story, StoryArticle
+from app.models.models import Article, ArticleEvent, Story
 from app.services.clustering_service import clustering_service
 
 
@@ -174,12 +174,12 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
     mock_search_similar.return_value = [{"id": similar_article_id, "score": 0.85}]
 
     # 2. Case A: Event similarity is high (>= 0.80) -> Merge succeeds
-    with patch.object(clustering_service, "generate_story_content", AsyncMock()) as mock_gen_content, \
+    with patch.object(clustering_service, "update_story_incrementally", AsyncMock()) as mock_incr_update, \
          patch.object(clustering_service, "compute_trending_score", AsyncMock()) as mock_trend:
-        
+
         merged = await clustering_service.add_article_to_existing_story_if_similar(article_id, mock_db_session)
         assert merged is True
-        mock_gen_content.assert_called_once()
+        mock_incr_update.assert_called_once()
         mock_trend.assert_called_once()
 
     # In Case B, the event in the story is completely different (e.g. in Miami, different type/actors)
@@ -194,10 +194,10 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
     current_story_events = [evt_different]
 
     # 3. Case B: Event similarity is low (< 0.80) -> Merge rejected
-    with patch.object(clustering_service, "generate_story_content", AsyncMock()) as mock_gen_content:
+    with patch.object(clustering_service, "update_story_incrementally", AsyncMock()) as mock_incr_update:
         merged = await clustering_service.add_article_to_existing_story_if_similar(article_id, mock_db_session)
         assert merged is False
-        mock_gen_content.assert_not_called()
+        mock_incr_update.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -285,9 +285,9 @@ async def test_batch_clustering_validation_split(
             # Wait, run_batch_clustering creates a story for each sub-cluster:
             # "for art_list in verified_clusters: ... Creating story for cluster with len(art_list) articles."
             stories_created = await clustering_service.run_batch_clustering(mock_db_session)
-            
+
             # Should split into 2 separate stories (one for each article)
             assert stories_created == 2
-            
+
             # Story additions to session: Story, StoryMetric, StoryArticle for art1; then same for art2
             assert mock_db_session.add.call_count >= 6
