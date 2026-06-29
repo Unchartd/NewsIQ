@@ -1,7 +1,8 @@
 """Unit tests for the pipeline failures admin API endpoints."""
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -37,7 +38,7 @@ def test_list_failures_endpoint():
     )
 
     from app.core.database import get_db
-    
+
     mock_db = AsyncMock()
     mock_res = MagicMock()
     mock_scalars = MagicMock()
@@ -45,13 +46,13 @@ def test_list_failures_endpoint():
     mock_res.scalars.return_value = mock_scalars
     mock_res.scalar.return_value = 1
     mock_db.execute.return_value = mock_res
-    
+
     app.dependency_overrides[get_db] = lambda: mock_db
-    
+
     try:
         client = TestClient(app)
         response = client.get("/api/v1/admin/failures?resolved=false")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert "failures" in data
@@ -81,17 +82,18 @@ def test_get_failure_detail_endpoint():
     )
 
     from app.core.database import get_db
+
     mock_db = AsyncMock()
     mock_res = MagicMock()
     mock_res.scalar_one_or_none.return_value = mock_failure
     mock_db.execute.return_value = mock_res
-    
+
     app.dependency_overrides[get_db] = lambda: mock_db
-    
+
     try:
         client = TestClient(app)
         response = client.get(f"/api/v1/admin/failures/{failure_id}")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["failureId"] == str(failure_id)
@@ -118,20 +120,21 @@ def test_resolve_failure_endpoint():
     )
 
     from app.core.database import get_db
+
     mock_db = AsyncMock()
     mock_res = MagicMock()
     mock_res.scalar_one_or_none.return_value = mock_failure
     mock_db.execute.return_value = mock_res
-    
+
     app.dependency_overrides[get_db] = lambda: mock_db
-    
+
     try:
         client = TestClient(app)
         response = client.post(
             f"/api/v1/admin/failures/{failure_id}/resolve",
             json={"resolution_notes": "fixed"},
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["resolved"] is True
@@ -144,8 +147,9 @@ def test_resolve_failure_endpoint():
 def test_failure_analytics_endpoint():
     """Verify that GET /admin/failure-analytics returns Sentry-like charting data."""
     from app.core.database import get_db
+
     mock_db = AsyncMock()
-    
+
     # Sequential queries in the endpoint:
     # 1. select total failures count
     # 2. select resolved failures count
@@ -157,28 +161,28 @@ def test_failure_analytics_endpoint():
     # 8. select provider health (group by provider)
     # 9. select failures daily trend (group by day)
     # 10. select successes daily trend (group by day)
-    
+
     mock_res_total = MagicMock()
     mock_res_total.scalar.return_value = 10
-    
+
     mock_res_resolved = MagicMock()
     mock_res_resolved.scalar.return_value = 3
-    
+
     mock_res_stages = MagicMock()
     mock_res_stages.scalars.return_value = MagicMock(all=lambda: [("event_extraction", 5)])
-    
+
     mock_res_providers = MagicMock()
     mock_res_providers.scalars.return_value = MagicMock(all=lambda: [("google", 4)])
-    
+
     mock_res_quota = MagicMock()
     mock_res_quota.scalar.return_value = 1
-    
+
     mock_res_rate = MagicMock()
     mock_res_rate.scalar.return_value = 2
-    
+
     mock_res_avg = MagicMock()
     mock_res_avg.scalar.return_value = 1.5
-    
+
     # For health, we iterate over it or call scalars().all()
     # In code:
     # res_health = await db.execute(stmt_health)
@@ -186,16 +190,16 @@ def test_failure_analytics_endpoint():
     # So res_health itself must be iterable!
     mock_res_health = MagicMock()
     mock_res_health.__iter__.return_value = iter([("google", 10, 2)])
-    
+
     # Trends:
     # res_fail_trend = await db.execute(stmt_fail_trend)
     # failures_by_day = {r[0]... for r in res_fail_trend}
     mock_res_fail_trend = MagicMock()
     mock_res_fail_trend.__iter__.return_value = iter([])
-    
+
     mock_res_succ_trend = MagicMock()
     mock_res_succ_trend.__iter__.return_value = iter([])
-    
+
     mock_db.execute.side_effect = [
         mock_res_total,
         mock_res_resolved,
@@ -208,13 +212,13 @@ def test_failure_analytics_endpoint():
         mock_res_fail_trend,
         mock_res_succ_trend,
     ]
-    
+
     app.dependency_overrides[get_db] = lambda: mock_db
-    
+
     try:
         client = TestClient(app)
         response = client.get("/api/v1/admin/failure-analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["totalFailures"] == 10

@@ -563,6 +563,7 @@ services:
     profiles: [monitor]
     volumes:
       - ./apps/api/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./apps/api/alert.rules:/etc/prometheus/alert.rules
     ports:
       - "9090:9090"
 

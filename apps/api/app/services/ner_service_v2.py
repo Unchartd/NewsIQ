@@ -20,8 +20,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.core.config import settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -515,7 +513,22 @@ class NERServiceV2:
             return []
 
         prompt = self._build_ner_prompt(text)
-        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        from app.core.trace import story_id_ctx
+        from app.services.cost_budget import cost_budget_manager
+        from app.services.model_router import model_router
+
+        story_id = story_id_ctx.get("")
+        budget_exceeded = False
+        if story_id:
+            budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
+
+        complexity = "standard"
+        if len(text) > 10000:
+            complexity = "complex"
+
+        model = model_router.select(
+            stage="entity_extraction", complexity=complexity, budget_exceeded=budget_exceeded
+        )
 
         from app.llm_gateway.request_manager import llm_gateway
 

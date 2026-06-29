@@ -1,14 +1,14 @@
 """Unit tests for the EntityLinker and coreference heuristics."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-from app.models.models import CanonicalEntity
+import pytest
+
 from app.services.entity_linker import (
-    entity_linker,
-    are_coreferent_persons,
-    are_coreferent_orgs,
     EntityResolution,
+    are_coreferent_orgs,
+    are_coreferent_persons,
+    entity_linker,
 )
 
 
@@ -115,3 +115,132 @@ async def test_link_entity_new(
 
     # Verify cache write
     mock_cache_set.assert_called_once()
+
+
+def test_ambiguity_checking():
+    """Verify ambiguity detection on names."""
+    assert entity_linker._is_name_ambiguous("Washington") is True
+    assert entity_linker._is_name_ambiguous("apple") is True
+    assert entity_linker._is_name_ambiguous("Jordan") is True
+    assert entity_linker._is_name_ambiguous("Donald Trump") is False
+    assert entity_linker._is_name_ambiguous("Supreme Court of India") is False
+
+
+def test_confidence_scoring():
+    """Verify confidence score calculations based on Wikidata results."""
+    # High confidence: Unambiguous name + keyword match
+    results_high = [{"id": "Q90", "label": "Paris", "description": "Capital city of France"}]
+    conf_high = entity_linker._assess_confidence("Paris", "CITY", results_high)
+    assert conf_high >= 0.8
+
+    # Low confidence: Ambiguous name + multiple competing results
+    results_low = [
+        {"id": "Q312", "label": "Apple", "description": "American technology company"},
+        {"id": "Q89", "label": "Apple", "description": "Edible fruit produced by an apple tree"},
+    ]
+    conf_low = entity_linker._assess_confidence("Apple", "COMPANY", results_low)
+    assert conf_low < 0.8
+
+
+@pytest.mark.asyncio
+@patch("app.services.entity_linker.cache_service.get")
+@patch("app.services.entity_linker.cache_service.set")
+@patch("app.services.entity_linker.entity_linker._disambiguate_with_llm")
+@patch("app.services.entity_linker.entity_linker._query_wikidata_multi")
+@patch("app.services.entity_linker.entity_linker._query_wikidata")
+async def test_link_entity_hybrid_high_conf(
+    mock_query_wiki,
+    mock_query_wiki_multi,
+    mock_llm,
+    mock_cache_set,
+    mock_cache_get,
+    mock_db_session,
+):
+    """Verify that a high-confidence entity skips LLM disambiguation in hybrid mode."""
+    # Setup mocks
+    mock_cache_get.return_value = None  # Cache miss
+    # Mock Wikidata returning a single, high confidence result
+    mock_query_wiki_multi.return_value = [
+        {"id": "Q142", "label": "France", "description": "Country in Western Europe"}
+    ]
+    mock_query_wiki.return_value = {
+        "wikidata_id": "Q142",
+        "description": "Country in Western Europe",
+        "label": "France",
+    }
+
+    # Mock DB execute returning no existing record
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalar_one_or_none.return_value = None
+    mock_db_session.execute.return_value = mock_execute_result
+
+    # Call linker with default "hybrid" mode
+    with patch("app.services.entity_linker.settings") as mock_settings:
+        mock_settings.ENTITY_LINKING_MODE = "hybrid"
+
+        res = await entity_linker.link_entity(
+            name="France",
+            entity_type="COUNTRY",
+            context="France is in Europe.",
+            session=mock_db_session,
+        )
+
+    # Verify LLM was NOT called
+    mock_llm.assert_not_called()
+    assert res.canonical_name == "France"
+    assert res.wikidata_id == "Q142"
+
+
+@pytest.mark.asyncio
+@patch("app.services.entity_linker.cache_service.get")
+@patch("app.services.entity_linker.cache_service.set")
+@patch("app.services.entity_linker.entity_linker._disambiguate_with_llm")
+@patch("app.services.entity_linker.entity_linker._query_wikidata_multi")
+@patch("app.services.entity_linker.entity_linker._query_wikidata")
+async def test_link_entity_hybrid_low_conf(
+    mock_query_wiki,
+    mock_query_wiki_multi,
+    mock_llm,
+    mock_cache_set,
+    mock_cache_get,
+    mock_db_session,
+):
+    """Verify that a low-confidence entity falls back to LLM disambiguation in hybrid mode."""
+    # Setup mocks
+    mock_cache_get.return_value = None  # Cache miss
+    # Mock Wikidata returning ambiguous results (forces confidence below 0.8)
+    mock_query_wiki_multi.return_value = [
+        {"id": "Q312", "label": "Apple", "description": "American technology company"},
+        {"id": "Q89", "label": "Apple", "description": "Edible fruit"},
+    ]
+    mock_llm.return_value = EntityResolution(
+        canonical_name="Apple Inc.",
+        wikidata_search_query="Apple Inc. tech company",
+        description="American multinational technology company",
+    )
+    mock_query_wiki.return_value = {
+        "wikidata_id": "Q312",
+        "description": "American technology company",
+        "label": "Apple Inc.",
+    }
+
+    # Mock DB execute returning no existing record
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalar_one_or_none.return_value = None
+    mock_db_session.execute.return_value = mock_execute_result
+
+    # Call linker with default "hybrid" mode
+    with patch("app.services.entity_linker.settings") as mock_settings:
+        mock_settings.ENTITY_LINKING_MODE = "hybrid"
+
+        res = await entity_linker.link_entity(
+            name="Apple",
+            entity_type="COMPANY",
+            context="Apple announced a new product.",
+            session=mock_db_session,
+        )
+
+    # Verify LLM WAS called due to low confidence
+    mock_llm.assert_called_once()
+    assert res.canonical_name == "Apple Inc."
+    assert res.wikidata_id == "Q312"

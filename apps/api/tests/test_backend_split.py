@@ -1,8 +1,10 @@
 """Unit tests for the Processing and User backend route isolation."""
 
 import importlib
+
 import pytest
 from fastapi.testclient import TestClient
+
 from app.core.config import settings
 
 
@@ -13,6 +15,7 @@ def reset_backend_role(monkeypatch):
     monkeypatch.setattr(settings, "BACKEND_SERVICE_ROLE", "monolith")
     import app.api.v1.router
     import app.main
+
     importlib.reload(app.api.v1.router)
     importlib.reload(app.main)
 
@@ -22,17 +25,21 @@ def test_user_backend_routing(monkeypatch):
     monkeypatch.setattr(settings, "BACKEND_SERVICE_ROLE", "user")
     import app.api.v1.router
     import app.main
+
     importlib.reload(app.api.v1.router)
     importlib.reload(app.main)
-    
+
     client = TestClient(app.main.app)
-    
+
     # System ping is globally registered and should succeed
     assert client.get("/api/v1/ping").status_code == 200
-    
+
     # User endpoint exists (auth or stories)
-    assert client.post("/api/v1/auth/login").status_code in (400, 422)  # Bad request/missing body but route is found
-    
+    assert client.post("/api/v1/auth/login").status_code in (
+        400,
+        422,
+    )  # Bad request/missing body but route is found
+
     # Admin endpoint must be absent (404)
     assert client.get("/api/v1/admin/stats").status_code == 404
 
@@ -42,19 +49,20 @@ def test_processing_backend_routing(monkeypatch):
     monkeypatch.setattr(settings, "BACKEND_SERVICE_ROLE", "processing")
     import app.api.v1.router
     import app.main
+
     importlib.reload(app.api.v1.router)
     importlib.reload(app.main)
-    
+
     client = TestClient(app.main.app)
-    
+
     # System ping should succeed
     assert client.get("/api/v1/ping").status_code == 200
-    
+
     # Auth endpoint exists on processing-api to support admin login
     assert client.post("/api/v1/auth/login").status_code in (400, 422)
-    
+
     # User-only route (like consent CMP) must be absent (404)
     assert client.get("/api/v1/consent").status_code == 404
-    
+
     # Admin endpoint exists (returns 401/403 since unauthenticated, but NOT 404)
     assert client.get("/api/v1/admin/stats").status_code in (401, 403, 307)

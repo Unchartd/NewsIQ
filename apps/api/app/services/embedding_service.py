@@ -103,7 +103,13 @@ class EmbeddingService:
 
         text-embedding-004 supports ~2048 tokens (≈ 8000 chars).
         """
-        return text.replace("\n", " ").replace("\r", " ").strip()[:8000]
+        if not text:
+            return ""
+        from app.services.context_extractor import context_extractor
+
+        # Extract optimized paragraph-aware context up to 8000 chars first
+        optimized = context_extractor.extract(text, max_chars=8000)
+        return optimized.replace("\n", " ").replace("\r", " ").strip()
 
     # ── Gemini embedding (new google.genai SDK) ────────────────────────────────
 
@@ -125,51 +131,47 @@ class EmbeddingService:
         def _call_sync() -> list[list[float]]:
             import time
 
-            results = []
-            for text in texts:
-                max_retries = 5
-                backoff = 2.0
-                raw_val = None
-                for attempt in range(max_retries):
-                    try:
-                        response = client.models.embed_content(
-                            model=model,
-                            contents=text,
-                            config={"task_type": "RETRIEVAL_DOCUMENT"},
-                        )
-                        raw_val = response.embeddings[0].values
-                        break
-                    except Exception as err:
-                        err_str = str(err).lower()
-                        is_rate_limit = (
-                            "429" in err_str
-                            or "quota" in err_str
-                            or "exhausted" in err_str
-                            or "resource_exhausted" in err_str
-                        )
-                        if is_rate_limit and attempt < max_retries - 1:
-                            logger.warning(
-                                "Gemini embedding hit rate limit. Retrying in %.1fs (attempt %d/%d). Error: %s",
-                                backoff,
-                                attempt + 1,
-                                max_retries,
-                                err,
-                            )
-                            time.sleep(backoff)
-                            backoff *= 2.0
-                        else:
-                            raise err
+            max_retries = 5
+            backoff = 2.0
+            for attempt in range(max_retries):
+                try:
+                    response = client.models.embed_content(
+                        model=model,
+                        contents=texts,  # type: ignore[arg-type]
+                        config={"task_type": "RETRIEVAL_DOCUMENT"},
+                    )
 
-                if raw_val is None:
-                    raise RuntimeError("Failed to retrieve embedding values after retries.")
-
-                # Truncate and normalize to EMBEDDING_DIM (768)
-                vec = np.array(raw_val[:EMBEDDING_DIM], dtype=np.float32)
-                norm = np.linalg.norm(vec)
-                if norm > 0:
-                    vec /= norm
-                results.append(vec.tolist())
-            return results
+                    results = []
+                    for emb in response.embeddings:
+                        raw_val = emb.values
+                        # Truncate and normalize to EMBEDDING_DIM (768)
+                        vec = np.array(raw_val[:EMBEDDING_DIM], dtype=np.float32)
+                        norm = np.linalg.norm(vec)
+                        if norm > 0:
+                            vec /= norm
+                        results.append(vec.tolist())
+                    return results
+                except Exception as err:
+                    err_str = str(err).lower()
+                    is_rate_limit = (
+                        "429" in err_str
+                        or "quota" in err_str
+                        or "exhausted" in err_str
+                        or "resource_exhausted" in err_str
+                    )
+                    if is_rate_limit and attempt < max_retries - 1:
+                        logger.warning(
+                            "Gemini embedding hit rate limit. Retrying in %.1fs (attempt %d/%d). Error: %s",
+                            backoff,
+                            attempt + 1,
+                            max_retries,
+                            err,
+                        )
+                        time.sleep(backoff)
+                        backoff *= 2.0
+                    else:
+                        raise err
+            raise RuntimeError("Failed to retrieve embedding values after retries.")
 
         # Use get_running_loop() — safe in both FastAPI and Celery worker contexts
         loop = asyncio.get_running_loop()
@@ -195,66 +197,159 @@ class EmbeddingService:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _cache_key(text: str) -> str:
+        """Construct a model-aware cache key for embeddings."""
+        text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        model = settings.EMBEDDING_MODEL or "gemini-embedding-001"
+        return f"newsiq:embedding:{model}:{text_hash}"
+
     async def get_embedding(self, text: str) -> list[float]:
         """Return a single 768-dim embedding vector for the given text.
 
-        Fallback chain: Gemini → OpenAI → Raise error.
+        Checks Redis cache first. Fallback chain: Gemini → OpenAI → Raise error.
         """
         if not text or not text.strip():
             return [0.0] * EMBEDDING_DIM
 
         clean = self._prepare_text(text)
+        cache_enabled = getattr(settings, "EMBEDDING_CACHE_ENABLED", True)
+
+        # ── Redis Cache Lookup ──
+        if cache_enabled:
+            try:
+                from app.services.cache_service import cache_service
+
+                key = self._cache_key(clean)
+                cached = await cache_service.get(key)
+                if cached:
+                    logger.debug("Embedding cache HIT for key: %s", key)
+                    return cached
+            except Exception as e:
+                logger.warning("Failed to lookup embedding in cache: %s", e)
+
+        vector: list[float] | None = None
 
         if self.gemini_enabled:
             try:
                 vectors = await self._embed_with_gemini([clean])
-                return vectors[0]
+                vector = vectors[0]
             except Exception as exc:
                 logger.error("Gemini embedding failed: %s — trying OpenAI fallback.", exc)
                 if not self.openai_enabled:
                     raise exc
 
-        if self.openai_enabled and self._openai_client:
+        if not vector and self.openai_enabled and self._openai_client:
             try:
                 vectors = await self._embed_with_openai([clean])
-                return vectors[0]
+                vector = vectors[0]
             except Exception as exc:
                 logger.error("OpenAI embedding failed: %s — raising error.", exc)
                 raise exc
 
-        raise RuntimeError(
-            "No embedding providers configured or enabled (Gemini and OpenAI are both disabled)."
-        )
+        if not vector:
+            raise RuntimeError(
+                "No embedding providers configured or enabled (Gemini and OpenAI are both disabled)."
+            )
+
+        # ── Redis Cache Store ──
+        if cache_enabled:
+            try:
+                from app.services.cache_service import cache_service
+
+                key = self._cache_key(clean)
+                await cache_service.set(key, vector, ttl=30 * 24 * 60 * 60)
+            except Exception as e:
+                logger.warning("Failed to save embedding to cache: %s", e)
+
+        return vector
 
     async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Return 768-dim embeddings for a batch of texts.
 
-        Gemini processes all texts individually (no native batch endpoint in
-        text-embedding-004). Falls back per-item on error.
+        Leverages Redis cache for both looking up cached entries and storing
+        newly generated embeddings. Only queries the provider API for cache misses.
         """
         if not texts:
             return []
 
         clean_texts = [self._prepare_text(t) if t else "" for t in texts]
 
-        if self.gemini_enabled:
-            try:
-                return await self._embed_with_gemini(clean_texts)
-            except Exception as exc:
-                logger.error("Gemini batch embedding failed: %s — trying OpenAI.", exc)
-                if not self.openai_enabled:
+        results: list[list[float] | None] = [None] * len(clean_texts)
+        miss_indices: list[int] = []
+        miss_texts: list[str] = []
+
+        cache_enabled = getattr(settings, "EMBEDDING_CACHE_ENABLED", True)
+
+        if cache_enabled:
+            from app.services.cache_service import cache_service
+
+            for idx, text in enumerate(clean_texts):
+                if not text:
+                    results[idx] = [0.0] * EMBEDDING_DIM
+                    continue
+                try:
+                    key = self._cache_key(text)
+                    cached = await cache_service.get(key)
+                    if cached:
+                        results[idx] = cached
+                    else:
+                        miss_indices.append(idx)
+                        miss_texts.append(text)
+                except Exception as e:
+                    logger.warning("Failed to check batch cache: %s", e)
+                    miss_indices.append(idx)
+                    miss_texts.append(text)
+        else:
+            for idx, text in enumerate(clean_texts):
+                if not text:
+                    results[idx] = [0.0] * EMBEDDING_DIM
+                else:
+                    miss_indices.append(idx)
+                    miss_texts.append(text)
+
+        # Fetch cache misses from provider APIs
+        if miss_texts:
+            logger.info(
+                "Embedding cache miss for %d of %d texts. Fetching from API.",
+                len(miss_texts),
+                len(texts),
+            )
+            fetched_vectors: list[list[float]] = []
+
+            if self.gemini_enabled:
+                try:
+                    fetched_vectors = await self._embed_with_gemini(miss_texts)
+                except Exception as exc:
+                    logger.error("Gemini batch embedding failed: %s — trying OpenAI.", exc)
+                    if not self.openai_enabled:
+                        raise exc
+
+            if not fetched_vectors and self.openai_enabled and self._openai_client:
+                try:
+                    fetched_vectors = await self._embed_with_openai(miss_texts)
+                except Exception as exc:
+                    logger.error("OpenAI batch embedding failed: %s — raising error.", exc)
                     raise exc
 
-        if self.openai_enabled and self._openai_client:
-            try:
-                return await self._embed_with_openai(clean_texts)
-            except Exception as exc:
-                logger.error("OpenAI batch embedding failed: %s — raising error.", exc)
-                raise exc
+            if not fetched_vectors:
+                raise RuntimeError(
+                    "No embedding providers configured or enabled, or all providers failed."
+                )
 
-        raise RuntimeError(
-            "No embedding providers configured or enabled (Gemini and OpenAI are both disabled)."
-        )
+            # Store results and cache
+            for idx, vec in zip(miss_indices, fetched_vectors):
+                results[idx] = vec
+                if cache_enabled:
+                    try:
+                        from app.services.cache_service import cache_service
+
+                        key = self._cache_key(clean_texts[idx])
+                        await cache_service.set(key, vec, ttl=30 * 24 * 60 * 60)
+                    except Exception as e:
+                        logger.warning("Failed to store embedding in cache: %s", e)
+
+        return [r for r in results if r is not None]
 
 
 embedding_service = EmbeddingService()

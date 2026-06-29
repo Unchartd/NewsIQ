@@ -1,10 +1,10 @@
 import hashlib
-import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from app.exceptions.auth import (
     AuthException,
     EmailAlreadyVerifiedException,
@@ -108,7 +108,7 @@ async def test_resend_verification_cooldown_rate_limit(mock_db_session, mock_red
     ):
         with pytest.raises(AuthException) as exc:
             await auth_service.request_email_verification("user@example.com")
-        
+
         assert "Please wait at least 60 seconds" in str(exc.value)
 
 
@@ -135,6 +135,8 @@ async def test_resend_verification_ip_rate_limit(mock_db_session, mock_redis):
         patch("app.services.auth_service.cache_service._redis", mock_redis),
     ):
         with pytest.raises(AuthException) as exc:
-            await auth_service.request_email_verification("user@example.com", ip_address="192.168.1.1")
-        
+            await auth_service.request_email_verification(
+                "user@example.com", ip_address="192.168.1.1"
+            )
+
         assert "Too many verification requests from this IP" in str(exc.value)

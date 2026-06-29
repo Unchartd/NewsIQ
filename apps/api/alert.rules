@@ -1,0 +1,38 @@
+groups:
+  - name: NewsIQPipelineAlerts
+    rules:
+      - alert: HighPipelineStageLatency
+        expr: histogram_quantile(0.95, sum(rate(newsiq_latency_seconds_bucket[5m])) by (le, stage)) > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pipeline stage {{ $labels.stage }} latency is high"
+          description: "The 95th percentile latency for stage {{ $labels.stage }} is {{ $value }}s, exceeding the 30s threshold."
+
+      - alert: HighLLMProviderFailureRate
+        expr: sum(rate(newsiq_provider_calls_total{status="error"}[5m])) / sum(rate(newsiq_provider_calls_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM provider API failure rate is high"
+          description: "Over 5% of calls to {{ $labels.provider }} / {{ $labels.model }} in stage {{ $labels.stage }} are failing."
+
+      - alert: QueueBacklogAccumulating
+        expr: newsiq_queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery queue backlog is accumulating"
+          description: "The Celery queue depth has been {{ $value }} (exceeding 100) for more than 5 minutes."
+
+      - alert: HighStoryBudgetSkips
+        expr: sum(rate(newsiq_story_stages_total{status="skipped"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High rate of story stages being skipped"
+          description: "Story stages are being skipped due to cost budget limits (current rate: {{ $value }}/s)."

@@ -46,7 +46,7 @@ async def test_run_batch_clustering(
 
     # Mock DB queries using a query-aware helper
     from app.services.embedding_service import EMBEDDING_DIM
-    
+
     async def mock_execute_side_effect(stmt):
         stmt_str = str(stmt).lower()
         res = MagicMock()
@@ -55,15 +55,24 @@ async def test_run_batch_clustering(
         res.scalar.return_value = None
         res.scalars.return_value.all.return_value = []
         if "article_events" in stmt_str:
-            evt = ArticleEvent(
+            evt1 = ArticleEvent(
+                article_id=article_id_1,
                 event_type_canonical="ATTACK",
                 actors=["Russia"],
                 targets=["Ukraine"],
                 location="Kyiv",
                 event_time=datetime.datetime(2026, 6, 20),
             )
-            res.scalar_one_or_none.return_value = evt
-            res.scalars.return_value.all.return_value = [evt]
+            evt2 = ArticleEvent(
+                article_id=article_id_2,
+                event_type_canonical="ATTACK",
+                actors=["Russia"],
+                targets=["Ukraine"],
+                location="Kyiv",
+                event_time=datetime.datetime(2026, 6, 20),
+            )
+            res.scalar_one_or_none.side_effect = [evt1, evt2, evt1, evt2]
+            res.scalars.return_value.all.return_value = [evt1, evt2]
         elif "articles" in stmt_str or "article " in stmt_str:
             res.scalars.return_value.all.return_value = [art1, art2]
             res.scalar_one_or_none.return_value = art1

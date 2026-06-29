@@ -95,7 +95,7 @@ class RequestManager:
 
         system_prompt, user_prompt = self._extract_prompts(messages)
 
-        errors_encountered = []
+        errors_encountered: list[str] = []
 
         # 2. Iterate through the fallback chain
         for entry in chain:
@@ -187,6 +187,22 @@ class RequestManager:
                     response.cost_usd = cost
                     trace_call.cost_usd = cost
 
+                    try:
+                        from app.core.trace import story_id_ctx
+
+                        story_id = story_id_ctx.get("")
+                        if story_id:
+                            import asyncio
+
+                            from app.services.cost_budget import cost_budget_manager
+
+                            if asyncio.get_event_loop().is_running():
+                                asyncio.create_task(
+                                    cost_budget_manager.add_story_cost(story_id, cost)
+                                )
+                    except Exception as cost_exc:
+                        logger.warning("Failed to record story cost in async execute: %s", cost_exc)
+
                 # 4. Report health check success
                 self.health_monitor.report_success(selected_key)
 
@@ -206,6 +222,18 @@ class RequestManager:
                 newsiq_llm_gateway_latency_seconds.labels(
                     provider=provider_name, model=model_name, stage=stage
                 ).observe(response.latency_ms / 1000.0)
+
+                if len(errors_encountered) > 0:
+                    try:
+                        from app.core.metrics import newsiq_llm_fallback_attempts
+
+                        newsiq_llm_fallback_attempts.labels(
+                            stage=stage,
+                            final_provider=provider_name,
+                            final_model=model_name,
+                        ).inc(len(errors_encountered))
+                    except Exception:
+                        pass
 
                 return response
 
@@ -284,7 +312,7 @@ class RequestManager:
         if provider_override and model_override:
             chain = [{"provider": provider_override, "model": model_override}]
 
-        errors_encountered = []
+        errors_encountered: list[str] = []
 
         for entry in chain:
             provider_name = entry["provider"]
@@ -341,6 +369,20 @@ class RequestManager:
                 )
                 response.cost_usd = cost
 
+                try:
+                    from app.core.trace import story_id_ctx
+
+                    story_id = story_id_ctx.get("")
+                    if story_id:
+                        import asyncio
+
+                        from app.services.cost_budget import cost_budget_manager
+
+                        if asyncio.get_event_loop().is_running():
+                            asyncio.create_task(cost_budget_manager.add_story_cost(story_id, cost))
+                except Exception as cost_exc:
+                    logger.warning("Failed to record story cost in sync execute: %s", cost_exc)
+
                 self.health_monitor.report_success(selected_key)
 
                 newsiq_llm_gateway_calls_total.labels(
@@ -349,6 +391,18 @@ class RequestManager:
                 newsiq_llm_gateway_cost_usd.labels(
                     provider=provider_name, model=model_name, stage=stage
                 ).inc(cost)
+
+                if len(errors_encountered) > 0:
+                    try:
+                        from app.core.metrics import newsiq_llm_fallback_attempts
+
+                        newsiq_llm_fallback_attempts.labels(
+                            stage=stage,
+                            final_provider=provider_name,
+                            final_model=model_name,
+                        ).inc(len(errors_encountered))
+                    except Exception:
+                        pass
 
                 return response
 

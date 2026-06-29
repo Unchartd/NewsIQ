@@ -23,7 +23,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.core.config import settings
 from app.services.event_taxonomy import canonicalize_event_type
 
 logger = logging.getLogger(__name__)
@@ -300,39 +299,93 @@ class EventService:
         title: str,
         content: str,
         published_at: str | None = None,
+        source_name: str = "",
     ) -> ArticleEventResponse:
         """Extract structured events from a news article.
 
+        Pipeline: cache check → LLM call → cache store.
         Fallback chain: Gemini → OpenAI → mock.
 
         Args:
             title: Article headline
             content: Full article text
             published_at: ISO 8601 publication timestamp (NOT used as event_time)
+            source_name: Publisher name (used in prompt context)
         """
         if not title and not content:
             raise ValueError(
                 "Cannot extract events from empty article (both title and content are missing)."
             )
 
-        prompt = self._build_extraction_prompt(title, content, published_at)
-        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        from app.services.context_extractor import context_extractor
+        from app.services.pipeline_cache import pipeline_cache
+        from app.services.prompt_registry import prompt_registry
+
+        # ── Prompt registry (system/user split for provider prefix caching) ───
+        prompt_tmpl = prompt_registry.get("event_extraction")
+        prompt_version = prompt_tmpl.version
+        model = prompt_tmpl.model
+
+        # Extract optimized paragraph-aware context
+        optimized_content = context_extractor.extract(content, max_chars=6000)
+
+        # Content hash for cache key — based on actual article content, not prompt
+        content_hash = pipeline_cache.content_hash(f"{title}::{optimized_content}")
+
+        # ── Cache check ───────────────────────────────────────────────────────
+        cached = await pipeline_cache.get(
+            stage="event_extraction",
+            model=model,
+            prompt_version=prompt_version,
+            content_hash=content_hash,
+            temperature=0.1,
+        )
+        if cached is not None:
+            try:
+                return self._normalize_response(cached)
+            except Exception as e:
+                logger.warning("Failed to deserialize cached event extraction: %s", e)
+
+        # ── LLM call (cache miss) ─────────────────────────────────────────────
+        # Use prompt registry for system/user split (maximizes provider prefix caching)
+        messages = prompt_tmpl.messages(
+            title=title,
+            source_name=source_name or "Unknown",
+            published_at=published_at or "unknown",
+            content=optimized_content,
+        )
 
         from app.llm_gateway.request_manager import llm_gateway
 
         response = await llm_gateway.execute_request(
             model=model,
             stage="event_extraction",
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             response_format=ArticleEventResponse,
             temperature=0.1,
         )
 
         if response.parsed:
-            return response.parsed
+            result = response.parsed
+        else:
+            data = json.loads(response.content)
+            result = self._normalize_response(data)
 
-        data = json.loads(response.content)
-        return self._normalize_response(data)
+        # ── Cache store ───────────────────────────────────────────────────────
+        try:
+            cache_data = result.model_dump(mode="json")
+            await pipeline_cache.set(
+                stage="event_extraction",
+                model=model,
+                prompt_version=prompt_version,
+                content_hash=content_hash,
+                response_data=cache_data,
+                temperature=0.1,
+            )
+        except Exception as e:
+            logger.warning("Failed to cache event extraction result: %s", e)
+
+        return result
 
     async def detect_event_time_conflict(
         self,

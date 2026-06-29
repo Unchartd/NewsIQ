@@ -27,6 +27,7 @@ def test_clean_html_none():
 def test_generate_mock_embedding():
     """Verify that deterministic mock embeddings generate vectors of correct length."""
     from app.services.embedding_service import EMBEDDING_DIM
+
     text1 = "Breaking news about AI developments."
     text2 = "Breaking news about AI developments."
     text3 = "Different news story headline."
@@ -135,6 +136,7 @@ async def test_ingest_rss_with_crawler_success(mock_db_session):
         def __init__(self, text, status_code=200):
             self.text = text
             self.status_code = status_code
+
         def raise_for_status(self):
             pass
 
@@ -144,16 +146,19 @@ async def test_ingest_rss_with_crawler_success(mock_db_session):
         "author": "John Doe",
         "image_url": "http://example.com/image.jpg",
         "title": "Crawled Article Title",
-        "extractor": "newspaper4k"
+        "extractor": "newspaper4k",
     }
 
     # Patch both the HTTP client get and crawler_service.crawl_article
-    with patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)), \
-         patch("app.services.crawler_service.crawler_service.crawl_article", return_value=crawled_mock):
-        
+    with (
+        patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
+        patch(
+            "app.services.crawler_service.crawler_service.crawl_article", return_value=crawled_mock
+        ),
+    ):
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 1
-        
+
         # Verify that article was added to session
         added_objs = [call[0][0] for call in mock_db_session.add.call_args_list]
         assert len(added_objs) == 1
@@ -199,16 +204,18 @@ async def test_ingest_rss_with_crawler_failure_fallback(mock_db_session):
         def __init__(self, text, status_code=200):
             self.text = text
             self.status_code = status_code
+
         def raise_for_status(self):
             pass
 
     # Patch both the HTTP client get and crawler_service.crawl_article (returning None)
-    with patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)), \
-         patch("app.services.crawler_service.crawler_service.crawl_article", return_value=None):
-        
+    with (
+        patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
+        patch("app.services.crawler_service.crawler_service.crawl_article", return_value=None),
+    ):
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 1
-        
+
         # Verify that article was added to session and has feed summary content
         added_objs = [call[0][0] for call in mock_db_session.add.call_args_list]
         assert len(added_objs) == 1

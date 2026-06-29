@@ -5,8 +5,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.core.config import settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -93,9 +91,72 @@ class AIService:
         timeline: list[dict[str, Any]],
         source_comparisons: list[dict[str, Any]],
     ) -> StorySummaryResponse:
-        """Summarize story from its knowledge graph and analysis inputs through the LLM Gateway."""
-        prompt = self._build_summary_prompt(kg, contradictions, timeline, source_comparisons)
-        model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+        """Summarize story from its knowledge graph and analysis inputs.
+
+        Pipeline: cache check → LLM call → cache store.
+        """
+        import json
+
+        from app.services.pipeline_cache import pipeline_cache
+        from app.services.prompt_registry import prompt_registry
+
+        # ── Cache check ───────────────────────────────────────────────────────
+        prompt_tmpl = prompt_registry.get("summary_generation")
+        prompt_version = prompt_tmpl.version
+
+        from app.core.trace import story_id_ctx
+        from app.services.cost_budget import cost_budget_manager
+        from app.services.model_router import model_router
+
+        story_id = story_id_ctx.get("")
+        budget_exceeded = False
+        if story_id:
+            budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
+
+        complexity = "standard"
+        if len(kg.get("nodes", [])) > 20 or len(source_comparisons) >= 3:
+            complexity = "complex"
+
+        model = model_router.select(
+            stage="summary_generation", complexity=complexity, budget_exceeded=budget_exceeded
+        )
+
+        kg_str = json.dumps(kg, indent=2, default=str)
+        contras_str = json.dumps(contradictions, indent=2, default=str)
+        timeline_str = json.dumps(timeline, indent=2, default=str)
+        source_comp_str = json.dumps(source_comparisons, indent=2, default=str)
+
+        content_hash = pipeline_cache.composite_hash(
+            kg_str, contras_str, timeline_str, source_comp_str
+        )
+
+        cached = await pipeline_cache.get(
+            stage="summary_generation",
+            model=model,
+            prompt_version=prompt_version,
+            content_hash=content_hash,
+            temperature=0.1,
+        )
+        if cached is not None:
+            try:
+                return StorySummaryResponse(**cached)
+            except Exception as e:
+                logger.warning("Failed to deserialize cached summary: %s", e)
+
+        # ── LLM call (cache miss) ─────────────────────────────────────────────
+        # Count unique sources for context
+        source_count = 0
+        if isinstance(kg, dict) and "nodes" in kg:
+            source_count = len([n for n in kg["nodes"] if n.get("type") == "source"])
+
+        messages = prompt_tmpl.messages(
+            knowledge_graph=kg_str,
+            timeline=timeline_str,
+            contradictions=contras_str,
+            source_comparisons=source_comp_str,
+            category=f"Choose from: {', '.join(CATEGORY_SLUGS)}",
+            source_count=source_count,
+        )
 
         from app.llm_gateway.request_manager import llm_gateway
 
@@ -103,7 +164,7 @@ class AIService:
         response = await llm_gateway.execute_request(
             model=model,
             stage="summary_generation",
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             response_format=StorySummaryResponse,
             temperature=0.1,
         )
@@ -111,8 +172,6 @@ class AIService:
         if response.parsed:
             res_data = response.parsed
         else:
-            import json
-
             data = json.loads(response.content)
             key_map = {
                 "oneLineSummary": "one_line_summary",
@@ -141,6 +200,19 @@ class AIService:
                     data[field] = ""
 
             res_data = StorySummaryResponse(**data)
+
+        # ── Cache store ───────────────────────────────────────────────────────
+        try:
+            await pipeline_cache.set(
+                stage="summary_generation",
+                model=model,
+                prompt_version=prompt_version,
+                content_hash=content_hash,
+                response_data=res_data.model_dump(mode="json"),
+                temperature=0.1,
+            )
+        except Exception as e:
+            logger.warning("Failed to cache summary result: %s", e)
 
         return res_data
 

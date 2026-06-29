@@ -2,39 +2,36 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
 from app.api.v1.auth import (
     forgot_password,
+    get_sessions,
     login,
     logout,
     logout_all,
     refresh_token,
     register,
     reset_password,
-    verify_email,
-    verify_reset_token,
-    get_sessions,
     revoke_session,
+    verify_email,
 )
 from app.exceptions.auth import (
     AccountLockedException,
     EmailNotVerifiedException,
     InvalidCredentialsException,
-    InvalidRefreshTokenException,
-    SessionExpiredException,
     UserAlreadyExistsException,
 )
-from app.models.user import User
 from app.models.session import Session
+from app.models.user import User
 from app.schemas.auth import (
+    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     ResetPasswordRequest,
-    ForgotPasswordRequest,
 )
 
 
@@ -128,6 +125,7 @@ async def test_login_success(mock_db_session, mock_request, mock_response):
     body = LoginRequest(email="john@example.com", password="securepassword123")
 
     from app.core.security import hash_password
+
     hashed = hash_password("securepassword123")
 
     user = User(
@@ -160,6 +158,7 @@ async def test_login_invalid_credentials(mock_db_session, mock_request, mock_res
     body = LoginRequest(email="john@example.com", password="wrongpassword")
 
     from app.core.security import hash_password
+
     hashed = hash_password("securepassword123")
 
     user = User(
@@ -189,6 +188,7 @@ async def test_login_account_lockout(mock_db_session, mock_request, mock_respons
     body = LoginRequest(email="john@example.com", password="wrongpassword")
 
     from app.core.security import hash_password
+
     hashed = hash_password("securepassword123")
 
     user = User(
@@ -224,6 +224,7 @@ async def test_login_email_unverified(mock_db_session, mock_request, mock_respon
     body = LoginRequest(email="john@example.com", password="securepassword123")
 
     from app.core.security import hash_password
+
     hashed = hash_password("securepassword123")
 
     user = User(
@@ -266,9 +267,14 @@ async def test_refresh_token_rotation(mock_db_session, mock_request, mock_respon
 
     # Mock decode_token to return valid payload
     with (
-        patch("app.services.auth_service.decode_token", return_value={"sub": str(user.id), "type": "refresh"}),
+        patch(
+            "app.services.auth_service.decode_token",
+            return_value={"sub": str(user.id), "type": "refresh"},
+        ),
         patch("app.services.session_service.SessionService.hash_token", return_value="hashA"),
-        patch("app.services.session_service.SessionRepository.get_by_token_hash", return_value=session),
+        patch(
+            "app.services.session_service.SessionRepository.get_by_token_hash", return_value=session
+        ),
         patch("app.services.session_service.SessionRepository.delete") as mock_delete,
         patch("app.services.session_service.SessionRepository.create") as mock_create,
         patch("app.services.auth_service.create_access_token", return_value="accesstokenB"),
@@ -307,10 +313,17 @@ async def test_refresh_token_theft_revocation(mock_db_session, mock_request, moc
     user_id = uuid.uuid4()
 
     with (
-        patch("app.services.auth_service.decode_token", return_value={"sub": str(user_id), "type": "refresh"}),
+        patch(
+            "app.services.auth_service.decode_token",
+            return_value={"sub": str(user_id), "type": "refresh"},
+        ),
         patch("app.services.session_service.SessionService.hash_token", return_value="reused_hash"),
-        patch("app.services.session_service.SessionRepository.get_by_token_hash", return_value=None),
-        patch("app.services.session_service.SessionRepository.delete_all_by_user_id") as mock_delete_all,
+        patch(
+            "app.services.session_service.SessionRepository.get_by_token_hash", return_value=None
+        ),
+        patch(
+            "app.services.session_service.SessionRepository.delete_all_by_user_id"
+        ) as mock_delete_all,
     ):
         with pytest.raises(HTTPException) as excinfo:
             await refresh_token(mock_request, mock_response, mock_db_session)
@@ -352,7 +365,9 @@ async def test_logout_all_devices(mock_db_session, mock_response):
     """Test logout all devices deletes all user sessions."""
     user = User(id=uuid.uuid4(), role="user", subscription_plan="free")
 
-    with patch("app.services.session_service.SessionRepository.delete_all_by_user_id") as mock_delete_all:
+    with patch(
+        "app.services.session_service.SessionRepository.delete_all_by_user_id"
+    ) as mock_delete_all:
         res = await logout_all(mock_response, user, mock_db_session)
         assert res.message == "Logged out from all devices."
         mock_delete_all.assert_called_once_with(user.id)
@@ -392,13 +407,16 @@ async def test_password_reset_flow(mock_db_session):
         res = await forgot_password(forgot_body, mock_db_session)
         assert "reset link has been sent" in res.message
         import hashlib
+
         assert user.password_reset_token == hashlib.sha256(b"resettoken").hexdigest()
         assert user.password_reset_expiry is not None
 
     # 2. Reset password
     reset_body = ResetPasswordRequest(token="resettoken", new_password="newsecurepassword123")
     with (
-        patch("app.services.session_service.SessionRepository.delete_all_by_user_id") as mock_delete_all,
+        patch(
+            "app.services.session_service.SessionRepository.delete_all_by_user_id"
+        ) as mock_delete_all,
     ):
         res = await reset_password(reset_body, mock_db_session)
         assert res.message == "Password reset successfully."

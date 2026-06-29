@@ -1,0 +1,30 @@
+{
+  "name": "business_01",
+  "category": "business",
+  "articles": [
+    {
+      "title": "Acme Corp to Acquire Widget Ltd in $12 Billion Deal",
+      "description": "Acme Corp has announced a definitive agreement to acquire Widget Ltd for $12 billion in cash and stock.",
+      "content": "Acme Corp announced today that it will buy Widget Ltd in a mega-merger valued at $12 billion. The acquisition will allow Acme to expand its market share in manufacturing widgets. The board of directors of both companies have approved the deal.",
+      "published_at": "2026-06-26T09:00:00Z",
+      "source_name": "Bloomberg"
+    },
+    {
+      "title": "Widget Ltd Bought by Acme Corp for $12B",
+      "description": "Widget Ltd has agreed to be acquired by Acme Corp in a deal valued at $12 billion.",
+      "content": "Widget Ltd shares surged after Acme Corp announced it will buy the company for $12 billion. Analysts expect the deal to close by the third quarter of 2026.",
+      "published_at": "2026-06-26T09:10:00Z",
+      "source_name": "Wall Street Journal"
+    }
+  ],
+  "expected": {
+    "category": "business",
+    "headline_keywords": ["acme", "acquire", "widget", "billion"],
+    "key_facts_keywords": ["12 billion", "12b"],
+    "entities": [
+      {"value": "Acme Corp", "type": "COMPANY"},
+      {"value": "Widget Ltd", "type": "COMPANY"}
+    ],
+    "contradiction": false
+  }
+}

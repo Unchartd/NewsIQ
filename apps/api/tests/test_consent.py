@@ -1,16 +1,21 @@
 """Unit tests for Consent Management Platform (CMP) endpoints."""
 
 import uuid
-import pytest
-from httpx import AsyncClient
-from unittest.mock import AsyncMock, MagicMock
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
-from app.models.consent import ConsentPreference, ConsentAuditLog
+import pytest
+
+from app.api.v1.consent import (
+    detect_client_region,
+    get_preferences,
+    get_region_defaults,
+    save_preferences,
+    withdraw_consent,
+)
+from app.models.consent import ConsentAuditLog, ConsentPreference
 from app.models.models import User
-from app.api.v1.consent import detect_client_region, get_region_defaults, get_preferences, save_preferences, withdraw_consent
 from app.schemas.consent import ConsentPreferencesSaveRequest
-
 
 
 def test_detect_client_region():
@@ -47,10 +52,7 @@ def test_detect_client_region():
 
     # Test California state detection
     req_ca = MagicMock()
-    req_ca.headers = {
-        "x-vercel-ip-country": "us",
-        "x-vercel-ip-country-region": "ca"
-    }
+    req_ca.headers = {"x-vercel-ip-country": "us", "x-vercel-ip-country-region": "ca"}
     req_ca.query_params = {}
     assert detect_client_region(req_ca) == "CA"
 
@@ -96,7 +98,7 @@ async def test_get_preferences_authenticated(mock_db_session):
         region="EU",
         consent_version="2026-06-v1",
         accepted_at=datetime.now(UTC).replace(tzinfo=None),
-        updated_at=datetime.now(UTC).replace(tzinfo=None)
+        updated_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
     mock_result = MagicMock()
@@ -123,7 +125,7 @@ async def test_get_preferences_anonymous(mock_db_session):
         region="ROW",
         consent_version="2026-06-v1",
         accepted_at=datetime.now(UTC).replace(tzinfo=None),
-        updated_at=datetime.now(UTC).replace(tzinfo=None)
+        updated_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
     mock_result = MagicMock()
@@ -151,14 +153,14 @@ async def test_get_preferences_merges_anonymous_if_logged_in(mock_db_session):
         region="EU",
         consent_version="2026-06-v1",
         accepted_at=datetime.now(UTC).replace(tzinfo=None),
-        updated_at=datetime.now(UTC).replace(tzinfo=None)
+        updated_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
     # First execute call (finding user pref) returns None
     # Second execute call (finding anonymous pref) returns pref
     mock_result_user = MagicMock()
     mock_result_user.scalar_one_or_none.return_value = None
-    
+
     mock_result_anon = MagicMock()
     mock_result_anon.scalar_one_or_none.return_value = pref
 
@@ -166,17 +168,14 @@ async def test_get_preferences_merges_anonymous_if_logged_in(mock_db_session):
     mock_db_session.execute.side_effect = [mock_result_user, mock_result_anon]
 
     response = await get_preferences(
-        request=None,
-        anonymous_id="anon-123",
-        db=mock_db_session,
-        current_user=user
+        request=None, anonymous_id="anon-123", db=mock_db_session, current_user=user
     )
 
     assert response is not None
     assert response.user_id == user.id
     assert response.anonymous_id == "anon-123"
     assert response.functional is True
-    
+
     # Check that audit log was inserted
     assert mock_db_session.add.call_count == 1
     # Verify call arguments
@@ -188,7 +187,6 @@ async def test_get_preferences_merges_anonymous_if_logged_in(mock_db_session):
 
 
 @pytest.mark.asyncio
-
 async def test_save_preferences(mock_db_session):
     """Test saving consent preferences and producing an audit log."""
     user = User(id=uuid.uuid4())
@@ -198,7 +196,7 @@ async def test_save_preferences(mock_db_session):
         analytics=True,
         marketing=False,
         region="EU",
-        consent_version="2026-06-v1"
+        consent_version="2026-06-v1",
     )
 
     # Mock no existing pref
@@ -212,10 +210,7 @@ async def test_save_preferences(mock_db_session):
     mock_request.client.host = "192.168.1.1"
 
     response = await save_preferences(
-        body=body,
-        request=mock_request,
-        db=mock_db_session,
-        current_user=user
+        body=body, request=mock_request, db=mock_db_session, current_user=user
     )
 
     assert response is not None
@@ -244,7 +239,7 @@ async def test_withdraw_consent(mock_db_session):
         region="CA",
         consent_version="2026-06-v1",
         accepted_at=datetime.now(UTC).replace(tzinfo=None),
-        updated_at=datetime.now(UTC).replace(tzinfo=None)
+        updated_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
     mock_result = MagicMock()
@@ -256,10 +251,7 @@ async def test_withdraw_consent(mock_db_session):
     mock_request.client.host = "192.168.1.1"
 
     response = await withdraw_consent(
-        anonymous_id="anon-123",
-        request=mock_request,
-        db=mock_db_session,
-        current_user=user
+        anonymous_id="anon-123", request=mock_request, db=mock_db_session, current_user=user
     )
 
     assert response is not None
@@ -284,7 +276,7 @@ async def test_get_consent_logs(mock_db_session):
         new_value={"functional": True, "analytics": True, "marketing": True},
         ip_hash="hashed_ip",
         timestamp=datetime.now(UTC).replace(tzinfo=None),
-        consent_version="2026-06-v1"
+        consent_version="2026-06-v1",
     )
 
     mock_scalars = MagicMock()
@@ -294,9 +286,8 @@ async def test_get_consent_logs(mock_db_session):
     mock_db_session.execute.return_value = mock_result
 
     from app.api.v1.consent import get_consent_logs
+
     response = await get_consent_logs(db=mock_db_session, current_user=user)
     assert len(response) == 1
     assert response[0].action == "accept_all"
     assert response[0].anonymous_id == "anon-123"
-
-

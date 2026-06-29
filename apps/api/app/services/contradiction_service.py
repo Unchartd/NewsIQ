@@ -9,6 +9,7 @@ Uses a hybrid approach:
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -16,7 +17,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.core.config import settings
 from app.models.models import Article, ArticleEvent, StoryArticle, StoryContradiction
 
 logger = logging.getLogger(__name__)
@@ -56,19 +56,37 @@ class ContradictionService:
         source2_name: str,
         context: str,
     ) -> ContradictionResolution:
-        """Call Gemini/OpenAI to verify if a candidate mismatch is a true contradiction."""
-        prompt = (
-            f"You are a factual contradiction validator for a news intelligence platform.\n"
-            f"Compare these two conflicting reports of the same '{fact_type}' detail:\n"
-            f"1. Source: {source1_name} reports: {val1}\n"
-            f"2. Source: {source2_name} reports: {val2}\n\n"
-            f"Context from the articles:\n{context[:3000]}\n\n"
-            f"Determine if this is a true factual contradiction (e.g. Source A says Russia did it, Source B says Ukraine did it; or 15 dead vs 50 dead).\n"
-            f"Note: Wording differences, translation variations, or subset relationships (e.g. '15 police officers' vs '15 people' or '15 dead' vs 'at least 10 dead') are NOT contradictions.\n\n"
-            f"Respond in JSON matching this schema:\n"
-            f'{{"is_contradiction": true/false, "description": "...", "confidence": 0.0-1.0}}'
+        """Call Gemini/OpenAI to verify if a candidate mismatch is a true contradiction.
+
+        Pipeline: cache check → Agno Agent → LLM Gateway fallback → heuristic fallback.
+        """
+        from app.services.pipeline_cache import pipeline_cache
+        from app.services.prompt_registry import prompt_registry
+
+        # ── Cache check ───────────────────────────────────────────────────────
+        prompt_tmpl = prompt_registry.get("contradiction_detection")
+        prompt_version = prompt_tmpl.version
+        model = prompt_tmpl.model
+
+        content_hash = pipeline_cache.composite_hash(
+            fact_type, str(val1), str(val2), context[:1000]
         )
 
+        cached = await pipeline_cache.get(
+            stage="contradiction_detection",
+            model=model,
+            prompt_version=prompt_version,
+            content_hash=content_hash,
+            temperature=0.1,
+        )
+        if cached is not None:
+            try:
+                return ContradictionResolution(**cached)
+            except Exception as e:
+                logger.warning("Failed to deserialize cached contradiction: %s", e)
+
+        # ── Agno Agent (primary path) ─────────────────────────────────────────
+        result: ContradictionResolution | None = None
         try:
             from app.agents.contradiction_agent import check_contradiction
 
@@ -80,7 +98,7 @@ class ContradictionService:
                 source2_name=source2_name,
                 context=context,
             )
-            return ContradictionResolution(
+            result = ContradictionResolution(
                 is_contradiction=agent_res.contradiction,
                 description=agent_res.explanation,
                 confidence=agent_res.confidence,
@@ -88,56 +106,104 @@ class ContradictionService:
         except Exception as e:
             logger.warning("Agno Contradiction Agent failed: %s. Falling back.", e)
 
-        # LLM Gateway fallback if Agno Agent fails
-        try:
-            model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
-            from app.llm_gateway.request_manager import llm_gateway
+        # ── LLM Gateway fallback ──────────────────────────────────────────────
+        if result is None:
+            try:
+                from app.llm_gateway.request_manager import llm_gateway
 
-            response = await llm_gateway.execute_request(
-                model=model,
-                stage="contradiction_detection",
-                messages=[{"role": "user", "content": prompt}],
-                response_format=ContradictionResolution,
-                temperature=0.1,
+                messages = prompt_tmpl.messages(
+                    fact_type=fact_type,
+                    val1=val1,
+                    val2=val2,
+                    source1_name=source1_name,
+                    source2_name=source2_name,
+                    context=context[:3000],
+                )
+
+                response = await llm_gateway.execute_request(
+                    model=model,
+                    stage="contradiction_detection",
+                    messages=messages,
+                    response_format=ContradictionResolution,
+                    temperature=0.1,
+                )
+
+                if response.parsed:
+                    result = response.parsed
+                else:
+                    try:
+                        import json
+
+                        data = json.loads(response.content)
+                        result = ContradictionResolution(**data)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                logger.warning("LLM Gateway contradiction verification failed: %s", exc)
+
+        # ── Heuristic fallback ────────────────────────────────────────────────
+        if result is None:
+            desc = f"Mismatch on {fact_type}: {source1_name} reports '{val1}', while {source2_name} reports '{val2}'."
+            result = ContradictionResolution(
+                is_contradiction=True,
+                description=desc,
+                confidence=0.70,
             )
 
-            if response.parsed:
-                return response.parsed
+        # ── Cache store ───────────────────────────────────────────────────────
+        try:
+            await pipeline_cache.set(
+                stage="contradiction_detection",
+                model=model,
+                prompt_version=prompt_version,
+                content_hash=content_hash,
+                response_data=result.model_dump(mode="json"),
+                temperature=0.1,
+            )
+        except Exception as e:
+            logger.warning("Failed to cache contradiction result: %s", e)
 
-            try:
-                import json
-
-                data = json.loads(response.content)
-                return ContradictionResolution(**data)
-            except Exception:
-                pass
-        except Exception as exc:
-            logger.warning("LLM Gateway contradiction verification failed: %s", exc)
-
-        # Fallback if AI disabled or failed
-        desc = f"Mismatch on {fact_type}: {source1_name} reports '{val1}', while {source2_name} reports '{val2}'."
-        return ContradictionResolution(
-            is_contradiction=True,
-            description=desc,
-            confidence=0.70,
-        )
+        return result
 
     async def detect_and_save_contradictions(
-        self, story_id: Any, session: AsyncSession
+        self,
+        story_id: Any,
+        session: AsyncSession,
+        articles: list[Article] = None,
+        article_events: list[ArticleEvent] = None,
+        article_source_map: dict[uuid.UUID, str] = None,
     ) -> list[StoryContradiction]:
         """Detect contradictions among the articles in a story and save them to the DB.
 
         First runs local heuristics, then validates with LLM.
         """
-        # Fetch articles and their events
-        stmt = (
-            select(Article, ArticleEvent)
-            .join(StoryArticle, StoryArticle.article_id == Article.id)
-            .join(ArticleEvent, ArticleEvent.article_id == Article.id)
-            .where(StoryArticle.story_id == story_id)
-        )
-        res = await session.execute(stmt)
-        rows = list(res.all())
+        # Fetch articles and their events if not provided
+        rows: list[Any] = []
+        if articles is None or article_events is None:
+            stmt = (
+                select(Article, ArticleEvent)
+                .join(StoryArticle, StoryArticle.article_id == Article.id)
+                .join(ArticleEvent, ArticleEvent.article_id == Article.id)
+                .where(StoryArticle.story_id == story_id)
+            )
+            res = await session.execute(stmt)
+            rows = list(res.all())
+
+            # Build local source map since it wasn't provided
+            local_source_map = {}
+            for art, _ in rows:
+                if art.id not in local_source_map:
+                    if art.source:
+                        local_source_map[art.id] = art.source.name
+                    else:
+                        local_source_map[art.id] = "Unknown Source"
+        else:
+            # Reconstruct rows mapping Article to its ArticleEvent(s)
+            for art in articles:
+                for evt in article_events:
+                    if evt.article_id == art.id:
+                        rows.append((art, evt))
+            local_source_map = article_source_map or {}
 
         # Delete existing contradictions for this story to avoid duplication or stale data
         from sqlalchemy import delete
@@ -149,13 +215,16 @@ class ContradictionService:
         # Check unique sources count to avoid contradiction checking on single-source stories
         unique_sources = {art.source_id for art, _ in rows if art.source_id}
         if len(unique_sources) < 2:
-            await session.commit()
+            if articles is None:
+                await session.commit()
+            else:
+                await session.flush()
             return []
 
         # Build full text context for LLM disambiguation
         context_parts = []
         for art, evt in rows:
-            src_name = art.source.name if art.source else "Unknown Source"
+            src_name = local_source_map.get(art.id, "Unknown Source")
             context_parts.append(
                 f"Source: {src_name}\nTitle: {art.title}\nContent: {art.description or ''}\n"
             )
@@ -167,12 +236,12 @@ class ContradictionService:
 
         for i in range(n_rows):
             art1, evt1 = rows[i]
-            src1_name = art1.source.name if art1.source else "Unknown Source"
+            src1_name = local_source_map.get(art1.id, "Unknown Source")
             src1_id = str(art1.source_id)
 
             for j in range(i + 1, n_rows):
                 art2, evt2 = rows[j]
-                src2_name = art2.source.name if art2.source else "Unknown Source"
+                src2_name = local_source_map.get(art2.id, "Unknown Source")
                 src2_id = str(art2.source_id)
 
                 if src1_id == src2_id:
@@ -297,6 +366,150 @@ class ContradictionService:
                 contradiction = StoryContradiction(
                     story_id=story_id,
                     fact_type=cand["fact_type"],
+                    description=res_resolution.description,
+                    confidence=res_resolution.confidence,
+                    source_attribution={
+                        cand["src1_id"]: str(cand["val1"]),
+                        cand["src2_id"]: str(cand["val2"]),
+                    },
+                )
+                session.add(contradiction)
+                validated_contradictions.append(contradiction)
+
+        if validated_contradictions:
+            if articles is None:
+                await session.commit()
+            else:
+                await session.flush()
+
+        return validated_contradictions
+
+    async def detect_and_save_contradictions_incremental(
+        self,
+        story_id: Any,
+        new_article: Article,
+        existing_articles: list[Article],
+        session: AsyncSession,
+    ) -> list[StoryContradiction]:
+        """Detect contradictions introduced by a new article compared against existing ones in a story."""
+        # Fetch events for the new article
+        new_event_stmt = select(ArticleEvent).where(ArticleEvent.article_id == new_article.id)
+        new_event_res = await session.execute(new_event_stmt)
+        new_events = list(new_event_res.scalars().all())
+
+        if not new_events:
+            return []
+
+        # Fetch events for existing articles
+        existing_ids = [art.id for art in existing_articles]
+        if not existing_ids:
+            return []
+
+        existing_event_stmt = (
+            select(Article, ArticleEvent)
+            .join(ArticleEvent, ArticleEvent.article_id == Article.id)
+            .where(Article.id.in_(existing_ids))
+        )
+        existing_event_res = await session.execute(existing_event_stmt)
+        existing_rows = list(existing_event_res.all())
+
+        if not existing_rows:
+            return []
+
+        # Build context
+        context_parts = []
+        for art in [new_article] + existing_articles:
+            src_name = art.source.name if art.source else "Unknown Source"
+            context_parts.append(
+                f"Source: {src_name}\nTitle: {art.title}\nContent: {art.description or ''}\n"
+            )
+        full_context = "\n".join(context_parts)
+
+        # Candidates (compare new events against existing ones)
+        candidates = []
+        new_src_name = new_article.source.name if new_article.source else "Unknown Source"
+        new_src_id = str(new_article.source_id)
+
+        for new_evt in new_events:
+            for ext_art, ext_evt in existing_rows:
+                ext_src_name = ext_art.source.name if ext_art.source else "Unknown Source"
+                ext_src_id = str(ext_art.source_id)
+
+                if new_src_id == ext_src_id:
+                    continue  # Skip comparing same publisher
+
+                # 1. Actors Conflict
+                a1 = set(new_evt.actors or [])
+                a2 = set(ext_evt.actors or [])
+                if a1 and a2 and a1.isdisjoint(a2):
+                    candidates.append(
+                        {
+                            "fact_type": "actor",
+                            "val1": sorted(list(a1)),
+                            "val2": sorted(list(a2)),
+                            "src1_name": new_src_name,
+                            "src2_name": ext_src_name,
+                            "src1_id": new_src_id,
+                            "src2_id": ext_src_id,
+                        }
+                    )
+
+                # 2. Targets Conflict
+                t1 = set(new_evt.targets or [])
+                t2 = set(ext_evt.targets or [])
+                if t1 and t2 and t1.isdisjoint(t2):
+                    candidates.append(
+                        {
+                            "fact_type": "target",
+                            "val1": sorted(list(t1)),
+                            "val2": sorted(list(t2)),
+                            "src1_name": new_src_name,
+                            "src2_name": ext_src_name,
+                            "src1_id": new_src_id,
+                            "src2_id": ext_src_id,
+                        }
+                    )
+
+                # 3. Numbers Conflict
+                num1 = new_evt.numbers or {}
+                num2 = ext_evt.numbers or {}
+                for k in num1.keys():
+                    if k in num2 and num1[k] != num2[k]:
+                        candidates.append(
+                            {
+                                "fact_type": k,
+                                "val1": str(num1[k]),
+                                "val2": str(num2[k]),
+                                "src1_name": new_src_name,
+                                "src2_name": ext_src_name,
+                                "src1_id": new_src_id,
+                                "src2_id": ext_src_id,
+                            }
+                        )
+
+        validated_contradictions = []
+        seen_pairs = set()
+
+        for cand in candidates:
+            pair_key = (cand["fact_type"], cand["src1_id"], cand["src2_id"])
+            if pair_key in seen_pairs:
+                continue
+            seen_pairs.add(pair_key)
+
+            # Call LLM to confirm
+            res_resolution = await self._validate_with_llm(
+                fact_type=str(cand["fact_type"]),
+                val1=cand["val1"],
+                val2=cand["val2"],
+                source1_name=str(cand["src1_name"]),
+                source2_name=str(cand["src2_name"]),
+                context=full_context,
+            )
+
+            if res_resolution.is_contradiction:
+                contradiction = StoryContradiction(
+                    story_id=story_id,
+                    fact_type=str(cand["fact_type"]),
                     description=res_resolution.description,
                     confidence=res_resolution.confidence,
                     source_attribution={

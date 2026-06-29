@@ -2,26 +2,25 @@
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 
-from app.api.v1.users import (
-    update_profile,
-    update_preferences,
-    mark_all_notifications_read,
-    get_reading_history,
-    delete_history_item,
-    clear_all_history,
-    upgrade_subscription,
-    cancel_subscription,
-    export_user_data,
-    clear_personalisation_data,
-)
 from app.api.v1.auth import change_password
-from app.models.models import User, UserPreference, Notification, UserEvent, Story, Category
-from app.schemas.user import UserPreferencesUpdate, ChangePasswordRequest, ProfileUpdateRequest
+from app.api.v1.users import (
+    cancel_subscription,
+    clear_all_history,
+    clear_personalisation_data,
+    delete_history_item,
+    export_user_data,
+    get_reading_history,
+    mark_all_notifications_read,
+    update_preferences,
+    update_profile,
+    upgrade_subscription,
+)
+from app.models.models import Category, Story, User, UserEvent, UserPreference
+from app.schemas.user import ChangePasswordRequest, ProfileUpdateRequest, UserPreferencesUpdate
 
 
 @pytest.mark.asyncio
@@ -55,7 +54,7 @@ async def test_get_reading_history(mock_db_session):
     """Verify reading history retrieves and maps event items correctly."""
     user = User(id=uuid.uuid4())
     story_id = uuid.uuid4()
-    
+
     event = UserEvent(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -75,11 +74,11 @@ async def test_get_reading_history(mock_db_session):
     # Mock fetching user events
     mock_events_result = MagicMock()
     mock_events_result.scalars.return_value.all.return_value = [event]
-    
+
     # Mock fetching story details
     mock_story_result = MagicMock()
     mock_story_result.scalar_one_or_none.return_value = story
-    
+
     # Setup mock_db_session execute chain
     mock_db_session.execute.side_effect = [mock_events_result, mock_story_result]
 
@@ -157,7 +156,7 @@ async def test_export_user_data(mock_db_session):
         status="active",
         email_verified=True,
     )
-    
+
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
     mock_result.scalar_one_or_none.return_value = None
@@ -187,7 +186,9 @@ async def test_clear_personalisation_data(mock_db_session):
 @patch("app.core.security.verify_password")
 @patch("app.core.security.hash_password")
 @patch("app.api.v1.auth.AuthService.logout_all")
-async def test_change_password(mock_logout_all, mock_hash_password, mock_verify_password, mock_db_session):
+async def test_change_password(
+    mock_logout_all, mock_hash_password, mock_verify_password, mock_db_session
+):
     """Verify that password can be changed successfully."""
     user = User(
         id=uuid.uuid4(),
@@ -201,7 +202,9 @@ async def test_change_password(mock_logout_all, mock_hash_password, mock_verify_
     mock_hash_password.return_value = "new_hash"
     mock_logout_all.return_value = AsyncMock()
 
-    body = ChangePasswordRequest(current_password="old_password", new_password="NewSecurePassword123!")
+    body = ChangePasswordRequest(
+        current_password="old_password", new_password="NewSecurePassword123!"
+    )
     response = await change_password(body=body, user=user, db=mock_db_session)
 
     assert response.message == "Password changed successfully."

@@ -105,6 +105,7 @@ async def run_async_migrations() -> None:
     url = config.get_main_option("sqlalchemy.url")
     if settings.DATABASE_SSL or (url and "neon.tech" in url):
         import ssl
+
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
