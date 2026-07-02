@@ -1,40 +1,40 @@
+import asyncio
 import json
 import logging
-import asyncio
-import uuid
-import time
-from typing import Any, AsyncGenerator, Type, Mapping
-from pydantic import BaseModel, ValidationError as PydanticValidationError
+from collections.abc import AsyncGenerator
+from typing import Any
 
-from app.core.config import settings
-from app.core.trace import track_llm_call, story_id_ctx, article_id_ctx
-from app.services.cost_budget import cost_budget_manager
-from app.ai.interfaces import GatewayRequest, GatewayResponse, HealthStatus
+from pydantic import BaseModel
+from pydantic import ValidationError as PydanticValidationError
+
+from app.ai.cache.redis_cache import ai_cache
 from app.ai.errors import (
     AIGatewayError,
+    AuthenticationError,
     ProviderUnavailableError,
     RateLimitError,
-    ValidationError,
     TimeoutError,
-    AuthenticationError,
+    ValidationError,
 )
-from app.ai.prompts.registry import prompt_registry
-from app.ai.router.capability_router import capability_router
-from app.ai.cache.redis_cache import ai_cache
+from app.ai.interfaces import GatewayRequest, GatewayResponse
 from app.ai.metrics.telemetry import (
+    newsiq_ai_gateway_cache_total,
     newsiq_ai_gateway_calls_total,
     newsiq_ai_gateway_cost_usd,
-    newsiq_ai_gateway_tokens_total,
     newsiq_ai_gateway_latency_seconds,
     newsiq_ai_gateway_retries_total,
-    newsiq_ai_gateway_cache_total,
     newsiq_ai_gateway_timeouts_total,
+    newsiq_ai_gateway_tokens_total,
     newsiq_ai_gateway_validation_failures_total,
     newsiq_prompt_executions_total,
     newsiq_prompt_latency_seconds,
     newsiq_prompt_tokens_total,
     newsiq_provider_fallback_executions_total,
 )
+from app.ai.prompts.registry import prompt_registry
+from app.ai.router.capability_router import capability_router
+from app.core.trace import article_id_ctx, story_id_ctx, track_llm_call
+from app.services.cost_budget import cost_budget_manager
 
 logger = logging.getLogger(__name__)
 
@@ -103,11 +103,11 @@ def clean_json_for_schema(data: Any, schema: type[BaseModel]) -> Any:
     cleaned = {}
     for k, v in data.items():
         mapped_key = camel_to_snake.get(k, k)
-        
+
         # 4. Safe list conversion for fields expecting list[str]
         field_info = schema.model_fields.get(mapped_key)
         if field_info:
-            from typing import get_origin, get_args
+            from typing import get_origin
             origin = get_origin(field_info.annotation)
             # Check if list type
             is_list = (origin is list) or (isinstance(field_info.annotation, type) and issubclass(field_info.annotation, list))
@@ -409,7 +409,6 @@ class AIGateway:
 
         chain = capability_router.get_route(capability)
         client, api_key, route_cfg = chain[0]  # Try streaming only on primary provider
-        provider_name = route_cfg["provider"]
         model_name = route_cfg["model"]
         timeout = route_cfg["timeout"]
         temp = temperature if temperature is not None else route_cfg["temperature"]
@@ -453,7 +452,7 @@ class AIGateway:
 
         raise AIGatewayError(f"All embedding providers failed. Last error: {last_err}")
 
-    def countTokens(self, text: str, capability: str = "summary") -> int:
+    def count_tokens(self, text: str, capability: str = "summary") -> int:
         """Count tokens of the text locally using the primary provider tokenizer."""
         chain = capability_router.get_route(capability)
         client, _, _ = chain[0]

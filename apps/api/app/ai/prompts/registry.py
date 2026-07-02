@@ -1,8 +1,9 @@
-import os
 import logging
-import yaml
+import os
 from dataclasses import dataclass, field
 from typing import Any
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class PromptRegistry:
             raise KeyError(f"No prompt file found at: {filepath} for stage: {stage}")
 
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             prompt = PromptTemplate(

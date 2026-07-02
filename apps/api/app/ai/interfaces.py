@@ -1,6 +1,8 @@
-from typing import Any, AsyncGenerator, Protocol
-from pydantic import BaseModel, Field
+from collections.abc import AsyncGenerator
 from datetime import datetime
+from typing import Any, Protocol
+
+from pydantic import BaseModel, Field
 
 
 class APIKey(BaseModel):

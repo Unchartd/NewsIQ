@@ -1,10 +1,9 @@
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
 try:
-    from prometheus_client import Counter, Histogram, Gauge
+    from prometheus_client import Counter, Gauge, Histogram
 
     # Total calls
     newsiq_ai_gateway_calls_total = Counter(

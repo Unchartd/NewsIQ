@@ -1,15 +1,20 @@
 import json
 import logging
 import time
-from typing import Any, AsyncGenerator
-from datetime import datetime
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from google import genai as google_genai
 from google.genai import types
 from pydantic import BaseModel
 
-from app.ai.interfaces import AIProvider, GatewayRequest, GatewayResponse, HealthStatus, APIKey
-from app.ai.errors import AuthenticationError, ProviderUnavailableError, TimeoutError, RateLimitError
+from app.ai.errors import (
+    AuthenticationError,
+    ProviderUnavailableError,
+    RateLimitError,
+    TimeoutError,
+)
+from app.ai.interfaces import AIProvider, APIKey, GatewayRequest, GatewayResponse, HealthStatus
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +161,7 @@ class GeminiProvider(AIProvider):
         try:
             client = google_genai.Client(api_key=api_key.key)
             # Make a lightweight call to verify key and latency
-            response = await client.aio.models.generate_content(
+            await client.aio.models.generate_content(
                 model="gemini-2.5-flash",
                 contents="ping",
                 config=types.GenerateContentConfig(max_output_tokens=5, temperature=0.0)

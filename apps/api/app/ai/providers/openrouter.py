@@ -1,13 +1,20 @@
 import json
 import logging
 import time
-from typing import Any, AsyncGenerator
-from openai import AsyncOpenAI, APIError, APITimeoutError
+from collections.abc import AsyncGenerator
+from typing import Any
+
+from openai import APIError, APITimeoutError, AsyncOpenAI
 from pydantic import BaseModel
 
+from app.ai.errors import (
+    AuthenticationError,
+    ProviderUnavailableError,
+    RateLimitError,
+    TimeoutError,
+)
+from app.ai.interfaces import AIProvider, APIKey, GatewayRequest, GatewayResponse, HealthStatus
 from app.core.config import settings
-from app.ai.interfaces import AIProvider, GatewayRequest, GatewayResponse, HealthStatus, APIKey
-from app.ai.errors import AuthenticationError, ProviderUnavailableError, TimeoutError, RateLimitError
 
 logger = logging.getLogger(__name__)
 

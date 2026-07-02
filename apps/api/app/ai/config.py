@@ -1,4 +1,4 @@
-from typing import Any, TypedDict, Literal
+from typing import Literal, TypedDict
 
 ProviderType = Literal["nvidia", "gemini", "openrouter", "mock"]
 

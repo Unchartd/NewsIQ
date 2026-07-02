@@ -1,19 +1,16 @@
-import os
-import sys
-import logging
 import asyncio
-import hashlib
+import logging
+import sys
 from datetime import datetime, timedelta
-from typing import Any, Tuple
 
-from app.core.config import settings
-from app.ai.interfaces import AIProvider, APIKey, HealthStatus
-from app.ai.config import CAPABILITY_ROUTING, ProviderType, ProviderModelRoute
+from app.ai.config import CAPABILITY_ROUTING, ProviderModelRoute, ProviderType
+from app.ai.interfaces import AIProvider, APIKey
+from app.ai.metrics.telemetry import newsiq_ai_gateway_circuit_state
 from app.ai.providers.gemini import GeminiProvider
+from app.ai.providers.mock import MockProvider
 from app.ai.providers.nvidia import NvidiaProvider
 from app.ai.providers.openrouter import OpenRouterProvider
-from app.ai.providers.mock import MockProvider
-from app.ai.metrics.telemetry import newsiq_ai_gateway_circuit_state
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +139,7 @@ class CapabilityRouter:
 
         return available[0] if available else None
 
-    def get_route(self, capability: str) -> list[Tuple[AIProvider, APIKey, ProviderModelRoute]]:
+    def get_route(self, capability: str) -> list[tuple[AIProvider, APIKey, ProviderModelRoute]]:
         """Return the prioritized list of (client, key, route_config) for a capability."""
         # Detect testing environment
         is_testing = "pytest" in sys.modules or any(

@@ -1,10 +1,11 @@
 import json
 import logging
-import re
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
+
 from pydantic import BaseModel
 
-from app.ai.interfaces import AIProvider, GatewayRequest, GatewayResponse, HealthStatus, APIKey
+from app.ai.interfaces import AIProvider, APIKey, GatewayRequest, GatewayResponse, HealthStatus
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,7 @@ class MockProvider(AIProvider):
     async def embeddings(self, text: str, api_key: APIKey) -> list[float]:
         # Return a deterministic mock embedding of length 768
         import hashlib
+
         import numpy as np
         digest = hashlib.sha256(text.encode("utf-8")).digest()
         seed = int.from_bytes(digest[:4], byteorder="big")
