@@ -11,7 +11,7 @@
  *   https://developers.google.com/search/docs/appearance/structured-data/
  */
 
-import { SITE_URL, SITE_NAME, DEFAULT_OG_IMAGE } from "@/lib/metadata";
+import { SITE_URL, SITE_NAME, DEFAULT_OG_IMAGE, getStoryRoute } from "@/lib/metadata";
 
 // ─────────────────────────────────────────────────────────────
 // Organization (root-level identity)
@@ -40,7 +40,7 @@ export function buildOrganizationSchema() {
     contactPoint: {
       "@type": "ContactPoint",
       contactType: "customer support",
-      email: "support@newsiq.app",
+      email: "support@newsiq.online",
     },
   };
 }
@@ -128,7 +128,7 @@ export function buildNewsArticleSchema(story: {
   articles?: Array<{ url?: string; image_url?: string | null; source?: { name: string } }>;
   timeline?: Array<{ event_time: string; description: string }>;
 }) {
-  const url = `${SITE_URL}/story/${story.id}`;
+  const url = `${SITE_URL}${getStoryRoute(story)}`;
   const ogImage =
     story.articles?.find((a) => a.image_url)?.image_url || DEFAULT_OG_IMAGE;
 

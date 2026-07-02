@@ -34,7 +34,7 @@ const SOURCE_FAQS = [
   {
     question: "How can publishers opt out of being indexed?",
     answer:
-      "We respect publisher autonomy. If you are a publisher and wish to opt out of our news index, or if you want to update your name, logo, or RSS feed URL in our registry, please email us at support@newsiq.app. We also honor standard web crawling protocols and robots.txt directives.",
+      "We respect publisher autonomy. If you are a publisher and wish to opt out of our news index, or if you want to update your name, logo, or RSS feed URL in our registry, please email us at support@newsiq.online. We also honor standard web crawling protocols and robots.txt directives.",
   },
   {
     question: "Does NewsIQ reproduce entire articles?",
@@ -198,8 +198,8 @@ export default function SourceTransparencyPage() {
             </ul>
             <p className="text-muted-foreground leading-relaxed">
               For any request or inquiry, please contact our source integrity team at{" "}
-              <a href="mailto:support@newsiq.app" className="text-primary hover:underline font-semibold">
-                support@newsiq.app
+              <a href="mailto:support@newsiq.online" className="text-primary hover:underline font-semibold">
+                support@newsiq.online
               </a>
               . We respond to all publisher communications within 2 business days.
             </p>

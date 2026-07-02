@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.online";
 
 const nextConfig: NextConfig = {
   // ── Performance ──────────────────────────────────────────────

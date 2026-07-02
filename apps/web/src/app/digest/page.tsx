@@ -10,6 +10,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { getStoryRoute } from "@/lib/metadata";
 
 interface DigestItem {
   story_id: string;
@@ -120,7 +121,7 @@ export default function DigestPage() {
                       </span>
                     </div>
                     <CardTitle className="text-lg font-bold leading-tight text-foreground hover:text-primary transition-colors">
-                      <Link href={`/story/${item.story_id}`}>{item.headline}</Link>
+                      <Link href={getStoryRoute({ id: item.story_id, headline: item.headline })}>{item.headline}</Link>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4 pb-6">
@@ -134,7 +135,7 @@ export default function DigestPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        render={<Link href={`/story/${item.story_id}`} />}
+                        render={<Link href={getStoryRoute({ id: item.story_id, headline: item.headline })} />}
                         nativeButton={false}
                         className="rounded-xl text-xs flex items-center gap-1.5 h-8 text-primary hover:bg-primary/10"
                       >

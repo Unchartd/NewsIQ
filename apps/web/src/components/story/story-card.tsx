@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { SourceDots } from "@/components/ui/source-dots";
 import type { Story } from "@/types";
+import { getStoryRoute } from "@/lib/metadata";
 
 interface StoryCardProps {
   story: Story;
@@ -68,7 +69,7 @@ export function StoryCard({ story, summaryType = "short", index = 0 }: StoryCard
       style={{ width: "100%" }}
     >
       <Link
-        href={`/story/${story.id}`}
+        href={getStoryRoute(story)}
         className="card"
         tabIndex={0}
         style={{ textDecoration: "none" }}

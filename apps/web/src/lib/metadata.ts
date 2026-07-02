@@ -11,7 +11,7 @@
 
 import type { Metadata } from "next";
 
-export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.app";
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.online";
 export const SITE_NAME = "NewsIQ";
 export const SITE_DESCRIPTION =
   "Understand any major story in under 30 seconds. AI-powered news clustering, multi-source comparison, neutral headlines, and transparent summaries.";
@@ -20,7 +20,31 @@ export const SITE_DESCRIPTION =
 export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.jpg`;
 
 // Default Twitter handle
-export const TWITTER_HANDLE = "@newsiq_app";
+export const TWITTER_HANDLE = "@newsiq_online";
+
+/**
+ * Slugifies a given text to make it URL-friendly.
+ */
+export function slugify(text: string): string {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-") // Replace spaces with -
+    .replace(/[^\w\-]+/g, "") // Remove all non-word chars
+    .replace(/\-\-+/g, "-") // Replace multiple - with single -
+    .replace(/^-+/, "") // Trim - from start of text
+    .replace(/-+$/, ""); // Trim - from end of text
+}
+
+/**
+ * Generates the SEO-friendly URL route for a story.
+ */
+export function getStoryRoute(story: { id: string; headline: string }): string {
+  if (!story.headline) return `/story/${story.id}`;
+  const slug = slugify(story.headline);
+  return `/story/${slug}-${story.id}`;
+}
 
 /**
  * Build metadata for a standard informational page.
@@ -91,7 +115,7 @@ export function buildStoryMetadata(
     articles?: Array<{ image_url?: string | null }>;
   }
 ): Metadata {
-  const url = `${SITE_URL}/story/${story.id}`;
+  const url = `${SITE_URL}${getStoryRoute(story)}`;
   const title = story.headline;
   const description =
     story.one_line_summary ||

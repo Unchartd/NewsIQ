@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-07-02T12:35:54.483570",
+  "summary": {
+    "total_scenarios": 5,
+    "passed": 5,
+    "failed": 0,
+    "pass_rate_percent": 100.0,
+    "average_score": 98.33333333333334
+  },
+  "scenarios": [
+    {
+      "scenario_id": "tech_acquisition",
+      "description": "TechCorp acquires InnovateAI for $500M",
+      "duration_seconds": 0.8488733768463135,
+      "score": 100.0,
+      "is_passed": true,
+      "metrics": {
+        "headline_keyword_score": 100.0,
+        "category_match_score": 100.0,
+        "facts_score": 100.0,
+        "forbidden_words_penalties": 0.0,
+        "forbidden_words_found": []
+      },
+      "outputs": {
+        "headline": "TechCorp Announces Definitive Agreement to Acquire InnovateAI startup for $500M",
+        "category": "technology",
+        "one_line_summary": "TechCorp is acquiring startup InnovateAI to accelerate ML offerings.",
+        "key_facts_count": 2
+      }
+    },
+    {
+      "scenario_id": "natural_disaster",
+      "description": "Category 4 Hurricane landfall in Florida",
+      "duration_seconds": 0.8112940788269043,
+      "score": 100.0,
+      "is_passed": true,
+      "metrics": {
+        "headline_keyword_score": 100.0,
+        "category_match_score": 100.0,
+        "facts_score": 100.0,
+        "forbidden_words_penalties": 0.0,
+        "forbidden_words_found": []
+      },
+      "outputs": {
+        "headline": "Hurricane Helene Landfall in Florida as Category 4 Storm",
+        "category": "weather",
+        "one_line_summary": "Hurricane Helene makes landfall in Florida causing storm surges.",
+        "key_facts_count": 2
+      }
+    },
+    {
+      "scenario_id": "financial_policy",
+      "description": "Federal Reserve raises interest rates",
+      "duration_seconds": 20.63769555091858,
+      "score": 100.0,
+      "is_passed": true,
+      "metrics": {
+        "headline_keyword_score": 100.0,
+        "category_match_score": 100.0,
+        "facts_score": 100.0,
+        "forbidden_words_penalties": 0.0,
+        "forbidden_words_found": []
+      },
+      "outputs": {
+        "headline": "Federal Reserve Hikes Interest Rates by 25 Basis Points to Combat Inflation",
+        "category": "business",
+        "one_line_summary": "The Federal Reserve increases interest rates by 0.25% to target inflation.",
+        "key_facts_count": 2
+      }
+    },
+    {
+      "scenario_id": "space_discovery",
+      "description": "James Webb space telescope discovers exoplanet",
+      "duration_seconds": 0.8897440433502197,
+      "score": 91.66666666666667,
+      "is_passed": true,
+      "metrics": {
+        "headline_keyword_score": 75.0,
+        "category_match_score": 100.0,
+        "facts_score": 100.0,
+        "forbidden_words_penalties": 0.0,
+        "forbidden_words_found": []
+      },
+      "outputs": {
+        "headline": "NASA's Webb Telescope Confirms Earth-Sized Exoplanet LHS 475 b",
+        "category": "science",
+        "one_line_summary": "James Webb Space Telescope discovers new rocky exoplanet.",
+        "key_facts_count": 2
+      }
+    },
+    {
+      "scenario_id": "sports_championship",
+      "description": "World Cup championship match winner",
+      "duration_seconds": 1.1016452312469482,
+      "score": 100.0,
+      "is_passed": true,
+      "metrics": {
+        "headline_keyword_score": 100.0,
+        "category_match_score": 100.0,
+        "facts_score": 100.0,
+        "forbidden_words_penalties": 0.0,
+        "forbidden_words_found": []
+      },
+      "outputs": {
+        "headline": "Argentina Wins World Cup Championship in Thrilling Shootout",
+        "category": "sports",
+        "one_line_summary": "Argentina beats France to win the World Cup championship.",
+        "key_facts_count": 2
+      }
+    }
+  ]
+}

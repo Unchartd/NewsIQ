@@ -10,6 +10,7 @@ import { TrendingUp } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import type { Story } from "@/types";
 import Link from "next/link";
+import { getStoryRoute } from "@/lib/metadata";
 
 const TIME_TABS = [
   { slug: "today", name: "Today" },
@@ -158,7 +159,7 @@ export default function TrendingPage() {
 
             return (
               <Link
-                href={`/story/${story.id}`}
+                href={getStoryRoute(story)}
                 key={story.id}
                 className="trcard"
                 style={{ textDecoration: "none" }}

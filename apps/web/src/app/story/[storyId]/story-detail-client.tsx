@@ -19,6 +19,7 @@ import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { StoryDetail, StoryEntity } from "@/types";
 import { analytics } from "@/lib/analytics/service";
+import { getStoryRoute } from "@/lib/metadata";
 
 interface Props {
   storyId: string;
@@ -89,10 +90,14 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
   // Track which entity-type rows the user has expanded
   const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set());
 
+  // Extract the UUID (which is the last 36 characters of the slugified storyId or the storyId itself)
+  const uuidMatch = storyId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  const uuid = uuidMatch ? uuidMatch[0] : storyId;
+
   const { data: story, isLoading, error } = useQuery<StoryDetail>({
-    queryKey: ["story-detail", storyId],
+    queryKey: ["story-detail", uuid],
     queryFn: async () => {
-      const response = await apiClient.get(`/stories/${storyId}`);
+      const response = await apiClient.get(`/stories/${uuid}`);
       return response.data;
     },
     initialData: initialStory ?? undefined,
@@ -107,7 +112,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
     enabled: isAuthenticated,
   });
 
-  const isBookmarked = bookmarkedStories?.some((s) => s.id === storyId) || false;
+  const isBookmarked = bookmarkedStories?.some((s) => s.id === uuid) || false;
 
   // Fire reading history event once when story data is first available
   useEffect(() => {
@@ -115,7 +120,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
 
     // Track analytics events
     analytics.track("story_view", {
-      story_id: storyId,
+      story_id: uuid,
       headline: story.headline,
       category: story.category?.name,
       tags: story.tags,
@@ -304,7 +309,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
           <div className="slbl" style={{ marginBottom: 10 }}>Related</div>
           <nav aria-label="Related stories" style={{ display: "flex", flexDirection: "column" }}>
             {story.related_stories.slice(0, 3).map((relStory) => (
-              <Link key={relStory.id} href={`/story/${relStory.id}`} style={{ textDecoration: "none" }}>
+              <Link key={relStory.id} href={getStoryRoute(relStory)} style={{ textDecoration: "none" }}>
                 <div className="titem" style={{ padding: "8px 0" }}>
                   <div>
                     <div className="ti-h" style={{ fontSize: 13 }}>

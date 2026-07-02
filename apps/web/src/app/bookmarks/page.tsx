@@ -13,6 +13,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { SidebarWidgets } from "@/components/sidebar/sidebar-widgets";
+import { getStoryRoute } from "@/lib/metadata";
 
 export default function BookmarksPage() {
   const { isAuthenticated } = useAuthStore();
@@ -62,7 +63,7 @@ export default function BookmarksPage() {
       navigator.share({
         title: story.headline,
         text: story.one_line_summary,
-        url: `${window.location.origin}/story/${story.id}`,
+        url: `${window.location.origin}${getStoryRoute(story)}`,
       })
       .then(() => {
         toast.success("Shared successfully");
@@ -74,7 +75,7 @@ export default function BookmarksPage() {
       })
       .catch(() => {});
     } else {
-      navigator.clipboard.writeText(`${window.location.origin}/story/${story.id}`);
+      navigator.clipboard.writeText(`${window.location.origin}${getStoryRoute(story)}`);
       toast.success("Link copied to clipboard!");
       if (isAuthenticated) {
         apiClient
@@ -183,7 +184,7 @@ export default function BookmarksPage() {
           <div className="feed-list" style={{ paddingBottom: 96 }}>
             {filteredStories.map((story) => (
               <Link
-                href={`/story/${story.id}`}
+                href={getStoryRoute(story)}
                 key={story.id}
                 className="bkcard"
                 style={{ textDecoration: "none" }}

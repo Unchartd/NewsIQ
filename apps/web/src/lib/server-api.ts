@@ -19,7 +19,11 @@ const API_BASE_URL =
  */
 export async function fetchStoryServer(storyId: string): Promise<StoryDetail | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/stories/${storyId}`, {
+    // Extract the UUID (which is the last 36 characters of the slugified storyId or the storyId itself)
+    const uuidMatch = storyId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    const uuid = uuidMatch ? uuidMatch[0] : storyId;
+
+    const res = await fetch(`${API_BASE_URL}/stories/${uuid}`, {
       next: { revalidate: 300 }, // 5 minutes
     });
     if (!res.ok) return null;
