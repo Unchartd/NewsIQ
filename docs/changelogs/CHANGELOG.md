@@ -6,6 +6,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.9.0-dev] - 2026-07-02
+
+### Added
+- **Centralized Structured AI Gateway (`app/ai/`)**: Implemented a production-grade AI gateway supporting capability routing, API key rotation, circuit breaking, automatic failover, Redis caching, and Prometheus telemetry.
+- **Robust Output Schema Validation**: Added automated JSON unnesting, camelCase/PascalCase to snake_case field mapping, and type coercion in `clean_json_for_schema` to handle variations in LLM outputs.
+- **Circuit Breaker Circuit Telemetry**: Track consecutive provider errors and trip unhealthy channels for 5 minutes, with self-healing background heartbeat checks running every 2 minutes.
+- **Daily Story Cost Budgeting**: Circuit breaker pattern to enforce strict daily USD budgets at the story synthesis level.
+- **Batch Embedding Cache**: Wired Redis caching and batch execution into `EmbeddingService` to reduce latency and Gemini API costs.
+- **Pipeline Health Dashboard**: Created a Grafana telemetry dashboard and alerting rules to monitor LLM token consumption, latencies, error rates, and costs.
+- **Admin UI Pipeline Dashboard**: Built a Next.js admin page at `/admin/quality` to visualize pipeline execution health, cache statistics, and evaluation runs.
+- **Golden Scenario Evaluation Runner**: Designed a 5-scenario evaluation runner with strict quality gates (average score target >= 80%) to test end-to-end processing quality.
+
+### Fixed
+- **Empty News Cards Pipeline Leak**: Resolved a production issue where stories with blank headlines/summaries were visible to clients:
+  - Flipped initial story creation status to `pending` and only promoted to `active` after synthesis successfully runs.
+  - Added strict SQL query guards to `/stories`, search, and feed endpoints to exclude pending/failed or empty headline/summary stories.
+  - Ensured `GET /stories/{id}` returns `404 Not Found` for stories that are not active or are missing content.
+  - Removed unsafe exception handler fallbacks that were writing empty strings to the database on parsing failures.
+
 ## [1.8.0-dev] - 2026-06-19
 
 ### Added
