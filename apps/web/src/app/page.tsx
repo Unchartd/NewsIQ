@@ -27,7 +27,7 @@ export const metadata: Metadata = {
       "AI-powered news intelligence. Neutral headlines, multi-source comparison, timelines, and fact extraction. Updated every 5 minutes.",
     images: [
       {
-        url: "/og-image.jpg",
+        url: "/og-image.png",
         width: 1200,
         height: 630,
         alt: "NewsIQ — AI News Intelligence Platform",

@@ -26,7 +26,7 @@ export function buildOrganizationSchema() {
     url: SITE_URL,
     logo: {
       "@type": "ImageObject",
-      url: `${SITE_URL}/logo.png`,
+      url: `${SITE_URL}/brand/icon-red.svg`,
       width: 512,
       height: 512,
     },
@@ -224,7 +224,7 @@ export function buildNewsArticleSchema(story: {
       name: SITE_NAME,
       logo: {
         "@type": "ImageObject",
-        url: `${SITE_URL}/logo.png`,
+        url: `${SITE_URL}/brand/icon-red.svg`,
       },
     },
     isAccessibleForFree: true,

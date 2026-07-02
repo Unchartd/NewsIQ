@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useAuthStore } from "@/stores/auth-store";
 import { toast } from "sonner";
+import { BrandLogo } from "@/branding";
 import "./landing.css";
 
 export function LandingClientPage() {
@@ -137,10 +138,7 @@ export function LandingClientPage() {
            ════════════════════════════════════════ */}
       <nav className="nav">
         <div className="nav-inner">
-          <div className="logo">
-            <b>News</b>
-            <i>IQ</i>
-          </div>
+          <BrandLogo variant="full" size="sm" />
           <div className="nav-links">
             <a className="nav-link" href="#features">
               Features
@@ -2292,10 +2290,7 @@ export function LandingClientPage() {
           <div className="footer-grid">
             {/* Brand */}
             <div className="footer-brand">
-              <div className="logo">
-                <b>News</b>
-                <i>IQ</i>
-              </div>
+              <BrandLogo variant="full" size="sm" theme="dark" />
               <p className="footer-tagline">
                 AI-powered news intelligence. Understand the world&apos;s events in
                 under 30 seconds.

@@ -85,7 +85,10 @@ export default function DashboardLayout({
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
         <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/15">
-          <Shield className="w-5 h-5 text-primary" />
+          <svg viewBox="0 0 64 64" className="w-5 h-5" fill="none">
+            <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="currentColor" className="text-primary" />
+            <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill="white" />
+          </svg>
         </div>
         <div>
           <p className="text-sm font-bold text-foreground leading-none">

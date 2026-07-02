@@ -16,8 +16,8 @@ export const SITE_NAME = "NewsIQ";
 export const SITE_DESCRIPTION =
   "Understand any major story in under 30 seconds. AI-powered news clustering, multi-source comparison, neutral headlines, and transparent summaries.";
 
-// Default OG image — served from /public/og-image.jpg (1200×630)
-export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.jpg`;
+// Default OG image — served from /public/og-image.png (1200×630)
+export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 // Default Twitter handle
 export const TWITTER_HANDLE = "@newsiq_online";

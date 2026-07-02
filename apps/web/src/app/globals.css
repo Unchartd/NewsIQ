@@ -82,8 +82,8 @@
   --popover: #FFFFFF;
   --popover-foreground: #0D0D0D;
 
-  /* Primary — Crimson #C41E3A */
-  --primary: #C41E3A;
+  /* Primary — Brand Red #EF4444 */
+  --primary: #EF4444;
   --primary-foreground: #FFFFFF;
 
   /* Secondary */
@@ -104,7 +104,7 @@
   /* Border & Input */
   --border: #E2E2DC;
   --input: #E2E2DC;
-  --ring: #C41E3A;
+  --ring: #EF4444;
 
   /* NewsIQ specific */
   --success: #16A34A;
@@ -148,7 +148,7 @@
   --ease: ease-out;
 
   /* Charts — vibrant palette */
-  --chart-1: #C41E3A;
+  --chart-1: #EF4444;
   --chart-2: #16A34A;
   --chart-3: #D97706;
   --chart-4: #1A56DB;
@@ -159,12 +159,12 @@
   /* Sidebar */
   --sidebar: #FFFFFF;
   --sidebar-foreground: #0D0D0D;
-  --sidebar-primary: #C41E3A;
+  --sidebar-primary: #EF4444;
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-accent: #F7F7F5;
   --sidebar-accent-foreground: #0D0D0D;
   --sidebar-border: #E2E2DC;
-  --sidebar-ring: #C41E3A;
+  --sidebar-ring: #EF4444;
 
   /* ── Newly added index.html aliases ── */
   --ink2: #3d3d3d;
@@ -210,7 +210,7 @@
   --popover: #1C1C1A;
   --popover-foreground: #F0EFE9;
 
-  --primary: #E8334A;
+  --primary: #EF4444;
   --primary-foreground: #FFFFFF;
 
   --secondary: #1C1C1A;
@@ -226,7 +226,7 @@
 
   --border: #2E2E2A;
   --input: #2E2E2A;
-  --ring: #E8334A;
+  --ring: #EF4444;
 
   --success: #34D399;
   --warning: #FBBF24;
@@ -242,7 +242,7 @@
   --shadow-hover: 0 4px 16px rgba(0,0,0,0.4);
   --shadow-modal: 0 20px 60px rgba(0,0,0,0.5);
 
-  --chart-1: #E8334A;
+  --chart-1: #EF4444;
   --chart-2: #34D399;
   --chart-3: #FBBF24;
   --chart-4: #5B8DEF;
@@ -250,12 +250,12 @@
 
   --sidebar: #1C1C1A;
   --sidebar-foreground: #F0EFE9;
-  --sidebar-primary: #E8334A;
+  --sidebar-primary: #EF4444;
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-accent: #2E2E2A;
   --sidebar-accent-foreground: #F0EFE9;
   --sidebar-border: #2E2E2A;
-  --sidebar-ring: #E8334A;
+  --sidebar-ring: #EF4444;
 
   /* ── Newly added index.html aliases ── */
   --ink2: #a8a89e;

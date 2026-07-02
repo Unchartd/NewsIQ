@@ -11,18 +11,22 @@ export default function AppleIcon() {
           width: 180,
           height: 180,
           borderRadius: 38,
-          background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+          background: "#EF4444",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "sans-serif",
-          fontWeight: 900,
-          fontSize: 100,
-          color: "#fff",
-          letterSpacing: "-4px",
+          position: "relative",
         }}
       >
-        N
+        <svg
+          viewBox="0 0 64 64"
+          width="120"
+          height="120"
+          fill="none"
+        >
+          <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="#FFFFFF" />
+          <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill="#EF4444" />
+        </svg>
       </div>
     ),
     { width: 180, height: 180 }

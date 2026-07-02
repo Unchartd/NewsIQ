@@ -111,7 +111,7 @@ export default function LoginPage() {
           width: 44px;
           height: 44px;
           border-radius: 10px;
-          background: #2a1a1a;
+          background: #2a1515;
           border: 0.5px solid #3d2020;
           display: flex;
           align-items: center;
@@ -132,7 +132,7 @@ export default function LoginPage() {
         }
 
         .brand-name span {
-          color: #e05c5c;
+          color: #EF4444;
         }
 
         .console-label {
@@ -218,8 +218,8 @@ export default function LoginPage() {
         }
 
         .input-field:focus {
-          border-color: #e05c5c;
-          box-shadow: 0 0 0 3px rgba(224, 92, 92, 0.08);
+          border-color: #EF4444;
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
         }
 
         .input-field::placeholder {
@@ -249,7 +249,7 @@ export default function LoginPage() {
         .sign-in-btn {
           width: 100%;
           height: 42px;
-          background: #e05c5c;
+          background: #EF4444;
           border: none;
           border-radius: 8px;
           font-size: 13.5px;
@@ -265,7 +265,7 @@ export default function LoginPage() {
           transition: background 0.15s, transform 0.1s;
         }
 
-        .sign-in-btn:hover { background: #cc4e4e; }
+        .sign-in-btn:hover { background: #DC2626; }
         .sign-in-btn:active { transform: scale(0.99); }
         .sign-in-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -281,8 +281,8 @@ export default function LoginPage() {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: rgba(224, 92, 92, 0.13);
-          border: 1px solid rgba(224, 92, 92, 0.27);
+          background: rgba(239, 68, 68, 0.13);
+          border: 1px solid rgba(239, 68, 68, 0.27);
           flex-shrink: 0;
         }
 
@@ -328,11 +328,9 @@ export default function LoginPage() {
 
           <div className="card-header">
             <div className="logo-wrap">
-              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6L12 2z" fill="#e05c5c" opacity="0.18"/>
-                <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6L12 2z" stroke="#e05c5c" strokeWidth={1.5} strokeLinejoin="round"/>
-                <circle cx={12} cy={11} r={2.5} fill="#e05c5c"/>
-                <path d="M12 13.5V16" stroke="#e05c5c" strokeWidth={1.5} strokeLinecap="round"/>
+              <svg viewBox="0 0 64 64" width="22" height="22" fill="none">
+                <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="#EF4444"/>
+                <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill="#FFFFFF"/>
               </svg>
             </div>
 

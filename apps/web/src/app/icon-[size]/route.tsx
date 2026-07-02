@@ -3,27 +3,31 @@ import { NextRequest } from "next/server";
 
 export const runtime = "edge";
 
-function IconSVG({ size }: { size: number }) {
-  const radius = Math.round(size * 0.2);
-  const fontSize = Math.round(size * 0.55);
+function BrandIcon({ size }: { size: number }) {
+  const radius = Math.round(size * 0.22);
+  const iconSize = Math.round(size * 0.7);
   return (
     <div
       style={{
         width: size,
         height: size,
         borderRadius: radius,
-        background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+        background: "#EF4444",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontFamily: "sans-serif",
-        fontWeight: 900,
-        fontSize,
-        color: "#fff",
-        letterSpacing: "-3px",
+        position: "relative",
       }}
     >
-      N
+      <svg
+        viewBox="0 0 64 64"
+        width={iconSize}
+        height={iconSize}
+        fill="none"
+      >
+        <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="#FFFFFF" />
+        <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill="#EF4444" />
+      </svg>
     </div>
   );
 }
@@ -34,5 +38,5 @@ export async function GET(
 ) {
   const { size: sizeParam } = await params;
   const size = sizeParam === "512" ? 512 : 192;
-  return new ImageResponse(<IconSVG size={size} />, { width: size, height: size });
+  return new ImageResponse(<BrandIcon size={size} />, { width: size, height: size });
 }

@@ -12,6 +12,7 @@ import {
   Bell,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
+import { BrandLogo } from "@/branding";
 
 interface NavbarProps {
   title?: string;
@@ -55,10 +56,7 @@ export function Navbar({ title }: NavbarProps = {}) {
       <div className="nav-inner">
         {/* Logo */}
         <Link href={isAuthenticated ? "/home" : "/"} style={{ textDecoration: "none" }}>
-          <div className="logo">
-            <b>News</b>
-            <i>IQ</i>
-          </div>
+          <BrandLogo variant="full" size="sm" />
         </Link>
 
         {/* Search bar */}
