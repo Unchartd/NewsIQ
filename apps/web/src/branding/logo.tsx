@@ -86,7 +86,7 @@ function Wordmark({
         style={{
           fontFamily: brandFonts.wordmarkAccent,
           fontWeight: brandWeights.wordmarkAccent,
-          fontStyle: "italic",
+          fontStyle: "normal",
           fontSize,
           color: brandColors.primary,
         }}

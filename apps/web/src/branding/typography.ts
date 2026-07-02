@@ -8,8 +8,8 @@ export const brandFonts = {
   /** Wordmark "News" — clean sans-serif */
   wordmarkPrimary: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 
-  /** Wordmark "IQ" — editorial serif italic */
-  wordmarkAccent: "'Newsreader', Georgia, 'Times New Roman', serif",
+  /** Wordmark "IQ" — clean sans-serif matching News */
+  wordmarkAccent: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 
   /** Body text */
   body: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
