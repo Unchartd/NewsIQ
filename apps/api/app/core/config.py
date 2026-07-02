@@ -201,11 +201,6 @@ class Settings(BaseSettings):
 
         log = logging.getLogger(__name__)
 
-        def _masked(val: str) -> str:
-            if not val:
-                return "(not set)"
-            return val[:8] + "..." if len(val) > 8 else "***"
-
         log.info(
             "NewsIQ startup configuration:\n"
             "  Role:             %s\n"
@@ -232,8 +227,8 @@ class Settings(BaseSettings):
             self.LANGFUSE_HOST,
             bool(self.LANGFUSE_PUBLIC_KEY and self.LANGFUSE_SECRET_KEY),
             bool(self.SENTRY_DSN),
-            _masked(self.GEMINI_API_KEY),
-            _masked(self.OPENROUTER_API_KEY),
+            "set" if self.GEMINI_API_KEY else "not set",
+            "set" if self.OPENROUTER_API_KEY else "not set",
         )
 
     model_config = {
