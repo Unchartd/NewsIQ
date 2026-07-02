@@ -49,7 +49,7 @@ class NvidiaProvider(AIProvider):
         if isinstance(e, APITimeoutError):
             return TimeoutError(f"NVIDIA request timed out: {e}")
         elif isinstance(e, APIError):
-            status = e.status_code
+            status = getattr(e, "status_code", None)
             if status == 401:
                 return AuthenticationError(f"NVIDIA authentication failed: {e}")
             elif status == 429:

@@ -93,8 +93,9 @@ class AIService:
     ) -> StorySummaryResponse:
         """Summarize story from its knowledge graph and analysis inputs using the central AI Gateway."""
         import json
-        from app.core.trace import story_id_ctx
+
         from app.ai.gateway import ai_gateway
+        from app.core.trace import story_id_ctx
 
         story_id = story_id_ctx.get("")
 

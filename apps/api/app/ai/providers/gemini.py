@@ -107,9 +107,11 @@ class GeminiProvider(AIProvider):
 
             input_tokens = 0
             output_tokens = 0
-            if getattr(response, "usage_metadata", None):
-                input_tokens = response.usage_metadata.prompt_token_count or 0
-                output_tokens = response.usage_metadata.candidates_token_count or 0
+            if getattr(response, "usage_metadata", None) is not None:
+                meta = response.usage_metadata
+                if meta is not None:
+                    input_tokens = getattr(meta, "prompt_token_count", 0) or 0
+                    output_tokens = getattr(meta, "candidates_token_count", 0) or 0
 
             content = response.text or ""
             parsed = None
@@ -197,8 +199,11 @@ class GeminiProvider(AIProvider):
                 contents=text,
                 config={"task_type": "RETRIEVAL_DOCUMENT"},
             )
-            raw_val = response.embeddings[0].values
-            # Target dimension is 768
-            return raw_val[:768]
+            if response.embeddings:
+                raw_val = response.embeddings[0].values
+                if raw_val is not None:
+                    # Target dimension is 768
+                    return raw_val[:768]
+            raise ValueError("No embeddings returned from Gemini API")
         except Exception as e:
             raise self._handle_exception(e)

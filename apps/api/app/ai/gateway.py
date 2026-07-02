@@ -195,7 +195,7 @@ class AIGateway:
         newsiq_ai_gateway_cache_total.labels(capability=capability, status="miss").inc()
 
         # 4. Iterate through the fallback chain
-        last_error = None
+        last_error: Exception | None = None
         for idx, (client, api_key, route_cfg) in enumerate(chain):
             provider_name = route_cfg["provider"]
             model_name = route_cfg["model"]

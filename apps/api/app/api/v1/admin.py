@@ -1192,13 +1192,13 @@ async def get_evaluation_report(
     """Get the latest offline Quality Evaluation framework report (admin only)."""
     import json
     import os
-    
+
     report_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../evaluation_report.json"))
     if not os.path.exists(report_path):
         raise HTTPException(status_code=404, detail="Quality Evaluation report not found. Run the eval runner first.")
-        
+
     try:
-        with open(report_path, "r", encoding="utf-8") as f:
+        with open(report_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read evaluation report: {str(e)}")
@@ -1214,15 +1214,15 @@ async def trigger_evaluation_run(
     import os
     import subprocess
     import sys
-    
+
     python_exe = sys.executable
     script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../tests/golden/eval_runner.py"))
-    
+
     try:
         # Run subprocess under correct python env
         env = os.environ.copy()
         env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-        
+
         process = await asyncio.create_subprocess_exec(
             python_exe,
             script_path,
@@ -1231,12 +1231,12 @@ async def trigger_evaluation_run(
             stderr=subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
-        
+
         # Read the newly generated report
         report_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../evaluation_report.json"))
-        with open(report_path, "r", encoding="utf-8") as f:
+        with open(report_path, encoding="utf-8") as f:
             report_data = json.load(f)
-            
+
         return {
             "success": process.returncode == 0,
             "exit_code": process.returncode,

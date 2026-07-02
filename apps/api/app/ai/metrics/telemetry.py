@@ -1,6 +1,22 @@
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Declare metrics as Any to allow DummyMetric fallbacks under type checking
+newsiq_ai_gateway_calls_total: Any
+newsiq_ai_gateway_cost_usd: Any
+newsiq_ai_gateway_tokens_total: Any
+newsiq_ai_gateway_latency_seconds: Any
+newsiq_ai_gateway_retries_total: Any
+newsiq_ai_gateway_cache_total: Any
+newsiq_ai_gateway_timeouts_total: Any
+newsiq_ai_gateway_validation_failures_total: Any
+newsiq_ai_gateway_circuit_state: Any
+newsiq_prompt_executions_total: Any
+newsiq_prompt_latency_seconds: Any
+newsiq_prompt_tokens_total: Any
+newsiq_provider_fallback_executions_total: Any
 
 try:
     from prometheus_client import Counter, Gauge, Histogram

@@ -71,7 +71,7 @@ class AIProvider(Protocol):
         """Asynchronously execute the request and validate its schema."""
         ...
 
-    async def stream(self, request: GatewayRequest, api_key: APIKey) -> AsyncGenerator[str, None]:
+    def stream(self, request: GatewayRequest, api_key: APIKey) -> AsyncGenerator[str, None]:
         """Asynchronously stream raw completion content."""
         ...
 

@@ -270,8 +270,8 @@ class EntityLinker:
         self, name: str, entity_type: str, context: str
     ) -> EntityResolution:
         """Query LLM to generate a clean search query and description via central AI Gateway."""
-        from app.core.trace import story_id_ctx
         from app.ai.gateway import ai_gateway
+        from app.core.trace import story_id_ctx
 
         story_id = story_id_ctx.get("")
 

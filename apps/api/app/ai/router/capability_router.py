@@ -24,8 +24,8 @@ class ProviderHealthTracker:
         self.provider = provider
         self.healthy = True
         self.consecutive_failures = 0
-        self.disabled_until = None
-        self.last_health_check = None
+        self.disabled_until: datetime | None = None
+        self.last_health_check: datetime | None = None
 
     def report_success(self) -> None:
         self.consecutive_failures = 0
@@ -148,6 +148,7 @@ class CapabilityRouter:
 
         if is_testing:
             mock_key = self._select_key("mock")
+            assert mock_key is not None
             mock_route = ProviderModelRoute(provider="mock", model="mock", temperature=0.0, timeout=15.0)
             return [(self.clients["mock"], mock_key, mock_route)]
 
@@ -156,7 +157,9 @@ class CapabilityRouter:
             raise ValueError(f"Unknown capability: {capability}")
 
         chain = []
-        for level in ["primary", "fallback", "lastFallback"]:
+        from typing import Literal
+        levels: list[Literal["primary", "fallback", "lastFallback"]] = ["primary", "fallback", "lastFallback"]
+        for level in levels:
             cfg = route_config[level]
             provider = cfg["provider"]
             tracker = self.health_trackers[provider]
