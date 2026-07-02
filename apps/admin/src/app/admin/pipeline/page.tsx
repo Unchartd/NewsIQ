@@ -799,6 +799,25 @@ export default function PipelinePage() {
                         </div>
                       </div>
 
+                      {/* Processed Metadata Summary */}
+                      {stageDetails.metadata && Object.keys(stageDetails.metadata).length > 0 && (
+                        <div className="p-4 bg-slate-900/40 rounded-xl border border-slate-800 space-y-2">
+                          <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Process Summary</h4>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                            {Object.entries(stageDetails.metadata).map(([key, val]) => {
+                              if (typeof val === "object" && val !== null) return null; // skip nested structures
+                              const label = key.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+                              return (
+                                <div key={key} className="flex justify-between py-1 border-b border-slate-850/60">
+                                  <span className="text-slate-450">{label}</span>
+                                  <span className="font-mono font-semibold text-slate-200">{String(val)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Technical Identifiers */}
                       <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-3.5 text-xs font-mono">
                         <div className="flex items-center justify-between">
@@ -1115,6 +1134,7 @@ export default function PipelinePage() {
                   <th className="text-left py-2 pr-4">Run ID</th>
                   <th className="text-left py-2 pr-4">Trigger</th>
                   <th className="text-left py-2 pr-4">Type</th>
+                  <th className="text-left py-2 pr-4">Summary</th>
                   <th className="text-left py-2 pr-4">Status</th>
                   <th className="text-left py-2 pr-4">Started At</th>
                   <th className="text-right py-2 pr-4">Duration</th>
@@ -1136,6 +1156,9 @@ export default function PipelinePage() {
                       <td className="py-2.5 pr-4 font-mono font-semibold text-slate-300">{run.id.slice(0, 18)}…</td>
                       <td className="py-2.5 pr-4 font-mono text-slate-400 capitalize">{run.trigger}</td>
                       <td className="py-2.5 pr-4 font-mono text-slate-400 capitalize">{run.pipeline_type}</td>
+                      <td className="py-2.5 pr-4 text-slate-300 font-medium max-w-[200px] truncate" title={run.summary}>
+                        {run.summary || "—"}
+                      </td>
                       <td className="py-2.5 pr-4">
                         <span className={`flex items-center gap-1.5 font-bold uppercase text-[10px] ${cfg.cls}`}>
                           <Icon className={`w-3.5 h-3.5 ${cfg.iconCls || ""}`} />
