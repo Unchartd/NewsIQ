@@ -54,8 +54,10 @@ class MockProvider(AIProvider):
 
         # Build schema-based output if response_format is provided
         schema = None
-        if request.response_format and isinstance(request.response_format, type) and issubclass(
-            request.response_format, BaseModel
+        if (
+            request.response_format
+            and isinstance(request.response_format, type)
+            and issubclass(request.response_format, BaseModel)
         ):
             schema = request.response_format
 
@@ -72,7 +74,12 @@ class MockProvider(AIProvider):
                 elif "extraction" in name_lower or "entity" in name_lower:
                     fields = {
                         "entities": [
-                            {"value": "Mock entity", "type": "ORG", "canonical_name": "Mock entity", "confidence": 0.95}
+                            {
+                                "value": "Mock entity",
+                                "type": "ORG",
+                                "canonical_name": "Mock entity",
+                                "confidence": 0.95,
+                            }
                         ]
                     }
                 elif "event" in name_lower:
@@ -143,11 +150,7 @@ class MockProvider(AIProvider):
         yield response.content
 
     async def health(self, api_key: APIKey) -> HealthStatus:
-        return HealthStatus(
-            healthy=True,
-            latency_ms=1.0,
-            supported_models=["mock"]
-        )
+        return HealthStatus(healthy=True, latency_ms=1.0, supported_models=["mock"])
 
     def count_tokens(self, text: str) -> int:
         return len(text) // 4
@@ -157,6 +160,7 @@ class MockProvider(AIProvider):
         import hashlib
 
         import numpy as np
+
         digest = hashlib.sha256(text.encode("utf-8")).digest()
         seed = int.from_bytes(digest[:4], byteorder="big")
         rng = np.random.default_rng(seed)

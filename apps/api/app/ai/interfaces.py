@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class APIKey(BaseModel):
     """Representation of an API key inside the provider key pool."""
+
     key: str = Field(..., description="The raw API key string")
     provider: str = Field(..., description="The provider name (gemini, nvidia, openrouter, etc.)")
     requests_per_minute: int = Field(60, description="Rate limit RPM")
@@ -29,10 +30,13 @@ class APIKey(BaseModel):
 
 class GatewayRequest(BaseModel):
     """Unified request schema for AI Gateway calls."""
+
     model: str = Field(..., description="Target model ID")
     messages: list[dict[str, Any]] = Field(..., description="OpenAI-style message list")
     temperature: float = Field(0.0, description="Sampling temperature")
-    response_format: dict[str, Any] | type[BaseModel] | None = Field(None, description="Output validation schema")
+    response_format: dict[str, Any] | type[BaseModel] | None = Field(
+        None, description="Output validation schema"
+    )
     stage: str = Field("unknown", description="Pipeline stage for tracing")
     story_id: str = Field("", description="Story ID context for tracing")
     article_id: str = Field("", description="Article ID context for tracing")
@@ -44,8 +48,11 @@ class GatewayRequest(BaseModel):
 
 class GatewayResponse(BaseModel):
     """Unified response schema for AI Gateway calls."""
+
     content: str = Field(..., description="Raw text response content")
-    parsed: Any | None = Field(None, description="Parsed structured response matching response_format")
+    parsed: Any | None = Field(
+        None, description="Parsed structured response matching response_format"
+    )
     input_tokens: int = Field(0, description="Count of input prompt tokens")
     output_tokens: int = Field(0, description="Count of output completion tokens")
     total_tokens: int = Field(0, description="Total token count")
@@ -59,6 +66,7 @@ class GatewayResponse(BaseModel):
 
 class HealthStatus(BaseModel):
     """Result of a provider health check."""
+
     healthy: bool
     latency_ms: float
     supported_models: list[str]
@@ -67,6 +75,7 @@ class HealthStatus(BaseModel):
 
 class AIProvider(Protocol):
     """Unified AI Provider interface."""
+
     async def generate(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
         """Asynchronously execute the request and validate its schema."""
         ...

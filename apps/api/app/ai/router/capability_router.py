@@ -60,7 +60,9 @@ class ProviderHealthTracker:
             return True
         if self.disabled_until and datetime.utcnow() > self.disabled_until:
             # Let it try once to see if it recovered (half-open state)
-            logger.info("Circuit breaker HALF-OPEN for provider: %s. Testing recovery.", self.provider)
+            logger.info(
+                "Circuit breaker HALF-OPEN for provider: %s. Testing recovery.", self.provider
+            )
             return True
         return False
 
@@ -96,26 +98,34 @@ class CapabilityRouter:
         gemini_keys = []
         gemini_env = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY or ""
         for k in [k.strip() for k in gemini_env.split(",") if k.strip()]:
-            gemini_keys.append(APIKey(key=k, provider="gemini", requests_per_minute=15, requests_per_day=1500))
+            gemini_keys.append(
+                APIKey(key=k, provider="gemini", requests_per_minute=15, requests_per_day=1500)
+            )
         self.pools["gemini"] = gemini_keys
 
         # 2. NVIDIA NIM
         nvidia_keys = []
         nvidia_env = settings.NVIDIA_API_KEY or ""
         for k in [k.strip() for k in nvidia_env.split(",") if k.strip()]:
-            nvidia_keys.append(APIKey(key=k, provider="nvidia", requests_per_minute=15, requests_per_day=5000))
+            nvidia_keys.append(
+                APIKey(key=k, provider="nvidia", requests_per_minute=15, requests_per_day=5000)
+            )
         self.pools["nvidia"] = nvidia_keys
 
         # 3. OpenRouter
         openrouter_keys = []
         openrouter_env = settings.OPENROUTER_API_KEY or ""
         for k in [k.strip() for k in openrouter_env.split(",") if k.strip()]:
-            openrouter_keys.append(APIKey(key=k, provider="openrouter", requests_per_minute=30, requests_per_day=14400))
+            openrouter_keys.append(
+                APIKey(key=k, provider="openrouter", requests_per_minute=30, requests_per_day=14400)
+            )
         self.pools["openrouter"] = openrouter_keys
 
         # 4. Mock
         self.pools["mock"] = [
-            APIKey(key="mock-key", provider="mock", requests_per_minute=1000, requests_per_day=100000)
+            APIKey(
+                key="mock-key", provider="mock", requests_per_minute=1000, requests_per_day=100000
+            )
         ]
 
     def _select_key(self, provider: str) -> APIKey | None:
@@ -149,7 +159,9 @@ class CapabilityRouter:
         if is_testing:
             mock_key = self._select_key("mock")
             assert mock_key is not None
-            mock_route = ProviderModelRoute(provider="mock", model="mock", temperature=0.0, timeout=15.0)
+            mock_route = ProviderModelRoute(
+                provider="mock", model="mock", temperature=0.0, timeout=15.0
+            )
             return [(self.clients["mock"], mock_key, mock_route)]
 
         route_config = CAPABILITY_ROUTING.get(capability)
@@ -158,7 +170,12 @@ class CapabilityRouter:
 
         chain = []
         from typing import Literal
-        levels: list[Literal["primary", "fallback", "lastFallback"]] = ["primary", "fallback", "lastFallback"]
+
+        levels: list[Literal["primary", "fallback", "lastFallback"]] = [
+            "primary",
+            "fallback",
+            "lastFallback",
+        ]
         for level in levels:
             cfg = route_config[level]
             provider = cfg["provider"]
@@ -203,7 +220,9 @@ class CapabilityRouter:
                 if status.healthy:
                     tracker.report_success()
                 else:
-                    logger.warning("Background health check failed for %s: %s", provider, status.error)
+                    logger.warning(
+                        "Background health check failed for %s: %s", provider, status.error
+                    )
             except Exception as e:
                 logger.error("Error during background health check for %s: %s", provider, e)
 

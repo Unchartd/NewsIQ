@@ -299,6 +299,7 @@ class ClusteringService:
 
         # ── Incremental Updates Guard ──
         from app.services.cache_service import cache_service
+
         guard_key = f"story_synthesis_hash:{story.id}"
         is_guard_hit = False
         if story.headline:
@@ -308,7 +309,9 @@ class ClusteringService:
                     if existing_hash and existing_hash.decode("utf-8") == story_input_hash:
                         is_guard_hit = True
                 except Exception as e:
-                    logger.warning("Failed to check incremental updates guard for story %s: %s", story.id, e)
+                    logger.warning(
+                        "Failed to check incremental updates guard for story %s: %s", story.id, e
+                    )
             else:
                 existing_hash = _memory_guard_cache.get(str(story.id))
                 if existing_hash == story_input_hash:
@@ -335,6 +338,7 @@ class ClusteringService:
             ) as span:
                 try:
                     from app.services.prompt_registry import prompt_registry
+
                     prompt_tmpl = prompt_registry.get("contradiction_detection")
                     model = prompt_tmpl.model
                     prompt_version = prompt_tmpl.version
@@ -415,6 +419,7 @@ class ClusteringService:
             ) as span:
                 try:
                     from app.services.prompt_registry import prompt_registry
+
                     prompt_tmpl = prompt_registry.get("source_comparison")
                     model = prompt_tmpl.model
                     prompt_version = prompt_tmpl.version
@@ -465,6 +470,7 @@ class ClusteringService:
 
                         # ── Budget gate: skip expensive source comparison if stage budget exceeded ──
                         from app.services.cost_budget import cost_budget_manager
+
                         _budget_exceeded = await cost_budget_manager.is_stage_budget_exceeded(
                             str(story.id), "source_comparison", cat_slug
                         )
@@ -794,7 +800,9 @@ class ClusteringService:
             try:
                 await cache_service._redis.set(guard_key, story_input_hash, ex=604800)  # 7-day TTL
             except Exception as e:
-                logger.warning("Failed to update incremental updates guard for story %s: %s", story.id, e)
+                logger.warning(
+                    "Failed to update incremental updates guard for story %s: %s", story.id, e
+                )
         else:
             _memory_guard_cache[str(story.id)] = story_input_hash
 
@@ -829,6 +837,7 @@ class ClusteringService:
         """Determine if summary reflection should be run based on multi-dimensional signal analysis."""
         # 0. Budget gate — never run expensive reflection if stage budget is exceeded
         from app.services.cost_budget import cost_budget_manager
+
         budget_exceeded = await cost_budget_manager.is_stage_budget_exceeded(
             str(story.id), "summary_reflection", category_slug
         )

@@ -455,7 +455,14 @@ async def get_story_detail(
     res = await db.execute(stmt)
     story = res.scalar_one_or_none()
 
-    if not story or story.story_status != "active" or not story.headline or story.headline.strip() == "" or not story.short_summary or story.short_summary.strip() == "":
+    if (
+        not story
+        or story.story_status != "active"
+        or not story.headline
+        or story.headline.strip() == ""
+        or not story.short_summary
+        or story.short_summary.strip() == ""
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Story not found.",

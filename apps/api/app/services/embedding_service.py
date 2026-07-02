@@ -59,6 +59,7 @@ class EmbeddingService:
 
         # Call AI Gateway
         from app.ai.gateway import ai_gateway
+
         try:
             vector = await ai_gateway.embeddings(clean)
         except Exception as exc:

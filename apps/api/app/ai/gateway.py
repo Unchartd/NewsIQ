@@ -57,7 +57,6 @@ PRICING_TABLE = {
 }
 
 
-
 def clean_json_for_schema(data: Any, schema: type[BaseModel]) -> Any:
     """Clean and map JSON fields to align with the expected Pydantic schema.
 
@@ -108,14 +107,22 @@ def clean_json_for_schema(data: Any, schema: type[BaseModel]) -> Any:
         field_info = schema.model_fields.get(mapped_key)
         if field_info:
             from typing import get_origin
+
             origin = get_origin(field_info.annotation)
             # Check if list type
-            is_list = (origin is list) or (isinstance(field_info.annotation, type) and issubclass(field_info.annotation, list))
+            is_list = (origin is list) or (
+                isinstance(field_info.annotation, type) and issubclass(field_info.annotation, list)
+            )
             if is_list:
                 if isinstance(v, str):
                     v = [v]
                 elif isinstance(v, dict):
-                    v = [f"{key_k}: {key_v}" if not isinstance(key_v, list) else f"{key_k}: {', '.join(map(str, key_v))}" for key_k, key_v in v.items()]
+                    v = [
+                        f"{key_k}: {key_v}"
+                        if not isinstance(key_v, list)
+                        else f"{key_k}: {', '.join(map(str, key_v))}"
+                        for key_k, key_v in v.items()
+                    ]
 
         cleaned[mapped_key] = v
 
@@ -269,10 +276,14 @@ class AIGateway:
                                 newsiq_ai_gateway_validation_failures_total.labels(
                                     capability=capability, model=model_name
                                 ).inc()
-                                raise ValidationError(f"Response validation failed against schema: {val_err}")
+                                raise ValidationError(
+                                    f"Response validation failed against schema: {val_err}"
+                                )
 
                         # Calculate and set cost
-                        cost = self._calculate_cost(model_name, response.input_tokens, response.output_tokens)
+                        cost = self._calculate_cost(
+                            model_name, response.input_tokens, response.output_tokens
+                        )
                         response.cost_usd = cost
                         trace_call.cost_usd = cost
 
@@ -302,16 +313,25 @@ class AIGateway:
 
                     # Record metrics
                     newsiq_ai_gateway_calls_total.labels(
-                        provider=provider_name, model=model_name, capability=capability, status="success"
+                        provider=provider_name,
+                        model=model_name,
+                        capability=capability,
+                        status="success",
                     ).inc()
                     newsiq_ai_gateway_cost_usd.labels(
                         provider=provider_name, model=model_name, capability=capability
                     ).inc(cost)
                     newsiq_ai_gateway_tokens_total.labels(
-                        provider=provider_name, model=model_name, capability=capability, token_type="input"
+                        provider=provider_name,
+                        model=model_name,
+                        capability=capability,
+                        token_type="input",
                     ).inc(response.input_tokens)
                     newsiq_ai_gateway_tokens_total.labels(
-                        provider=provider_name, model=model_name, capability=capability, token_type="output"
+                        provider=provider_name,
+                        model=model_name,
+                        capability=capability,
+                        token_type="output",
                     ).inc(response.output_tokens)
                     newsiq_ai_gateway_latency_seconds.labels(
                         provider=provider_name, model=model_name, capability=capability
@@ -323,7 +343,9 @@ class AIGateway:
                     # Save to Redis Cache (Exact hash)
                     cache_data = {
                         "content": response.content,
-                        "parsed": response.parsed.model_dump(mode="json") if isinstance(response.parsed, BaseModel) else response.parsed,
+                        "parsed": response.parsed.model_dump(mode="json")
+                        if isinstance(response.parsed, BaseModel)
+                        else response.parsed,
                         "provider": provider_name,
                         "model": model_name,
                     }
@@ -344,7 +366,10 @@ class AIGateway:
                     logger.warning("LLM output schema validation failed: %s. Attempting retry.", ve)
                     last_error = ve
                     newsiq_ai_gateway_retries_total.labels(
-                        provider=provider_name, model=model_name, capability=capability, reason="validation_failure"
+                        provider=provider_name,
+                        model=model_name,
+                        capability=capability,
+                        reason="validation_failure",
                     ).inc()
                     if attempt == max_attempts - 1:
                         # Break and try next provider if we exhausted attempts
@@ -352,7 +377,12 @@ class AIGateway:
                     await asyncio.sleep(backoff)
                     backoff *= 2.0
 
-                except (RateLimitError, TimeoutError, ProviderUnavailableError, AuthenticationError) as err:
+                except (
+                    RateLimitError,
+                    TimeoutError,
+                    ProviderUnavailableError,
+                    AuthenticationError,
+                ) as err:
                     # Map to standard gateway exceptions and report failure to tracker
                     logger.warning(
                         "Gateway attempt failed for provider=%s model=%s capability=%s: %s",
@@ -374,7 +404,10 @@ class AIGateway:
 
                     # Metric tracking
                     newsiq_ai_gateway_calls_total.labels(
-                        provider=provider_name, model=model_name, capability=capability, status="error"
+                        provider=provider_name,
+                        model=model_name,
+                        capability=capability,
+                        status="error",
                     ).inc()
                     if isinstance(err, TimeoutError):
                         newsiq_ai_gateway_timeouts_total.labels(
@@ -382,7 +415,10 @@ class AIGateway:
                         ).inc()
 
                     newsiq_ai_gateway_retries_total.labels(
-                        provider=provider_name, model=model_name, capability=capability, reason=err.__class__.__name__
+                        provider=provider_name,
+                        model=model_name,
+                        capability=capability,
+                        reason=err.__class__.__name__,
                     ).inc()
 
                     # Wait and backoff
@@ -433,7 +469,9 @@ class AIGateway:
             results[provider] = {
                 "healthy": tracker.healthy,
                 "consecutive_failures": tracker.consecutive_failures,
-                "disabled_until": tracker.disabled_until.isoformat() if tracker.disabled_until else None,
+                "disabled_until": tracker.disabled_until.isoformat()
+                if tracker.disabled_until
+                else None,
             }
         return results
 

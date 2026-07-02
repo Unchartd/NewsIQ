@@ -104,10 +104,10 @@ class CostBudgetManager:
 
 # Stage-aware budget thresholds as a percentage of the total story cost budget
 STAGE_BUDGET_THRESHOLDS = {
-    "summary_reflection": 0.50,       # Skip reflection if spent > 50% of budget
-    "source_comparison": 0.80,        # Fallback to deterministic comparison if spent > 80%
+    "summary_reflection": 0.50,  # Skip reflection if spent > 50% of budget
+    "source_comparison": 0.80,  # Fallback to deterministic comparison if spent > 80%
     "contradiction_detection": 0.70,  # Fallback to cheaper models if spent > 70%
-    "summary_generation": 1.00,       # Fallback to cheaper models if spent > 100% (never skip)
+    "summary_generation": 1.00,  # Fallback to cheaper models if spent > 100% (never skip)
 }
 
 cost_budget_manager = CostBudgetManager()

@@ -40,7 +40,10 @@ class OpenRouterProvider(AIProvider):
             has_json = any("json" in str(m.get("content", "")).lower() for m in messages)
             if not has_json:
                 params["messages"] = messages + [
-                    {"role": "system", "content": "Respond in valid JSON format matching the schema."}
+                    {
+                        "role": "system",
+                        "content": "Respond in valid JSON format matching the schema.",
+                    }
                 ]
 
         return params
@@ -64,10 +67,7 @@ class OpenRouterProvider(AIProvider):
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
             params = self._prepare_params(request)
 
-            response = await client.chat.completions.create(
-                **params,
-                timeout=request.timeout
-            )
+            response = await client.chat.completions.create(**params, timeout=request.timeout)
             latency_ms = (time.perf_counter() - t0) * 1000
 
             choice = response.choices[0]
@@ -109,9 +109,7 @@ class OpenRouterProvider(AIProvider):
             params = self._prepare_params(request)
 
             response_stream = await client.chat.completions.create(
-                **params,
-                stream=True,
-                timeout=request.timeout
+                **params, stream=True, timeout=request.timeout
             )
             async for chunk in response_stream:
                 choice = chunk.choices[0]
@@ -130,26 +128,24 @@ class OpenRouterProvider(AIProvider):
                 messages=[{"role": "user", "content": "ping"}],
                 max_tokens=5,
                 temperature=0.0,
-                timeout=5.0
+                timeout=5.0,
             )
             latency_ms = (time.perf_counter() - t0) * 1000
             return HealthStatus(
                 healthy=True,
                 latency_ms=latency_ms,
-                supported_models=["deepseek/deepseek-chat", "qwen/qwen-2.5-72b-instruct"]
+                supported_models=["deepseek/deepseek-chat", "qwen/qwen-2.5-72b-instruct"],
             )
         except Exception as e:
             latency_ms = (time.perf_counter() - t0) * 1000
             return HealthStatus(
-                healthy=False,
-                latency_ms=latency_ms,
-                supported_models=[],
-                error=str(e)
+                healthy=False, latency_ms=latency_ms, supported_models=[], error=str(e)
             )
 
     def count_tokens(self, text: str) -> int:
         try:
             import tiktoken
+
             encoding = tiktoken.get_encoding("cl100k_base")
             return len(encoding.encode(text))
         except ImportError:
@@ -159,8 +155,7 @@ class OpenRouterProvider(AIProvider):
         try:
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
             response = await client.embeddings.create(
-                input=[text],
-                model="nomic/nomic-embed-text-v1.5"
+                input=[text], model="nomic/nomic-embed-text-v1.5"
             )
             raw = response.data[0].embedding
             return raw[:768]

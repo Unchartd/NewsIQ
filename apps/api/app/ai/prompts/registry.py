@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class PromptTemplate:
     """A versioned prompt template with separated system/user content."""
+
     stage: str
     version: str
     system: str

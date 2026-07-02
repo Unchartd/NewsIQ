@@ -83,9 +83,20 @@ class GeminiProvider(AIProvider):
         """Map SDK errors to custom gateway exceptions."""
         err_msg = str(e)
         err_lower = err_msg.lower()
-        if "401" in err_lower or "api key not valid" in err_lower or "invalid api key" in err_lower or "403" in err_lower:
+        if (
+            "401" in err_lower
+            or "api key not valid" in err_lower
+            or "invalid api key" in err_lower
+            or "403" in err_lower
+        ):
             return AuthenticationError(f"Gemini authentication failed: {err_msg}")
-        elif "429" in err_lower or "rate limit" in err_lower or "quota" in err_lower or "resource exhausted" in err_lower or "too many requests" in err_lower:
+        elif (
+            "429" in err_lower
+            or "rate limit" in err_lower
+            or "quota" in err_lower
+            or "resource exhausted" in err_lower
+            or "too many requests" in err_lower
+        ):
             return RateLimitError(f"Gemini rate limit exceeded: {err_msg}")
         elif "timeout" in err_lower or "deadline exceeded" in err_lower:
             return TimeoutError(f"Gemini request timed out: {err_msg}")
@@ -99,9 +110,7 @@ class GeminiProvider(AIProvider):
             params = self._prepare_params(request)
 
             response = await client.aio.models.generate_content(
-                model=request.model,
-                contents=params["contents"],
-                config=params["config"]
+                model=request.model, contents=params["contents"], config=params["config"]
             )
             latency_ms = (time.perf_counter() - t0) * 1000
 
@@ -148,9 +157,7 @@ class GeminiProvider(AIProvider):
             params = self._prepare_params(request)
 
             response_stream = await client.aio.models.generate_content_stream(
-                model=request.model,
-                contents=params["contents"],
-                config=params["config"]
+                model=request.model, contents=params["contents"], config=params["config"]
             )
             async for chunk in response_stream:
                 if chunk.text:
@@ -166,26 +173,24 @@ class GeminiProvider(AIProvider):
             await client.aio.models.generate_content(
                 model="gemini-2.5-flash",
                 contents="ping",
-                config=types.GenerateContentConfig(max_output_tokens=5, temperature=0.0)
+                config=types.GenerateContentConfig(max_output_tokens=5, temperature=0.0),
             )
             latency_ms = (time.perf_counter() - t0) * 1000
             return HealthStatus(
                 healthy=True,
                 latency_ms=latency_ms,
-                supported_models=["gemini-2.5-flash", "gemini-2.5-pro", "text-embedding-004"]
+                supported_models=["gemini-2.5-flash", "gemini-2.5-pro", "text-embedding-004"],
             )
         except Exception as e:
             latency_ms = (time.perf_counter() - t0) * 1000
             return HealthStatus(
-                healthy=False,
-                latency_ms=latency_ms,
-                supported_models=[],
-                error=str(e)
+                healthy=False, latency_ms=latency_ms, supported_models=[], error=str(e)
             )
 
     def count_tokens(self, text: str) -> int:
         try:
             import tiktoken
+
             encoding = tiktoken.get_encoding("cl100k_base")
             return len(encoding.encode(text))
         except ImportError:

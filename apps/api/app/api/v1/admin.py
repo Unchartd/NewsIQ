@@ -1193,9 +1193,14 @@ async def get_evaluation_report(
     import json
     import os
 
-    report_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../evaluation_report.json"))
+    report_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../evaluation_report.json")
+    )
     if not os.path.exists(report_path):
-        raise HTTPException(status_code=404, detail="Quality Evaluation report not found. Run the eval runner first.")
+        raise HTTPException(
+            status_code=404,
+            detail="Quality Evaluation report not found. Run the eval runner first.",
+        )
 
     try:
         with open(report_path, encoding="utf-8") as f:
@@ -1216,7 +1221,9 @@ async def trigger_evaluation_run(
     import sys
 
     python_exe = sys.executable
-    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../tests/golden/eval_runner.py"))
+    script_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../tests/golden/eval_runner.py")
+    )
 
     try:
         # Run subprocess under correct python env
@@ -1224,16 +1231,14 @@ async def trigger_evaluation_run(
         env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
         process = await asyncio.create_subprocess_exec(
-            python_exe,
-            script_path,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            python_exe, script_path, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
 
         # Read the newly generated report
-        report_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../evaluation_report.json"))
+        report_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../../../evaluation_report.json")
+        )
         with open(report_path, encoding="utf-8") as f:
             report_data = json.load(f)
 
@@ -1242,7 +1247,9 @@ async def trigger_evaluation_run(
             "exit_code": process.returncode,
             "stdout": stdout.decode("utf-8", errors="ignore"),
             "stderr": stderr.decode("utf-8", errors="ignore"),
-            "report": report_data
+            "report": report_data,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to execute evaluation runner: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to execute evaluation runner: {str(e)}"
+        )
