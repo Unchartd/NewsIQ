@@ -347,21 +347,19 @@ class EventService:
                 logger.warning("Failed to deserialize cached event extraction: %s", e)
 
         # ── LLM call (cache miss) ─────────────────────────────────────────────
-        # Use prompt registry for system/user split (maximizes provider prefix caching)
-        messages = prompt_tmpl.messages(
-            title=title,
-            source_name=source_name or "Unknown",
-            published_at=published_at or "unknown",
-            content=optimized_content,
-        )
+        from app.ai.gateway import ai_gateway
 
-        from app.llm_gateway.request_manager import llm_gateway
+        prompt_variables = {
+            "title": title,
+            "source_name": source_name or "Unknown",
+            "published_at": published_at or "unknown",
+            "content": optimized_content,
+        }
 
-        response = await llm_gateway.execute_request(
-            model=model,
-            stage="event_extraction",
-            messages=messages,
-            response_format=ArticleEventResponse,
+        response = await ai_gateway.generate(
+            capability="event_extraction",
+            prompt_variables=prompt_variables,
+            schema=ArticleEventResponse,
             temperature=0.1,
         )
 

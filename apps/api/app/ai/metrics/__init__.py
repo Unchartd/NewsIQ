@@ -1,0 +1,31 @@
+from app.ai.metrics.telemetry import (
+    newsiq_ai_gateway_cache_total,
+    newsiq_ai_gateway_calls_total,
+    newsiq_ai_gateway_circuit_state,
+    newsiq_ai_gateway_cost_usd,
+    newsiq_ai_gateway_latency_seconds,
+    newsiq_ai_gateway_retries_total,
+    newsiq_ai_gateway_timeouts_total,
+    newsiq_ai_gateway_tokens_total,
+    newsiq_ai_gateway_validation_failures_total,
+    newsiq_prompt_executions_total,
+    newsiq_prompt_latency_seconds,
+    newsiq_prompt_tokens_total,
+    newsiq_provider_fallback_executions_total,
+)
+
+__all__ = [
+    "newsiq_ai_gateway_calls_total",
+    "newsiq_ai_gateway_cost_usd",
+    "newsiq_ai_gateway_tokens_total",
+    "newsiq_ai_gateway_latency_seconds",
+    "newsiq_ai_gateway_retries_total",
+    "newsiq_ai_gateway_cache_total",
+    "newsiq_ai_gateway_timeouts_total",
+    "newsiq_ai_gateway_validation_failures_total",
+    "newsiq_ai_gateway_circuit_state",
+    "newsiq_prompt_executions_total",
+    "newsiq_prompt_latency_seconds",
+    "newsiq_prompt_tokens_total",
+    "newsiq_provider_fallback_executions_total",
+]

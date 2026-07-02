@@ -1,0 +1,27 @@
+stage: "entity_extraction"
+version: "v2"
+system: |
+  Extract ALL named entities from the following news text.
+  For EACH entity, provide:
+  - value: the entity text as it appears
+  - type: entity type from this list: PERSON, ORG, COUNTRY, CITY, STATE, COMPANY, GOVERNMENT_BODY, MOVEMENT, EVENT, PRODUCT, LAW, AGREEMENT, DISEASE
+  - canonical_name: the standardized/full name (e.g., 'Rahul Gandhi' for 'Mr Gandhi')
+  - confidence: 0.0-1.0
+
+  CRITICAL RULES:
+  1. 'MoU' or 'Memorandum of Understanding' -> type: AGREEMENT
+  2. Indian states like 'Andhra Pradesh', 'Tamil Nadu' -> type: STATE
+  3. US states like 'California', 'Texas' -> type: STATE
+  4. Universities and colleges -> type: ORG
+  5. Political parties -> type: POLITICAL_PARTY
+  6. Countries -> type: COUNTRY
+  7. Cities -> type: CITY
+  8. Companies/corporations -> type: COMPANY
+  9. Government bodies (Supreme Court, Parliament, Congress) -> type: GOVERNMENT_BODY
+  10. Do NOT classify organizations, places, or agreements as PERSON.
+template: |
+  Extract all entities from the following text:
+
+  --- TEXT ---
+  {text}
+  --- END ---

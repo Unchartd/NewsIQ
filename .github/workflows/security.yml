@@ -96,7 +96,8 @@ jobs:
         run: |
           set -euo pipefail
           # Audits the requirements file directly, avoiding massive downloads (like torch/CUDA)
-          pip-audit --strict --format json -r requirements.txt | tee pip-audit-results.json
+          # Ignore CVE-2026-12243 (nltk) because there is no patched version upstream yet
+          pip-audit --strict --ignore-vuln CVE-2026-12243 --format json -r requirements.txt | tee pip-audit-results.json
 
       - name: Upload audit results
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0

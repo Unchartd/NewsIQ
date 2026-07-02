@@ -94,13 +94,15 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
 
     # ── AI Models ─────────────────────────────────────────────────────────────
-    OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_API_KEY_EMBEDDING: str = ""
     GEMINI_API_KEY_SYNTH: str = ""
+    NVIDIA_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     CEREBRAS_API_KEY: str = ""
-    NVIDIA_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     EMBEDDING_MODEL: str = "gemini-embedding-2"
     SUMMARIZATION_MODEL: str = "gemini-2.5-flash"
 
@@ -199,11 +201,6 @@ class Settings(BaseSettings):
 
         log = logging.getLogger(__name__)
 
-        def _masked(val: str) -> str:
-            if not val:
-                return "(not set)"
-            return val[:8] + "..." if len(val) > 8 else "***"
-
         log.info(
             "NewsIQ startup configuration:\n"
             "  Role:             %s\n"
@@ -217,7 +214,7 @@ class Settings(BaseSettings):
             "  Langfuse enabled: %s\n"
             "  Sentry enabled:   %s\n"
             "  Gemini key:       %s\n"
-            "  OpenAI key:       %s",
+            "  OpenRouter key:   %s",
             self.BACKEND_SERVICE_ROLE,
             self.DEBUG,
             self.DATABASE_URL.split("@")[-1] if "@" in self.DATABASE_URL else self.DATABASE_URL,
@@ -230,8 +227,8 @@ class Settings(BaseSettings):
             self.LANGFUSE_HOST,
             bool(self.LANGFUSE_PUBLIC_KEY and self.LANGFUSE_SECRET_KEY),
             bool(self.SENTRY_DSN),
-            _masked(self.GEMINI_API_KEY),
-            _masked(self.OPENAI_API_KEY),
+            "set" if self.GEMINI_API_KEY else "not set",
+            "set" if self.OPENROUTER_API_KEY else "not set",
         )
 
     model_config = {

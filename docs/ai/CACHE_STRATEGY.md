@@ -8,23 +8,32 @@ NewsIQ employs a strict, content-addressed caching architecture at the LLM pipel
 
 Unlike traditional caching systems that rely on time-to-live (TTL) expiration to update data, the NewsIQ cache is **fully content-addressed**. Invalidation is driven entirely by changes in the input data, code version, or prompt template.
 
-### Cache Key Format
+### Cache Key Formats
 
-Every cache key is deterministic and composed of all dimensions that can affect the LLM output:
-
+#### A. Stage-Level Cache Key
+Used to cache intermediate outputs of individual pipeline stages (e.g. contradiction detection, source comparison):
 ```
-llm_cache:{stage}:{model}:{prompt_version}:{pipeline_version}:{temperature}:{content_hash}
+stage_cache:{stage}:{model}:{prompt_version}:{pipeline_version}:{temperature}:{content_hash}
 ```
 
 | Key Component | Description | Invalidation Event |
 |---|---|---|
-| `llm_cache` | Namespace prefix | None |
-| `stage` | Pipeline stage name (e.g. `event_extraction`, `summary_generation`) | Code path changes |
-| `model` | Exact name of the model being called (e.g. `gemini-2.5-flash-lite`) | Routing model change |
+| `stage_cache` | Namespace prefix | None |
+| `stage` | Pipeline stage name (e.g. `contradiction_detection`, `source_comparison`) | Code path changes |
+| `model` | Exact name of the model being called (e.g. `gemini-3.1-flash-lite`) | Routing model change |
 | `prompt_version` | Semver-ish prompt template version from the prompt registry | Prompt edits / bumps |
 | `pipeline_version` | Overall version of the system architecture (e.g. `1.0.0`) | Pipeline logic release |
-| `temperature` | The generation temperature (formatted to 2 decimal places) | Temperature adjustment |
-| `content_hash` | SHA-256 digest of normalized, formatted input text/JSON | Article edits / new sources |
+| `temperature` | The generation temperature (formatted as string) | Temperature adjustment |
+| `content_hash` | SHA-256 digest of normalized, sorted input text/JSON | Article edits / new sources |
+
+#### B. Incremental Updates Guard Key
+Used to track entire story synthesis states to avoid redundant regeneration runs:
+```
+story_synthesis_hash:{story_id}
+```
+- **Value**: The composite content-addressed hash of all articles currently associated with the story.
+- **TTL**: 7 days (`604,800` seconds).
+- **Behavior**: If a story is updated but the set of articles has not changed (i.e. composite hash matches this cached value), execution of the synthesis pipeline is skipped entirely.
 
 ---
 

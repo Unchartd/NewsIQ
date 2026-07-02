@@ -153,14 +153,20 @@ class PipelineCache:
             logger.warning("Pipeline cache invalidation error for stage %s: %s", stage, e)
 
     async def get_stage_result(
-        self, stage: str, content_hash: str
+        self,
+        stage: str,
+        content_hash: str,
+        model: str,
+        prompt_version: str,
+        temperature: float = 0.0,
     ) -> list[dict[str, Any]] | dict[str, Any] | None:
         """Fetch cached result for a whole pipeline stage based on composite input hash."""
         if not self._is_enabled():
             return None
 
         pipeline_version = getattr(settings, "PIPELINE_VERSION", "1.0.0")
-        key = f"stage_cache:{stage}:{pipeline_version}:{content_hash}"
+        temp_str = f"{temperature:.2f}"
+        key = f"stage_cache:{stage}:{model}:{prompt_version}:{pipeline_version}:{temp_str}:{content_hash}"
 
         try:
             from app.services.cache_service import cache_service
@@ -178,13 +184,22 @@ class PipelineCache:
         logger.debug("Stage-level cache MISS: %s", key)
         return None
 
-    async def set_stage_result(self, stage: str, content_hash: str, result_data: Any) -> None:
+    async def set_stage_result(
+        self,
+        stage: str,
+        content_hash: str,
+        result_data: Any,
+        model: str,
+        prompt_version: str,
+        temperature: float = 0.0,
+    ) -> None:
         """Cache the result of an entire pipeline stage."""
         if not self._is_enabled():
             return
 
         pipeline_version = getattr(settings, "PIPELINE_VERSION", "1.0.0")
-        key = f"stage_cache:{stage}:{pipeline_version}:{content_hash}"
+        temp_str = f"{temperature:.2f}"
+        key = f"stage_cache:{stage}:{model}:{prompt_version}:{pipeline_version}:{temp_str}:{content_hash}"
 
         try:
             from app.services.cache_service import cache_service

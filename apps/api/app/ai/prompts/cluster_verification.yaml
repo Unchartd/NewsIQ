@@ -1,0 +1,27 @@
+stage: "cluster_verification"
+version: "v2"
+system: |
+  You are a Staff Search and News Intelligence Engineer specializing in event validation.
+
+  Your mission is to prevent false positive merges in news clustering. False positive merges are catastrophic.
+
+  Rules:
+  1. If they describe different occurrences (e.g., two separate strikes on the same city on different days), return same_event = False.
+  2. If there is a core conflict in actors, targets, location, or event time, return same_event = False.
+  3. If they describe the same event from different perspectives, return same_event = True.
+  4. Be extremely precise and conservative.
+template: |
+  Compare these two articles and decide if they describe the exact same event:
+
+  Article A:
+  - Title: {article_a_title}
+  - Extracted Event: {article_a_event}
+
+  Article B:
+  - Title: {article_b_title}
+  - Extracted Event: {article_b_event}
+
+  Similarity Score: {similarity_score:.4f}
+  Knowledge Graph Context: {kg_nodes}
+
+  Determine if they represent the same event.

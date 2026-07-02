@@ -1,15 +1,19 @@
-"""Unit tests for the event service and event taxonomy."""
-
-from unittest.mock import patch
-
 import pytest
-
+from unittest.mock import AsyncMock, patch
+import app.ai.gateway
 from app.llm_gateway.base_provider import GatewayResponse
 from app.services.event_service import ArticleEventResponse, ExtractedEvent, event_service
 from app.services.event_taxonomy import (
     canonicalize_event_type,
     get_parent_type,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_cache():
+    with patch("app.services.pipeline_cache.pipeline_cache.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = None
+        yield
 
 
 def test_event_taxonomy():
@@ -83,8 +87,8 @@ async def test_detect_event_time_conflict():
 
 
 @pytest.mark.asyncio
-@patch("app.llm_gateway.request_manager.llm_gateway.execute_request")
-async def test_extract_events_gateway_parsed_success(mock_execute_request):
+@patch("app.ai.gateway.ai_gateway.generate")
+async def test_extract_events_gateway_parsed_success(mock_generate):
     """Verify that event extraction succeeds using LLM Gateway returning parsed response."""
     expected_response = ArticleEventResponse(
         primary_event=ExtractedEvent(
@@ -103,7 +107,7 @@ async def test_extract_events_gateway_parsed_success(mock_execute_request):
         provider="google",
         model="gemini-2.5-flash-lite",
     )
-    mock_execute_request.return_value = mock_response
+    mock_generate.return_value = mock_response
 
     res = await event_service.extract_events(
         title="Police arrested suspect",
@@ -112,12 +116,12 @@ async def test_extract_events_gateway_parsed_success(mock_execute_request):
     assert res.primary_event.event_type == "DETENTION"
     assert "Police" in res.primary_event.actors
     assert res.primary_event.confidence == 0.9
-    mock_execute_request.assert_called_once()
+    mock_generate.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.llm_gateway.request_manager.llm_gateway.execute_request")
-async def test_extract_events_gateway_json_string_success(mock_execute_request):
+@patch("app.ai.gateway.ai_gateway.generate")
+async def test_extract_events_gateway_json_string_success(mock_generate):
     """Verify that event extraction succeeds using LLM Gateway returning raw JSON string."""
     mock_response = GatewayResponse(
         content='{"primary_event": {"event_type": "ELECTION", "actors": ["Voters"], "targets": [], "location": "France", "event_time": "2026-06-20T00:00:00Z", "confidence": 0.85}, "secondary_events": []}',
@@ -125,7 +129,7 @@ async def test_extract_events_gateway_json_string_success(mock_execute_request):
         provider="openai",
         model="gpt-4o-mini",
     )
-    mock_execute_request.return_value = mock_response
+    mock_generate.return_value = mock_response
 
     res = await event_service.extract_events(
         title="France Elections",
@@ -133,18 +137,18 @@ async def test_extract_events_gateway_json_string_success(mock_execute_request):
     )
     assert res.primary_event.event_type == "ELECTION"
     assert "Voters" in res.primary_event.actors
-    mock_execute_request.assert_called_once()
+    mock_generate.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.llm_gateway.request_manager.llm_gateway.execute_request")
-async def test_extract_events_gateway_failure_propagates_exception(mock_execute_request):
+@patch("app.ai.gateway.ai_gateway.generate")
+async def test_extract_events_gateway_failure_propagates_exception(mock_generate):
     """Verify that event extraction raises the exception when gateway fails."""
-    mock_execute_request.side_effect = Exception("Gateway Timeout")
+    mock_generate.side_effect = Exception("Gateway Timeout")
 
     with pytest.raises(Exception, match="Gateway Timeout"):
         await event_service.extract_events(
             title="Failed API test",
             content="Some news content.",
         )
-    mock_execute_request.assert_called_once()
+    mock_generate.assert_called_once()

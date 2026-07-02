@@ -109,22 +109,21 @@ class ContradictionService:
         # ── LLM Gateway fallback ──────────────────────────────────────────────
         if result is None:
             try:
-                from app.llm_gateway.request_manager import llm_gateway
+                from app.ai.gateway import ai_gateway
 
-                messages = prompt_tmpl.messages(
-                    fact_type=fact_type,
-                    val1=val1,
-                    val2=val2,
-                    source1_name=source1_name,
-                    source2_name=source2_name,
-                    context=context[:3000],
-                )
+                prompt_variables = {
+                    "fact_type": fact_type,
+                    "val1": val1,
+                    "val2": val2,
+                    "source1_name": source1_name,
+                    "source2_name": source2_name,
+                    "context": context[:3000],
+                }
 
-                response = await llm_gateway.execute_request(
-                    model=model,
-                    stage="contradiction_detection",
-                    messages=messages,
-                    response_format=ContradictionResolution,
+                response = await ai_gateway.generate(
+                    capability="contradiction_analysis",
+                    prompt_variables=prompt_variables,
+                    schema=ContradictionResolution,
                     temperature=0.1,
                 )
 
@@ -139,7 +138,7 @@ class ContradictionService:
                     except Exception:
                         pass
             except Exception as exc:
-                logger.warning("LLM Gateway contradiction verification failed: %s", exc)
+                logger.warning("AI Gateway contradiction verification failed: %s", exc)
 
         # ── Heuristic fallback ────────────────────────────────────────────────
         if result is None:

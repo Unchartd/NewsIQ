@@ -269,37 +269,25 @@ class EntityLinker:
     async def _disambiguate_with_llm(
         self, name: str, entity_type: str, context: str
     ) -> EntityResolution:
-        """Query LLM to generate a clean search query and description.
-
-        Only used when ENTITY_LINKING_DETERMINISTIC is False.
-        """
-        prompt = self._build_disambiguation_prompt(name, entity_type, context)
+        """Query LLM to generate a clean search query and description via central AI Gateway."""
+        from app.ai.gateway import ai_gateway
         from app.core.trace import story_id_ctx
-        from app.services.cost_budget import cost_budget_manager
-        from app.services.model_router import model_router
 
         story_id = story_id_ctx.get("")
-        budget_exceeded = False
-        if story_id:
-            budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
-
-        complexity = "standard"
-        if len(context) > 10000:
-            complexity = "complex"
-
-        model = model_router.select(
-            stage="entity_linking", complexity=complexity, budget_exceeded=budget_exceeded
-        )
-
-        from app.llm_gateway.request_manager import llm_gateway
 
         try:
-            response = await llm_gateway.execute_request(
-                model=model,
-                stage="entity_linking",
-                messages=[{"role": "user", "content": prompt}],
-                response_format=EntityResolution,
+            prompt_variables = {
+                "name": name,
+                "entity_type": entity_type,
+                "context": context[:3000],
+            }
+
+            response = await ai_gateway.generate(
+                capability="entity_linking",
+                prompt_variables=prompt_variables,
+                schema=EntityResolution,
                 temperature=0.1,
+                story_id=story_id,
             )
 
             if response.parsed:
@@ -313,9 +301,9 @@ class EntityLinker:
             except Exception:
                 pass
         except Exception as exc:
-            logger.warning("LLM Gateway disambiguation failed for %s: %s", name, exc)
+            logger.warning("AI Gateway disambiguation failed for %s: %s", name, exc)
 
-        # Fallback if LLM is disabled or failed
+        # Fallback if AI Gateway is disabled or failed
         return EntityResolution(
             canonical_name=name,
             wikidata_search_query=name,

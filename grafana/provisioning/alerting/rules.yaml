@@ -1,0 +1,75 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: NewsIQAlerts
+    folder: NewsIQ
+    interval: 1m
+    rules:
+      - uid: low_cache_hit_rate
+        title: LowCacheHitRate
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: sum(increase(newsiq_pipeline_cache_operations{operation="hit"}[15m])) / (sum(increase(newsiq_pipeline_cache_operations{operation="hit"}[15m])) + sum(increase(newsiq_pipeline_cache_operations{operation="miss"}[15m])))
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        noDataState: OK
+        execErrState: OK
+        for: 5m
+        annotations:
+          summary: "Pipeline cache hit rate is dangerously low (< 20%)"
+          description: "Cache hit rate over the last 15 minutes is below 20%. Please investigate Redis connection state or key structure mismatch."
+        labels:
+          severity: warning
+
+      - uid: budget_exhausted
+        title: BudgetExhausted
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: sum(increase(newsiq_story_stages_total{status="skipped"}[5m])) by (stage)
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        noDataState: OK
+        execErrState: OK
+        for: 2m
+        annotations:
+          summary: "Story stage skipped due to budget exhaustion"
+          description: "Stage {{ $labels.stage }} was skipped for a story cluster because the cost budget for the category or stage threshold was exceeded."
+        labels:
+          severity: critical
+
+      - uid: gateway_failures
+        title: GatewayHighFailureRate
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: sum(increase(newsiq_failure_rate[5m])) / sum(increase(newsiq_story_stages_total[5m]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        noDataState: OK
+        execErrState: ALERTING
+        for: 2m
+        annotations:
+          summary: "AI pipeline/gateway is experiencing high failure rates (> 5%)"
+          description: "The ratio of pipeline failures to total executions is {{ $value }} over 5m, exceeding the 5% threshold."
+        labels:
+          severity: critical

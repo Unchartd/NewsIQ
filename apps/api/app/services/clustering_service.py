@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 
 SIMILARITY_THRESHOLD = 0.80  # Cosine similarity threshold for real-time merge
 
+# In-memory fallback for Incremental Updates Guard when Redis is offline
+_memory_guard_cache: dict[str, str] = {}
+
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -294,6 +297,38 @@ class ClusteringService:
         article_inputs.sort()
         story_input_hash = pipeline_cache.composite_hash(*article_inputs)
 
+        # ── Incremental Updates Guard ──
+        from app.services.cache_service import cache_service
+
+        guard_key = f"story_synthesis_hash:{story.id}"
+        is_guard_hit = False
+        if story.headline:
+            if cache_service._redis:
+                try:
+                    existing_hash = await cache_service._redis.get(guard_key)
+                    if existing_hash and existing_hash.decode("utf-8") == story_input_hash:
+                        is_guard_hit = True
+                except Exception as e:
+                    logger.warning(
+                        "Failed to check incremental updates guard for story %s: %s", story.id, e
+                    )
+            else:
+                existing_hash = _memory_guard_cache.get(str(story.id))
+                if existing_hash == story_input_hash:
+                    is_guard_hit = True
+
+        if is_guard_hit:
+            logger.info(
+                "Incremental Updates Guard HIT: Article set for story %s has not changed. Skipping generation.",
+                story.id,
+            )
+            return
+
+        # Initialize cat_slug in outer scope
+        cat_slug = "world"
+        if story.category:
+            cat_slug = story.category.slug
+
         # 6. Run Contradiction & Source Comparison Engines Concurrently
         import asyncio
 
@@ -302,8 +337,18 @@ class ClusteringService:
                 stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)
             ) as span:
                 try:
+                    from app.services.prompt_registry import prompt_registry
+
+                    prompt_tmpl = prompt_registry.get("contradiction_detection")
+                    model = prompt_tmpl.model
+                    prompt_version = prompt_tmpl.version
+
                     cached_contras = await pipeline_cache.get_stage_result(
-                        "contradictions", story_input_hash
+                        stage="contradictions",
+                        content_hash=story_input_hash,
+                        model=model,
+                        prompt_version=prompt_version,
+                        temperature=0.1,
                     )
                     if cached_contras is not None:
                         res = []
@@ -346,7 +391,12 @@ class ClusteringService:
                             for c in res
                         ]
                         await pipeline_cache.set_stage_result(
-                            "contradictions", story_input_hash, c_serialized
+                            stage="contradictions",
+                            content_hash=story_input_hash,
+                            result_data=c_serialized,
+                            model=model,
+                            prompt_version=prompt_version,
+                            temperature=0.1,
                         )
                         logger.info(
                             "Contradiction detection successfully run and cached for story %s.",
@@ -368,8 +418,18 @@ class ClusteringService:
                 stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)
             ) as span:
                 try:
+                    from app.services.prompt_registry import prompt_registry
+
+                    prompt_tmpl = prompt_registry.get("source_comparison")
+                    model = prompt_tmpl.model
+                    prompt_version = prompt_tmpl.version
+
                     cached_comp = await pipeline_cache.get_stage_result(
-                        "source_comparison", story_input_hash
+                        stage="source_comparison",
+                        content_hash=story_input_hash,
+                        model=model,
+                        prompt_version=prompt_version,
+                        temperature=0.1,
                     )
                     if cached_comp is not None:
                         cov_list = []
@@ -407,6 +467,27 @@ class ClusteringService:
                     else:
                         # Wait for contradictions to finish before running comparison
                         contras = await contras_future
+
+                        # ── Budget gate: skip expensive source comparison if stage budget exceeded ──
+                        from app.services.cost_budget import cost_budget_manager
+
+                        _budget_exceeded = await cost_budget_manager.is_stage_budget_exceeded(
+                            str(story.id), "source_comparison", cat_slug
+                        )
+                        if _budget_exceeded:
+                            logger.warning(
+                                "Stage budget exceeded for story %s, stage 'source_comparison' — "
+                                "skipping LLM source comparison. Contradictions still available.",
+                                story.id,
+                            )
+                            span.set_metadata(
+                                {
+                                    "inputs": {"story_id": str(story.id)},
+                                    "outputs": {"skipped": True, "reason": "stage_budget_exceeded"},
+                                }
+                            )
+                            return [], []
+
                         (
                             cov_list,
                             diff_list,
@@ -436,12 +517,15 @@ class ClusteringService:
                             for d in diff_list
                         ]
                         await pipeline_cache.set_stage_result(
-                            "source_comparison",
-                            story_input_hash,
-                            {
+                            stage="source_comparison",
+                            content_hash=story_input_hash,
+                            result_data={
                                 "coverage": cov_serialized,
                                 "differences": diff_serialized,
                             },
+                            model=model,
+                            prompt_version=prompt_version,
+                            temperature=0.1,
                         )
                         logger.info(
                             "Source comparison successfully run and cached for story %s.", story.id
@@ -531,7 +615,6 @@ class ClusteringService:
             )
 
         # 7. Call Summary Engine (KG-grounded summarization)
-        cat_slug = "world"
         async with StageSpan(
             stage=PipelineStage.SUMMARY_GENERATION, story_id=str(story.id)
         ) as span:
@@ -649,6 +732,11 @@ class ClusteringService:
                 story.detailed_summary = story.detailed_summary or fallback_detailed
                 story.key_facts = story.key_facts or []
 
+                if story.headline and story.headline.strip() and story.headline != "News Story":
+                    story.story_status = "active"
+                else:
+                    story.story_status = "failed"
+
             span.set_metadata(
                 {
                     "inputs": {
@@ -671,7 +759,29 @@ class ClusteringService:
         else:
             await session.flush()
 
-        # 8. Index in Meilisearch and invalidate caches for this story
+        # 8. Record story-level Prometheus metrics (best-effort — never blocks pipeline)
+        try:
+            from app.core.metrics import newsiq_story_cost_usd, newsiq_story_stages_total
+            from app.services.cost_budget import cost_budget_manager
+
+            total_cost = await cost_budget_manager.get_story_cost(str(story.id))
+            newsiq_story_cost_usd.labels(category=cat_slug).inc(total_cost)
+
+            # Record per-stage completion counts for the finished story
+            for _stage_name in [
+                "timeline",
+                "entity_extraction",
+                "entity_linking",
+                "contradiction_detection",
+                "source_comparison",
+                "knowledge_graph",
+                "summary_generation",
+            ]:
+                newsiq_story_stages_total.labels(stage=_stage_name, status="success").inc()
+        except Exception as _metrics_exc:
+            logger.debug("Story-level metrics recording failed (non-critical): %s", _metrics_exc)
+
+        # 9. Index in Meilisearch and invalidate caches for this story
         async with StageSpan(stage=PipelineStage.INDEXING, story_id=str(story.id)) as span:
             await self._index_and_invalidate(story, cat_slug, list(tags_added))
             span.set_metadata(
@@ -684,6 +794,17 @@ class ClusteringService:
                     "outputs": {"indexed": True},
                 }
             )
+
+        # Store computed synthesis hash to enable future skips
+        if cache_service._redis:
+            try:
+                await cache_service._redis.set(guard_key, story_input_hash, ex=604800)  # 7-day TTL
+            except Exception as e:
+                logger.warning(
+                    "Failed to update incremental updates guard for story %s: %s", story.id, e
+                )
+        else:
+            _memory_guard_cache[str(story.id)] = story_input_hash
 
     async def _index_and_invalidate(
         self,
@@ -714,6 +835,20 @@ class ClusteringService:
         session: AsyncSession,
     ) -> bool:
         """Determine if summary reflection should be run based on multi-dimensional signal analysis."""
+        # 0. Budget gate — never run expensive reflection if stage budget is exceeded
+        from app.services.cost_budget import cost_budget_manager
+
+        budget_exceeded = await cost_budget_manager.is_stage_budget_exceeded(
+            str(story.id), "summary_reflection", category_slug
+        )
+        if budget_exceeded:
+            logger.info(
+                "Reflection skipped for story %s: stage budget exceeded (category: %s).",
+                story.id,
+                category_slug,
+            )
+            return False
+
         # 1. Admin override
         if getattr(story, "force_reflection", False):
             logger.info("Reflection triggered by admin force override for story %s.", story.id)
@@ -1718,7 +1853,7 @@ class ClusteringService:
             now = _now()
             story = Story(
                 id=story_id,
-                story_status="active",
+                story_status="pending",
                 first_seen_at=min(
                     (a.published_at for a in art_list if a.published_at), default=now
                 ),

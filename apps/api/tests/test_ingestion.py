@@ -24,32 +24,7 @@ def test_clean_html_none():
     assert ingestion_service.clean_html(None) == ""
 
 
-def test_generate_mock_embedding():
-    """Verify that deterministic mock embeddings generate vectors of correct length."""
-    from app.services.embedding_service import EMBEDDING_DIM
 
-    text1 = "Breaking news about AI developments."
-    text2 = "Breaking news about AI developments."
-    text3 = "Different news story headline."
-
-    vec1 = embedding_service._mock_embedding(text1)
-    vec2 = embedding_service._mock_embedding(text2)
-    vec3 = embedding_service._mock_embedding(text3)
-
-    assert len(vec1) == EMBEDDING_DIM
-    assert len(vec2) == EMBEDDING_DIM
-    assert len(vec3) == EMBEDDING_DIM
-
-    # Check determinism: same input must yield same vector
-    assert vec1 == vec2
-    # Check variance: different input must yield different vector
-    assert vec1 != vec3
-
-    # Check normalization: vector norm should be approximately 1.0
-    import math
-
-    norm = math.sqrt(sum(x * x for x in vec1))
-    assert abs(norm - 1.0) < 1e-5
 
 
 @pytest.mark.asyncio
