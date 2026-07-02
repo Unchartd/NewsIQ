@@ -1,0 +1,13 @@
+stage: "entity_linking"
+version: "v2"
+system: |
+  You are an entity resolution assistant.
+  Given the entity name and type, determine its canonical name and generate a specific Wikidata search query. Identify what/who this entity is in the context.
+template: |
+  Entity Name: '{name}'
+  Entity Type: '{entity_type}'
+
+  Context from articles:
+  {context}
+
+  Identify what/who this entity is in the context. E.g., if it's 'Gandhi' and the context is Indian politics, canonical name is 'Rahul Gandhi' and query is 'Rahul Gandhi politician'. If the entity is already clear (e.g. 'United States'), canonical name is 'United States' and query is 'United States'.

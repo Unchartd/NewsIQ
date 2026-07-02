@@ -78,5 +78,36 @@ class CostBudgetManager:
             )
         return is_exceeded
 
+    async def is_stage_budget_exceeded(
+        self, story_id: str, stage: str, category_slug: str = "world"
+    ) -> bool:
+        """Check if the current accumulated cost exceeds the stage-specific threshold."""
+        if not story_id:
+            return False
+
+        cost = await self.get_story_cost(story_id)
+        limit = self.get_budget_limit(category_slug)
+        threshold_pct = STAGE_BUDGET_THRESHOLDS.get(stage, 1.0)
+
+        is_exceeded = cost > (limit * threshold_pct)
+        if is_exceeded:
+            logger.warning(
+                "Stage budget exceeded for story %s, stage %s. Current: $%f, Limit: $%f, Threshold: %d%%",
+                story_id,
+                stage,
+                cost,
+                limit,
+                int(threshold_pct * 100),
+            )
+        return is_exceeded
+
+
+# Stage-aware budget thresholds as a percentage of the total story cost budget
+STAGE_BUDGET_THRESHOLDS = {
+    "summary_reflection": 0.50,       # Skip reflection if spent > 50% of budget
+    "source_comparison": 0.80,        # Fallback to deterministic comparison if spent > 80%
+    "contradiction_detection": 0.70,  # Fallback to cheaper models if spent > 70%
+    "summary_generation": 1.00,       # Fallback to cheaper models if spent > 100% (never skip)
+}
 
 cost_budget_manager = CostBudgetManager()

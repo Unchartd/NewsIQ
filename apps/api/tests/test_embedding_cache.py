@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import app.ai.gateway
 from app.services.embedding_service import EMBEDDING_DIM, EmbeddingService
 
 
@@ -32,16 +33,14 @@ async def test_get_embedding_cache_miss(mock_cache_set, mock_cache_get):
     # Mock cache miss
     mock_cache_get.return_value = None
 
-    # Setup mock Gemini provider
-    service.gemini_enabled = True
     dummy_vector = [0.2] * EMBEDDING_DIM
 
-    with patch.object(service, "_embed_with_gemini", new_callable=AsyncMock) as mock_embed:
-        mock_embed.return_value = [dummy_vector]
+    with patch("app.ai.gateway.ai_gateway.embeddings", new_callable=AsyncMock) as mock_embed:
+        mock_embed.return_value = dummy_vector
 
         vec = await service.get_embedding("uncached text")
         assert vec == dummy_vector
-        mock_embed.assert_called_once_with(["uncached text"])
+        mock_embed.assert_called_once_with("uncached text")
 
     mock_cache_get.assert_called_once()
     mock_cache_set.assert_called_once()
@@ -52,7 +51,6 @@ async def test_get_embedding_cache_miss(mock_cache_set, mock_cache_get):
 @patch("app.services.cache_service.cache_service.set", new_callable=AsyncMock)
 async def test_get_embeddings_batch_hybrid(mock_cache_set, mock_cache_get):
     service = EmbeddingService()
-    service.gemini_enabled = True
 
     # We query 2 texts: text1 (hit) and text2 (miss)
     dummy_vec1 = [0.1] * EMBEDDING_DIM
@@ -61,8 +59,8 @@ async def test_get_embeddings_batch_hybrid(mock_cache_set, mock_cache_get):
     # Mock cache get returns dummy_vec1 for the first key and None for the second
     mock_cache_get.side_effect = [dummy_vec1, None]
 
-    with patch.object(service, "_embed_with_gemini", new_callable=AsyncMock) as mock_embed:
-        mock_embed.return_value = [dummy_vec2]
+    with patch("app.ai.gateway.ai_gateway.embeddings", new_callable=AsyncMock) as mock_embed:
+        mock_embed.return_value = dummy_vec2
 
         vecs = await service.get_embeddings(["text1", "text2"])
         assert len(vecs) == 2
@@ -70,7 +68,7 @@ async def test_get_embeddings_batch_hybrid(mock_cache_set, mock_cache_get):
         assert vecs[1] == dummy_vec2
 
         # Verify provider was only called for text2 (the miss)
-        mock_embed.assert_called_once_with(["text2"])
+        mock_embed.assert_called_once_with("text2")
 
     assert mock_cache_get.call_count == 2
     mock_cache_set.assert_called_once()

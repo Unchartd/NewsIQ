@@ -107,22 +107,21 @@ class SourceComparisonService:
         # ── LLM call (cache miss) ─────────────────────────────────────────────
         result: SourceComparisonResolution | None = None
 
-        from app.llm_gateway.request_manager import llm_gateway
+        from app.ai.gateway import ai_gateway
 
         try:
-            messages = prompt_tmpl.messages(
-                src_name=src_name,
-                unique_summary=unique_summary or "None",
-                missing_summary=missing_summary or "None",
-                contradictions_summary=contradictions_summary or "None",
-                context=context[:3000],
-            )
+            prompt_variables = {
+                "src_name": src_name,
+                "unique_summary": unique_summary or "None",
+                "missing_summary": missing_summary or "None",
+                "contradictions_summary": contradictions_summary or "None",
+                "context": context[:3000],
+            }
 
-            response = await llm_gateway.execute_request(
-                model=model,
-                stage="source_comparison",
-                messages=messages,
-                response_format=SourceComparisonResolution,
+            response = await ai_gateway.generate(
+                capability="source_comparison",
+                prompt_variables=prompt_variables,
+                schema=SourceComparisonResolution,
                 temperature=0.1,
             )
 
@@ -137,7 +136,7 @@ class SourceComparisonService:
                 except Exception:
                     pass
         except Exception as exc:
-            logger.warning("LLM Gateway source comparison failed for %s: %s", src_name, exc)
+            logger.warning("AI Gateway source comparison failed for %s: %s", src_name, exc)
 
         # ── Deterministic fallback ───────────────────────────────────────────
         if result is None:

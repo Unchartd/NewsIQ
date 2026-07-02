@@ -223,6 +223,122 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 8,
+      "title": "LLM Provider Fallback & Retries",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(newsiq_provider_fallback_executions_total[5m])) by (provider, level)",
+          "legendFormat": "{{provider}} fallback level {{level}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 9,
+      "title": "Active Prompt Latency by Version",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(newsiq_prompt_latency_seconds_sum[5m]) / rate(newsiq_prompt_latency_seconds_count[5m])",
+          "legendFormat": "{{stage}} v{{version}} latency (s)",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 10,
+      "title": "Active Prompt Token Consumption",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(newsiq_prompt_tokens_total[5m])) by (stage, version, token_type)",
+          "legendFormat": "{{stage}} v{{version}} {{token_type}} tokens/s",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 11,
+      "title": "Story Quality Evaluation Score",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(newsiq_eval_summary_score_sum[5m])) / sum(rate(newsiq_eval_summary_score_count[5m]))",
+          "legendFormat": "avg quality score",
+          "range": true,
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "10s",
@@ -236,5 +352,5 @@
   "timepicker": {},
   "timezone": "utc",
   "title": "NewsIQ Pipeline Health",
-  "version": 1
+  "version": 2
 }

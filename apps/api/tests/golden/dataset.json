@@ -1,0 +1,107 @@
+[
+  {
+    "scenario_id": "tech_acquisition",
+    "description": "TechCorp acquires InnovateAI for $500M",
+    "category": "technology",
+    "articles": [
+      {
+        "title": "TechCorp to acquire InnovateAI for $500 Million",
+        "description": "In a major consolidation event, TechCorp announced it is acquiring startup InnovateAI to accelerate its machine learning products.",
+        "content": "Silicon Valley giant TechCorp today announced a definitive agreement to acquire InnovateAI, a leading artificial intelligence startup, in an all-cash transaction valued at $500 million. The acquisition represents TechCorp's largest purchase this year and aims to integrate advanced generative models into their enterprise suite. The transaction is expected to close in Q3."
+      },
+      {
+        "title": "Silicon Valley consolidates: TechCorp buys InnovateAI startup",
+        "description": "InnovateAI has been acquired by enterprise software giant TechCorp for half a billion dollars.",
+        "content": "TechCorp is expanding its AI division with the acquisition of InnovateAI for $500M. Founded in 2023, InnovateAI specializes in low-latency transformer models. The entire team of 45 engineers will join TechCorp's cloud platform team immediately upon close."
+      }
+    ],
+    "expected_headline_keywords": ["TechCorp", "acquire", "InnovateAI"],
+    "expected_category": "technology",
+    "min_key_facts": 2,
+    "forbidden_words": ["hallucinate", "unrelated_tech_news"]
+  },
+  {
+    "scenario_id": "natural_disaster",
+    "description": "Category 4 Hurricane landfall in Florida",
+    "category": "weather",
+    "articles": [
+      {
+        "title": "Hurricane Helene makes landfall in Florida as Category 4 storm",
+        "description": "Helene brings storm surge and devastating winds to Florida's Gulf Coast.",
+        "content": "Hurricane Helene slammed into the Florida Big Bend region late Thursday as a powerful Category 4 storm. The National Hurricane Center reported maximum sustained winds of 140 mph, warning of a life-threatening storm surge of up to 15 feet in coastal areas."
+      },
+      {
+        "title": "Devastation on Florida Gulf Coast as Category 4 Helene hits",
+        "description": "Wind damage and power outages affect millions in Florida following Helene landfall.",
+        "content": "Category 4 Hurricane Helene made landfall on Florida's coast, packing winds of 140 mph. Local utility companies report that over 1.2 million customers are already without power. Emergency services have launched rescue operations in flooded coastal towns."
+      }
+    ],
+    "expected_headline_keywords": ["Hurricane", "Florida", "landfall", "Helene"],
+    "expected_category": "weather",
+    "min_key_facts": 2,
+    "forbidden_words": ["earthquake", "tsunami"]
+  },
+  {
+    "scenario_id": "financial_policy",
+    "description": "Federal Reserve raises interest rates",
+    "category": "business",
+    "articles": [
+      {
+        "title": "Federal Reserve hikes interest rates by 25 basis points",
+        "description": "The Fed moves to curb persistent inflation with another rate hike.",
+        "content": "The Federal Reserve raised its benchmark interest rate by a quarter of a percentage point today, pushing borrowing costs to their highest level in 16 years. Fed Chairman Jerome Powell indicated that while inflation is moderating, additional hikes remain on the table if economic conditions warrant."
+      },
+      {
+        "title": "Fed raises rates again to combat inflation",
+        "description": "Interest rates rise 0.25% in the Fed's latest policy decision.",
+        "content": "In its latest policy meeting, the Federal Reserve increased the federal funds rate by 25 basis points to a target range of 5.25% to 5.5%. The decision was unanimous, reflecting the central bank's ongoing commitment to returning inflation to its 2% target."
+      }
+    ],
+    "expected_headline_keywords": ["Federal Reserve", "rates", "interest", "hike"],
+    "expected_category": "business",
+    "min_key_facts": 2,
+    "forbidden_words": ["deflation", "recession_avoided"]
+  },
+  {
+    "scenario_id": "space_discovery",
+    "description": "James Webb space telescope discovers exoplanet",
+    "category": "science",
+    "articles": [
+      {
+        "title": "NASA's James Webb telescope discovers Earth-sized exoplanet",
+        "description": "Astronomers confirm a new rocky exoplanet orbiting a nearby red dwarf star.",
+        "content": "NASA's James Webb Space Telescope has discovered a rocky planet similar in size to Earth orbiting a red dwarf star just 41 light-years away. Designated LHS 475 b, the planet has a diameter that is 99% of Earth's, though its surface temperature is several hundred degrees warmer."
+      },
+      {
+        "title": "Webb telescope confirms new exoplanet discovery",
+        "description": "James Webb confirms rocky world LHS 475 b exists.",
+        "content": "Astronomers using the James Webb Space Telescope have confirmed the presence of a new rocky exoplanet. The planet, LHS 475 b, orbits its host star in just two days. Spectra show no definitive atmosphere yet, but its detection demonstrates the precision of Webb's instruments."
+      }
+    ],
+    "expected_headline_keywords": ["Webb", "exoplanet", "discover", "LHS 475"],
+    "expected_category": "science",
+    "min_key_facts": 2,
+    "forbidden_words": ["aliens", "ufo"]
+  },
+  {
+    "scenario_id": "sports_championship",
+    "description": "World Cup championship match winner",
+    "category": "sports",
+    "articles": [
+      {
+        "title": "Argentina wins World Cup in dramatic penalty shootout",
+        "description": "Messi leads Argentina to victory over France in the final match.",
+        "content": "Argentina captured the World Cup trophy after defeating France in a penalty shootout following a thrilling 3-3 draw in extra time. Lionel Messi scored twice and converted his shootout attempt, securing the title in what is being hailed as the greatest final in history."
+      },
+      {
+        "title": "World Cup glory for Messi and Argentina in Qatar",
+        "description": "Argentina beats France on penalties to win the World Cup.",
+        "content": "Argentina is the champion of the world. Led by Lionel Messi, the squad defeated France in a shootout after 120 minutes of play ended in a tie. This marks Argentina's third World Cup title and their first since 1862."
+      }
+    ],
+    "expected_headline_keywords": ["Argentina", "wins", "World Cup"],
+    "expected_category": "sports",
+    "min_key_facts": 2,
+    "forbidden_words": ["cricket", "basketball"]
+  }
+]

@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { href: "/admin/clusters", label: "Clusters", icon: Layers },
   { href: "/admin/prompts", label: "Prompts", icon: FileText },
   { href: "/admin/costs", label: "Cost Analytics", icon: DollarSign },
+  { href: "/admin/quality", label: "Quality Evaluation", icon: Shield },
   { href: "/admin/failures", label: "Failure Center", icon: AlertOctagon },
   { href: "/admin/failure-analytics", label: "Failure Analytics", icon: Activity },
   { href: "/admin/review", label: "Review Queue", icon: UserCheck },

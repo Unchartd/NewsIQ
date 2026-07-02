@@ -136,7 +136,7 @@ async def list_stories(
     state: str | None = None,
     city: str | None = None,
     q: str | None = Query(None, max_length=200),
-    status: str | None = Query(None, description="active, approved, rejected, all"),
+    status: str | None = Query("active", description="active, approved, rejected, all"),
     trending: bool = False,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -151,7 +151,13 @@ async def list_stories(
             .selectinload(StoryArticle.article)
             .selectinload(Article.source),
         )
-        .where(Story.headline.not_like("[Mock]%"))
+        .where(
+            Story.headline.not_like("[Mock]%"),
+            Story.headline.isnot(None),
+            Story.headline != "",
+            Story.short_summary.isnot(None),
+            Story.short_summary != "",
+        )
     )
 
     if status and status != "all":
@@ -221,7 +227,15 @@ async def search_stories(
         stmt = (
             select(Story)
             .options(*base_options)
-            .where(Story.id.in_(uuid_ids), Story.headline.not_like("[Mock]%"))
+            .where(
+                Story.id.in_(uuid_ids),
+                Story.headline.not_like("[Mock]%"),
+                Story.story_status == "active",
+                Story.headline.isnot(None),
+                Story.headline != "",
+                Story.short_summary.isnot(None),
+                Story.short_summary != "",
+            )
         )
         result = await db.execute(stmt)
         stories_by_id = {s.id: s for s in result.scalars().all()}
@@ -241,6 +255,11 @@ async def search_stories(
                     | Story.detailed_summary.ilike(f"%{safe_q}%")
                 ),
                 Story.headline.not_like("[Mock]%"),
+                Story.story_status == "active",
+                Story.headline.isnot(None),
+                Story.headline != "",
+                Story.short_summary.isnot(None),
+                Story.short_summary != "",
             )
         )
         if category:
@@ -304,7 +323,14 @@ async def personalized_feed(
             .selectinload(StoryArticle.article)
             .selectinload(Article.source),
         )
-        .where(Story.headline.not_like("[Mock]%"))
+        .where(
+            Story.headline.not_like("[Mock]%"),
+            Story.story_status == "active",
+            Story.headline.isnot(None),
+            Story.headline != "",
+            Story.short_summary.isnot(None),
+            Story.short_summary != "",
+        )
     )
 
     if category_ids:
@@ -429,7 +455,7 @@ async def get_story_detail(
     res = await db.execute(stmt)
     story = res.scalar_one_or_none()
 
-    if not story:
+    if not story or story.story_status != "active" or not story.headline or story.headline.strip() == "" or not story.short_summary or story.short_summary.strip() == "":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Story not found.",
