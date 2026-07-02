@@ -10,19 +10,24 @@ export default function Icon() {
         style={{
           width: 32,
           height: 32,
-          borderRadius: 8,
-          background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+          borderRadius: 7,
+          background: "#EF4444",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "sans-serif",
-          fontWeight: 900,
-          fontSize: 18,
-          color: "#fff",
-          letterSpacing: "-1px",
+          position: "relative",
         }}
       >
-        N
+        {/* Lightning bolt + N rendered as text shorthand for OG ImageResponse */}
+        <svg
+          viewBox="0 0 64 64"
+          width="22"
+          height="22"
+          fill="none"
+        >
+          <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="#FFFFFF" />
+          <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill="#EF4444" />
+        </svg>
       </div>
     ),
     { width: 32, height: 32 }
