@@ -403,6 +403,50 @@ async def replay_story_stage(
     )
 
 
+def _build_run_summary(stage_runs) -> str:
+    if not stage_runs:
+        return "Idle"
+
+    failed_stages = [sr for sr in stage_runs if sr.status == "failed"]
+    if failed_stages:
+        stage_name = failed_stages[0].stage.replace("_", " ").title()
+        return f"Failed at {stage_name}"
+
+    ingested = 0
+    embedded = 0
+    stories_created = 0
+    stories_updated = 0
+
+    for sr in stage_runs:
+        meta = sr.metadata_payload or {}
+        stage = sr.stage.lower()
+        if "ingestion" in stage:
+            ingested += meta.get("articles_ingested", 0)
+        elif "deduplication" in stage or "embedding" in stage:
+            embedded += meta.get("success_count", 0)
+        elif "clustering" in stage:
+            stories_created += meta.get("stories_created", 0)
+            stories_updated += meta.get("stories_updated", 0)
+
+    parts = []
+    if ingested > 0:
+        parts.append(f"Ingested {ingested} articles")
+    if stories_created > 0:
+        parts.append(f"Created {stories_created} stories")
+    if stories_updated > 0:
+        parts.append(f"Updated {stories_updated} stories")
+
+    if not parts:
+        all_skipped = all(sr.status == "skipped" for sr in stage_runs)
+        if all_skipped:
+            return "No new articles found"
+        if any(sr.status == "running" for sr in stage_runs):
+            return "Executing..."
+        return "Completed (no actions)"
+
+    return " → ".join(parts)
+
+
 @router.get("/pipeline/runs")
 async def list_pipeline_runs(
     limit: int = 50,
@@ -419,6 +463,20 @@ async def list_pipeline_runs(
     )
     res = await db.execute(stmt)
     runs = res.scalars().all()
+
+    run_ids = [r.id for r in runs]
+    stage_runs: list[StageRunModel] = []
+    if run_ids:
+        stage_stmt = select(StageRunModel).where(StageRunModel.run_id.in_(run_ids))
+        stage_res = await db.execute(stage_stmt)
+        stage_runs = list(stage_res.scalars().all())
+
+    from collections import defaultdict
+
+    stages_by_run = defaultdict(list)
+    for sr in stage_runs:
+        stages_by_run[sr.run_id].append(sr)
+
     return [
         {
             "id": str(r.id),
@@ -430,6 +488,7 @@ async def list_pipeline_runs(
             "completed_at": r.completed_at.isoformat() if r.completed_at else None,
             "total_latency_ms": r.total_latency_ms,
             "error": r.error,
+            "summary": _build_run_summary(stages_by_run[r.id]),
         }
         for r in runs
     ]
