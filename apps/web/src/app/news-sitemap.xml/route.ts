@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { getStoryRoute } from "@/lib/metadata";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.online";
 const API_BASE_URL =
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
@@ -55,7 +56,7 @@ ${stories
       : "General";
 
     return `  <url>
-    <loc>${SITE_URL}/story/${story.id}</loc>
+    <loc>${SITE_URL}${getStoryRoute(story)}</loc>
     <lastmod>${new Date(story.updated_at || story.first_seen_at).toISOString()}</lastmod>
     <news:news>
       <news:publication>

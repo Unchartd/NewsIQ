@@ -6,6 +6,7 @@ import type { Story } from "@/types";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
+import { getStoryRoute } from "@/lib/metadata";
 
 /* ─── Trending Widget ──────────────────────────── */
 interface TrendingWidgetProps {
@@ -17,7 +18,7 @@ export function TrendingWidget({ stories }: TrendingWidgetProps) {
     <div className="widget">
       <div className="slbl">Trending Now</div>
       {stories.slice(0, 4).map((story, i) => (
-        <Link key={story.id} href={`/story/${story.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+        <Link key={story.id} href={getStoryRoute(story)} style={{ textDecoration: "none", color: "inherit" }}>
           <div className="titem">
             <span className="ti-r">{i + 1}</span>
             <div>

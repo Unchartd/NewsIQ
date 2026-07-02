@@ -138,6 +138,10 @@ async def list_stories(
     q: str | None = Query(None, max_length=200),
     status: str | None = Query("active", description="active, approved, rejected, all"),
     trending: bool = False,
+    sort: str | None = Query(None, description="updated_at, first_seen_at, trend_score"),
+    after: datetime | None = Query(
+        None, description="Filter stories updated or created after this UTC datetime"
+    ),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -175,6 +179,12 @@ async def list_stories(
     if city:
         stmt = stmt.where(Story.location_city == city)
 
+    if after:
+        if sort == "first_seen_at":
+            stmt = stmt.where(Story.first_seen_at >= after)
+        else:
+            stmt = stmt.where(Story.updated_at >= after)
+
     if q:
         # Escape SQL LIKE wildcards in user input
         safe_q = q.replace("%", r"\%").replace("_", r"\_")
@@ -184,8 +194,13 @@ async def list_stories(
             | Story.short_summary.ilike(f"%{safe_q}%")
         )
 
-    if trending:
+    # Sorting
+    if trending or sort == "trend_score":
         stmt = stmt.order_by(Story.trend_score.desc())
+    elif sort == "first_seen_at":
+        stmt = stmt.order_by(Story.first_seen_at.desc())
+    elif sort == "updated_at":
+        stmt = stmt.order_by(Story.updated_at.desc())
     else:
         stmt = stmt.order_by(Story.updated_at.desc())
 

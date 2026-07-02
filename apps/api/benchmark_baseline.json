@@ -1,0 +1,10 @@
+{
+  "story_id": "8661d01b-43d4-41c0-ac10-9ff100236a76",
+  "articles_count": 1,
+  "generation_success": true,
+  "error": null,
+  "latency_seconds": 2.1521,
+  "accumulated_cost_usd": 0.0,
+  "timestamp": "2026-07-02T10:24:09.827434+00:00",
+  "environment": "baseline"
+}

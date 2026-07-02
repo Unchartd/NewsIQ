@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
+import { getStoryRoute } from "@/lib/metadata";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.online";
 const API_BASE_URL =
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
@@ -106,7 +107,7 @@ const CATEGORY_ROUTES: MetadataRoute.Sitemap = CATEGORIES.map((slug) => ({
  * Fetch recent stories from the API for dynamic story entries.
  * Falls back to an empty array on error so the sitemap always renders.
  */
-async function fetchRecentStoryIds(): Promise<Array<{ id: string; updatedAt: string }>> {
+async function fetchRecentStoryIds(): Promise<Array<{ id: string; headline: string; updatedAt: string }>> {
   try {
     const res = await fetch(`${API_BASE_URL}/stories?limit=200&sort=updated_at`, {
       next: { revalidate: 900 }, // Re-fetch every 15 minutes
@@ -114,8 +115,9 @@ async function fetchRecentStoryIds(): Promise<Array<{ id: string; updatedAt: str
     if (!res.ok) return [];
     const stories = await res.json();
     const list = Array.isArray(stories) ? stories : (stories?.items ?? []);
-    return list.map((s: { id: string; updated_at?: string }) => ({
+    return list.map((s: { id: string; headline?: string; updated_at?: string }) => ({
       id: s.id,
+      headline: s.headline || "",
       updatedAt: s.updated_at || new Date().toISOString(),
     }));
   } catch {
@@ -132,9 +134,9 @@ async function fetchRecentStoryIds(): Promise<Array<{ id: string; updatedAt: str
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const stories = await fetchRecentStoryIds();
 
-  const storyRoutes: MetadataRoute.Sitemap = stories.map(({ id, updatedAt }) => ({
-    url: `${SITE_URL}/story/${id}`,
-    lastModified: new Date(updatedAt),
+  const storyRoutes: MetadataRoute.Sitemap = stories.map((story) => ({
+    url: `${SITE_URL}${getStoryRoute(story)}`,
+    lastModified: new Date(story.updatedAt),
     changeFrequency: "hourly" as const,
     priority: 0.9,
   }));

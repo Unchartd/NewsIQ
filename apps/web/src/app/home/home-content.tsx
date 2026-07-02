@@ -14,6 +14,7 @@ import { BreakingBanner } from "@/components/ui/breaking-banner";
 import apiClient from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Story } from "@/types";
+import { getStoryRoute } from "@/lib/metadata";
 
 const CATEGORIES = [
   { slug: "all", name: "All" },
@@ -173,7 +174,7 @@ function HomeContentInner() {
         <BreakingBanner
           text={`${uniqueStories[0].headline} — ${uniqueStories[0].source_count} sources covering`}
           time="Just now"
-          onClick={() => router.push(`/story/${uniqueStories[0].id}`)}
+          onClick={() => router.push(getStoryRoute(uniqueStories[0]))}
         />
       )}
 

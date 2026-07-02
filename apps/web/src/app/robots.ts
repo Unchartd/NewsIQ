@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://newsiq.online";
 
 /**
  * robots.ts — Crawler policy for NewsIQ
