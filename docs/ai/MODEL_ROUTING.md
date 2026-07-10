@@ -68,3 +68,23 @@ To maximize throughput and avoid rate-limiting limits, the router manages an API
 - **Key Rotation**: When a key is requested, the router rotates keys in a round-robin/priority fashion.
 - **Cooldowns**: If a key hits a rate limit (429), it is placed on a cooldown period (e.g. 10s for Gemini). The router will bypass cooling keys and select the next available healthy key.
 - **Safe Fallback**: If all keys for a provider are in cooldown, the router selects the one whose cooldown expires soonest.
+
+---
+
+## 5. Gateway Migration & Deprecation Strategy
+
+To support unified capability-based routing and a simpler developer experience, Gateway B (`llm_gateway`) is being deprecated in favor of the new Unified Gateway A (`AIGateway`).
+
+### A. Safe Rollback Feature Flag
+The migration is governed by a global feature flag:
+- **`USE_NEW_GATEWAY`** (boolean, defaults to `True`): When enabled, all calls to `llm_gateway` and `GatewayModel` are routed to the new `AIGateway`. If disabled, requests flow through the legacy Gateway B fallback paths.
+
+### B. Configuration-Driven Model Fallbacks
+Provider routing is configured via the `MODEL_FALLBACKS` dictionary in `app/ai/config.py`. Only **Gemini, NVIDIA NIM, and OpenRouter** are supported. Groq and Cerebras are excluded.
+
+### C. Deprecated Endpoint Forwarding
+To ensure backward compatibility during the transition, `RequestManager` (the old gateway) async and sync entry points (`execute_request` and `execute_request_sync`) act as thin proxies that log a warning and delegate directly to the unified `AIGateway` if the feature flag is enabled.
+
+### D. Budget & Token Guards
+Pro capability models are protected by the `MAX_PRO_MODEL_TOKENS` budget guard which counts input prompt tokens and truncates input content if it exceeds the limit (default: 30,000 tokens) to prevent unnecessary billing costs.
+

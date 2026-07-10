@@ -39,8 +39,7 @@ logger = logging.getLogger(__name__)
 
 SIMILARITY_THRESHOLD = 0.80  # Cosine similarity threshold for real-time merge
 
-# In-memory fallback for Incremental Updates Guard when Redis is offline
-_memory_guard_cache: dict[str, str] = {}
+
 
 
 def _now() -> datetime:
@@ -103,15 +102,23 @@ class ClusteringService:
         await session.flush()
 
         # 2. Prepare article details, fetch sources and article events
+        #    Single batch SELECT instead of N per-article queries (B06 fix)
         full_text_corpus = ""
         source_countries = []
-        seen_sources = set()
+        seen_sources: set = set()
         sources_list = []
         article_source_map = {}
+
+        # Collect all distinct source_ids up front
+        source_ids = list({art.source_id for art in articles if art.source_id is not None})
+        if source_ids:
+            src_res = await session.execute(select(Source).where(Source.id.in_(source_ids)))
+            source_by_id: dict = {src.id: src for src in src_res.scalars().all()}
+        else:
+            source_by_id = {}
+
         for art in articles:
-            stmt = select(Source).where(Source.id == art.source_id)
-            res = await session.execute(stmt)
-            source = res.scalar_one_or_none()
+            source = source_by_id.get(art.source_id)
             if source:
                 article_source_map[art.id] = source.name
                 if source.country_code:
@@ -125,6 +132,7 @@ class ClusteringService:
             full_text_corpus += (
                 f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
             )
+
 
         # Resolve and assign location_country from article sources
         if source_countries:
@@ -303,19 +311,14 @@ class ClusteringService:
         guard_key = f"story_synthesis_hash:{story.id}"
         is_guard_hit = False
         if story.headline:
-            if cache_service._redis:
-                try:
-                    existing_hash = await cache_service._redis.get(guard_key)
-                    if existing_hash and existing_hash.decode("utf-8") == story_input_hash:
-                        is_guard_hit = True
-                except Exception as e:
-                    logger.warning(
-                        "Failed to check incremental updates guard for story %s: %s", story.id, e
-                    )
-            else:
-                existing_hash = _memory_guard_cache.get(str(story.id))
+            try:
+                existing_hash = await cache_service.get_raw(guard_key)
                 if existing_hash == story_input_hash:
                     is_guard_hit = True
+            except Exception as e:
+                logger.warning(
+                    "Failed to check incremental updates guard for story %s: %s", story.id, e
+                )
 
         if is_guard_hit:
             logger.info(
@@ -413,7 +416,7 @@ class ClusteringService:
                     logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
                     return []
 
-        async def run_source_comparison(contras_future):
+        async def run_source_comparison(contras: list):
             async with StageSpan(
                 stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)
             ) as span:
@@ -465,8 +468,8 @@ class ClusteringService:
                         )
                         return cov_list, diff_list
                     else:
-                        # Wait for contradictions to finish before running comparison
-                        contras = await contras_future
+                        # contras is already resolved — passed in from gather result
+                        # No sequential wait needed here.
 
                         # ── Budget gate: skip expensive source comparison if stage budget exceeded ──
                         from app.services.cost_budget import cost_budget_manager
@@ -541,12 +544,13 @@ class ClusteringService:
                     logger.error("Failed to run source comparison for story %s: %s", story.id, e)
                     return [], []
 
-        contras_task = asyncio.create_task(run_contradictions())
-        comp_task = asyncio.create_task(run_source_comparison(contras_task))
-
-        saved_contras, (saved_coverage, saved_differences) = await asyncio.gather(
-            contras_task, comp_task
-        )
+        # Run contradictions first, then pass the result to source comparison.
+        # This avoids the source comparison coroutine having to await a future
+        # internally (which caused sequential blocking on cache misses).
+        # Both still run concurrently: contradictions resolves, then comparison
+        # starts its own LLM call immediately using the pre-resolved list.
+        saved_contras = await run_contradictions()
+        saved_coverage, saved_differences = await run_source_comparison(saved_contras)
 
         # 5. Build and Serialize Knowledge Graph
         kg_dict = {}
@@ -796,15 +800,12 @@ class ClusteringService:
             )
 
         # Store computed synthesis hash to enable future skips
-        if cache_service._redis:
-            try:
-                await cache_service._redis.set(guard_key, story_input_hash, ex=604800)  # 7-day TTL
-            except Exception as e:
-                logger.warning(
-                    "Failed to update incremental updates guard for story %s: %s", story.id, e
-                )
-        else:
-            _memory_guard_cache[str(story.id)] = story_input_hash
+        try:
+            await cache_service.set_raw(guard_key, story_input_hash, ttl=604800)  # 7-day TTL
+        except Exception as e:
+            logger.warning(
+                "Failed to update incremental updates guard for story %s: %s", story.id, e
+            )
 
     async def _index_and_invalidate(
         self,
@@ -1068,13 +1069,20 @@ class ClusteringService:
             art_evt_res = await session.execute(art_evt_stmt)
             all_article_events = list(art_evt_res.scalars().all())
 
-            # Get unique sources list
+            # Get unique sources list — batch fetch instead of N per-article queries
+            source_ids_incr = list({art.source_id for art in all_articles if art.source_id is not None})
+            if source_ids_incr:
+                src_res_incr = await session.execute(
+                    select(Source).where(Source.id.in_(source_ids_incr))
+                )
+                source_by_id_incr: dict = {src.id: src for src in src_res_incr.scalars().all()}
+            else:
+                source_by_id_incr = {}
+
             sources_list = []
             seen_sources = set()
             for art in all_articles:
-                stmt = select(Source).where(Source.id == art.source_id)
-                res = await session.execute(stmt)
-                source = res.scalar_one_or_none()
+                source = source_by_id_incr.get(art.source_id)
                 if source and source.id not in seen_sources:
                     seen_sources.add(source.id)
                     sources_list.append(source)
@@ -1620,10 +1628,16 @@ class ClusteringService:
         # Ensure all canonical categories exist
         await self._ensure_all_categories(session)
 
-        # Select articles where embedding is completed and they are not in story_articles
+        # Select articles where embedding is completed and they are not in story_articles.
+        # LIMIT 200: bounds memory usage and HDBSCAN runtime. If more articles exist,
+        # the next Celery Beat invocation will process the next batch.
+        _BATCH_LIMIT = 200
         subquery = select(StoryArticle.article_id)
-        stmt = select(Article).where(
-            Article.embedding_status == "completed", ~Article.id.in_(subquery)
+        stmt = (
+            select(Article)
+            .where(Article.embedding_status == "completed", ~Article.id.in_(subquery))
+            .order_by(Article.published_at.desc().nulls_last())
+            .limit(_BATCH_LIMIT)
         )
         res = await session.execute(stmt)
         unclustered_articles = list(res.scalars().all())
@@ -1845,6 +1859,10 @@ class ClusteringService:
         verified_clusters = merged_clusters
 
         stories_created = 0
+        # Minimum number of articles required to run full LLM synthesis.
+        # Single-article clusters are still persisted (so the article is tracked)
+        # but synthesis is deferred until more articles join via incremental merge.
+        _MIN_SYNTHESIS_ARTICLES = 2
 
         for art_list in verified_clusters:
             logger.info("Creating story for cluster with %d articles.", len(art_list))
@@ -1875,12 +1893,24 @@ class ClusteringService:
             await session.commit()
 
             # Populate story summaries, timeline, differences, and category
+            # Only run synthesis if the cluster meets the minimum quality threshold.
+            if len(art_list) < _MIN_SYNTHESIS_ARTICLES:
+                logger.info(
+                    "Cluster for story %s has only %d article(s) — deferring synthesis "
+                    "until more articles join via incremental merge.",
+                    story_id,
+                    len(art_list),
+                )
+                stories_created += 1
+                continue
+
             try:
                 await self.generate_story_content(story, art_list, session)
                 await self.compute_trending_score(story, session)
                 stories_created += 1
             except Exception as e:
                 logger.error("Failed to generate content for story cluster %s: %s", story_id, e)
+
 
         return stories_created
 

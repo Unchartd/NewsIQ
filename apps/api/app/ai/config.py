@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, Any
 
 ProviderType = Literal["nvidia", "gemini", "openrouter", "mock"]
 
@@ -14,6 +14,42 @@ class CapabilityRoute(TypedDict):
     primary: ProviderModelRoute
     fallback: ProviderModelRoute
     lastFallback: ProviderModelRoute
+
+
+# Model fallback chains (configuration-driven instead of hardcoded)
+# Scoped strictly to Gemini, NVIDIA NIM, and OpenRouter.
+MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
+    "gemini-2.5-flash": [
+        {"provider": "gemini", "model": "gemini-2.5-flash", "temperature": 0.1, "timeout": 30.0},
+        {"provider": "openrouter", "model": "deepseek/deepseek-chat", "temperature": 0.1, "timeout": 30.0},
+        {"provider": "mock", "model": "mock", "temperature": 0.1, "timeout": 15.0},
+    ],
+    "gemini-2.5-pro": [
+        {"provider": "gemini", "model": "gemini-2.5-pro", "temperature": 0.1, "timeout": 45.0},
+        {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct", "temperature": 0.1, "timeout": 45.0},
+        {"provider": "mock", "model": "mock", "temperature": 0.1, "timeout": 15.0},
+    ],
+    "gemini-2.5-flash-lite": [
+        {"provider": "gemini", "model": "gemini-2.5-flash-lite", "temperature": 0.1, "timeout": 30.0},
+        {"provider": "openrouter", "model": "deepseek/deepseek-chat", "temperature": 0.1, "timeout": 30.0},
+        {"provider": "mock", "model": "mock", "temperature": 0.1, "timeout": 15.0},
+    ],
+    "deepseek-ai/deepseek-v4-flash": [
+        {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash", "temperature": 0.1, "timeout": 30.0},
+        {"provider": "gemini", "model": "gemini-2.5-flash", "temperature": 0.1, "timeout": 30.0},
+        {"provider": "openrouter", "model": "deepseek/deepseek-chat", "temperature": 0.1, "timeout": 30.0},
+        {"provider": "mock", "model": "mock", "temperature": 0.1, "timeout": 15.0},
+    ],
+    "deepseek-ai/deepseek-v4-pro": [
+        {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "temperature": 0.1, "timeout": 45.0},
+        {"provider": "gemini", "model": "gemini-2.5-pro", "temperature": 0.1, "timeout": 45.0},
+        {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct", "temperature": 0.1, "timeout": 45.0},
+        {"provider": "mock", "model": "mock", "temperature": 0.1, "timeout": 15.0},
+    ],
+    "mock": [
+        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
+    ],
+}
 
 
 # Capability-based routing configuration

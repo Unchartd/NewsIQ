@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextvars import ContextVar
 from typing import Any
@@ -85,6 +86,22 @@ class RequestManager:
         article_id: str = "",
     ) -> GatewayResponse:
         """Asynchronously execute LLM requests through the gateway's fallback chain."""
+        from app.core.config import settings
+        if settings.USE_NEW_GATEWAY:
+            logger.warning("DEPRECATION: execute_request called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
+            from app.ai.gateway import ai_gateway
+            return await ai_gateway.execute_request(
+                model=model,
+                stage=stage,
+                messages=messages,
+                response_format=response_format,
+                temperature=temperature,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=story_id,
+                article_id=article_id,
+            )
+
         # 1. Retrieve prioritized list of provider/model fallbacks
         chain = self.fallback_chain.get_fallback_chain(model)
 
@@ -192,14 +209,12 @@ class RequestManager:
 
                         story_id = story_id_ctx.get("")
                         if story_id:
-                            import asyncio
-
                             from app.services.cost_budget import cost_budget_manager
 
-                            if asyncio.get_event_loop().is_running():
-                                asyncio.create_task(
-                                    cost_budget_manager.add_story_cost(story_id, cost)
-                                )
+                            # Await directly — create_task() can be silently dropped
+                            # when the loop exits. get_running_loop() is the correct
+                            # Python 3.12 API (get_event_loop() is deprecated).
+                            await cost_budget_manager.add_story_cost(story_id, cost)
                     except Exception as cost_exc:
                         logger.warning("Failed to record story cost in async execute: %s", cost_exc)
 
@@ -305,6 +320,22 @@ class RequestManager:
         article_id: str = "",
     ) -> GatewayResponse:
         """Synchronously execute LLM requests through the gateway's fallback chain."""
+        from app.core.config import settings
+        if settings.USE_NEW_GATEWAY:
+            logger.warning("DEPRECATION: execute_request_sync called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
+            from app.ai.gateway import ai_gateway
+            return ai_gateway.execute_request_sync(
+                model=model,
+                stage=stage,
+                messages=messages,
+                response_format=response_format,
+                temperature=temperature,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=story_id,
+                article_id=article_id,
+            )
+
         chain = self.fallback_chain.get_fallback_chain(model)
 
         provider_override = provider_override_ctx.get("")
@@ -374,12 +405,13 @@ class RequestManager:
 
                     story_id = story_id_ctx.get("")
                     if story_id:
-                        import asyncio
-
                         from app.services.cost_budget import cost_budget_manager
 
-                        if asyncio.get_event_loop().is_running():
-                            asyncio.create_task(cost_budget_manager.add_story_cost(story_id, cost))
+                        # Await directly — create_task() can be silently dropped.
+                        # get_running_loop() is the correct Python 3.12 API.
+                        loop = asyncio.get_running_loop()
+                        if loop and loop.is_running():
+                            loop.create_task(cost_budget_manager.add_story_cost(story_id, cost))
                 except Exception as cost_exc:
                     logger.warning("Failed to record story cost in sync execute: %s", cost_exc)
 

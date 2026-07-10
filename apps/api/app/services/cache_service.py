@@ -110,6 +110,71 @@ class CacheService:
             logger.exception("Redis ping failed:")
             return False
 
+    @property
+    def is_active(self) -> bool:
+        """Return True if the Redis client is initialized."""
+        return self._redis is not None
+
+    async def set_nx(self, key: str, value: str, ttl: int) -> bool:
+        """Set a value only if it does not already exist (distributed lock helper).
+
+        Returns:
+            True if set successfully (lock acquired), False otherwise.
+        """
+        if not self._redis:
+            return False
+        try:
+            res = await self._redis.set(key, value, ex=ttl, nx=True)
+            return bool(res)
+        except Exception as e:
+            logger.warning("Cache SET_NX failed for %s: %s", key, e)
+            return False
+
+    async def incr_by_float(self, key: str, amount: float, ttl: int | None = None) -> float:
+        """Increment a floating-point value. Sets TTL on new keys."""
+        if not self._redis:
+            return 0.0
+        try:
+            new_val = await self._redis.incrbyfloat(key, amount)
+            if ttl is not None:
+                await self._redis.expire(key, ttl)
+            return float(new_val)
+        except Exception as e:
+            logger.warning("Cache INCR_BY_FLOAT failed for %s: %s", key, e)
+            return 0.0
+
+    async def incr(self, key: str, ttl: int | None = None) -> int:
+        """Increment an integer value. Optionally sets TTL on new keys."""
+        if not self._redis:
+            return 0
+        try:
+            new_val = await self._redis.incr(key)
+            if ttl is not None:
+                await self._redis.expire(key, ttl)
+            return int(new_val)
+        except Exception as e:
+            logger.warning("Cache INCR failed for %s: %s", key, e)
+            return 0
+
+    async def get_raw(self, key: str) -> str | None:
+        """Get raw un-serialized string value from Redis."""
+        if not self._redis:
+            return None
+        try:
+            return await self._redis.get(key)
+        except Exception as e:
+            logger.warning("Cache GET_RAW failed for %s: %s", key, e)
+            return None
+
+    async def set_raw(self, key: str, value: str, ttl: int | None = None) -> None:
+        """Set raw string value with optional TTL."""
+        if not self._redis:
+            return
+        try:
+            await self._redis.set(key, value, ex=ttl)
+        except Exception as e:
+            logger.warning("Cache SET_RAW failed for %s: %s", key, e)
+
     # ─────────────────────────────────────────────
     # Key builders
     # ─────────────────────────────────────────────

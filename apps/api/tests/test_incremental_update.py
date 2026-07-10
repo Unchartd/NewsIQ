@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import app.core.database
 from app.models.models import Article, Source, Story
-from app.services.clustering_service import clustering_service, _memory_guard_cache
+from app.services.clustering_service import clustering_service
 
 
 @pytest.mark.asyncio
@@ -42,14 +42,18 @@ async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, moc
     mock_detect = AsyncMock(return_value=[])
     mock_compare = AsyncMock(return_value=(([], [])))
 
-    # Enable cache and mock Redis offline to force in-memory guard cache usage
+    # Enable cache and mock Redis via public API methods
     pipeline_cache._is_enabled = MagicMock(return_value=True)
 
-    # Clear memory guard cache
-    _memory_guard_cache.clear()
+    stored_hashes = {}
+    async def mock_get_raw(key):
+        return stored_hashes.get(key)
+    async def mock_set_raw(key, val, ttl=None):
+        stored_hashes[key] = val
 
     with (
-        patch.object(cache_service, "_redis", None),
+        patch.object(cache_service, "get_raw", mock_get_raw),
+        patch.object(cache_service, "set_raw", mock_set_raw),
         patch.object(contradiction_service, "detect_and_save_contradictions", mock_detect),
         patch.object(source_comparison_service, "compare_sources_and_save", mock_compare),
         patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
@@ -59,8 +63,8 @@ async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, moc
         assert mock_detect.call_count == 1
         assert mock_compare.call_count == 1
 
-        # Check that memory cache has the guard key
-        assert len(_memory_guard_cache) == 1
+        # Check that simulated cache has the guard key
+        assert len(stored_hashes) == 1
 
         # Reset counts
         mock_detect.reset_mock()

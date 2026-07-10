@@ -94,14 +94,14 @@ class GNewsService:
 
         # 1. Exact name match
         res = await session.execute(select(Source).where(Source.name.ilike(name_clean)))
-        source = res.scalar_one_or_none()
+        source = res.scalars().first()
         if source:
             return source
 
         # 2. Slug match
         candidate_slug = self._slugify(name_clean)
         res = await session.execute(select(Source).where(Source.slug == candidate_slug))
-        source = res.scalar_one_or_none()
+        source = res.scalars().first()
         if source:
             return source
 
@@ -111,11 +111,13 @@ class GNewsService:
             res = await session.execute(
                 select(Source).where(Source.website_url.ilike(f"%{domain}%"))
             )
-            source = res.scalar_one_or_none()
+            source = res.scalars().first()
             if source:
                 return source
 
         # 4. Auto-create a new Source (GNews surfaces publishers we don't have seeded)
+        #    Use a nested transaction (SAVEPOINT) so that a UniqueViolation on concurrent
+        #    inserts only rolls back this INSERT — not the entire ingest transaction.
         logger.info("GNews: auto-creating new source: '%s'", name_clean)
         new_source = Source(
             name=name_clean,
@@ -129,12 +131,29 @@ class GNewsService:
         )
         session.add(new_source)
         try:
-            await session.flush()  # Get the ID without committing
+            async with session.begin_nested():
+                await session.flush()  # Get the ID without committing the outer transaction
+            return new_source
         except Exception as exc:
-            await session.rollback()
-            logger.warning("Failed to auto-create source '%s': %s", name_clean, exc)
-            return None
-        return new_source
+            # SAVEPOINT rolled back automatically — outer transaction is still alive.
+            # Re-query by slug to return the winner from a concurrent insert.
+            logger.warning(
+                "GNews: auto-create race/conflict for source '%s' (%s) — re-querying winner.",
+                name_clean,
+                exc,
+            )
+            try:
+                res = await session.execute(
+                    select(Source).where(Source.slug == candidate_slug)
+                )
+                return res.scalars().first()
+            except Exception as requery_exc:
+                logger.error(
+                    "GNews: re-query after source conflict failed for '%s': %s",
+                    name_clean,
+                    requery_exc,
+                )
+                return None
 
     # ── Ingestion orchestration ────────────────────────────────────────────────
 

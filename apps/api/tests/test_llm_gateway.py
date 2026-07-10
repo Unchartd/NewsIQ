@@ -148,58 +148,60 @@ def test_cost_tracker():
 @pytest.mark.asyncio
 @patch("app.llm_gateway.request_manager.track_llm_call")
 async def test_request_manager_fallback_execution(mock_track_call):
-    # Mock database trace context manager
-    mock_trace = MagicMock()
-    mock_trace.response_text = ""
-    mock_trace.input_tokens = 0
-    mock_trace.output_tokens = 0
-    mock_trace.total_tokens = 0
-    mock_trace.status = "success"
-    mock_trace.cost_usd = 0.0
-    mock_trace.error = None
+    from app.core.config import settings
+    with patch.object(settings, "USE_NEW_GATEWAY", False):
+        # Mock database trace context manager
+        mock_trace = MagicMock()
+        mock_trace.response_text = ""
+        mock_trace.input_tokens = 0
+        mock_trace.output_tokens = 0
+        mock_trace.total_tokens = 0
+        mock_trace.status = "success"
+        mock_trace.cost_usd = 0.0
+        mock_trace.error = None
 
-    # Setup the async context manager mock
-    async_context_mock = AsyncMock()
-    async_context_mock.__aenter__.return_value = mock_trace
-    async_context_mock.__aexit__.return_value = None
-    mock_track_call.return_value = async_context_mock
+        # Setup the async context manager mock
+        async_context_mock = AsyncMock()
+        async_context_mock.__aenter__.return_value = mock_trace
+        async_context_mock.__aexit__.return_value = None
+        mock_track_call.return_value = async_context_mock
 
-    manager = RequestManager()
-    manager.key_pool.pools["google"] = [APIKey(key="g-key", provider="google")]
-    manager.key_pool.pools["groq"] = [APIKey(key="gr-key", provider="groq")]
+        manager = RequestManager()
+        manager.key_pool.pools["google"] = [APIKey(key="g-key", provider="google")]
+        manager.key_pool.pools["groq"] = [APIKey(key="gr-key", provider="groq")]
 
-    # Mock the providers to fail for Gemini, and succeed for Groq/OpenAI fallback
-    gemini_client = AsyncMock()
-    gemini_client.execute.return_value = GatewayResponse(
-        content="", provider="google", model="gemini-2.5-flash-lite", error="429 Resource Exhausted"
-    )
+        # Mock the providers to fail for Gemini, and succeed for Groq/OpenAI fallback
+        gemini_client = AsyncMock()
+        gemini_client.execute.return_value = GatewayResponse(
+            content="", provider="google", model="gemini-2.5-flash-lite", error="429 Resource Exhausted"
+        )
 
-    groq_client = AsyncMock()
-    groq_client.execute.return_value = GatewayResponse(
-        content="Success from Groq",
-        provider="groq",
-        model="llama-3.1-8b-instant",
-        input_tokens=10,
-        output_tokens=20,
-        total_tokens=30,
-    )
+        groq_client = AsyncMock()
+        groq_client.execute.return_value = GatewayResponse(
+            content="Success from Groq",
+            provider="groq",
+            model="llama-3.1-8b-instant",
+            input_tokens=10,
+            output_tokens=20,
+            total_tokens=30,
+        )
 
-    manager.router.clients["google"] = gemini_client
-    manager.router.clients["groq"] = groq_client
+        manager.router.clients["google"] = gemini_client
+        manager.router.clients["groq"] = groq_client
 
-    # Execute request requesting gemini-2.5-flash-lite
-    response = await manager.execute_request(
-        model="gemini-2.5-flash-lite",
-        stage="test_stage",
-        messages=[{"role": "user", "content": "Hello"}],
-    )
+        # Execute request requesting gemini-2.5-flash-lite
+        response = await manager.execute_request(
+            model="gemini-2.5-flash-lite",
+            stage="test_stage",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
 
-    # Groq was executed successfully as fallback
-    assert response.content == "Success from Groq"
-    assert response.provider == "groq"
-    assert response.model == "llama-3.1-8b-instant"
-    assert response.cost_usd > 0.0
+        # Groq was executed successfully as fallback
+        assert response.content == "Success from Groq"
+        assert response.provider == "groq"
+        assert response.model == "llama-3.1-8b-instant"
+        assert response.cost_usd > 0.0
 
-    # Ensure gemini failed and health monitor was notified
-    assert gemini_client.execute.called
+        # Ensure gemini failed and health monitor was notified
+        assert gemini_client.execute.called
     assert groq_client.execute.called

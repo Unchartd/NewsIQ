@@ -45,8 +45,7 @@ async def run_benchmark():
         
         # 2. Reset story cost budget tracker in Redis to ensure clean start
         from app.services.cache_service import cache_service
-        if cache_service._redis:
-            await cache_service._redis.delete(f"story_cost:{story.id}")
+        await cache_service.delete(f"story_cost:{story.id}")
             
         # 3. Regenerate story content and measure latency + cost
         start_time = time.perf_counter()

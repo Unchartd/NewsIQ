@@ -294,7 +294,8 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                     except Exception as e:
                         logger.error("Failed to generate batch embeddings: %s", e)
 
-                    # 4. Upsert to Qdrant and update status
+                    # 4. Upsert to Qdrant and update status in-memory.
+                    # Single commit at the end instead of one per article (B12 fix).
                     for i, article in enumerate(pending_articles):
                         bind_article_context(str(article.id))
                         if i < len(vectors):
@@ -317,9 +318,8 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                                     payload=payload,
                                 )
 
-                                # Mark as completed in PostgreSQL
+                                # Mark as completed in-memory — committed below
                                 article.embedding_status = "completed"
-                                await session.commit()
                                 success_count += 1
                             except Exception as e:
                                 logger.error(
@@ -330,7 +330,6 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                                     },
                                 )
                                 article.embedding_status = "failed"
-                                await session.commit()
                                 failed_count += 1
                         else:
                             # Batch embedding did not return a vector for this article
@@ -339,8 +338,10 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                                 extra={"article_id": str(article.id)},
                             )
                             article.embedding_status = "failed"
-                            await session.commit()
                             failed_count += 1
+
+                    # Single batch commit for all status updates
+                    await session.commit()
 
                     span.set_metadata(
                         {
@@ -422,8 +423,10 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     for article in articles:
                         bind_article_context(str(article.id))
                         try:
+                            # Mark as processing in-memory — no commit here.
+                            # The final commit below will persist the terminal status
+                            # ("completed" or "failed") in a single round-trip.
                             article.event_extraction_status = "processing"
-                            await session.commit()
 
                             # Extract structured events
                             content = article.content or article.description or ""
@@ -631,40 +634,70 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
             logger.info("Pipeline is paused. Skipping batch clustering.")
             return 0
 
-        from app.llm_gateway.request_manager import QuotaExhaustedError
+        # Distributed lock — prevents two concurrent workers from running
+        # batch clustering simultaneously and creating duplicate stories.
+        # NX = only set if not exists; TTL = 10 minutes (generous upper bound).
+        _CLUSTER_LOCK_KEY = "newsiq:lock:cluster_news_task"
+        _CLUSTER_LOCK_TTL = 600  # seconds
 
-        async with PipelineRun(
-            trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
-        ) as run:
-            async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
-                async with async_session_factory() as session:
-                    from app.services.clustering_service import clustering_service
+        from app.services.cache_service import cache_service
 
-                    try:
-                        stories_created = await clustering_service.run_batch_clustering(session)
-                    except QuotaExhaustedError:
-                        await _pause_pipeline_for_quota_cooldown("clustering")
-                        logger.warning(
-                            "QuotaExhaustedError during clustering. Pipeline paused for %d seconds.",
-                            _QUOTA_COOLDOWN_SECONDS,
+        lock_acquired = True  # default: allow run if Redis unavailable
+        try:
+            lock_acquired = await cache_service.set_nx(
+                _CLUSTER_LOCK_KEY, "1", ttl=_CLUSTER_LOCK_TTL
+            )
+        except Exception as lock_err:
+            logger.warning("Failed to acquire cluster lock (Redis error): %s — proceeding.", lock_err)
+
+        if not lock_acquired:
+            logger.info(
+                "cluster_news_task: lock already held by another worker — skipping this invocation."
+            )
+            return 0
+
+        try:
+            from app.llm_gateway.request_manager import QuotaExhaustedError
+
+            async with PipelineRun(
+                trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
+            ) as run:
+                async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
+                    async with async_session_factory() as session:
+                        from app.services.clustering_service import clustering_service
+
+                        try:
+                            stories_created = await clustering_service.run_batch_clustering(session)
+                        except QuotaExhaustedError:
+                            await _pause_pipeline_for_quota_cooldown("clustering")
+                            logger.warning(
+                                "QuotaExhaustedError during clustering. Pipeline paused for %d seconds.",
+                                _QUOTA_COOLDOWN_SECONDS,
+                            )
+                            span.mark_skipped()
+                            return 0
+
+                        span.set_metadata(
+                            {
+                                "stories_created": stories_created,
+                            }
                         )
-                        span.mark_skipped()
-                        return 0
-
-                    span.set_metadata(
-                        {
-                            "stories_created": stories_created,
-                        }
-                    )
-                    if stories_created == 0:
-                        span.mark_skipped()
-                    logger.info(
-                        "Batch clustering complete",
-                        extra={"stories_created": stories_created},
-                    )
-                    return stories_created
+                        if stories_created == 0:
+                            span.mark_skipped()
+                        logger.info(
+                            "Batch clustering complete",
+                            extra={"stories_created": stories_created},
+                        )
+                        return stories_created
+        finally:
+            # Always release the lock, even on exception
+            try:
+                await cache_service.delete(_CLUSTER_LOCK_KEY)
+            except Exception as lock_err:
+                logger.warning("Failed to release cluster lock: %s", lock_err)
 
     return run_async(_run())
+
 
 
 @celery_app.task(name="app.workers.tasks.collect_queue_metrics_task")
@@ -683,12 +716,47 @@ def replay_story_task(story_id_str: str) -> None:
     async def _run():
         import uuid
 
+        # Per-story distributed lock — prevents duplicate concurrent replays
+        # (e.g., double-click in admin UI or two concurrent API calls).
+        # Scoped per story_id so different stories can replay in parallel.
+        _REPLAY_LOCK_KEY = f"newsiq:lock:replay:{story_id_str}"
+        _REPLAY_LOCK_TTL = 900  # 15 minutes
+
+        from app.services.cache_service import cache_service
         from app.services.replay_service import replay_service
 
-        async with async_session_factory() as session:
-            await replay_service.replay_full_story(uuid.UUID(story_id_str), session)
+        lock_acquired = True  # fail-open if Redis unavailable
+        try:
+            lock_acquired = await cache_service.set_nx(
+                _REPLAY_LOCK_KEY, "1", ttl=_REPLAY_LOCK_TTL
+            )
+        except Exception as lock_err:
+            logger.warning(
+                "Failed to acquire replay lock for story %s: %s — proceeding.",
+                story_id_str,
+                lock_err,
+            )
+
+        if not lock_acquired:
+            logger.info(
+                "replay_story_task: replay already in progress for story %s — skipping.",
+                story_id_str,
+            )
+            return
+
+        try:
+            async with async_session_factory() as session:
+                await replay_service.replay_full_story(uuid.UUID(story_id_str), session)
+        finally:
+            try:
+                await cache_service.delete(_REPLAY_LOCK_KEY)
+            except Exception as lock_err:
+                logger.warning(
+                    "Failed to release replay lock for story %s: %s", story_id_str, lock_err
+                )
 
     run_async(_run())
+
 
 
 @celery_app.task(name="app.workers.tasks.replay_story_stage_task")
@@ -727,3 +795,32 @@ def replay_story_stage_task(
             await replay_service.replay_story_stage(sid, stage_name, session, article_id=aid)
 
     run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.recover_stuck_embeddings_task")
+def recover_stuck_embeddings_task() -> int:
+    """Reset articles that got stuck in 'processing' state back to 'pending'."""
+    logger.info("Celery task: Running stuck embedding recovery.")
+
+    async def _run():
+        from datetime import datetime, timedelta
+        from sqlalchemy import update
+        from app.models.models import Article
+
+        cutoff = datetime.utcnow() - timedelta(minutes=30)
+        async with async_session_factory() as session:
+            stmt = (
+                update(Article)
+                .where(Article.embedding_status == "processing")
+                .where(Article.crawled_at < cutoff)
+                .values(embedding_status="pending")
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            rowcount = result.rowcount
+            if rowcount > 0:
+                logger.warning("Recovered %d stuck embedding tasks.", rowcount)
+            return rowcount
+
+    return run_async(_run())
+

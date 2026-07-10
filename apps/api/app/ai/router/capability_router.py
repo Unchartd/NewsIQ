@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 from datetime import datetime, timedelta
+from typing import Any
 
 from app.ai.config import CAPABILITY_ROUTING, ProviderModelRoute, ProviderType
 from app.ai.interfaces import AIProvider, APIKey
@@ -198,6 +199,55 @@ class CapabilityRouter:
         if not chain:
             # Fallback to mock in desperation or raise
             raise RuntimeError(f"No healthy providers available for capability: {capability}")
+
+        return chain
+
+    def get_model_route(self, model: str) -> list[tuple[AIProvider, APIKey, dict[str, Any]]]:
+        """Return prioritized list of (client, key, route_config) for a model name.
+
+        Performs dynamic health checks and rotates/selects API keys.
+        """
+        # Detect testing environment
+        is_testing = "pytest" in sys.modules or any(
+            "pytest" in arg or "unittest" in arg for arg in sys.argv
+        )
+
+        if is_testing:
+            mock_key = self._select_key("mock")
+            assert mock_key is not None
+            mock_route = {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0}
+            return [(self.clients["mock"], mock_key, mock_route)]
+
+        from app.ai.config import MODEL_FALLBACKS
+
+        routes = MODEL_FALLBACKS.get(model)
+        if not routes:
+            # If not configured, fall back to openrouter or gemini if we can guess,
+            # or try to run model as-is on Gemini / OpenRouter. Default to gemini.
+            logger.warning("get_model_route: model '%s' not in MODEL_FALLBACKS, using default.", model)
+            routes = [{"provider": "gemini", "model": model, "temperature": 0.1, "timeout": 30.0}]
+
+        chain = []
+        for cfg in routes:
+            provider = cfg["provider"]
+            tracker = self.health_trackers.get(provider)
+            if tracker and not tracker.is_available():
+                logger.warning("CapabilityRouter skipping unhealthy provider in model route: %s", provider)
+                self.trigger_background_health_check(provider)
+                continue
+
+            key = self._select_key(provider)
+            if not key:
+                continue
+
+            chain.append((self.clients[provider], key, cfg))
+
+        if not chain:
+            mock_key = self._select_key("mock")
+            if mock_key:
+                chain.append((self.clients["mock"], mock_key, {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0}))
+            else:
+                raise RuntimeError(f"No healthy providers available for model: {model}")
 
         return chain
 

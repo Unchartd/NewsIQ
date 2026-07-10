@@ -321,6 +321,8 @@ async def test_generate_story_content_redesigned_timeline(
         res.scalar.return_value = None
         if "from sources" in stmt_str:
             res.scalar_one_or_none.return_value = src
+            res.scalars.value = [src]
+            res.scalars.return_value.all.return_value = [src]
         elif "from article_events" in stmt_str:
             res.scalars.return_value.all.return_value = [evt1, evt2]
         return res
