@@ -1,0 +1,33 @@
+# Story Lifecycle Configuration
+# Defines transition thresholds and polling intervals per state.
+
+# Polling intervals (in seconds) for the discovery scheduler based on current state.
+polling_intervals:
+  emerging: 900       # 15 minutes
+  developing: 3600    # 1 hour
+  monitoring: 21600   # 6 hours
+  stable: 86400       # 24 hours
+  archived: -1        # Disabled
+
+# Rules for evaluating transitions between states
+transitions:
+  developing:
+    min_articles: 3
+    # No time requirement; transitions immediately when minimum articles are met.
+
+  monitoring:
+    min_confidence: 0.80
+    inactivity_hours: 6
+    min_sources: 3
+    max_contradiction: 0.2
+
+  stable:
+    min_confidence: 0.95
+    inactivity_hours: 24
+    min_sources: 5
+    max_contradiction: 0.1
+
+  archived:
+    inactivity_hours: 168  # 7 days of inactivity (no updates)
+    no_recent_discovery_hours: 168 # No recent discovery
+    # Note: User engagement/searches would also be evaluated in the code.

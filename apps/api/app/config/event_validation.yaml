@@ -1,0 +1,28 @@
+# Configuration for Dual-Stage Event Validation
+
+stage_a:
+  weights:
+    entity_overlap: 35
+    location: 20
+    time_proximity: 15
+    title_similarity: 20
+    publisher_trust: 10
+  thresholds:
+    pass: 60
+    maybe: 45
+
+stage_b:
+  thresholds:
+    cosine: 0.72
+    entity_overlap: 2
+
+reflection:
+  threshold: 0.55
+
+discovery:
+  expiration_hours:
+    breaking_news: 6
+    politics: 24
+    finance: 12
+    evergreen: 48
+    default: 24
