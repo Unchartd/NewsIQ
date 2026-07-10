@@ -35,7 +35,9 @@ class CostBudgetManager:
                 new_cost = await cache_service.incr_by_float(key, cost, ttl=3600)
                 return new_cost
             except Exception as e:
-                logger.warning("Failed to increment cost via cache_service for story %s: %s", story_id, e)
+                logger.warning(
+                    "Failed to increment cost via cache_service for story %s: %s", story_id, e
+                )
 
         # Fallback to memory cache
         current = _memory_cost_cache.get(story_id, 0.0)

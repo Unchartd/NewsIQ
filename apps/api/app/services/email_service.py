@@ -24,7 +24,7 @@ class EmailService:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verify your NewsIQ Email</title>
+  <title>Verify your {settings.BRAND_NAME} Email</title>
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -61,7 +61,7 @@ class EmailService:
     .logo-icon {{
       width: 38px;
       height: 38px;
-      background-color: #C41E3A;
+      background-color: {settings.BRAND_COLOR_PRIMARY};
       border-radius: 10px;
       display: inline-block;
       vertical-align: middle;
@@ -102,7 +102,7 @@ class EmailService:
     }}
     .btn {{
       display: inline-block;
-      background-color: #C41E3A;
+      background-color: {settings.BRAND_COLOR_PRIMARY};
       color: #ffffff !important;
       text-decoration: none;
       font-weight: 600;
@@ -129,7 +129,7 @@ class EmailService:
     }}
     .fallback-link {{
       font-size: 13px;
-      color: #C41E3A;
+      color: {settings.BRAND_COLOR_PRIMARY};
       text-decoration: none;
     }}
     .footer {{
@@ -151,14 +151,14 @@ class EmailService:
     <div class="container">
       <div class="header">
         <a href="{settings.FRONTEND_URL}" class="logo-container">
-          <span class="logo-icon">⚡</span>
-          <span class="logo-text">NewsIQ</span>
+          <span class="logo-icon">{settings.BRAND_ICON}</span>
+          <span class="logo-text">{settings.BRAND_NAME}</span>
         </a>
       </div>
       <div class="content">
         <h1>Verify your email address</h1>
         <p>Hello {name},</p>
-        <p>Thank you for signing up for NewsIQ! To complete your registration and activate your account, please verify your email address by clicking the button below.</p>
+        <p>Thank you for signing up for {settings.BRAND_NAME}! To complete your registration and activate your account, please verify your email address by clicking the button below.</p>
 
         <div class="btn-container">
           <a href="{verification_link}" class="btn" target="_blank">Verify Email</a>
@@ -173,8 +173,8 @@ class EmailService:
         </div>
 
         <div class="footer">
-          <p class="security-notice"><strong>Security Notice:</strong> If you did not sign up for a NewsIQ account, you can safely ignore this email. Someone may have entered your email address by mistake.</p>
-          <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
+          <p class="security-notice"><strong>Security Notice:</strong> If you did not sign up for a {settings.BRAND_NAME} account, you can safely ignore this email. Someone may have entered your email address by mistake.</p>
+          <p>&copy; {current_year} {settings.BRAND_NAME}. All rights reserved.</p>
         </div>
       </div>
     </div>
@@ -191,7 +191,7 @@ class EmailService:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset your NewsIQ Password</title>
+  <title>Reset your {settings.BRAND_NAME} Password</title>
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -228,7 +228,7 @@ class EmailService:
     .logo-icon {{
       width: 38px;
       height: 38px;
-      background-color: #C41E3A;
+      background-color: {settings.BRAND_COLOR_PRIMARY};
       border-radius: 10px;
       display: inline-block;
       vertical-align: middle;
@@ -269,7 +269,7 @@ class EmailService:
     }}
     .btn {{
       display: inline-block;
-      background-color: #C41E3A;
+      background-color: {settings.BRAND_COLOR_PRIMARY};
       color: #ffffff !important;
       text-decoration: none;
       font-weight: 600;
@@ -296,7 +296,7 @@ class EmailService:
     }}
     .fallback-link {{
       font-size: 13px;
-      color: #C41E3A;
+      color: {settings.BRAND_COLOR_PRIMARY};
       text-decoration: none;
     }}
     .footer {{
@@ -318,14 +318,14 @@ class EmailService:
     <div class="container">
       <div class="header">
         <a href="{settings.FRONTEND_URL}" class="logo-container">
-          <span class="logo-icon">⚡</span>
-          <span class="logo-text">NewsIQ</span>
+          <span class="logo-icon">{settings.BRAND_ICON}</span>
+          <span class="logo-text">{settings.BRAND_NAME}</span>
         </a>
       </div>
       <div class="content">
         <h1>Reset your password</h1>
         <p>Hello {name},</p>
-        <p>We received a request to reset your NewsIQ account password. Click the button below to choose a new password.</p>
+        <p>We received a request to reset your {settings.BRAND_NAME} account password. Click the button below to choose a new password.</p>
 
         <div class="btn-container">
           <a href="{reset_link}" class="btn" target="_blank">Reset Password</a>
@@ -342,7 +342,7 @@ class EmailService:
         </div>
 
         <div class="footer">
-          <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
+          <p>&copy; {current_year} {settings.BRAND_NAME}. All rights reserved.</p>
         </div>
       </div>
     </div>
@@ -355,7 +355,7 @@ class EmailService:
         """Send a beautiful verification HTML email to the user."""
         verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
         name = user.name or "User"
-        subject = "Verify your NewsIQ account"
+        subject = f"Verify your {settings.BRAND_NAME} account"
 
         html_content = self._get_verification_html(name, verification_link)
         text_content = f"Hello {name},\n\nPlease verify your email by opening the following link in your browser:\n{verification_link}\n\nThis link will expire in 24 hours."
@@ -437,7 +437,7 @@ class EmailService:
     .logo-icon {{
       width: 38px;
       height: 38px;
-      background-color: #C41E3A;
+      background-color: {settings.BRAND_COLOR_PRIMARY};
       border-radius: 10px;
       display: inline-block;
       vertical-align: middle;
@@ -502,7 +502,7 @@ class EmailService:
       text-decoration: none;
     }}
     .story-title a:hover {{
-      color: #C41E3A;
+      color: {settings.BRAND_COLOR_PRIMARY};
     }}
     .story-one-line {{
       font-size: 13px;
@@ -528,7 +528,7 @@ class EmailService:
     .story-link {{
       font-size: 13px;
       font-weight: 600;
-      color: #C41E3A;
+      color: {settings.BRAND_COLOR_PRIMARY};
       text-decoration: none;
     }}
     .footer {{
@@ -541,7 +541,7 @@ class EmailService:
       text-align: center;
     }}
     .footer a {{
-      color: #C41E3A;
+      color: {settings.BRAND_COLOR_PRIMARY};
       text-decoration: none;
     }}
   </style>
@@ -551,8 +551,8 @@ class EmailService:
     <div class="container">
       <div class="header">
         <a href="{settings.FRONTEND_URL}" class="logo-container">
-          <span class="logo-icon">⚡</span>
-          <span class="logo-text">NewsIQ</span>
+          <span class="logo-icon">{settings.BRAND_ICON}</span>
+          <span class="logo-text">{settings.BRAND_NAME}</span>
         </a>
         <h1>{title}</h1>
         <p class="digest-meta">Personalized Briefing for {name}</p>
@@ -565,7 +565,7 @@ class EmailService:
       <div class="footer">
         <p>You received this email because you are subscribed to the {title}.</p>
         <p><a href="{settings.FRONTEND_URL}/settings?tab=notif">Manage Subscription Settings</a> | <a href="{settings.FRONTEND_URL}/settings?tab=notif">Unsubscribe</a></p>
-        <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
+        <p>&copy; {current_year} {settings.BRAND_NAME}. All rights reserved.</p>
       </div>
     </div>
   </div>
@@ -576,7 +576,7 @@ class EmailService:
     async def send_digest_email(self, user: User, edition_title: str, stories: list[dict]) -> None:
         """Send a beautiful news digest HTML email to the user."""
         name = user.name or "Subscriber"
-        subject = f"Your NewsIQ {edition_title}"
+        subject = f"Your {settings.BRAND_NAME} {edition_title}"
 
         html_content = self._get_digest_html(name, edition_title, stories)
 
@@ -589,7 +589,7 @@ class EmailService:
             link = f"{settings.FRONTEND_URL}/story/{story_id}"
             story_texts.append(f'{index + 1}. {headline}\n   "{one_line}"\n   Link: {link}')
         text_content = (
-            f"Hello {name},\n\nHere is your NewsIQ {edition_title}:\n\n"
+            f"Hello {name},\n\nHere is your {settings.BRAND_NAME} {edition_title}:\n\n"
             + "\n\n".join(story_texts)
             + f"\n\nManage your settings here: {settings.FRONTEND_URL}/settings?tab=notif"
         )

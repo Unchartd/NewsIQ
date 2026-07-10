@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock, patch
-import app.ai.gateway
+
+import pytest
+
 from app.llm_gateway.base_provider import GatewayResponse
 from app.services.event_service import ArticleEventResponse, ExtractedEvent, event_service
 from app.services.event_taxonomy import (

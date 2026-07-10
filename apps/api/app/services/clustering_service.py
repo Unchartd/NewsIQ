@@ -150,7 +150,6 @@ class ClusteringService:
                 f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
             )
 
-
         # Resolve and assign location_country from article sources
         if source_countries:
             from collections import Counter
@@ -545,7 +544,9 @@ class ClusteringService:
             all_article_events = list(art_evt_res.scalars().all())
 
             # Get unique sources list — batch fetch instead of N per-article queries
-            source_ids_incr = list({art.source_id for art in all_articles if art.source_id is not None})
+            source_ids_incr = list(
+                {art.source_id for art in all_articles if art.source_id is not None}
+            )
             if source_ids_incr:
                 src_res_incr = await session.execute(
                     select(Source).where(Source.id.in_(source_ids_incr))
@@ -703,6 +704,7 @@ class ClusteringService:
             )
             # Delegate to StorySynthesisOrchestrator
             from app.services.story_synthesis_service import story_synthesis_orchestrator
+
             await story_synthesis_orchestrator.synthesize_story(
                 session=session,
                 story_id=story_id,
@@ -970,10 +972,12 @@ class ClusteringService:
         # Candidate Retrieval: Hybrid filtering
         # 1. Base time window (e.g. 72 hours)
         from datetime import UTC, datetime, timedelta
+
         time_window = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=72)
 
         # 2. Extract article entities for indexing
         from app.services.event_validation_service import EventValidationService
+
         extracted_ents = EventValidationService()._extract_entities(article.title)
 
         # 3. Build query
@@ -989,7 +993,7 @@ class ClusteringService:
                 Story.updated_at >= time_window,
                 ~Story.id.in_(
                     select(StoryArticle.story_id).where(StoryArticle.article_id == article.id)
-                )
+                ),
             )
         )
 
@@ -1003,7 +1007,9 @@ class ClusteringService:
             recent_stories_stmt = recent_stories_stmt.where(
                 or_(
                     func.lower(StoryEntity.entity_value).in_([e.lower() for e in extracted_ents]),
-                    StoryEntity.id.is_(None) # fallback to allow recent stories with no entities yet
+                    StoryEntity.id.is_(
+                        None
+                    ),  # fallback to allow recent stories with no entities yet
                 )
             )
 
@@ -1018,9 +1024,19 @@ class ClusteringService:
         stage_a_passed_candidates = []
         for story in candidates:
             # Build Story Anchor
-            primary_entities = {e.entity_value.lower() for e in story.entities} if story.entities else set()
+            primary_entities = (
+                {e.entity_value.lower() for e in story.entities} if story.entities else set()
+            )
             # Simple fallback for locations from primary entities
-            top_locations = {e.entity_value.lower() for e in story.entities if getattr(e, 'entity_type', '') in ('GPE', 'LOC')} if story.entities else set()
+            top_locations = (
+                {
+                    e.entity_value.lower()
+                    for e in story.entities
+                    if getattr(e, "entity_type", "") in ("GPE", "LOC")
+                }
+                if story.entities
+                else set()
+            )
 
             anchor = StoryAnchor(
                 story_id=str(story.id),
@@ -1032,7 +1048,9 @@ class ClusteringService:
                 category=story.category.slug if story.category else None,
                 event_type=getattr(story, "event_type", None),
                 centroid_vector=getattr(story, "story_embedding", None),
-                entity_graph_ids=set(story.knowledge_graph.get("nodes", [])) if story.knowledge_graph else set()
+                entity_graph_ids=set(story.knowledge_graph.get("nodes", []))
+                if story.knowledge_graph
+                else set(),
             )
 
             decision = event_validation_service.validate_stage_a(article, anchor)
@@ -1041,10 +1059,18 @@ class ClusteringService:
                 newsiq_stage_a_validation_total.labels(outcome=decision.outcome.value).inc()
             else:
                 newsiq_stage_a_validation_total.labels(outcome="rejected").inc()
-                logger.debug("Article %s rejected for story %s at Stage A: %s", article_id, story.id, decision.reason)
+                logger.debug(
+                    "Article %s rejected for story %s at Stage A: %s",
+                    article_id,
+                    story.id,
+                    decision.reason,
+                )
 
         if not stage_a_passed_candidates:
-            logger.info("Article %s failed Stage A validation for all top candidates. Routing to Discovery Queue.", article_id)
+            logger.info(
+                "Article %s failed Stage A validation for all top candidates. Routing to Discovery Queue.",
+                article_id,
+            )
             return False
 
         # Fetch vector from Qdrant for Stage B
@@ -1084,27 +1110,46 @@ class ClusteringService:
             story_id = story.id
             if decision_b.outcome == ValidationOutcome.PASS:
                 # Merge directly
-                logger.info("Article %s passed Stage B for story %s. Merging.", article_id, story_id)
+                logger.info(
+                    "Article %s passed Stage B for story %s. Merging.", article_id, story_id
+                )
                 return await self.merge_article_into_existing_story(article, story_id, session)
 
             elif decision_b.outcome == ValidationOutcome.MAYBE:
                 if decision_b.score < REFLECTION_THRESHOLD:
-                    logger.info("Article %s scored MAYBE (%.2f) but below reflection threshold (%.2f). Skipping reflection.", article_id, decision_b.score, REFLECTION_THRESHOLD)
+                    logger.info(
+                        "Article %s scored MAYBE (%.2f) but below reflection threshold (%.2f). Skipping reflection.",
+                        article_id,
+                        decision_b.score,
+                        REFLECTION_THRESHOLD,
+                    )
                     continue
 
                 # Send to LLM Reflection
-                logger.info("Article %s scored MAYBE (%.2f) for story %s. Sending to reflection.", article_id, decision_b.score, story_id)
+                logger.info(
+                    "Article %s scored MAYBE (%.2f) for story %s. Sending to reflection.",
+                    article_id,
+                    decision_b.score,
+                    story_id,
+                )
                 newsiq_reflection_requests_total.labels(outcome="requested").inc()
                 lock_id = uuid_to_advisory_lock_id(story_id)
                 await session.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
 
-                stmt_first_art = select(Article).join(StoryArticle).where(StoryArticle.story_id == story.id).limit(1)
+                stmt_first_art = (
+                    select(Article)
+                    .join(StoryArticle)
+                    .where(StoryArticle.story_id == story.id)
+                    .limit(1)
+                )
                 res_first_art = await session.execute(stmt_first_art)
                 first_art = res_first_art.scalar_one_or_none()
 
                 first_evt = None
                 if first_art:
-                    stmt_evt = select(ArticleEvent).where(ArticleEvent.article_id == first_art.id).limit(1)
+                    stmt_evt = (
+                        select(ArticleEvent).where(ArticleEvent.article_id == first_art.id).limit(1)
+                    )
                     res_evt = await session.execute(stmt_evt)
                     first_evt = res_evt.scalar_one_or_none()
 
@@ -1117,18 +1162,33 @@ class ClusteringService:
                         event_b=first_evt,
                         similarity_score=decision_b.score,
                         category_slug=category_slug,
-                        kg_nodes=story.knowledge_graph.get("nodes", []) if story.knowledge_graph else [],
+                        kg_nodes=story.knowledge_graph.get("nodes", [])
+                        if story.knowledge_graph
+                        else [],
                     )
                     if should_merge:
-                        logger.info("Reflection passed for article %s into story %s", article_id, story_id)
-                        return await self.merge_article_into_existing_story(article, story_id, session)
+                        logger.info(
+                            "Reflection passed for article %s into story %s", article_id, story_id
+                        )
+                        return await self.merge_article_into_existing_story(
+                            article, story_id, session
+                        )
                     else:
-                        logger.info("Reflection rejected merge of article %s into story %s", article_id, story_id)
+                        logger.info(
+                            "Reflection rejected merge of article %s into story %s",
+                            article_id,
+                            story_id,
+                        )
                 else:
                     logger.warning("Missing event data for reflection on story %s", story_id)
 
             else:
-                logger.info("Article %s rejected for story %s at Stage B: %s", article_id, story.id, decision_b.reason)
+                logger.info(
+                    "Article %s rejected for story %s at Stage B: %s",
+                    article_id,
+                    story.id,
+                    decision_b.reason,
+                )
 
         return False
 
@@ -1418,7 +1478,6 @@ class ClusteringService:
 
             await session.commit()
 
-
             # Populate story summaries, timeline, differences, and category
             # Only run synthesis if the cluster meets the minimum quality threshold.
             if len(art_list) < _MIN_SYNTHESIS_ARTICLES:
@@ -1437,7 +1496,6 @@ class ClusteringService:
                 stories_created += 1
             except Exception as e:
                 logger.error("Failed to generate content for story cluster %s: %s", story_id, e)
-
 
         return stories_created
 

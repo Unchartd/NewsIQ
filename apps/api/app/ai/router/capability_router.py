@@ -224,7 +224,9 @@ class CapabilityRouter:
         if not routes:
             # If not configured, fall back to openrouter or gemini if we can guess,
             # or try to run model as-is on Gemini / OpenRouter. Default to gemini.
-            logger.warning("get_model_route: model '%s' not in MODEL_FALLBACKS, using default.", model)
+            logger.warning(
+                "get_model_route: model '%s' not in MODEL_FALLBACKS, using default.", model
+            )
             routes = [{"provider": "gemini", "model": model, "temperature": 0.1, "timeout": 30.0}]
 
         chain = []
@@ -232,7 +234,9 @@ class CapabilityRouter:
             provider = cfg["provider"]
             tracker = self.health_trackers.get(provider)
             if tracker and not tracker.is_available():
-                logger.warning("CapabilityRouter skipping unhealthy provider in model route: %s", provider)
+                logger.warning(
+                    "CapabilityRouter skipping unhealthy provider in model route: %s", provider
+                )
                 self.trigger_background_health_check(provider)
                 continue
 
@@ -245,7 +249,13 @@ class CapabilityRouter:
         if not chain:
             mock_key = self._select_key("mock")
             if mock_key:
-                chain.append((self.clients["mock"], mock_key, {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0}))
+                chain.append(
+                    (
+                        self.clients["mock"],
+                        mock_key,
+                        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
+                    )
+                )
             else:
                 raise RuntimeError(f"No healthy providers available for model: {model}")
 

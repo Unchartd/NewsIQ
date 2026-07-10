@@ -1282,8 +1282,8 @@ export function LandingClientPage() {
                     style={{
                       fontSize: "11px",
                       padding: "3px 8px",
-                      background: "rgba(196,30,58,.1)",
-                      border: "1px solid rgba(196,30,58,.2)",
+                      background: "rgba(var(--brand-primary-dark-rgb), .1)",
+                      border: "1px solid rgba(var(--brand-primary-dark-rgb), .2)",
                       borderRadius: "4px",
                       color: "var(--landing-primary)",
                       fontWeight: 600,
@@ -2076,7 +2076,7 @@ export function LandingClientPage() {
                 <div
                   className="testi-avatar"
                   style={{
-                    background: "linear-gradient(135deg,#C41E3A,#8B1429)",
+                    background: "linear-gradient(135deg,var(--brand-primary-dark),var(--brand-secondary))",
                   }}
                 >
                   V
@@ -2225,7 +2225,7 @@ export function LandingClientPage() {
             <div
               className="eyebrow"
               style={{
-                color: "rgba(196,30,58,.85)",
+                color: "rgba(var(--brand-primary-dark-rgb), .85)",
                 justifyContent: "center",
                 display: "flex",
               }}

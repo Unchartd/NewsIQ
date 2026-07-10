@@ -6,9 +6,9 @@ Maintains backward-compatible API contracts to eliminate drift while avoiding co
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from app.ai.prompts.registry import PromptTemplate, prompt_registry as yaml_registry
+from app.ai.prompts.registry import PromptTemplate
+from app.ai.prompts.registry import prompt_registry as yaml_registry
 
 logger = logging.getLogger(__name__)
 

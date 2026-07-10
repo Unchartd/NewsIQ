@@ -533,8 +533,10 @@ class NERServiceV2:
         from app.core.config import settings
 
         try:
+            response: Any
             if settings.USE_NEW_GATEWAY:
                 from app.ai.gateway import ai_gateway
+
                 response = await ai_gateway.generate(
                     capability="entity_extraction",
                     prompt_variables={"text": text},
@@ -544,6 +546,7 @@ class NERServiceV2:
                 )
             else:
                 from app.llm_gateway.request_manager import llm_gateway
+
                 response = await llm_gateway.execute_request(
                     model=model,
                     stage="entity_extraction",

@@ -1,6 +1,7 @@
 """Service for ingesting news articles from RSS feeds and other news APIs."""
 
 import asyncio
+import hashlib
 import logging
 import time
 from datetime import UTC, datetime
@@ -12,11 +13,16 @@ from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.bloom_filter import URLBloomFilter
+from app.core.fingerprint import compute_fingerprints
 from app.core.utils import canonicalize_url
 from app.models.models import Article, Source
+from app.services.cache_service import cache_service
 from app.services.crawler_service import crawler_service
 
 logger = logging.getLogger(__name__)
+
+url_bloom_filter = URLBloomFilter(cache_service)
 
 
 class IngestionService:
@@ -77,12 +83,19 @@ class IngestionService:
                 continue
             url = canonicalize_url(raw_url)
 
-            # Deduplication: Check if article with this URL already exists
-            stmt = select(Article).where(Article.url == url)
-            res = await session.execute(stmt)
-            if res.scalar_one_or_none():
-                continue
-            new_entries.append((entry, url))
+            # Stage 1: URL Bloom Filter
+            url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+            might_exist = await url_bloom_filter.exists(url_hash)
+
+            if might_exist:
+                stmt = select(Article).where(Article.url_hash == url_hash)
+                res = await session.execute(stmt)
+                existing_article = res.scalar_one_or_none()
+                if existing_article:
+                    new_entries.append((entry, url, existing_article))
+                    continue
+
+            new_entries.append((entry, url, None))
 
         if not new_entries:
             logger.info("No new articles found for '%s'", source_name)
@@ -91,19 +104,21 @@ class IngestionService:
         # Crawl concurrently with a semaphore
         sem = asyncio.Semaphore(5)
 
-        async def crawl_with_semaphore(e: Any, u: str) -> tuple[Any, str, dict[str, Any] | None]:
+        async def crawl_with_semaphore(
+            e: Any, u: str, existing: Any
+        ) -> tuple[Any, str, dict[str, Any] | None, Any]:
             async with sem:
                 try:
                     crawled = await crawler_service.crawl_article(u)
-                    return e, u, crawled
+                    return e, u, crawled, existing
                 except Exception as ex:
                     logger.error("Error crawling article %s: %s", u, ex)
-                    return e, u, None
+                    return e, u, None, existing
 
-        tasks = [crawl_with_semaphore(entry, url) for entry, url in new_entries]
+        tasks = [crawl_with_semaphore(entry, url, existing) for entry, url, existing in new_entries]
         crawled_results = await asyncio.gather(*tasks)
 
-        for entry, url, crawled in crawled_results:
+        for entry, url, crawled, existing_article in crawled_results:
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
 
@@ -140,6 +155,32 @@ class IngestionService:
             else:
                 content = fallback_content
 
+            # Compute fingerprints
+            fingerprints = compute_fingerprints(
+                url,
+                title.lower().strip() if title else "",
+                content.lower().strip() if content else "",
+            )
+            url_hash = fingerprints["url_hash"]
+            content_hash = fingerprints["content_hash"]
+
+            if existing_article:
+                if existing_article.content_hash != content_hash:
+                    logger.info("Content changed for existing URL %s. Updating article.", url)
+                    existing_article.title = title
+                    existing_article.description = description
+                    existing_article.content = content
+                    existing_article.content_hash = content_hash
+                    existing_article.version += 1
+                    session.add(existing_article)
+                    new_articles_count += 1
+                continue
+
+            # Stage 2: Content exact duplicate check
+            stmt = select(Article).where(Article.content_hash == content_hash)
+            res = await session.execute(stmt)
+            duplicate_existing = res.scalar_one_or_none()
+
             article = Article(
                 source_id=source_id,
                 title=title,
@@ -153,8 +194,13 @@ class IngestionService:
                 crawled_at=datetime.utcnow(),
                 embedding_status="pending",
                 created_at=datetime.utcnow(),
+                url_hash=url_hash,
+                content_hash=content_hash,
+                fingerprint_version=1,
+                duplicate_of_article_id=duplicate_existing.id if duplicate_existing else None,
             )
             session.add(article)
+            await url_bloom_filter.add(url_hash)
             new_articles_count += 1
 
         if new_articles_count > 0:

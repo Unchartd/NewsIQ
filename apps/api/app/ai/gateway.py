@@ -497,7 +497,9 @@ class AIGateway:
         client, _, _ = chain[0]
         return client.count_tokens(text)
 
-    def _apply_token_budget_guard(self, messages: list[dict[str, Any]], model_name: str) -> list[dict[str, Any]]:
+    def _apply_token_budget_guard(
+        self, messages: list[dict[str, Any]], model_name: str
+    ) -> list[dict[str, Any]]:
         """Count prompt tokens and truncate if budget for Pro models is exceeded."""
         from app.core.config import settings
 
@@ -531,13 +533,16 @@ class AIGateway:
             msg = messages[longest_idx]
             content = msg.get("content", "")
             while total_tokens > settings.MAX_PRO_MODEL_TOKENS and len(content) > 100:
-                content = content[:int(len(content) * 0.8)]
+                content = content[: int(len(content) * 0.8)]
                 temp_messages = list(messages)
                 temp_messages[longest_idx] = {"role": msg["role"], "content": content}
                 full_text = "\n".join(m.get("content", "") for m in temp_messages)
                 total_tokens = self.count_tokens(full_text)
 
-            messages[longest_idx] = {"role": msg["role"], "content": content + "\n[TRUNCATED BY BUDGET GUARD]"}
+            messages[longest_idx] = {
+                "role": msg["role"],
+                "content": content + "\n[TRUNCATED BY BUDGET GUARD]",
+            }
 
         return messages
 
@@ -605,7 +610,7 @@ class AIGateway:
         messages = self._apply_token_budget_guard(messages, model_name)
 
         # 4. Iterate through fallback chain
-        last_error = None
+        last_error: Exception | None = None
         for idx, (client, api_key, route_cfg) in enumerate(chain):
             provider_name = route_cfg["provider"]
             model_name = route_cfg["model"]
@@ -726,14 +731,19 @@ class AIGateway:
                 except Exception as err:
                     logger.warning(
                         "Gateway execute attempt failed for provider=%s model=%s stage=%s: %s",
-                        provider_name, model_name, stage, err
+                        provider_name,
+                        model_name,
+                        stage,
+                        err,
                     )
                     capability_router.health_trackers[provider_name].report_failure(str(err))
                     last_error = err
                     await asyncio.sleep(backoff)
                     backoff *= 2.0
 
-        raise AIGatewayError(f"All AI Gateway providers failed in execute_request fallback. Last error: {last_error}")
+        raise AIGatewayError(
+            f"All AI Gateway providers failed in execute_request fallback. Last error: {last_error}"
+        )
 
     def execute_request_sync(
         self,
@@ -749,6 +759,7 @@ class AIGateway:
     ) -> GatewayResponse:
         """Synchronously execute custom requests through the gateway fallback chain."""
         import anyio
+
         return anyio.from_thread.run(
             self.execute_request,
             model,

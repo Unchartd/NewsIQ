@@ -40,8 +40,10 @@ class GatewayModel(Model):
 
         from app.core.config import settings
 
+        response: Any
         if settings.USE_NEW_GATEWAY:
             from app.ai.gateway import ai_gateway
+
             response = await ai_gateway.execute_request(
                 model=self.id,
                 stage=self.stage,
@@ -55,6 +57,7 @@ class GatewayModel(Model):
             )
         else:
             from app.llm_gateway.request_manager import llm_gateway
+
             response = await llm_gateway.execute_request(
                 model=self.id,
                 stage=self.stage,
@@ -101,8 +104,10 @@ class GatewayModel(Model):
 
         from app.core.config import settings
 
+        response: Any
         if settings.USE_NEW_GATEWAY:
             from app.ai.gateway import ai_gateway
+
             response = ai_gateway.execute_request_sync(
                 model=self.id,
                 stage=self.stage,
@@ -116,6 +121,7 @@ class GatewayModel(Model):
             )
         else:
             from app.llm_gateway.request_manager import llm_gateway
+
             response = llm_gateway.execute_request_sync(
                 model=self.id,
                 stage=self.stage,

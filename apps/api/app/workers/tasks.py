@@ -648,7 +648,9 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
                 _CLUSTER_LOCK_KEY, "1", ttl=_CLUSTER_LOCK_TTL
             )
         except Exception as lock_err:
-            logger.warning("Failed to acquire cluster lock (Redis error): %s — proceeding.", lock_err)
+            logger.warning(
+                "Failed to acquire cluster lock (Redis error): %s — proceeding.", lock_err
+            )
 
         if not lock_acquired:
             logger.info(
@@ -699,7 +701,6 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
     return run_async(_run())
 
 
-
 @celery_app.task(name="app.workers.tasks.collect_queue_metrics_task")
 def collect_queue_metrics_task() -> None:
     """Collect queue and worker health metrics."""
@@ -727,9 +728,7 @@ def replay_story_task(story_id_str: str) -> None:
 
         lock_acquired = True  # fail-open if Redis unavailable
         try:
-            lock_acquired = await cache_service.set_nx(
-                _REPLAY_LOCK_KEY, "1", ttl=_REPLAY_LOCK_TTL
-            )
+            lock_acquired = await cache_service.set_nx(_REPLAY_LOCK_KEY, "1", ttl=_REPLAY_LOCK_TTL)
         except Exception as lock_err:
             logger.warning(
                 "Failed to acquire replay lock for story %s: %s — proceeding.",
@@ -756,7 +755,6 @@ def replay_story_task(story_id_str: str) -> None:
                 )
 
     run_async(_run())
-
 
 
 @celery_app.task(name="app.workers.tasks.replay_story_stage_task")
@@ -804,7 +802,9 @@ def recover_stuck_embeddings_task() -> int:
 
     async def _run():
         from datetime import datetime, timedelta
+
         from sqlalchemy import update
+
         from app.models.models import Article
 
         cutoff = datetime.utcnow() - timedelta(minutes=30)
@@ -823,4 +823,3 @@ def recover_stuck_embeddings_task() -> int:
             return rowcount
 
     return run_async(_run())
-

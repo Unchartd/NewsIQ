@@ -1,6 +1,8 @@
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, patch
-from app.services.cost_budget import cost_budget_manager, STAGE_BUDGET_THRESHOLDS
+
+from app.services.cost_budget import cost_budget_manager
 
 
 @pytest.mark.asyncio
@@ -15,7 +17,7 @@ async def test_cost_budget_manager_limits():
 async def test_stage_aware_budget_enforcement():
     story_id = "test-stage-story-id"
     category = "world"
-    limit = cost_budget_manager.get_budget_limit(category)  # $0.015
+    cost_budget_manager.get_budget_limit(category)  # $0.015
 
     from app.services.cache_service import cache_service
     with patch.object(cache_service, "_redis", None):

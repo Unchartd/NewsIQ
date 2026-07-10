@@ -6,14 +6,18 @@ All tables follow the Backend Schema Document:
 - Timestamp columns without timezone (UTC assumed)
 """
 
+import enum
 import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    DateTime,
+    Float,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -26,6 +30,14 @@ from app.core.database import Base
 from app.models.session import Session as Session  # noqa: F401
 from app.models.user import User as User  # noqa: F401
 from app.models.user import UserPreference as UserPreference  # noqa: F401
+
+
+class DiscoveryState(enum.StrEnum):
+    PENDING = "discovery_pending"
+    GROUPING = "discovery_grouping"
+    READY = "discovery_ready"
+    CLUSTER_CREATED = "cluster_created"
+    EXPIRED = "expired"
 
 
 def _now() -> datetime:
@@ -127,6 +139,31 @@ class Source(Base):
     articles: Mapped[list["Article"]] = relationship(back_populates="source")
 
 
+class DiscoveryQueue(Base):
+    __tablename__ = "discovery_queue"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id"), unique=True
+    )
+    state: Mapped[DiscoveryState] = mapped_column(
+        String(50), default=DiscoveryState.PENDING, index=True
+    )
+    cluster_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_retry_reason: Mapped[str | None] = mapped_column(Text)
+    next_retry_at: Mapped[datetime | None] = mapped_column()
+
+    created_at: Mapped[datetime | None] = mapped_column(default=_now)
+    updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
+    expires_at: Mapped[datetime | None] = mapped_column(index=True)
+
+    article: Mapped["Article"] = relationship()
+
+
 class Article(Base):
     __tablename__ = "articles"
 
@@ -146,6 +183,16 @@ class Article(Base):
     embedding_status: Mapped[str | None] = mapped_column(String(30), default="pending")
     created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
+    # Phase B2: Deduplication and Fingerprinting
+    url_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    semantic_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fingerprint_version: Mapped[int] = mapped_column(Integer, default=1)
+    duplicate_of_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id"), nullable=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
     source: Mapped["Source"] = relationship(back_populates="articles")
     events: Mapped[list["ArticleEvent"]] = relationship(
         back_populates="article", cascade="all, delete-orphan"
@@ -159,6 +206,7 @@ class Article(Base):
     __table_args__ = (
         Index("idx_articles_published", published_at.desc()),
         Index("idx_articles_source", "source_id"),
+        Index("idx_articles_content_hash", "content_hash"),
     )
 
 
@@ -247,6 +295,25 @@ class ArticleEntity(Base):
 # ──────────────────────────────────────────────
 
 
+class EventAlias(Base):
+    """Tracks merged or redirected canonical event IDs to preserve history."""
+
+    __tablename__ = "event_aliases"
+
+    alias_event_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    canonical_event_id: Mapped[str] = mapped_column(String(100), index=True)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class StoryLifecycleState(enum.StrEnum):
+    EMERGING = "emerging"
+    DEVELOPING = "developing"
+    MONITORING = "monitoring"
+    STABLE = "stable"
+    ARCHIVED = "archived"
+
+
 class Story(Base):
     __tablename__ = "stories"
 
@@ -274,9 +341,42 @@ class Story(Base):
     updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
     knowledge_graph: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Lifecycle State
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(30), default=StoryLifecycleState.EMERGING, index=True
+    )
+    canonical_event_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    canonical_event_slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("story_versions.id", use_alter=True, name="fk_stories_current_version_id"),
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    transition_reason: Mapped[str | None] = mapped_column(Text)
+
+    # Lifecycle Timestamps
+    lifecycle_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+    last_discovery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_significant_update_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Health Metrics
+    confidence_score: Mapped[float | None] = mapped_column(Float, index=True)
+    freshness_score: Mapped[float | None] = mapped_column(Float, index=True)
+    source_diversity_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    contradiction_score: Mapped[float | None] = mapped_column(Float, index=True)
+
     category: Mapped["Category | None"] = relationship()
     articles: Mapped[list["StoryArticle"]] = relationship(
         back_populates="story", cascade="all, delete-orphan"
+    )
+    versions: Mapped[list["StoryVersion"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan", foreign_keys="[StoryVersion.story_id]"
     )
     timeline_events: Mapped[list["StoryTimelineEvent"]] = relationship(
         back_populates="story", cascade="all, delete-orphan"
@@ -557,3 +657,83 @@ class ApiKey(Base):
     created_at: Mapped[datetime | None] = mapped_column(default=_now)
 
     user: Mapped["User"] = relationship(back_populates="api_keys")
+
+
+class SynthesisArtifact(Base):
+    __tablename__ = "synthesis_artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
+    artifact_type: Mapped[str] = mapped_column(
+        String(50)
+    )  # summary, timeline, knowledge_graph, source_comparison, contradictions
+    content_hash: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+    __table_args__ = (
+        UniqueConstraint("story_id", "artifact_type", "content_hash"),
+        Index("idx_synthesis_artifacts_hash", "story_id", "artifact_type", "content_hash"),
+    )
+
+
+class StoryVersion(Base):
+    __tablename__ = "story_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
+    version_number: Mapped[int] = mapped_column(Integer)
+    pipeline_version: Mapped[str] = mapped_column(String(20))
+
+    summary_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    timeline_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    kg_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    source_comparison_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    contradiction_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+
+    llm_cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), default=0.0)
+    trigger: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+    story: Mapped["Story"] = relationship(back_populates="versions", foreign_keys=[story_id])
+    __table_args__ = (
+        UniqueConstraint("story_id", "version_number"),
+        Index("idx_story_versions_story", "story_id", "version_number"),
+    )
+
+
+class StoryReview(Base):
+    __tablename__ = "story_reviews"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
+    story_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("story_versions.id")
+    )
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    summary_quality: Mapped[int] = mapped_column(Integer)
+    hallucination_count: Mapped[int] = mapped_column(Integer, default=0)
+    missing_facts_count: Mapped[int] = mapped_column(Integer, default=0)
+    contradiction_accuracy: Mapped[int] = mapped_column(Integer)
+    source_coverage_score: Mapped[int] = mapped_column(Integer)
+    source_diversity_score: Mapped[int] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime] = mapped_column(default=_now)

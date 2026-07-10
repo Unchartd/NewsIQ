@@ -10,13 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Ensure app path is in system path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-import app.core.database
-from app.models.models import Article, Category, Source, Story, StoryTimelineEvent
+from app.models.models import Article, Category, Source, Story
 from app.services.ai_service import StorySummaryResponse
 from app.services.clustering_service import clustering_service
 from app.services.contradiction_service import contradiction_service
-from app.services.source_comparison_service import source_comparison_service
 from app.services.pipeline_cache import pipeline_cache
+from app.services.source_comparison_service import source_comparison_service
 
 # Expose custom Prometheus metrics for evaluation outcomes
 try:
@@ -45,24 +44,24 @@ async def run_scenario(scenario: dict) -> dict:
     scenario_id = scenario["scenario_id"]
     description = scenario["description"]
     target_category = scenario["category"]
-    
+
     print(f"\nRunning Scenario: {scenario_id} - {description}")
-    
+
     # 1. Setup Mock DB Session
     mock_db_session = AsyncMock()
     mock_db_session.execute = AsyncMock()
     mock_db_session.add = MagicMock()
     mock_db_session.commit = AsyncMock()
     mock_db_session.flush = AsyncMock()
-    
+
     # Mock Category Query: Return a Category object matching target_category
     cat_id = uuid.uuid4()
     mock_category = Category(id=cat_id, name=target_category.capitalize(), slug=target_category)
-    
+
     # Mock Source & Articles
     src_id = uuid.uuid4()
     mock_source = Source(id=src_id, name="TestPublisher")
-    
+
     articles = []
     for art_dict in scenario["articles"]:
         art = Article(
@@ -74,7 +73,7 @@ async def run_scenario(scenario: dict) -> dict:
         )
         art.source = mock_source
         articles.append(art)
-        
+
     async def mock_execute(stmt):
         stmt_str = str(stmt).lower()
         res = MagicMock()
@@ -85,15 +84,15 @@ async def run_scenario(scenario: dict) -> dict:
         elif "from sources" in stmt_str:
             res.scalar_one_or_none.return_value = mock_source
         return res
-        
+
     mock_db_session.execute.side_effect = mock_execute
-    
+
     # 2. Setup Story model
     story = Story(id=uuid.uuid4())
-    
+
     # 3. Setup LLM Response Mocking (Simulated execution by default, unless LIVE environment is active)
     is_live = os.environ.get("NEWS_AI_EVAL_LIVE", "false").lower() == "true"
-    
+
     if is_live:
         print("  Executing with LIVE LLM calls...")
         # Clear cache to guarantee a fresh LLM call
@@ -104,7 +103,7 @@ async def run_scenario(scenario: dict) -> dict:
         duration = time.time() - start_time
     else:
         print("  Executing with SIMULATED LLM outputs...")
-        
+
         simulated_responses = {
             "tech_acquisition": StorySummaryResponse(
                 headline="TechCorp Announces Definitive Agreement to Acquire InnovateAI startup for $500M",
@@ -147,7 +146,7 @@ async def run_scenario(scenario: dict) -> dict:
                 category="sports"
             )
         }
-        
+
         mock_summary_res = simulated_responses.get(
             scenario_id,
             StorySummaryResponse(
@@ -159,7 +158,7 @@ async def run_scenario(scenario: dict) -> dict:
                 category=target_category
             )
         )
-        
+
         with (
             patch("app.services.ai_service.ai_service.summarize_story_from_kg", AsyncMock(return_value=mock_summary_res)),
             patch("app.services.ner_service_v2.ner_service_v2.extract_entities", AsyncMock(return_value=[])),
@@ -176,18 +175,18 @@ async def run_scenario(scenario: dict) -> dict:
     one_line = story.one_line_summary or ""
     facts = story.key_facts or []
     category_slug = mock_category.slug
-    
+
     # Keyword Score
     keyword_matches = [kw for kw in scenario["expected_headline_keywords"] if kw.lower() in headline.lower()]
     kw_score = (len(keyword_matches) / len(scenario["expected_headline_keywords"])) * 100 if scenario["expected_headline_keywords"] else 100.0
-    
+
     # Category Score
     cat_score = 100.0 if category_slug == scenario["expected_category"] else 0.0
-    
+
     # Facts Score
     facts_count = len(facts)
     facts_score = min(1.0, facts_count / scenario["min_key_facts"]) * 100 if scenario["min_key_facts"] else 100.0
-    
+
     # Forbidden Words Check
     penalties = 0.0
     found_forbidden = []
@@ -196,10 +195,10 @@ async def run_scenario(scenario: dict) -> dict:
         if fw.lower() in text_to_check:
             penalties += 20.0
             found_forbidden.append(fw)
-            
+
     total_score = max(0.0, ((kw_score + cat_score + facts_score) / 3.0) - penalties)
     is_passed = total_score >= 80.0
-    
+
     print(f"  Headline: '{headline}'")
     print(f"  Category: '{category_slug}' (Expected: '{scenario['expected_category']}')")
     print(f"  Facts Count: {facts_count} (Expected Min: {scenario['min_key_facts']})")
@@ -207,10 +206,10 @@ async def run_scenario(scenario: dict) -> dict:
     if found_forbidden:
         print(f"  [WARNING] Forbidden Words Detected: {found_forbidden} (-{penalties} points)")
     print(f"  Score: {total_score:.1f}% ({'PASSED' if is_passed else 'FAILED'})")
-    
+
     # Publish to Prometheus Gauge
     newsiq_eval_summary_score.labels(scenario_id=scenario_id).set(total_score)
-    
+
     return {
         "scenario_id": scenario_id,
         "description": description,
@@ -242,27 +241,27 @@ async def main():
             pass
 
     dataset_path = os.path.join(os.path.dirname(__file__), "dataset.json")
-    with open(dataset_path, "r") as f:
+    with open(dataset_path) as f:
         scenarios = json.load(f)
-        
+
     print(f"Starting NewsIQ Offline Quality Evaluation run with {len(scenarios)} scenarios...")
-    
+
     results = []
     passed_count = 0
     total_score_sum = 0
-    
+
     for scenario in scenarios:
         res = await run_scenario(scenario)
         results.append(res)
         if res["is_passed"]:
             passed_count += 1
         total_score_sum += res["score"]
-        
+
     pass_rate = (passed_count / len(scenarios)) * 100.0
     avg_score = total_score_sum / len(scenarios)
-    
+
     newsiq_eval_pass_rate.set(pass_rate)
-    
+
     report = {
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "summary": {
@@ -274,11 +273,11 @@ async def main():
         },
         "scenarios": results
     }
-    
+
     report_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../evaluation_report.json"))
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
-        
+
     print("\n" + "="*50)
     print("NewsIQ Quality Evaluation Summary Report")
     print(f"Total Scenarios: {len(scenarios)}")
@@ -287,7 +286,7 @@ async def main():
     print(f"Average Quality Score: {avg_score:.1f}%")
     print(f"Report saved to: {report_path}")
     print("="*50)
-    
+
     if pass_rate < 80.0:
         print("\n[FAIL] Quality Gate FAILED: Pass rate is below 80.0%")
         sys.exit(1)

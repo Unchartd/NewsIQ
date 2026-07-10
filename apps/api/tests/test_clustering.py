@@ -73,9 +73,10 @@ async def test_run_batch_clustering(
             )
             res.scalar_one_or_none.side_effect = [evt1, evt2, evt1, evt2]
             res.scalars.return_value.all.return_value = [evt1, evt2]
-        elif "articles" in stmt_str or "article " in stmt_str:
+        elif "articles" in stmt_str or "article " in stmt_str or "discoveryqueue" in stmt_str:
             res.scalars.return_value.all.return_value = [art1, art2]
             res.scalar_one_or_none.return_value = art1
+            res.all.return_value = [(art1, MagicMock(id=uuid.uuid4(), state="ready")), (art2, MagicMock(id=uuid.uuid4(), state="ready"))]
         elif "sources" in stmt_str or "source" in stmt_str:
             res.scalar_one_or_none.return_value = MagicMock(name="Source Mock", country_code="US")
         elif "canonical_entities" in stmt_str:

@@ -143,9 +143,7 @@ class GNewsService:
                 exc,
             )
             try:
-                res = await session.execute(
-                    select(Source).where(Source.slug == candidate_slug)
-                )
+                res = await session.execute(select(Source).where(Source.slug == candidate_slug))
                 return res.scalars().first()
             except Exception as requery_exc:
                 logger.error(

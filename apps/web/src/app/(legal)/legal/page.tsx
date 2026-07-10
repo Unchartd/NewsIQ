@@ -212,7 +212,7 @@ function LegalPageContent() {
                 <span className="doc-pill">📅 Effective: {activePolicy.effectiveDate}</span>
                 <span className="doc-pill ver-badge">Version {activePolicy.version}</span>
                 {activePolicy.lawContext && (
-                  <span className="doc-pill" style={{ color: "var(--primary)", background: "rgba(196, 30, 58, 0.05)" }}>
+                  <span className="doc-pill" style={{ color: "var(--primary)", background: "rgba(var(--brand-primary-dark-rgb), 0.05)" }}>
                     ⚖️ {activePolicy.lawContext}
                   </span>
                 )}
