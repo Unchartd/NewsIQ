@@ -275,8 +275,8 @@ async def replay_pipeline(limit: int = 100, live: bool = False, dataset: str = "
             try:
                 with open(history_file) as f:
                     history = json.load(f)
-            except Exception:
-                pass
+            except Exception as history_err:
+                logger.debug("Unable to load replay history from %s: %s", history_file, history_err)
 
         run_data = {
             "timestamp": datetime.now(UTC).isoformat(),
