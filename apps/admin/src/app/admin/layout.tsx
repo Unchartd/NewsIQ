@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BRANDING } from "@/branding/constants";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth-store";
@@ -25,6 +26,7 @@ import {
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/pipeline-dashboard", label: "Pipeline Dashboard", icon: Activity },
   { href: "/admin/pipeline", label: "Pipeline DAG", icon: GitBranch },
   { href: "/admin/sources", label: "Sources", icon: Radio },
   { href: "/admin/stories", label: "Stories", icon: Layers },
@@ -92,7 +94,7 @@ export default function DashboardLayout({
         </div>
         <div>
           <p className="text-sm font-bold text-foreground leading-none">
-            NewsIQ
+            {BRANDING.NAME}
           </p>
           <p className="text-[10px] text-slate-500 mt-0.5 font-mono">Admin Console</p>
         </div>
@@ -192,7 +194,7 @@ export default function DashboardLayout({
           </button>
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
-            <span className="text-sm font-bold text-slate-100">NewsIQ Admin</span>
+            <span className="text-sm font-bold text-slate-100">{BRANDING.NAME} Admin</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <SSEStatusDot status={sseStatus} />

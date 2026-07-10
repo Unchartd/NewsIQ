@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useMemo } from "react";
+import { BRANDING } from "@/branding/constants";
 import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import { AlertTriangle, Clock, RefreshCw, BarChart2, CheckCircle2, ShieldCheck, HeartPulse, Sparkles } from "lucide-react";
@@ -145,15 +147,15 @@ export default function FailureAnalyticsPage() {
               />
               <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} formatter={(v) => <span className="text-slate-400 text-xs capitalize">{v}</span>} />
               <Area type="monotone" dataKey="successes" name="Successes" stroke="#10b981" fillOpacity={0.06} fill="url(#colorSuccess)" />
-              <Area type="monotone" dataKey="failures" name="Failures" stroke="#ef4444" fillOpacity={0.06} fill="url(#colorFailure)" />
+              <Area type="monotone" dataKey="failures" name="Failures" stroke="var(--brand-primary)" fillOpacity={0.06} fill="url(#colorFailure)" />
               <defs>
                 <linearGradient id="colorSuccess" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
                   <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="colorFailure" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--brand-primary)" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="var(--brand-primary)" stopOpacity={0} />
                 </linearGradient>
               </defs>
             </AreaChart>
@@ -264,7 +266,7 @@ export default function FailureAnalyticsPage() {
           <div>
             <h3 className="text-sm font-semibold text-red-400">Quota Limit Exceeded Alert</h3>
             <p className="text-xs text-slate-400 mt-1">
-              NewsIQ has hit provider-specific API credit/token quota limits{" "}
+              {BRANDING.NAME} has hit provider-specific API credit/token quota limits{" "}
               <span className="font-bold font-mono text-red-400">
                 {data?.quotaErrorCount} times
               </span>{" "}
