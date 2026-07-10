@@ -69,8 +69,8 @@ def apply_ai_mocks():
         if schema:
             try:
                 parsed = schema()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to instantiate mock schema %r: %s", schema, exc, exc_info=True)
         return GatewayResponse(
             content="Mocked AI Response",
             parsed=parsed,
