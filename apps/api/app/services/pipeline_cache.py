@@ -231,7 +231,7 @@ class PipelineCache:
             r = redis.from_url(settings.REDIS_URL)
             r.hincrby("newsiq:cache:stats", operation, 1)
         except Exception:
-            pass
+            pass  # Redis metric increment is best-effort; never fail pipeline flow
 
     # ── Feature Flag ───────────────────────────────────────────────────────────
 
