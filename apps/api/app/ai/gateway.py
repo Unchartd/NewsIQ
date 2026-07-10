@@ -287,10 +287,11 @@ class AIGateway:
                         response.cost_usd = cost
                         trace_call.cost_usd = cost
 
-                        # Update story cost budget
+                        # Update story cost budget (awaited directly — create_task() can be
+                        # silently dropped when the Celery worker loop exits before the task runs)
                         if s_id:
                             try:
-                                asyncio.create_task(cost_budget_manager.add_story_cost(s_id, cost))
+                                await cost_budget_manager.add_story_cost(s_id, cost)
                             except Exception as cost_exc:
                                 logger.warning("Failed to record story cost: %s", cost_exc)
 

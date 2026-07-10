@@ -422,8 +422,10 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     for article in articles:
                         bind_article_context(str(article.id))
                         try:
+                            # Mark as processing in-memory — no commit here.
+                            # The final commit below will persist the terminal status
+                            # ("completed" or "failed") in a single round-trip.
                             article.event_extraction_status = "processing"
-                            await session.commit()
 
                             # Extract structured events
                             content = article.content or article.description or ""
@@ -631,40 +633,71 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
             logger.info("Pipeline is paused. Skipping batch clustering.")
             return 0
 
-        from app.llm_gateway.request_manager import QuotaExhaustedError
+        # Distributed lock — prevents two concurrent workers from running
+        # batch clustering simultaneously and creating duplicate stories.
+        # NX = only set if not exists; TTL = 10 minutes (generous upper bound).
+        _CLUSTER_LOCK_KEY = "newsiq:lock:cluster_news_task"
+        _CLUSTER_LOCK_TTL = 600  # seconds
 
-        async with PipelineRun(
-            trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
-        ) as run:
-            async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
-                async with async_session_factory() as session:
-                    from app.services.clustering_service import clustering_service
+        from app.services.cache_service import cache_service
 
-                    try:
-                        stories_created = await clustering_service.run_batch_clustering(session)
-                    except QuotaExhaustedError:
-                        await _pause_pipeline_for_quota_cooldown("clustering")
-                        logger.warning(
-                            "QuotaExhaustedError during clustering. Pipeline paused for %d seconds.",
-                            _QUOTA_COOLDOWN_SECONDS,
+        lock_acquired = True  # default: allow run if Redis unavailable
+        if cache_service._redis:
+            try:
+                lock_acquired = await cache_service._redis.set(
+                    _CLUSTER_LOCK_KEY, "1", ex=_CLUSTER_LOCK_TTL, nx=True
+                )
+            except Exception as lock_err:
+                logger.warning("Failed to acquire cluster lock (Redis error): %s — proceeding.", lock_err)
+
+        if not lock_acquired:
+            logger.info(
+                "cluster_news_task: lock already held by another worker — skipping this invocation."
+            )
+            return 0
+
+        try:
+            from app.llm_gateway.request_manager import QuotaExhaustedError
+
+            async with PipelineRun(
+                trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
+            ) as run:
+                async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
+                    async with async_session_factory() as session:
+                        from app.services.clustering_service import clustering_service
+
+                        try:
+                            stories_created = await clustering_service.run_batch_clustering(session)
+                        except QuotaExhaustedError:
+                            await _pause_pipeline_for_quota_cooldown("clustering")
+                            logger.warning(
+                                "QuotaExhaustedError during clustering. Pipeline paused for %d seconds.",
+                                _QUOTA_COOLDOWN_SECONDS,
+                            )
+                            span.mark_skipped()
+                            return 0
+
+                        span.set_metadata(
+                            {
+                                "stories_created": stories_created,
+                            }
                         )
-                        span.mark_skipped()
-                        return 0
-
-                    span.set_metadata(
-                        {
-                            "stories_created": stories_created,
-                        }
-                    )
-                    if stories_created == 0:
-                        span.mark_skipped()
-                    logger.info(
-                        "Batch clustering complete",
-                        extra={"stories_created": stories_created},
-                    )
-                    return stories_created
+                        if stories_created == 0:
+                            span.mark_skipped()
+                        logger.info(
+                            "Batch clustering complete",
+                            extra={"stories_created": stories_created},
+                        )
+                        return stories_created
+        finally:
+            # Always release the lock, even on exception
+            try:
+                await cache_service.delete(_CLUSTER_LOCK_KEY)
+            except Exception as lock_err:
+                logger.warning("Failed to release cluster lock: %s", lock_err)
 
     return run_async(_run())
+
 
 
 @celery_app.task(name="app.workers.tasks.collect_queue_metrics_task")

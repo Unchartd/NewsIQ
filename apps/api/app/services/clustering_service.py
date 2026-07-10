@@ -103,15 +103,23 @@ class ClusteringService:
         await session.flush()
 
         # 2. Prepare article details, fetch sources and article events
+        #    Single batch SELECT instead of N per-article queries (B06 fix)
         full_text_corpus = ""
         source_countries = []
-        seen_sources = set()
+        seen_sources: set = set()
         sources_list = []
         article_source_map = {}
+
+        # Collect all distinct source_ids up front
+        source_ids = list({art.source_id for art in articles if art.source_id is not None})
+        if source_ids:
+            src_res = await session.execute(select(Source).where(Source.id.in_(source_ids)))
+            source_by_id: dict = {src.id: src for src in src_res.scalars().all()}
+        else:
+            source_by_id = {}
+
         for art in articles:
-            stmt = select(Source).where(Source.id == art.source_id)
-            res = await session.execute(stmt)
-            source = res.scalar_one_or_none()
+            source = source_by_id.get(art.source_id)
             if source:
                 article_source_map[art.id] = source.name
                 if source.country_code:
@@ -125,6 +133,7 @@ class ClusteringService:
             full_text_corpus += (
                 f"{(art.title or '')}\n{(art.description or '')}\n{(art.content or '')}\n\n"
             )
+
 
         # Resolve and assign location_country from article sources
         if source_countries:
@@ -413,7 +422,7 @@ class ClusteringService:
                     logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
                     return []
 
-        async def run_source_comparison(contras_future):
+        async def run_source_comparison(contras: list):
             async with StageSpan(
                 stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)
             ) as span:
@@ -465,8 +474,8 @@ class ClusteringService:
                         )
                         return cov_list, diff_list
                     else:
-                        # Wait for contradictions to finish before running comparison
-                        contras = await contras_future
+                        # contras is already resolved — passed in from gather result
+                        # No sequential wait needed here.
 
                         # ── Budget gate: skip expensive source comparison if stage budget exceeded ──
                         from app.services.cost_budget import cost_budget_manager
@@ -541,12 +550,13 @@ class ClusteringService:
                     logger.error("Failed to run source comparison for story %s: %s", story.id, e)
                     return [], []
 
-        contras_task = asyncio.create_task(run_contradictions())
-        comp_task = asyncio.create_task(run_source_comparison(contras_task))
-
-        saved_contras, (saved_coverage, saved_differences) = await asyncio.gather(
-            contras_task, comp_task
-        )
+        # Run contradictions first, then pass the result to source comparison.
+        # This avoids the source comparison coroutine having to await a future
+        # internally (which caused sequential blocking on cache misses).
+        # Both still run concurrently: contradictions resolves, then comparison
+        # starts its own LLM call immediately using the pre-resolved list.
+        saved_contras = await run_contradictions()
+        saved_coverage, saved_differences = await run_source_comparison(saved_contras)
 
         # 5. Build and Serialize Knowledge Graph
         kg_dict = {}

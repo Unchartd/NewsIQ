@@ -94,14 +94,14 @@ class GNewsService:
 
         # 1. Exact name match
         res = await session.execute(select(Source).where(Source.name.ilike(name_clean)))
-        source = res.scalar_one_or_none()
+        source = res.scalars().first()
         if source:
             return source
 
         # 2. Slug match
         candidate_slug = self._slugify(name_clean)
         res = await session.execute(select(Source).where(Source.slug == candidate_slug))
-        source = res.scalar_one_or_none()
+        source = res.scalars().first()
         if source:
             return source
 
@@ -111,7 +111,7 @@ class GNewsService:
             res = await session.execute(
                 select(Source).where(Source.website_url.ilike(f"%{domain}%"))
             )
-            source = res.scalar_one_or_none()
+            source = res.scalars().first()
             if source:
                 return source
 

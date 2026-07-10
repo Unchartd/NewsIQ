@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextvars import ContextVar
 from typing import Any
@@ -192,14 +193,12 @@ class RequestManager:
 
                         story_id = story_id_ctx.get("")
                         if story_id:
-                            import asyncio
-
                             from app.services.cost_budget import cost_budget_manager
 
-                            if asyncio.get_event_loop().is_running():
-                                asyncio.create_task(
-                                    cost_budget_manager.add_story_cost(story_id, cost)
-                                )
+                            # Await directly — create_task() can be silently dropped
+                            # when the loop exits. get_running_loop() is the correct
+                            # Python 3.12 API (get_event_loop() is deprecated).
+                            await cost_budget_manager.add_story_cost(story_id, cost)
                     except Exception as cost_exc:
                         logger.warning("Failed to record story cost in async execute: %s", cost_exc)
 
@@ -374,12 +373,13 @@ class RequestManager:
 
                     story_id = story_id_ctx.get("")
                     if story_id:
-                        import asyncio
-
                         from app.services.cost_budget import cost_budget_manager
 
-                        if asyncio.get_event_loop().is_running():
-                            asyncio.create_task(cost_budget_manager.add_story_cost(story_id, cost))
+                        # Await directly — create_task() can be silently dropped.
+                        # get_running_loop() is the correct Python 3.12 API.
+                        loop = asyncio.get_running_loop()
+                        if loop and loop.is_running():
+                            loop.create_task(cost_budget_manager.add_story_cost(story_id, cost))
                 except Exception as cost_exc:
                     logger.warning("Failed to record story cost in sync execute: %s", cost_exc)
 
