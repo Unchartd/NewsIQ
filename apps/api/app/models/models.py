@@ -10,14 +10,6 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-
-class DiscoveryState(enum.StrEnum):
-    PENDING = "discovery_pending"
-    GROUPING = "discovery_grouping"
-    READY = "discovery_ready"
-    CLUSTER_CREATED = "cluster_created"
-    EXPIRED = "expired"
-
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -38,6 +30,14 @@ from app.core.database import Base
 from app.models.session import Session as Session  # noqa: F401
 from app.models.user import User as User  # noqa: F401
 from app.models.user import UserPreference as UserPreference  # noqa: F401
+
+
+class DiscoveryState(enum.StrEnum):
+    PENDING = "discovery_pending"
+    GROUPING = "discovery_grouping"
+    READY = "discovery_ready"
+    CLUSTER_CREATED = "cluster_created"
+    EXPIRED = "expired"
 
 
 def _now() -> datetime:

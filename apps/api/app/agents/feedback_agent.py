@@ -65,7 +65,7 @@ def calculate_hhi(articles: list[Article]) -> float:
     """
     if not articles:
         return 1.0
-    source_counts = {}
+    source_counts: dict[str, int] = {}
     for art in articles:
         src_id = str(art.source_id) if art.source_id else "unknown"
         source_counts[src_id] = source_counts.get(src_id, 0) + 1

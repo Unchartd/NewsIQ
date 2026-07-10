@@ -605,7 +605,7 @@ class AIGateway:
         messages = self._apply_token_budget_guard(messages, model_name)
 
         # 4. Iterate through fallback chain
-        last_error = None
+        last_error: Exception | None = None
         for idx, (client, api_key, route_cfg) in enumerate(chain):
             provider_name = route_cfg["provider"]
             model_name = route_cfg["model"]

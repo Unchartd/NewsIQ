@@ -3,7 +3,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,7 +80,7 @@ class TimelineCompiler:
             })
 
         # Sort chronologically
-        timeline_entries.sort(key=lambda x: x["event_time"])
+        timeline_entries.sort(key=lambda x: cast(datetime, x["event_time"]))
         return timeline_entries
 
 
@@ -499,15 +499,17 @@ class StorySynthesisOrchestrator:
             """
 
             from app.ai.gateway import ai_gateway
-            response = await ai_gateway.generate(
-                prompt=refine_prompt,
+            response = await ai_gateway.execute_request(
                 model=model,
-                temperature=0.1
+                stage="summary_refinement",
+                messages=[{"role": "user", "content": refine_prompt}],
+                temperature=0.1,
+                story_id=str(story_id),
             )
 
-            summary_dict = json.loads(response.text)
+            summary_dict = json.loads(response.content)
             cache_hit = False
-            cost = response.cost or 0.002
+            cost = response.cost_usd or 0.002
 
         else:
             # Regular cached summarization

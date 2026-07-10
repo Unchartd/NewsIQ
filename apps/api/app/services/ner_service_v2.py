@@ -533,6 +533,7 @@ class NERServiceV2:
         from app.core.config import settings
 
         try:
+            response: Any
             if settings.USE_NEW_GATEWAY:
                 from app.ai.gateway import ai_gateway
                 response = await ai_gateway.generate(

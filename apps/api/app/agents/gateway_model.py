@@ -40,6 +40,7 @@ class GatewayModel(Model):
 
         from app.core.config import settings
 
+        response: Any
         if settings.USE_NEW_GATEWAY:
             from app.ai.gateway import ai_gateway
             response = await ai_gateway.execute_request(
@@ -101,6 +102,7 @@ class GatewayModel(Model):
 
         from app.core.config import settings
 
+        response: Any
         if settings.USE_NEW_GATEWAY:
             from app.ai.gateway import ai_gateway
             response = ai_gateway.execute_request_sync(

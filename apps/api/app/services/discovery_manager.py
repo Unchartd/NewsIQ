@@ -100,7 +100,7 @@ class DiscoveryManager:
         )
         result = await session.execute(stmt)
         await session.commit()
-        count = result.rowcount
+        count = getattr(result, "rowcount", 0) or 0
         if count > 0:
             logger.info("Expired %d items in Discovery Queue", count)
         return count
@@ -123,7 +123,7 @@ class DiscoveryManager:
         oldest_dt = (await session.execute(oldest_stmt)).scalar()
 
         now = datetime.now(UTC).replace(tzinfo=None)
-        age_minutes = 0
+        age_minutes = 0.0
         if oldest_dt:
             age_minutes = (now - oldest_dt).total_seconds() / 60.0
 

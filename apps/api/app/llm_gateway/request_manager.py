@@ -90,7 +90,7 @@ class RequestManager:
         if settings.USE_NEW_GATEWAY:
             logger.warning("DEPRECATION: execute_request called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
             from app.ai.gateway import ai_gateway
-            return await ai_gateway.execute_request(
+            return await ai_gateway.execute_request(  # type: ignore[return-value]
                 model=model,
                 stage=stage,
                 messages=messages,
@@ -324,7 +324,7 @@ class RequestManager:
         if settings.USE_NEW_GATEWAY:
             logger.warning("DEPRECATION: execute_request_sync called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
             from app.ai.gateway import ai_gateway
-            return ai_gateway.execute_request_sync(
+            return ai_gateway.execute_request_sync(  # type: ignore[return-value]
                 model=model,
                 stage=stage,
                 messages=messages,

@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.clustering_service import clustering_service
 from app.services.discovery_manager import DiscoveryManager
-from app.services.event_identity_service import event_identity_service
 from app.services.story_lifecycle_service import story_lifecycle_service
 
 logger = logging.getLogger(__name__)
@@ -38,14 +37,14 @@ class PipelineCoordinator:
         if merged_story_id:
             logger.info("PipelineCoordinator: Article %s merged into Story %s", article_id, merged_story_id)
 
-            # 2. Lifecycle
-            await story_lifecycle_service.evaluate_story_lifecycle(session, uuid.UUID(str(merged_story_id)))
-
-            # 3. Identity (Assign canonical ID if it meets criteria)
-            await event_identity_service.assign_canonical_id_if_ready(session, uuid.UUID(str(merged_story_id)))
-
-            # 4. Synthesis (Trigger summary update if needed)
-            # await ai_service.synthesize_story(session, merged_story_id) # Example
+            # 2. Lifecycle & B3 Graduation (automatic via transition logic)
+            from app.models.models import Story
+            from sqlalchemy import select
+            stmt = select(Story).where(Story.id == uuid.UUID(str(merged_story_id)))
+            res = await session.execute(stmt)
+            story = res.scalar_one_or_none()
+            if story:
+                await story_lifecycle_service.evaluate_and_transition(session, story)
 
             return True
 

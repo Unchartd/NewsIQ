@@ -126,4 +126,8 @@ class LifecycleRulesEngine:
                 )
 
         # No transition needed
-        return TransitionDecision(current_state, "No thresholds met.", False)
+        try:
+            target_enum = StoryLifecycleState(current_state)
+        except ValueError:
+            target_enum = StoryLifecycleState.EMERGING
+        return TransitionDecision(target_enum, "No thresholds met.", False)

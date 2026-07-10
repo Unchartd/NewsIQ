@@ -42,14 +42,14 @@ class URLBloomFilter:
                 res = await self.redis.execute_command("BF.ADD", self.KEY_BLOOM, url_hash)
                 return res == 1
             else:
-                res = await self.redis.sadd(self.KEY_SET, url_hash)
+                res = await self.redis.sadd(self.KEY_SET, url_hash)  # type: ignore[misc]
                 return res == 1
         except ResponseError as e:
             if "unknown command" in str(e).lower() and self.use_bloom:
                 logger.warning("RedisBloom not available. Falling back to SADD for URL deduplication.")
                 self.use_bloom = False
                 self.metrics["fallback_used"] = True
-                res = await self.redis.sadd(self.KEY_SET, url_hash)
+                res = await self.redis.sadd(self.KEY_SET, url_hash)  # type: ignore[misc]
                 return res == 1
             logger.error("Redis error adding to URL filter: %s", e)
             return True # Fail open
@@ -75,7 +75,7 @@ class URLBloomFilter:
                     self.metrics["miss_count"] += 1
                 return res == 1
             else:
-                res = await self.redis.sismember(self.KEY_SET, url_hash)
+                res = await self.redis.sismember(self.KEY_SET, url_hash)  # type: ignore[misc]
                 if res:
                     self.metrics["hit_count"] += 1
                 else:
@@ -85,7 +85,7 @@ class URLBloomFilter:
             if "unknown command" in str(e).lower() and self.use_bloom:
                 self.use_bloom = False
                 self.metrics["fallback_used"] = True
-                res = await self.redis.sismember(self.KEY_SET, url_hash)
+                res = await self.redis.sismember(self.KEY_SET, url_hash)  # type: ignore[misc]
                 return bool(res)
             logger.error("Redis error checking URL filter: %s", e)
             return False # Fail open
@@ -123,7 +123,7 @@ class URLBloomFilter:
             else:
                 await self.redis.delete(self.KEY_SET)
                 # Can SADD multiple at once
-                await self.redis.sadd(self.KEY_SET, *url_hashes)
+                await self.redis.sadd(self.KEY_SET, *url_hashes)  # type: ignore[misc]
             logger.info("Rebuilt URL filter with %d entries.", len(url_hashes))
         except ResponseError as e:
             if "unknown command" in str(e).lower() and self.use_bloom:
@@ -131,7 +131,7 @@ class URLBloomFilter:
                 self.metrics["fallback_used"] = True
                 await self.redis.delete(self.KEY_SET)
                 if url_hashes:
-                    await self.redis.sadd(self.KEY_SET, *url_hashes)
+                    await self.redis.sadd(self.KEY_SET, *url_hashes)  # type: ignore[misc]
                 logger.info("Rebuilt URL filter (fallback) with %d entries.", len(url_hashes))
             else:
                 logger.error("Failed to rebuild URL filter: %s", e)
