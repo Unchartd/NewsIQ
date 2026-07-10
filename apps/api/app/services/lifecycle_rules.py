@@ -74,7 +74,6 @@ class LifecycleRulesEngine:
                 last_update = last_update.replace(tzinfo=UTC)
             hours_since_update = (now - last_update).total_seconds() / 3600.0
 
-        hours_since_discovery = 0.0
         if story.last_discovery_at:
             last_discovery = story.last_discovery_at
             if last_discovery.tzinfo is None:
