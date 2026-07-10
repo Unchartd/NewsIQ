@@ -211,8 +211,9 @@ class StorySynthesisOrchestrator:
 
             status = "success" if decision != "error" else "failed"
             newsiq_story_stages_total.labels(stage=stage, status=status).inc()
-        except Exception:
-            pass
+        except Exception as e:
+            # Metrics emission is best-effort and must not interrupt synthesis flow.
+            logger.debug("Failed to emit story stage metric for stage '%s': %s", stage, e)
 
     async def run_knowledge_graph_stage(
         self,
