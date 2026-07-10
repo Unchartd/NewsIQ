@@ -5,19 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import {
   Activity,
-  Layers,
   DollarSign,
-  Clock,
-  Zap,
   ShieldAlert,
-  HelpCircle,
   Database,
-  Terminal,
   RefreshCw,
   Cpu,
   Server,
   AlertTriangle,
-  TrendingUp,
 } from "lucide-react";
 import {
   AreaChart,
