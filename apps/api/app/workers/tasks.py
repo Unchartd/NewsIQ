@@ -294,7 +294,8 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                     except Exception as e:
                         logger.error("Failed to generate batch embeddings: %s", e)
 
-                    # 4. Upsert to Qdrant and update status
+                    # 4. Upsert to Qdrant and update status in-memory.
+                    # Single commit at the end instead of one per article (B12 fix).
                     for i, article in enumerate(pending_articles):
                         bind_article_context(str(article.id))
                         if i < len(vectors):
@@ -317,9 +318,8 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                                     payload=payload,
                                 )
 
-                                # Mark as completed in PostgreSQL
+                                # Mark as completed in-memory — committed below
                                 article.embedding_status = "completed"
-                                await session.commit()
                                 success_count += 1
                             except Exception as e:
                                 logger.error(
@@ -330,7 +330,6 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                                     },
                                 )
                                 article.embedding_status = "failed"
-                                await session.commit()
                                 failed_count += 1
                         else:
                             # Batch embedding did not return a vector for this article
@@ -339,8 +338,10 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                                 extra={"article_id": str(article.id)},
                             )
                             article.embedding_status = "failed"
-                            await session.commit()
                             failed_count += 1
+
+                    # Single batch commit for all status updates
+                    await session.commit()
 
                     span.set_metadata(
                         {
@@ -716,12 +717,48 @@ def replay_story_task(story_id_str: str) -> None:
     async def _run():
         import uuid
 
+        # Per-story distributed lock — prevents duplicate concurrent replays
+        # (e.g., double-click in admin UI or two concurrent API calls).
+        # Scoped per story_id so different stories can replay in parallel.
+        _REPLAY_LOCK_KEY = f"newsiq:lock:replay:{story_id_str}"
+        _REPLAY_LOCK_TTL = 900  # 15 minutes
+
+        from app.services.cache_service import cache_service
         from app.services.replay_service import replay_service
 
-        async with async_session_factory() as session:
-            await replay_service.replay_full_story(uuid.UUID(story_id_str), session)
+        lock_acquired = True  # fail-open if Redis unavailable
+        if cache_service._redis:
+            try:
+                lock_acquired = await cache_service._redis.set(
+                    _REPLAY_LOCK_KEY, "1", ex=_REPLAY_LOCK_TTL, nx=True
+                )
+            except Exception as lock_err:
+                logger.warning(
+                    "Failed to acquire replay lock for story %s: %s — proceeding.",
+                    story_id_str,
+                    lock_err,
+                )
+
+        if not lock_acquired:
+            logger.info(
+                "replay_story_task: replay already in progress for story %s — skipping.",
+                story_id_str,
+            )
+            return
+
+        try:
+            async with async_session_factory() as session:
+                await replay_service.replay_full_story(uuid.UUID(story_id_str), session)
+        finally:
+            try:
+                await cache_service.delete(_REPLAY_LOCK_KEY)
+            except Exception as lock_err:
+                logger.warning(
+                    "Failed to release replay lock for story %s: %s", story_id_str, lock_err
+                )
 
     run_async(_run())
+
 
 
 @celery_app.task(name="app.workers.tasks.replay_story_stage_task")
