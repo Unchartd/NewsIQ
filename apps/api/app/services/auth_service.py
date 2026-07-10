@@ -338,21 +338,24 @@ class AuthService:
             raise EmailAlreadyVerifiedException()
 
         # Redis rate-limiting (fail open if Redis is down)
-        redis_client = cache_service._redis
-        if redis_client:
-            email_key = f"rate_limit:resend:{email}"
-            if await redis_client.get(email_key):
+        email_key = f"rate_limit:resend:{email}"
+        try:
+            if await cache_service.get_raw(email_key):
                 raise AuthException(
                     "Please wait at least 60 seconds before requesting another verification email."
                 )
 
             if ip_address:
                 ip_key = f"rate_limit:resend:ip:{ip_address}"
-                ip_count_str = await redis_client.get(ip_key)
+                ip_count_str = await cache_service.get_raw(ip_key)
                 if ip_count_str and int(ip_count_str) >= 5:
                     raise AuthException(
                         "Too many verification requests from this IP. Please try again later."
                     )
+        except AuthException:
+            raise
+        except Exception as e:
+            logger.warning("Resend email rate limit check failed (fail open): %s", e)
 
         now = datetime.now(UTC).replace(tzinfo=None)
         raw_token = secrets.token_urlsafe(32)
@@ -369,12 +372,14 @@ class AuthService:
             raise
 
         # Save rate limits in Redis
-        if redis_client:
-            await redis_client.set(email_key, "1", ex=60)
+        # Save rate limits in Redis
+        try:
+            await cache_service.set_raw(email_key, "1", ttl=60)
             if ip_address:
                 ip_key = f"rate_limit:resend:ip:{ip_address}"
-                await redis_client.incr(ip_key)
-                await redis_client.expire(ip_key, 3600)  # 1 hour window
+                await cache_service.incr(ip_key, ttl=3600)  # Increment and set 1h TTL
+        except Exception as e:
+            logger.warning("Failed to save resend email rate limits in Redis: %s", e)
 
         await self.email_service.send_verification_email(user, raw_token)
 

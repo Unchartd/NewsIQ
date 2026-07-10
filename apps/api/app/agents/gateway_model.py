@@ -38,21 +38,34 @@ class GatewayModel(Model):
                 {"role": msg.role, "content": str(msg.content) if msg.content is not None else ""}
             )
 
-        # Dynamically import RequestManager to prevent circular dependencies
-        from app.llm_gateway.request_manager import llm_gateway
+        from app.core.config import settings
 
-        # Execute call via gateway
-        response = await llm_gateway.execute_request(
-            model=self.id,
-            stage=self.stage,
-            messages=formatted_messages,
-            response_format=response_format,
-            temperature=0.1,
-            tools=tools,
-            tool_choice=tool_choice,
-            story_id=self.story_id,
-            article_id=self.article_id,
-        )
+        if settings.USE_NEW_GATEWAY:
+            from app.ai.gateway import ai_gateway
+            response = await ai_gateway.execute_request(
+                model=self.id,
+                stage=self.stage,
+                messages=formatted_messages,
+                response_format=response_format,
+                temperature=0.1,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=self.story_id,
+                article_id=self.article_id,
+            )
+        else:
+            from app.llm_gateway.request_manager import llm_gateway
+            response = await llm_gateway.execute_request(
+                model=self.id,
+                stage=self.stage,
+                messages=formatted_messages,
+                response_format=response_format,
+                temperature=0.1,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=self.story_id,
+                article_id=self.article_id,
+            )
 
         # Set token metrics on Agno message metrics
         if assistant_message.metrics:
@@ -86,19 +99,34 @@ class GatewayModel(Model):
                 {"role": msg.role, "content": str(msg.content) if msg.content is not None else ""}
             )
 
-        from app.llm_gateway.request_manager import llm_gateway
+        from app.core.config import settings
 
-        response = llm_gateway.execute_request_sync(
-            model=self.id,
-            stage=self.stage,
-            messages=formatted_messages,
-            response_format=response_format,
-            temperature=0.1,
-            tools=tools,
-            tool_choice=tool_choice,
-            story_id=self.story_id,
-            article_id=self.article_id,
-        )
+        if settings.USE_NEW_GATEWAY:
+            from app.ai.gateway import ai_gateway
+            response = ai_gateway.execute_request_sync(
+                model=self.id,
+                stage=self.stage,
+                messages=formatted_messages,
+                response_format=response_format,
+                temperature=0.1,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=self.story_id,
+                article_id=self.article_id,
+            )
+        else:
+            from app.llm_gateway.request_manager import llm_gateway
+            response = llm_gateway.execute_request_sync(
+                model=self.id,
+                stage=self.stage,
+                messages=formatted_messages,
+                response_format=response_format,
+                temperature=0.1,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=self.story_id,
+                article_id=self.article_id,
+            )
 
         if assistant_message.metrics:
             assistant_message.metrics.input_tokens = response.input_tokens

@@ -86,6 +86,22 @@ class RequestManager:
         article_id: str = "",
     ) -> GatewayResponse:
         """Asynchronously execute LLM requests through the gateway's fallback chain."""
+        from app.core.config import settings
+        if settings.USE_NEW_GATEWAY:
+            logger.warning("DEPRECATION: execute_request called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
+            from app.ai.gateway import ai_gateway
+            return await ai_gateway.execute_request(
+                model=model,
+                stage=stage,
+                messages=messages,
+                response_format=response_format,
+                temperature=temperature,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=story_id,
+                article_id=article_id,
+            )
+
         # 1. Retrieve prioritized list of provider/model fallbacks
         chain = self.fallback_chain.get_fallback_chain(model)
 
@@ -304,6 +320,22 @@ class RequestManager:
         article_id: str = "",
     ) -> GatewayResponse:
         """Synchronously execute LLM requests through the gateway's fallback chain."""
+        from app.core.config import settings
+        if settings.USE_NEW_GATEWAY:
+            logger.warning("DEPRECATION: execute_request_sync called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
+            from app.ai.gateway import ai_gateway
+            return ai_gateway.execute_request_sync(
+                model=model,
+                stage=stage,
+                messages=messages,
+                response_format=response_format,
+                temperature=temperature,
+                tools=tools,
+                tool_choice=tool_choice,
+                story_id=story_id,
+                article_id=article_id,
+            )
+
         chain = self.fallback_chain.get_fallback_chain(model)
 
         provider_override = provider_override_ctx.get("")

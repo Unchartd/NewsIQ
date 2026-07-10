@@ -29,13 +29,13 @@ class CostBudgetManager:
 
         key = f"story_cost:{story_id}"
 
-        if cache_service._redis:
+        # Try incrementing via cache_service public API if active
+        if cache_service.is_active:
             try:
-                new_cost = await cache_service._redis.incrbyfloat(key, cost)
-                await cache_service._redis.expire(key, 3600)  # 1 hour TTL
-                return float(new_cost)
+                new_cost = await cache_service.incr_by_float(key, cost, ttl=3600)
+                return new_cost
             except Exception as e:
-                logger.warning("Failed to increment cost in Redis for story %s: %s", story_id, e)
+                logger.warning("Failed to increment cost via cache_service for story %s: %s", story_id, e)
 
         # Fallback to memory cache
         current = _memory_cost_cache.get(story_id, 0.0)
@@ -52,10 +52,11 @@ class CostBudgetManager:
 
         key = f"story_cost:{story_id}"
 
-        if cache_service._redis:
+        if cache_service.is_active:
             try:
-                val = await cache_service._redis.get(key)
-                return float(val) if val is not None else 0.0
+                val = await cache_service.get_raw(key)
+                if val is not None:
+                    return float(val)
             except Exception:
                 pass
 

@@ -39,8 +39,7 @@ logger = logging.getLogger(__name__)
 
 SIMILARITY_THRESHOLD = 0.80  # Cosine similarity threshold for real-time merge
 
-# In-memory fallback for Incremental Updates Guard when Redis is offline
-_memory_guard_cache: dict[str, str] = {}
+
 
 
 def _now() -> datetime:
@@ -312,19 +311,14 @@ class ClusteringService:
         guard_key = f"story_synthesis_hash:{story.id}"
         is_guard_hit = False
         if story.headline:
-            if cache_service._redis:
-                try:
-                    existing_hash = await cache_service._redis.get(guard_key)
-                    if existing_hash and existing_hash.decode("utf-8") == story_input_hash:
-                        is_guard_hit = True
-                except Exception as e:
-                    logger.warning(
-                        "Failed to check incremental updates guard for story %s: %s", story.id, e
-                    )
-            else:
-                existing_hash = _memory_guard_cache.get(str(story.id))
+            try:
+                existing_hash = await cache_service.get_raw(guard_key)
                 if existing_hash == story_input_hash:
                     is_guard_hit = True
+            except Exception as e:
+                logger.warning(
+                    "Failed to check incremental updates guard for story %s: %s", story.id, e
+                )
 
         if is_guard_hit:
             logger.info(
@@ -806,15 +800,12 @@ class ClusteringService:
             )
 
         # Store computed synthesis hash to enable future skips
-        if cache_service._redis:
-            try:
-                await cache_service._redis.set(guard_key, story_input_hash, ex=604800)  # 7-day TTL
-            except Exception as e:
-                logger.warning(
-                    "Failed to update incremental updates guard for story %s: %s", story.id, e
-                )
-        else:
-            _memory_guard_cache[str(story.id)] = story_input_hash
+        try:
+            await cache_service.set_raw(guard_key, story_input_hash, ttl=604800)  # 7-day TTL
+        except Exception as e:
+            logger.warning(
+                "Failed to update incremental updates guard for story %s: %s", story.id, e
+            )
 
     async def _index_and_invalidate(
         self,

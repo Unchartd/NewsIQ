@@ -643,13 +643,12 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
         from app.services.cache_service import cache_service
 
         lock_acquired = True  # default: allow run if Redis unavailable
-        if cache_service._redis:
-            try:
-                lock_acquired = await cache_service._redis.set(
-                    _CLUSTER_LOCK_KEY, "1", ex=_CLUSTER_LOCK_TTL, nx=True
-                )
-            except Exception as lock_err:
-                logger.warning("Failed to acquire cluster lock (Redis error): %s — proceeding.", lock_err)
+        try:
+            lock_acquired = await cache_service.set_nx(
+                _CLUSTER_LOCK_KEY, "1", ttl=_CLUSTER_LOCK_TTL
+            )
+        except Exception as lock_err:
+            logger.warning("Failed to acquire cluster lock (Redis error): %s — proceeding.", lock_err)
 
         if not lock_acquired:
             logger.info(
@@ -727,17 +726,16 @@ def replay_story_task(story_id_str: str) -> None:
         from app.services.replay_service import replay_service
 
         lock_acquired = True  # fail-open if Redis unavailable
-        if cache_service._redis:
-            try:
-                lock_acquired = await cache_service._redis.set(
-                    _REPLAY_LOCK_KEY, "1", ex=_REPLAY_LOCK_TTL, nx=True
-                )
-            except Exception as lock_err:
-                logger.warning(
-                    "Failed to acquire replay lock for story %s: %s — proceeding.",
-                    story_id_str,
-                    lock_err,
-                )
+        try:
+            lock_acquired = await cache_service.set_nx(
+                _REPLAY_LOCK_KEY, "1", ttl=_REPLAY_LOCK_TTL
+            )
+        except Exception as lock_err:
+            logger.warning(
+                "Failed to acquire replay lock for story %s: %s — proceeding.",
+                story_id_str,
+                lock_err,
+            )
 
         if not lock_acquired:
             logger.info(
@@ -797,3 +795,32 @@ def replay_story_stage_task(
             await replay_service.replay_story_stage(sid, stage_name, session, article_id=aid)
 
     run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.recover_stuck_embeddings_task")
+def recover_stuck_embeddings_task() -> int:
+    """Reset articles that got stuck in 'processing' state back to 'pending'."""
+    logger.info("Celery task: Running stuck embedding recovery.")
+
+    async def _run():
+        from datetime import datetime, timedelta
+        from sqlalchemy import update
+        from app.models.models import Article
+
+        cutoff = datetime.utcnow() - timedelta(minutes=30)
+        async with async_session_factory() as session:
+            stmt = (
+                update(Article)
+                .where(Article.embedding_status == "processing")
+                .where(Article.crawled_at < cutoff)
+                .values(embedding_status="pending")
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            rowcount = result.rowcount
+            if rowcount > 0:
+                logger.warning("Recovered %d stuck embedding tasks.", rowcount)
+            return rowcount
+
+    return run_async(_run())
+

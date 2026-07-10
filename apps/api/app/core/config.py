@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
     BACKEND_SERVICE_ROLE: str = "monolith"
+    USE_NEW_GATEWAY: bool = True
+    MAX_PRO_MODEL_TOKENS: int = 30000
 
     # ── Database — Neon PostgreSQL ────────────────────────────────────────────
     # DATABASE_URL       → Pooled endpoint (PgBouncer). Used by FastAPI + Celery.

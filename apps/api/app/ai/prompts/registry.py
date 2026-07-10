@@ -18,6 +18,15 @@ class PromptTemplate:
     template: str
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def model(self) -> str:
+        """Return the default/primary model mapped to this capability stage."""
+        from app.ai.config import CAPABILITY_ROUTING
+        route = CAPABILITY_ROUTING.get(self.stage)
+        if route and "primary" in route:
+            return route["primary"]["model"]
+        return "gemini-2.5-flash"
+
     def system_message(self) -> dict[str, str]:
         """Return the system message dict for LLM API calls."""
         return {"role": "system", "content": self.system}

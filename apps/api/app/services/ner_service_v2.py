@@ -530,16 +530,28 @@ class NERServiceV2:
             stage="entity_extraction", complexity=complexity, budget_exceeded=budget_exceeded
         )
 
-        from app.llm_gateway.request_manager import llm_gateway
+        from app.core.config import settings
 
         try:
-            response = await llm_gateway.execute_request(
-                model=model,
-                stage="entity_extraction",
-                messages=[{"role": "user", "content": prompt}],
-                response_format=EntityExtractionResponse,
-                temperature=0.1,
-            )
+            if settings.USE_NEW_GATEWAY:
+                from app.ai.gateway import ai_gateway
+                response = await ai_gateway.generate(
+                    capability="entity_extraction",
+                    prompt_variables={"text": text},
+                    schema=EntityExtractionResponse,
+                    temperature=0.1,
+                    story_id=story_id,
+                )
+            else:
+                from app.llm_gateway.request_manager import llm_gateway
+                response = await llm_gateway.execute_request(
+                    model=model,
+                    stage="entity_extraction",
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format=EntityExtractionResponse,
+                    temperature=0.1,
+                    story_id=story_id,
+                )
 
             entities_raw = []
             if response.parsed:

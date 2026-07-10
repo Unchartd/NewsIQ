@@ -1,0 +1,80 @@
+name: Pipeline Quality Evaluation
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/app/ai/**'
+      - 'apps/api/app/services/clustering_service.py'
+      - 'apps/api/app/services/event_service.py'
+      - 'apps/api/app/agents/**'
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    name: Golden Evaluation Suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: newsiq_test
+          POSTGRES_PASSWORD: newsiq_test
+          POSTGRES_DB: newsiq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://newsiq_test:newsiq_test@localhost:5432/newsiq_test
+      DATABASE_DIRECT_URL: postgresql+asyncpg://newsiq_test:newsiq_test@localhost:5432/newsiq_test
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+      STORAGE_BACKEND: local
+      SECRET_KEY: test-secret-key-not-for-production-use
+      DEBUG: "true"
+      NEWS_AI_EVAL_LIVE: "false" # Run simulated quality checks in CI
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: |
+          uv pip install --system --no-cache torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --system --no-cache -e ".[dev]"
+
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_sm
+
+      - name: Run Alembic migrations
+        working-directory: apps/api
+        run: alembic upgrade head
+
+      - name: Run Quality Evaluation Suite
+        working-directory: apps/api
+        run: pytest tests/test_golden_eval.py -v --tb=short

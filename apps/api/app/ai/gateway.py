@@ -497,6 +497,269 @@ class AIGateway:
         client, _, _ = chain[0]
         return client.count_tokens(text)
 
+    def _apply_token_budget_guard(self, messages: list[dict[str, Any]], model_name: str) -> list[dict[str, Any]]:
+        """Count prompt tokens and truncate if budget for Pro models is exceeded."""
+        if "pro" not in model_name.lower():
+            return messages
+
+        full_text = "\n".join(msg.get("content", "") for msg in messages)
+        total_tokens = self.count_tokens(full_text)
+
+        if total_tokens <= settings.MAX_PRO_MODEL_TOKENS:
+            return messages
+
+        logger.warning(
+            "Pro model token budget exceeded (%d > %d tokens) for model %s. Truncating content.",
+            total_tokens,
+            settings.MAX_PRO_MODEL_TOKENS,
+            model_name,
+        )
+
+        # Find the longest message (typically the user prompt)
+        longest_idx = -1
+        longest_len = -1
+        for idx, msg in enumerate(messages):
+            content_len = len(msg.get("content", ""))
+            if content_len > longest_len:
+                longest_len = content_len
+                longest_idx = idx
+
+        if longest_idx != -1:
+            # Simple heuristic truncation: truncate character length by half and re-evaluate
+            msg = messages[longest_idx]
+            content = msg.get("content", "")
+            while total_tokens > settings.MAX_PRO_MODEL_TOKENS and len(content) > 100:
+                content = content[:int(len(content) * 0.8)]
+                temp_messages = list(messages)
+                temp_messages[longest_idx] = {"role": msg["role"], "content": content}
+                full_text = "\n".join(m.get("content", "") for m in temp_messages)
+                total_tokens = self.count_tokens(full_text)
+
+            messages[longest_idx] = {"role": msg["role"], "content": content + "\n[TRUNCATED BY BUDGET GUARD]"}
+
+        return messages
+
+    async def execute_request(
+        self,
+        model: str,
+        stage: str,
+        messages: list[dict[str, Any]],
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        temperature: float = 0.1,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        story_id: str = "",
+        article_id: str = "",
+    ) -> GatewayResponse:
+        """Execute custom requests (directly by model name) using the fallback routing logic.
+
+        Used by Agno agents and services requiring non-templated generation.
+        """
+        # 1. Resolve fallback chain for this model name
+        chain = capability_router.get_model_route(model)
+
+        s_id = story_id or story_id_ctx.get("")
+        a_id = article_id or article_id_ctx.get("")
+
+        # 2. Check Cache
+        first_client, first_key, first_cfg = chain[0]
+        model_name = first_cfg["model"]
+        prompt_text = "\n".join(msg.get("content", "") for msg in messages)
+
+        cached_response = await ai_cache.get(
+            capability=stage,
+            model=model_name,
+            prompt_version="v_direct",
+            prompt_text=prompt_text,
+            temperature=temperature,
+        )
+
+        schema = None
+        if response_format:
+            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+                schema = response_format
+
+        if cached_response is not None:
+            newsiq_ai_gateway_cache_total.labels(capability=stage, status="hit").inc()
+            parsed = None
+            if schema:
+                try:
+                    parsed = schema.model_validate(cached_response["parsed"])
+                except Exception as e:
+                    logger.warning("Cache deserialization failed: %s", e)
+
+            return GatewayResponse(
+                content=cached_response["content"],
+                parsed=parsed,
+                provider=cached_response["provider"],
+                model=cached_response["model"],
+                latency_ms=0.0,
+                cost_usd=0.0,
+            )
+
+        newsiq_ai_gateway_cache_total.labels(capability=stage, status="miss").inc()
+
+        # 3. Apply token budget guard for pro models
+        messages = self._apply_token_budget_guard(messages, model_name)
+
+        # 4. Iterate through fallback chain
+        last_error = None
+        for idx, (client, api_key, route_cfg) in enumerate(chain):
+            provider_name = route_cfg["provider"]
+            model_name = route_cfg["model"]
+            timeout = route_cfg.get("timeout", 30.0)
+            level_name = "primary" if idx == 0 else "fallback" if idx == 1 else "lastFallback"
+
+            newsiq_provider_fallback_executions_total.labels(
+                provider=provider_name, stage=stage, level=level_name
+            ).inc()
+
+            max_attempts = 3
+            backoff = 1.0
+
+            for attempt in range(max_attempts):
+                try:
+                    req = GatewayRequest(
+                        model=model_name,
+                        messages=messages,
+                        temperature=temperature,
+                        response_format=schema,
+                        stage=stage,
+                        story_id=s_id,
+                        article_id=a_id,
+                        timeout=timeout,
+                    )
+
+                    logger.info(
+                        "Gateway execute: provider=%s model=%s stage=%s (attempt %d/%d)",
+                        provider_name,
+                        model_name,
+                        stage,
+                        attempt + 1,
+                        max_attempts,
+                    )
+
+                    async with track_llm_call(
+                        provider=provider_name,
+                        model=model_name,
+                        stage=stage,
+                        system_prompt="",
+                        user_prompt=prompt_text,
+                        temperature=temperature,
+                        story_id=s_id,
+                        article_id=a_id,
+                    ) as trace_call:
+                        response = await client.generate(req, api_key)
+
+                        trace_call.response_text = response.content or response.error
+                        trace_call.input_tokens = response.input_tokens
+                        trace_call.output_tokens = response.output_tokens
+                        trace_call.total_tokens = response.total_tokens
+
+                        if response.error:
+                            trace_call.status = "error"
+                            trace_call.error = response.error
+                            raise ProviderUnavailableError(response.error)
+
+                        if schema and response.parsed is None:
+                            try:
+                                data = json.loads(response.content)
+                                cleaned_data = clean_json_for_schema(data, schema)
+                                response.parsed = schema.model_validate(cleaned_data)
+                            except (ValueError, PydanticValidationError) as val_err:
+                                newsiq_ai_gateway_validation_failures_total.labels(
+                                    capability=stage, model=model_name
+                                ).inc()
+                                raise ValidationError(
+                                    f"Response validation failed against schema: {val_err}"
+                                )
+
+                        cost = self._calculate_cost(
+                            model_name, response.input_tokens, response.output_tokens
+                        )
+                        response.cost_usd = cost
+                        trace_call.cost_usd = cost
+
+                        if s_id:
+                            try:
+                                await cost_budget_manager.add_story_cost(s_id, cost)
+                            except Exception as cost_exc:
+                                logger.warning("Failed to record story cost: %s", cost_exc)
+
+                    # Metrics
+                    newsiq_ai_gateway_calls_total.labels(
+                        provider=provider_name, model=model_name, capability=stage, status="success"
+                    ).inc()
+                    newsiq_ai_gateway_cost_usd.labels(
+                        provider=provider_name, model=model_name, capability=stage
+                    ).inc(cost)
+
+                    # Save to Cache
+                    cache_data = {
+                        "content": response.content,
+                        "parsed": response.parsed.model_dump(mode="json")
+                        if isinstance(response.parsed, BaseModel)
+                        else response.parsed,
+                        "provider": provider_name,
+                        "model": model_name,
+                    }
+                    await ai_cache.set(
+                        capability=stage,
+                        model=model_name,
+                        prompt_version="v_direct",
+                        prompt_text=prompt_text,
+                        response_data=cache_data,
+                        temperature=temperature,
+                    )
+
+                    return response
+
+                except ValidationError as ve:
+                    logger.warning("LLM output validation failed: %s. Retrying.", ve)
+                    last_error = ve
+                    if attempt == max_attempts - 1:
+                        break
+                    await asyncio.sleep(backoff)
+                    backoff *= 2.0
+                except Exception as err:
+                    logger.warning(
+                        "Gateway execute attempt failed for provider=%s model=%s stage=%s: %s",
+                        provider_name, model_name, stage, err
+                    )
+                    capability_router.health_trackers[provider_name].report_failure(str(err))
+                    last_error = err
+                    await asyncio.sleep(backoff)
+                    backoff *= 2.0
+
+        raise AIGatewayError(f"All AI Gateway providers failed in execute_request fallback. Last error: {last_error}")
+
+    def execute_request_sync(
+        self,
+        model: str,
+        stage: str,
+        messages: list[dict[str, Any]],
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        temperature: float = 0.1,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        story_id: str = "",
+        article_id: str = "",
+    ) -> GatewayResponse:
+        """Synchronously execute custom requests through the gateway fallback chain."""
+        import anyio
+        return anyio.from_thread.run(
+            self.execute_request,
+            model,
+            stage,
+            messages,
+            response_format,
+            temperature,
+            tools,
+            tool_choice,
+            story_id,
+            article_id,
+        )
+
 
 # Singleton Gateway
 ai_gateway = AIGateway()
