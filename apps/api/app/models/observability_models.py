@@ -26,6 +26,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
 )
@@ -516,3 +517,32 @@ class FunctionRunModel(Base):
     arguments: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+
+
+class PipelineTraceModel(Base):
+    """Rich execution trace logging for all pipeline stages (PipelineTrace)."""
+
+    __tablename__ = "pipeline_traces"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
+    )
+    story_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
+    article_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
+    canonical_event_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+
+    stage: Mapped[str] = mapped_column(String(50), index=True)  # e.g., summary_generation, feedback_agent
+    started_at: Mapped[datetime] = mapped_column(default=_now)
+    completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), default=0.0)
+    cache_hit: Mapped[bool] = mapped_column(Boolean, default=False)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(50), nullable=True)  # e.g., publish, regenerate
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+
+    __table_args__ = (
+        Index("idx_pipeline_traces_story_stage", "story_id", "stage"),
+    )
