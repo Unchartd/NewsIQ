@@ -1,15 +1,22 @@
 """Service for clustering articles into stories using HDBSCAN and incremental vector match."""
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
+import yaml
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.metrics import (
+    newsiq_discovery_clusters_total,
+    newsiq_reflection_requests_total,
+    newsiq_stage_a_validation_total,
+)
 from app.core.trace import PipelineStage, StageSpan
 from app.models.models import (
     Article,
@@ -30,6 +37,12 @@ from app.models.models import (
 from app.services.ai_service import CATEGORY_SLUGS, ai_service
 from app.services.contradiction_service import contradiction_service
 from app.services.entity_linker import entity_linker
+from app.services.event_identity_service import event_identity_service
+from app.services.event_validation_service import (
+    StoryAnchor,
+    ValidationOutcome,
+    event_validation_service,
+)
 from app.services.knowledge_graph import build_story_knowledge_graph
 from app.services.ner_service_v2 import ner_service_v2
 from app.services.source_comparison_service import source_comparison_service
@@ -39,7 +52,11 @@ logger = logging.getLogger(__name__)
 
 SIMILARITY_THRESHOLD = 0.80  # Cosine similarity threshold for real-time merge
 
-
+# Load config for reflection threshold
+config_path = os.path.join(os.path.dirname(__file__), "..", "config", "event_validation.yaml")
+with open(config_path) as f:
+    config = yaml.safe_load(f)
+REFLECTION_THRESHOLD = config.get("reflection", {}).get("threshold", 0.55)
 
 
 def _now() -> datetime:
@@ -142,73 +159,6 @@ class ClusteringService:
         else:
             story.location_country = None
 
-        article_ids = [art.id for art in articles]
-        event_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(article_ids))
-        event_res = await session.execute(event_stmt)
-        article_events = list(event_res.scalars().all())
-
-        # 3. Save Timeline Events (Sorted by parsed event time with UTC normalization)
-        saved_timeline_objects = []
-        timeline_entries: list[dict[str, Any]] = []
-        async with StageSpan(
-            stage=PipelineStage.TIMELINE_GENERATION, story_id=str(story.id)
-        ) as span:
-            for evt in article_events:
-                t = evt.event_time or evt.created_at or _now()
-                if t.tzinfo is not None:
-                    t = t.astimezone(UTC).replace(tzinfo=None)
-
-                src_name = article_source_map.get(evt.article_id, "Unknown Source")
-                evt_type = (
-                    (evt.event_type_canonical or evt.event_type or "Event")
-                    .replace("_", " ")
-                    .title()
-                )
-
-                details = []
-                if evt.actors:
-                    details.append(f"Actors: {', '.join(evt.actors)}")
-                if evt.targets:
-                    details.append(f"Targets: {', '.join(evt.targets)}")
-                if evt.location:
-                    details.append(f"Location: {evt.location}")
-                if evt.numbers:
-                    num_parts = [f"{k}: {v}" for k, v in evt.numbers.items()]
-                    details.append(f"Data: {', '.join(num_parts)}")
-
-                details_str = f" ({'; '.join(details)})" if details else ""
-                desc = f"{evt_type} reported by {src_name}{details_str}."
-
-                timeline_entries.append(
-                    {
-                        "event_time": t,
-                        "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                        "description": desc,
-                    }
-                )
-
-            # Sort timeline entries chronologically
-            timeline_entries.sort(key=lambda x: x["event_time"])
-
-            for entry in timeline_entries:
-                tl_event = StoryTimelineEvent(
-                    id=uuid.uuid4(),
-                    story_id=story.id,
-                    event_time=entry["event_time"],
-                    event_time_raw=entry["event_time_raw"],
-                    description=entry["description"],
-                    created_at=_now(),
-                )
-                session.add(tl_event)
-                saved_timeline_objects.append(tl_event)
-
-            span.set_metadata(
-                {
-                    "inputs": {"article_events_count": len(article_events)},
-                    "outputs": {"timeline_events_count": len(saved_timeline_objects)},
-                }
-            )
-
         # 4. Extract Named Entities — use pre-extracted ArticleEntities if available
         entities = []
         async with StageSpan(stage=PipelineStage.ENTITY_EXTRACTION, story_id=str(story.id)) as span:
@@ -298,494 +248,27 @@ class ClusteringService:
                 }
             )
 
-        # Compute input hash for synthesis stages
-        from app.services.pipeline_cache import pipeline_cache
+        # Delegate to StorySynthesisOrchestrator
+        from app.services.story_synthesis_service import story_synthesis_orchestrator
 
-        article_inputs = [f"{art.id}:{art.title or ''}:{art.description or ''}" for art in articles]
-        article_inputs.sort()
-        story_input_hash = pipeline_cache.composite_hash(*article_inputs)
+        await story_synthesis_orchestrator.synthesize_story(
+            session=session,
+            story_id=story.id,
+            trigger="new_article",
+            articles_override=articles,
+            story_override=story,
+        )
 
-        # ── Incremental Updates Guard ──
-        from app.services.cache_service import cache_service
-
-        guard_key = f"story_synthesis_hash:{story.id}"
-        is_guard_hit = False
-        if story.headline:
-            try:
-                existing_hash = await cache_service.get_raw(guard_key)
-                if existing_hash == story_input_hash:
-                    is_guard_hit = True
-            except Exception as e:
-                logger.warning(
-                    "Failed to check incremental updates guard for story %s: %s", story.id, e
-                )
-
-        if is_guard_hit:
-            logger.info(
-                "Incremental Updates Guard HIT: Article set for story %s has not changed. Skipping generation.",
-                story.id,
-            )
-            return
-
-        # Initialize cat_slug in outer scope
         cat_slug = "world"
         if story.category:
             cat_slug = story.category.slug
-
-        # 6. Run Contradiction & Source Comparison Engines Concurrently
-        import asyncio
-
-        async def run_contradictions():
-            async with StageSpan(
-                stage=PipelineStage.CONTRADICTION_DETECTION, story_id=str(story.id)
-            ) as span:
-                try:
-                    from app.services.prompt_registry import prompt_registry
-
-                    prompt_tmpl = prompt_registry.get("contradiction_detection")
-                    model = prompt_tmpl.model
-                    prompt_version = prompt_tmpl.version
-
-                    cached_contras = await pipeline_cache.get_stage_result(
-                        stage="contradictions",
-                        content_hash=story_input_hash,
-                        model=model,
-                        prompt_version=prompt_version,
-                        temperature=0.1,
-                    )
-                    if cached_contras is not None:
-                        res = []
-                        for c_data in cached_contras:
-                            contra = StoryContradiction(
-                                id=uuid.uuid4(),
-                                story_id=story.id,
-                                fact_type=c_data["fact_type"],
-                                description=c_data["description"],
-                                confidence=c_data["confidence"],
-                                source_attribution=c_data["source_attribution"],
-                            )
-                            session.add(contra)
-                            res.append(contra)
-                        logger.info(
-                            "Contradiction detection stage cache HIT for story %s.", story.id
-                        )
-                        span.set_metadata(
-                            {
-                                "inputs": {"story_id": str(story.id)},
-                                "outputs": {"contradictions_count": len(res)},
-                            }
-                        )
-                        return res
-                    else:
-                        res = await contradiction_service.detect_and_save_contradictions(
-                            story_id=story.id,
-                            session=session,
-                            articles=articles,
-                            article_events=article_events,
-                            article_source_map=article_source_map,
-                        )
-                        c_serialized = [
-                            {
-                                "fact_type": c.fact_type,
-                                "description": c.description,
-                                "confidence": float(c.confidence),
-                                "source_attribution": c.source_attribution,
-                            }
-                            for c in res
-                        ]
-                        await pipeline_cache.set_stage_result(
-                            stage="contradictions",
-                            content_hash=story_input_hash,
-                            result_data=c_serialized,
-                            model=model,
-                            prompt_version=prompt_version,
-                            temperature=0.1,
-                        )
-                        logger.info(
-                            "Contradiction detection successfully run and cached for story %s.",
-                            story.id,
-                        )
-                        span.set_metadata(
-                            {
-                                "inputs": {"story_id": str(story.id)},
-                                "outputs": {"contradictions_count": len(res)},
-                            }
-                        )
-                        return res
-                except Exception as e:
-                    logger.error("Failed to detect contradictions for story %s: %s", story.id, e)
-                    return []
-
-        async def run_source_comparison(contras: list):
-            async with StageSpan(
-                stage=PipelineStage.SOURCE_COMPARISON, story_id=str(story.id)
-            ) as span:
-                try:
-                    from app.services.prompt_registry import prompt_registry
-
-                    prompt_tmpl = prompt_registry.get("source_comparison")
-                    model = prompt_tmpl.model
-                    prompt_version = prompt_tmpl.version
-
-                    cached_comp = await pipeline_cache.get_stage_result(
-                        stage="source_comparison",
-                        content_hash=story_input_hash,
-                        model=model,
-                        prompt_version=prompt_version,
-                        temperature=0.1,
-                    )
-                    if cached_comp is not None:
-                        cov_list = []
-                        diff_list = []
-                        for cov_data in cached_comp["coverage"]:
-                            cov = StorySourceCoverage(
-                                id=uuid.uuid4(),
-                                story_id=story.id,
-                                source_id=uuid.UUID(cov_data["source_id"]),
-                                focus_area=cov_data["focus_area"],
-                                created_at=_now(),
-                            )
-                            session.add(cov)
-                            cov_list.append(cov)
-                        for diff_data in cached_comp["differences"]:
-                            diff = StoryDifference(
-                                id=uuid.uuid4(),
-                                story_id=story.id,
-                                source_id=uuid.UUID(diff_data["source_id"]),
-                                unique_information=diff_data["unique_information"],
-                                missing_information=diff_data["missing_information"],
-                                contradictions=diff_data["contradictions"],
-                                created_at=_now(),
-                            )
-                            session.add(diff)
-                            diff_list.append(diff)
-                        logger.info("Source comparison stage cache HIT for story %s.", story.id)
-                        span.set_metadata(
-                            {
-                                "inputs": {"story_id": str(story.id)},
-                                "outputs": {"differences_count": len(diff_list)},
-                            }
-                        )
-                        return cov_list, diff_list
-                    else:
-                        # contras is already resolved — passed in from gather result
-                        # No sequential wait needed here.
-
-                        # ── Budget gate: skip expensive source comparison if stage budget exceeded ──
-                        from app.services.cost_budget import cost_budget_manager
-
-                        _budget_exceeded = await cost_budget_manager.is_stage_budget_exceeded(
-                            str(story.id), "source_comparison", cat_slug
-                        )
-                        if _budget_exceeded:
-                            logger.warning(
-                                "Stage budget exceeded for story %s, stage 'source_comparison' — "
-                                "skipping LLM source comparison. Contradictions still available.",
-                                story.id,
-                            )
-                            span.set_metadata(
-                                {
-                                    "inputs": {"story_id": str(story.id)},
-                                    "outputs": {"skipped": True, "reason": "stage_budget_exceeded"},
-                                }
-                            )
-                            return [], []
-
-                        (
-                            cov_list,
-                            diff_list,
-                        ) = await source_comparison_service.compare_sources_and_save(
-                            story_id=story.id,
-                            session=session,
-                            articles=articles,
-                            article_events=article_events,
-                            article_source_map=article_source_map,
-                            sources_list=sources_list,
-                            precomputed_contradictions=contras,
-                        )
-                        cov_serialized = [
-                            {
-                                "source_id": str(c.source_id),
-                                "focus_area": c.focus_area,
-                            }
-                            for c in cov_list
-                        ]
-                        diff_serialized = [
-                            {
-                                "source_id": str(d.source_id),
-                                "unique_information": d.unique_information,
-                                "missing_information": d.missing_information,
-                                "contradictions": d.contradictions,
-                            }
-                            for d in diff_list
-                        ]
-                        await pipeline_cache.set_stage_result(
-                            stage="source_comparison",
-                            content_hash=story_input_hash,
-                            result_data={
-                                "coverage": cov_serialized,
-                                "differences": diff_serialized,
-                            },
-                            model=model,
-                            prompt_version=prompt_version,
-                            temperature=0.1,
-                        )
-                        logger.info(
-                            "Source comparison successfully run and cached for story %s.", story.id
-                        )
-                        span.set_metadata(
-                            {
-                                "inputs": {"story_id": str(story.id)},
-                                "outputs": {"differences_count": len(diff_list)},
-                            }
-                        )
-                        return cov_list, diff_list
-                except Exception as e:
-                    logger.error("Failed to run source comparison for story %s: %s", story.id, e)
-                    return [], []
-
-        # Run contradictions first, then pass the result to source comparison.
-        # This avoids the source comparison coroutine having to await a future
-        # internally (which caused sequential blocking on cache misses).
-        # Both still run concurrently: contradictions resolves, then comparison
-        # starts its own LLM call immediately using the pre-resolved list.
-        saved_contras = await run_contradictions()
-        saved_coverage, saved_differences = await run_source_comparison(saved_contras)
-
-        # 5. Build and Serialize Knowledge Graph
-        kg_dict = {}
-        async with StageSpan(stage=PipelineStage.KNOWLEDGE_GRAPH, story_id=str(story.id)) as span:
-            try:
-                kg = build_story_knowledge_graph(
-                    articles=articles,
-                    article_events=article_events,
-                    story_entities=saved_story_entities,
-                    sources=sources_list,
-                )
-                kg_dict = kg.to_dict()
-                story.knowledge_graph = kg_dict
-                logger.info(
-                    "Knowledge Graph successfully generated and assigned for story %s.", story.id
-                )
-            except Exception as e:
-                logger.error("Failed to generate knowledge graph for story %s: %s", story.id, e)
-
-            span.set_metadata(
-                {
-                    "inputs": {"articles_count": len(articles)},
-                    "outputs": {
-                        "nodes_count": len(kg_dict.get("nodes", [])),
-                        "edges_count": len(kg_dict.get("edges", [])),
-                    },
-                }
-            )
-
-        # Serialize inputs for KG-grounded summarization
-        contradictions_list = [
-            {
-                "fact_type": c.fact_type,
-                "description": c.description,
-                "confidence": float(c.confidence),
-                "source_attribution": c.source_attribution,
-            }
-            for c in saved_contras
-        ]
-
-        timeline_list = [
-            {
-                "date": t.event_time_raw
-                or (t.event_time.isoformat() if t.event_time else "Unknown"),
-                "description": t.description,
-            }
-            for t in saved_timeline_objects
-        ]
-
-        source_comparisons_list = []
-        for diff in saved_differences:
-            cov = next((c for c in saved_coverage if c.source_id == diff.source_id), None)
-            focus = cov.focus_area if cov else "General coverage"
-            src_name = article_source_map.get(
-                next((art.id for art in articles if art.source_id == diff.source_id), None),
-                "Unknown Source",
-            )
-            source_comparisons_list.append(
-                {
-                    "source_name": src_name,
-                    "focus_area": focus,
-                    "unique_information": diff.unique_information or "",
-                    "missing_information": diff.missing_information or "",
-                    "contradictions": diff.contradictions or "",
-                }
-            )
-
-        # 7. Call Summary Engine (KG-grounded summarization)
-        async with StageSpan(
-            stage=PipelineStage.SUMMARY_GENERATION, story_id=str(story.id)
-        ) as span:
-            try:
-                summary_res = await ai_service.summarize_story_from_kg(
-                    kg=kg_dict,
-                    contradictions=contradictions_list,
-                    timeline=timeline_list,
-                    source_comparisons=source_comparisons_list,
-                )
-
-                # Update main story details
-                story.headline = summary_res.headline
-                story.one_line_summary = summary_res.one_line_summary
-                story.short_summary = summary_res.short_summary
-                story.detailed_summary = summary_res.detailed_summary
-                story.key_facts = (
-                    [f for f in summary_res.key_facts if f] if summary_res.key_facts else []
-                )
-
-                # Resolve and assign category
-                cat_slug = (
-                    summary_res.category if summary_res.category in CATEGORY_SLUGS else "world"
-                )
-
-                # Summary Reflection Verification
-                run_reflection = await self.should_run_reflection(
-                    story=story,
-                    articles=articles,
-                    category_slug=cat_slug,
-                    saved_contras=saved_contras,
-                    saved_differences=saved_differences,
-                    saved_coverage=saved_coverage,
-                    session=session,
-                )
-                if run_reflection:
-                    try:
-                        from app.agents.reflection_agent import reflect_on_summary
-
-                        reflection = await reflect_on_summary(
-                            summary_text=story.detailed_summary or "",
-                            timeline=timeline_list,
-                            kg_nodes=kg_dict.get("nodes", []),
-                            source_coverage=source_comparisons_list,
-                        )
-                        logger.info(
-                            "Summary Reflection result for story %s: %s",
-                            story.id,
-                            reflection.model_dump(),
-                        )
-
-                        if reflection.has_hallucinations or reflection.contradicts_graph:
-                            logger.warning(
-                                "Reflection Agent detected issues/hallucinations for story %s. Regenerating summary.",
-                                story.id,
-                            )
-                            # Regenerate summary
-                            summary_res = await ai_service.summarize_story_from_kg(
-                                kg=kg_dict,
-                                contradictions=contradictions_list,
-                                timeline=timeline_list,
-                                source_comparisons=source_comparisons_list,
-                            )
-                            story.headline = summary_res.headline
-                            story.one_line_summary = summary_res.one_line_summary
-                            story.short_summary = summary_res.short_summary
-                            story.detailed_summary = summary_res.detailed_summary
-                            story.key_facts = (
-                                [f for f in summary_res.key_facts if f]
-                                if summary_res.key_facts
-                                else []
-                            )
-                    except Exception as reflection_exc:
-                        logger.error(
-                            "Reflection verification failed for story %s: %s",
-                            story.id,
-                            reflection_exc,
-                        )
-
-                cat_id = await self.get_or_create_category(
-                    cat_slug, cat_slug.replace("-", " ").title(), session
-                )
-                story.category_id = cat_id
-                story.story_status = "active"
-                logger.info(
-                    "Story summaries successfully synthesized and updated for story %s.", story.id
-                )
-            except Exception as e:
-                logger.error("Failed to summarize story from KG %s: %s", story.id, e)
-                primary_title = "News Story"
-                primary_desc = ""
-                primary_content = ""
-                if articles:
-                    primary_title = articles[0].title or "News Story"
-                    primary_desc = articles[0].description or ""
-                    primary_content = articles[0].content or ""
-
-                # Derive distinct emergency fallback summaries so all three depths
-                # don't show the same text in the UI.
-                fallback_one_line = (
-                    (primary_desc[:120].rstrip() + "…")
-                    if len(primary_desc) > 120
-                    else (primary_desc or "Summary currently unavailable.")
-                )
-                fallback_short = primary_desc or "Summary currently unavailable."
-                fallback_detailed = (
-                    f"{primary_desc}\n\n{primary_content[:600]}".strip()
-                    if primary_content
-                    else primary_desc
-                ) or "Summary currently unavailable."
-
-                story.headline = story.headline or primary_title
-                story.one_line_summary = story.one_line_summary or fallback_one_line
-                story.short_summary = story.short_summary or fallback_short
-                story.detailed_summary = story.detailed_summary or fallback_detailed
-                story.key_facts = story.key_facts or []
-
-                if story.headline and story.headline.strip() and story.headline != "News Story":
-                    story.story_status = "active"
-                else:
-                    story.story_status = "failed"
-
-            span.set_metadata(
-                {
-                    "inputs": {
-                        "kg_nodes": len(kg_dict.get("nodes", [])),
-                        "contradictions_count": len(contradictions_list),
-                        "timeline_count": len(timeline_list),
-                    },
-                    "outputs": {
-                        "headline": story.headline,
-                        "category": cat_slug,
-                        "one_line_summary": story.one_line_summary,
-                        "short_summary": story.short_summary,
-                        "key_facts": story.key_facts,
-                    },
-                }
-            )
 
         if commit:
             await session.commit()
         else:
             await session.flush()
 
-        # 8. Record story-level Prometheus metrics (best-effort — never blocks pipeline)
-        try:
-            from app.core.metrics import newsiq_story_cost_usd, newsiq_story_stages_total
-            from app.services.cost_budget import cost_budget_manager
-
-            total_cost = await cost_budget_manager.get_story_cost(str(story.id))
-            newsiq_story_cost_usd.labels(category=cat_slug).inc(total_cost)
-
-            # Record per-stage completion counts for the finished story
-            for _stage_name in [
-                "timeline",
-                "entity_extraction",
-                "entity_linking",
-                "contradiction_detection",
-                "source_comparison",
-                "knowledge_graph",
-                "summary_generation",
-            ]:
-                newsiq_story_stages_total.labels(stage=_stage_name, status="success").inc()
-        except Exception as _metrics_exc:
-            logger.debug("Story-level metrics recording failed (non-critical): %s", _metrics_exc)
-
-        # 9. Index in Meilisearch and invalidate caches for this story
+        # Index in Meilisearch and invalidate caches for this story
         async with StageSpan(stage=PipelineStage.INDEXING, story_id=str(story.id)) as span:
             await self._index_and_invalidate(story, cat_slug, list(tags_added))
             span.set_metadata(
@@ -797,14 +280,6 @@ class ClusteringService:
                     },
                     "outputs": {"indexed": True},
                 }
-            )
-
-        # Store computed synthesis hash to enable future skips
-        try:
-            await cache_service.set_raw(guard_key, story_input_hash, ttl=604800)  # 7-day TTL
-        except Exception as e:
-            logger.warning(
-                "Failed to update incremental updates guard for story %s: %s", story.id, e
             )
 
     async def _index_and_invalidate(
@@ -1226,8 +701,14 @@ class ClusteringService:
                 story_id,
                 len(all_articles),
             )
-            await self.update_story_incrementally(
-                story, article, [a for a in all_articles if a.id != article.id], session
+            # Delegate to StorySynthesisOrchestrator
+            from app.services.story_synthesis_service import story_synthesis_orchestrator
+            await story_synthesis_orchestrator.synthesize_story(
+                session=session,
+                story_id=story_id,
+                trigger="new_article",
+                articles_override=all_articles,
+                story_override=story,
             )
             await self.compute_trending_score(story, session)
 
@@ -1477,9 +958,7 @@ class ClusteringService:
         chk_stmt = select(StoryArticle).where(StoryArticle.article_id == article_id).limit(1)
         chk_res = await session.execute(chk_stmt)
         if chk_res.scalar_one_or_none():
-            logger.info(
-                "Article %s is already linked to a story. Skipping incremental merge.", article_id
-            )
+            logger.info("Article %s is already linked to a story.", article_id)
             return False
 
         stmt = select(Article).where(Article.id == article_id)
@@ -1488,7 +967,87 @@ class ClusteringService:
         if not article or article.embedding_status != "completed":
             return False
 
-        # Fetch vector from Qdrant
+        # Candidate Retrieval: Hybrid filtering
+        # 1. Base time window (e.g. 72 hours)
+        from datetime import UTC, datetime, timedelta
+        time_window = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=72)
+
+        # 2. Extract article entities for indexing
+        from app.services.event_validation_service import EventValidationService
+        extracted_ents = EventValidationService()._extract_entities(article.title)
+
+        # 3. Build query
+        from sqlalchemy import or_, text
+
+        recent_stories_stmt = (
+            select(Story)
+            .distinct()
+            .options(selectinload(Story.category), selectinload(Story.entities))
+            .outerjoin(StoryEntity, Story.id == StoryEntity.story_id)
+            .where(
+                Story.lifecycle_state.in_(["developing", "monitoring", "stable"]),
+                Story.updated_at >= time_window,
+                ~Story.id.in_(
+                    select(StoryArticle.story_id).where(StoryArticle.article_id == article.id)
+                )
+            )
+        )
+
+        # Filter by category if article has one (Optional, but helps recall)
+        # Assuming article category might not be resolved yet, but if it is:
+        # if hasattr(article, 'category_id') and article.category_id:
+        #     recent_stories_stmt = recent_stories_stmt.where(Story.category_id == article.category_id)
+
+        # Boost by entity overlap (if extracted entities exist)
+        if extracted_ents:
+            recent_stories_stmt = recent_stories_stmt.where(
+                or_(
+                    func.lower(StoryEntity.entity_value).in_([e.lower() for e in extracted_ents]),
+                    StoryEntity.id.is_(None) # fallback to allow recent stories with no entities yet
+                )
+            )
+
+        recent_stories_stmt = recent_stories_stmt.order_by(Story.updated_at.desc()).limit(20)
+
+        recent_stories_res = await session.execute(recent_stories_stmt)
+        candidates = recent_stories_res.scalars().all()
+
+        if not candidates:
+            return False
+
+        stage_a_passed_candidates = []
+        for story in candidates:
+            # Build Story Anchor
+            primary_entities = {e.entity_value.lower() for e in story.entities} if story.entities else set()
+            # Simple fallback for locations from primary entities
+            top_locations = {e.entity_value.lower() for e in story.entities if getattr(e, 'entity_type', '') in ('GPE', 'LOC')} if story.entities else set()
+
+            anchor = StoryAnchor(
+                story_id=str(story.id),
+                headline=story.headline or "",
+                first_seen_at=story.first_seen_at or datetime.now(UTC).replace(tzinfo=None),
+                last_updated_at=story.updated_at or datetime.now(UTC).replace(tzinfo=None),
+                primary_entities=primary_entities,
+                top_locations=top_locations,
+                category=story.category.slug if story.category else None,
+                event_type=getattr(story, "event_type", None),
+                centroid_vector=getattr(story, "story_embedding", None),
+                entity_graph_ids=set(story.knowledge_graph.get("nodes", [])) if story.knowledge_graph else set()
+            )
+
+            decision = event_validation_service.validate_stage_a(article, anchor)
+            if decision.outcome in (ValidationOutcome.PASS, ValidationOutcome.MAYBE):
+                stage_a_passed_candidates.append((story, anchor, decision))
+                newsiq_stage_a_validation_total.labels(outcome=decision.outcome.value).inc()
+            else:
+                newsiq_stage_a_validation_total.labels(outcome="rejected").inc()
+                logger.debug("Article %s rejected for story %s at Stage A: %s", article_id, story.id, decision.reason)
+
+        if not stage_a_passed_candidates:
+            logger.info("Article %s failed Stage A validation for all top candidates. Routing to Discovery Queue.", article_id)
+            return False
+
+        # Fetch vector from Qdrant for Stage B
         point_id = str(article_id)
         try:
             point_info = await vector_service.client.retrieve(
@@ -1496,121 +1055,80 @@ class ClusteringService:
             )
             if not point_info or not point_info[0].vector:
                 return False
-
             vector = point_info[0].vector
         except Exception as e:
             logger.error("Failed to retrieve vector for article %s: %s", article_id, e)
             return False
 
-        # Fetch the article's event for multi-signal verification
+        # Fetch the article's event/entities for multi-signal verification
         event_stmt = select(ArticleEvent).where(ArticleEvent.article_id == article_id).limit(1)
         event_res = await session.execute(event_stmt)
         article_event = event_res.scalar_one_or_none()
 
-        # Search for similar articles
-        matches = await vector_service.search_similar(
-            cast(list[float], vector), limit=3, score_threshold=SIMILARITY_THRESHOLD
-        )
-        for match in matches:
-            match_id = match["id"]
-            if match_id == article_id:
-                continue
+        # We also need canonical entity ids for stage B
+        article_canonical_entity_ids = set()
+        if article_event and article_event.actors:
+            article_canonical_entity_ids.update(article_event.actors)
+        if article_event and article_event.targets:
+            article_canonical_entity_ids.update(article_event.targets)
 
-            # Check if this similar article is associated with an existing story
-            story_stmt = (
-                select(StoryArticle.story_id).where(StoryArticle.article_id == match_id).limit(1)
+        # Sort stage_a_passed_candidates by Stage A score descending and take Top 3
+        stage_a_passed_candidates.sort(key=lambda x: x[2].score, reverse=True)
+        top_3_candidates = stage_a_passed_candidates[:3]
+
+        for story, anchor, stage_a_decision in top_3_candidates:
+            decision_b = event_validation_service.validate_stage_b(
+                article, anchor, cast(list[float], vector), article_canonical_entity_ids
             )
-            story_res = await session.execute(story_stmt)
-            story_id = story_res.scalar()
-            if story_id:
-                # Acquire transaction-bound advisory lock on story_id
+
+            story_id = story.id
+            if decision_b.outcome == ValidationOutcome.PASS:
+                # Merge directly
+                logger.info("Article %s passed Stage B for story %s. Merging.", article_id, story_id)
+                return await self.merge_article_into_existing_story(article, story_id, session)
+
+            elif decision_b.outcome == ValidationOutcome.MAYBE:
+                if decision_b.score < REFLECTION_THRESHOLD:
+                    logger.info("Article %s scored MAYBE (%.2f) but below reflection threshold (%.2f). Skipping reflection.", article_id, decision_b.score, REFLECTION_THRESHOLD)
+                    continue
+
+                # Send to LLM Reflection
+                logger.info("Article %s scored MAYBE (%.2f) for story %s. Sending to reflection.", article_id, decision_b.score, story_id)
+                newsiq_reflection_requests_total.labels(outcome="requested").inc()
                 lock_id = uuid_to_advisory_lock_id(story_id)
                 await session.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
 
-                # Check if already merged in another concurrent task
-                stmt_chk = select(StoryArticle).where(
-                    StoryArticle.story_id == story_id, StoryArticle.article_id == article_id
-                )
-                res_chk = await session.execute(stmt_chk)
-                if res_chk.scalar_one_or_none():
-                    return False
+                stmt_first_art = select(Article).join(StoryArticle).where(StoryArticle.story_id == story.id).limit(1)
+                res_first_art = await session.execute(stmt_first_art)
+                first_art = res_first_art.scalar_one_or_none()
 
-                # Retrieve the story with eagerly loaded relations to avoid lazy-load MissingGreenlet errors
-                stmt_story = (
-                    select(Story)
-                    .options(selectinload(Story.category), selectinload(Story.metrics))
-                    .where(Story.id == story_id)
-                )
-                res_story = await session.execute(stmt_story)
-                story = res_story.scalar_one_or_none()
+                first_evt = None
+                if first_art:
+                    stmt_evt = select(ArticleEvent).where(ArticleEvent.article_id == first_art.id).limit(1)
+                    res_evt = await session.execute(stmt_evt)
+                    first_evt = res_evt.scalar_one_or_none()
 
-                if story and article_event:
-                    # Gated merge using multi-signal similarity + Agno Agent verification
-                    score = await self.compute_story_similarity(article_event, story, session)
-
-                    should_merge = False
-                    if score >= 0.90:
-                        should_merge = True
-                        logger.info(
-                            "Auto-merging article %s into story %s (similarity: %.2f >= 0.90)",
-                            article_id,
-                            story_id,
-                            score,
-                        )
-                    elif score >= 0.70:
-                        # Fetch Article B (first article of the story) to compare events
-                        stmt_first_art = (
-                            select(Article)
-                            .join(StoryArticle)
-                            .where(StoryArticle.story_id == story.id)
-                            .limit(1)
-                        )
-                        res_first_art = await session.execute(stmt_first_art)
-                        first_art = res_first_art.scalar_one_or_none()
-
-                        first_evt = None
-                        if first_art:
-                            stmt_evt = (
-                                select(ArticleEvent)
-                                .where(ArticleEvent.article_id == first_art.id)
-                                .limit(1)
-                            )
-                            res_evt = await session.execute(stmt_evt)
-                            first_evt = res_evt.scalar_one_or_none()
-
-                        if first_art and first_evt:
-                            category_slug = story.category.slug if story.category else ""
-                            should_merge = await self._verify_merge_with_agents(
-                                article_a=article,
-                                event_a=article_event,
-                                article_b=first_art,
-                                event_b=first_evt,
-                                similarity_score=score,
-                                category_slug=category_slug,
-                                kg_nodes=story.knowledge_graph.get("nodes", [])
-                                if story.knowledge_graph
-                                else [],
-                            )
-                        else:
-                            should_merge = score >= 0.80  # fallback
-
-                    if not should_merge:
-                        logger.info(
-                            "Rejecting merge of article %s into story %s. Multi-signal similarity: %.2f (< 0.70 or verification failed)",
-                            article_id,
-                            story_id,
-                            score,
-                        )
-                        continue  # Try next candidate match
-                else:
-                    logger.warning(
-                        "Rejecting merge of article %s into story %s due to missing event or story metadata.",
-                        article_id,
-                        story_id,
+                if first_art and first_evt and article_event:
+                    category_slug = story.category.slug if story.category else ""
+                    should_merge = await self._verify_merge_with_agents(
+                        article_a=article,
+                        event_a=article_event,
+                        article_b=first_art,
+                        event_b=first_evt,
+                        similarity_score=decision_b.score,
+                        category_slug=category_slug,
+                        kg_nodes=story.knowledge_graph.get("nodes", []) if story.knowledge_graph else [],
                     )
-                    continue
+                    if should_merge:
+                        logger.info("Reflection passed for article %s into story %s", article_id, story_id)
+                        return await self.merge_article_into_existing_story(article, story_id, session)
+                    else:
+                        logger.info("Reflection rejected merge of article %s into story %s", article_id, story_id)
+                else:
+                    logger.warning("Missing event data for reflection on story %s", story_id)
 
-                return await self.merge_article_into_existing_story(article, story_id, session)
+            else:
+                logger.info("Article %s rejected for story %s at Stage B: %s", article_id, story.id, decision_b.reason)
 
         return False
 
@@ -1628,23 +1146,27 @@ class ClusteringService:
         # Ensure all canonical categories exist
         await self._ensure_all_categories(session)
 
-        # Select articles where embedding is completed and they are not in story_articles.
-        # LIMIT 200: bounds memory usage and HDBSCAN runtime. If more articles exist,
-        # the next Celery Beat invocation will process the next batch.
+        # Select articles from DiscoveryQueue that are READY
         _BATCH_LIMIT = 200
-        subquery = select(StoryArticle.article_id)
+
+        from app.models.models import DiscoveryQueue, DiscoveryState
+
         stmt = (
-            select(Article)
-            .where(Article.embedding_status == "completed", ~Article.id.in_(subquery))
+            select(Article, DiscoveryQueue)
+            .join(DiscoveryQueue, Article.id == DiscoveryQueue.article_id)
+            .where(DiscoveryQueue.state == DiscoveryState.READY)
             .order_by(Article.published_at.desc().nulls_last())
             .limit(_BATCH_LIMIT)
         )
         res = await session.execute(stmt)
-        unclustered_articles = list(res.scalars().all())
+        rows = res.all()
 
-        if len(unclustered_articles) < 1:
+        if len(rows) < 1:
             logger.info("No unclustered articles to run batch clustering.")
             return 0
+
+        unclustered_articles = [r[0] for r in rows]
+        dq_items = {r[0].id: r[1] for r in rows}
 
         logger.info(
             "Running batch clustering on %d unclustered articles.", len(unclustered_articles)
@@ -1866,6 +1388,7 @@ class ClusteringService:
 
         for art_list in verified_clusters:
             logger.info("Creating story for cluster with %d articles.", len(art_list))
+            newsiq_discovery_clusters_total.inc()
 
             story_id = uuid.uuid4()
             now = _now()
@@ -1878,6 +1401,7 @@ class ClusteringService:
                 trend_score=1.0,
                 created_at=now,
                 updated_at=now,
+                canonical_event_id=event_identity_service.generate_temporary_id(),
             )
             session.add(story)
 
@@ -1885,12 +1409,15 @@ class ClusteringService:
             metrics = StoryMetric(story_id=story_id, views=0, bookmarks=0, shares=0, clicks=0)
             session.add(metrics)
 
-            # Link articles
+            # Link articles and update DiscoveryQueue state
             for art in art_list:
                 link = StoryArticle(story_id=story_id, article_id=art.id)
                 session.add(link)
+                if art.id in dq_items:
+                    dq_items[art.id].state = DiscoveryState.CLUSTER_CREATED
 
             await session.commit()
+
 
             # Populate story summaries, timeline, differences, and category
             # Only run synthesis if the cluster meets the minimum quality threshold.
