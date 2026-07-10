@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
 import { BRANDING } from "@/branding/constants";
 import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
