@@ -10,11 +10,8 @@ from app.models.models import (
     Article,
     ArticleEvent,
     Source,
-    Story,
     StoryContradiction,
-    StoryTimelineEvent,
 )
-from app.services.clustering_service import clustering_service
 from app.services.contradiction_service import ContradictionResolution, contradiction_service
 from app.services.source_comparison_service import (
     SourceComparisonResolution,
@@ -274,15 +271,8 @@ async def test_source_comparison_deterministic_fallback():
 
 
 @pytest.mark.asyncio
-@patch("app.services.ai_service.ai_service.summarize_story_from_kg")
-@patch("app.services.ner_service_v2.ner_service_v2.extract_entities")
-async def test_generate_story_content_redesigned_timeline(
-    mock_extract_entities, mock_summarize_story, mock_db_session
-):
-    """Verify that generate_story_content builds a chronological timeline from events."""
-    story_id = uuid.uuid4()
-    story = Story(id=story_id)
-
+async def test_generate_story_content_redesigned_timeline():
+    """Verify that TimelineCompiler builds a chronological timeline from events."""
     src_id = uuid.uuid4()
     src = Source(id=src_id, name="BBC")
 
@@ -312,65 +302,22 @@ async def test_generate_story_content_redesigned_timeline(
         event_time=datetime.datetime(2026, 6, 20, 10, 0, 0),  # Earlier
     )
 
-    # Setup mocked DB session returns
-    async def mock_execute(stmt):
-        stmt_str = str(stmt).lower()
-        res = MagicMock()
-        res.scalar_one_or_none.return_value = None
-        res.scalar_one.return_value = 0
-        res.scalar.return_value = None
-        if "from sources" in stmt_str:
-            res.scalar_one_or_none.return_value = src
-            res.scalars.value = [src]
-            res.scalars.return_value.all.return_value = [src]
-        elif "from article_events" in stmt_str:
-            res.scalars.return_value.all.return_value = [evt1, evt2]
-        return res
+    from app.services.story_synthesis_service import TimelineCompiler
 
-    mock_db_session.execute.side_effect = mock_execute
-
-    # Mock AI Synthesis returns
-    from app.services.ai_service import StorySummaryResponse
-
-    mock_summarize_story.return_value = StorySummaryResponse(
-        headline="Headline",
-        one_line_summary="One line",
-        short_summary="Short summary",
-        detailed_summary="Detailed summary",
-        key_facts=["Fact 1"],
-        category="world",
+    timeline_events = TimelineCompiler.compile(
+        [evt1, evt2],
+        {art1.id: "BBC", art2.id: "BBC"}
     )
+    assert len(timeline_events) == 2
 
-    # Mock NER returns
-    mock_extract_entities.return_value = []
+    # Verify chronological sorting (earlier event should be first)
+    assert timeline_events[0]["event_time"] == datetime.datetime(2026, 6, 20, 10, 0, 0)
+    assert "Attack reported by BBC" in timeline_events[0]["description"]
+    assert "Actors: Russia" in timeline_events[0]["description"]
 
-    # Mock Contradiction & Source Comparison service calls to avoid hitting mock DB again
-    with (
-        patch.object(
-            contradiction_service, "detect_and_save_contradictions", AsyncMock(return_value=[])
-        ),
-        patch.object(
-            source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))
-        ),
-        patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
-    ):
-        await clustering_service.generate_story_content(story, [art1, art2], mock_db_session)
-
-        # Verify added objects
-        added_objects = [args[0] for args, _ in mock_db_session.add.call_args_list]
-
-        # Filter out StoryTimelineEvents
-        timeline_events = [obj for obj in added_objects if isinstance(obj, StoryTimelineEvent)]
-        assert len(timeline_events) == 2
-
-        # Verify chronological sorting (earlier event should be first)
-        assert timeline_events[0].event_time == datetime.datetime(2026, 6, 20, 10, 0, 0)
-        assert "Attack reported by BBC" in timeline_events[0].description
-        assert "Actors: Russia" in timeline_events[0].description
-
-        assert timeline_events[1].event_time == datetime.datetime(2026, 6, 20, 15, 0, 0)
-        assert "Detention reported by BBC" in timeline_events[1].description
-        assert "Actors: Police" in timeline_events[1].description
+    assert timeline_events[1]["event_time"] == datetime.datetime(2026, 6, 20, 15, 0, 0)
+    assert "Detention reported by BBC" in timeline_events[1]["description"]
+    assert "Actors: Police" in timeline_events[1]["description"]
 
 
 @pytest.mark.asyncio

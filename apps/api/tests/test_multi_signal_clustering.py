@@ -100,11 +100,13 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
         id=article_id,
         title="Breaking News: Fire in Chicago",
         embedding_status="completed",
+        published_at=datetime.datetime(2026, 6, 20),
     )
     similar_article = Article(
         id=similar_article_id,
         title="Fire reported in Chicago suburb",
         embedding_status="completed",
+        published_at=datetime.datetime(2026, 6, 20),
     )
 
     # 1. Mock DB returns for article and event
@@ -132,7 +134,15 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
         event_time=datetime.datetime(2026, 6, 20),
     )
 
-    story = Story(id=story_id)
+    from app.models.models import StoryEntity
+    story = Story(
+        id=story_id,
+        headline="Fire reported in Chicago",
+        first_seen_at=datetime.datetime(2026, 6, 20),
+        updated_at=datetime.datetime(2026, 6, 20),
+        entities=[StoryEntity(entity_value="Chicago", entity_type="GPE")]
+    )
+    story.story_embedding = [0.1] * 128
 
     current_story_events = [evt_story]
 
@@ -144,7 +154,11 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
         res.scalar_one.return_value = 0
         res.scalar.return_value = None
         res.scalars.return_value.all.return_value = []
-        if "from articles" in stmt_str or "from article " in stmt_str:
+        if "from stories" in stmt_str:
+            print(f"[mock_execute] MATCHED from stories! Returning [story] of id: {story.id}")
+            res.scalar_one_or_none.return_value = story
+            res.scalars.return_value.all.return_value = [story]
+        elif "from articles" in stmt_str or "from article " in stmt_str:
             if "story_articles" in stmt_str:
                 # Retrieve all articles in story
                 res.scalars.return_value.all.return_value = [similar_article, article]
@@ -160,8 +174,6 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
                 res.scalar_one_or_none.return_value = None
             elif "select story_articles.story_id" in stmt_str:
                 res.scalar.return_value = story_id
-        elif "from stories" in stmt_str:
-            res.scalar_one_or_none.return_value = story
         return res
 
     mock_db_session.execute.side_effect = mock_execute
@@ -175,16 +187,19 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
 
     # 2. Case A: Event similarity is high (>= 0.80) -> Merge succeeds
     with (
-        patch.object(
-            clustering_service, "update_story_incrementally", AsyncMock()
-        ) as mock_incr_update,
+        patch(
+            "app.services.story_synthesis_service.story_synthesis_orchestrator.synthesize_story",
+            AsyncMock(),
+        ) as mock_synthesize,
         patch.object(clustering_service, "compute_trending_score", AsyncMock()) as mock_trend,
     ):
+        print(f"DEBUG: clustering_service ID = {id(clustering_service)}")
+        print(f"DEBUG: compute_trending_score mock = {clustering_service.compute_trending_score}")
         merged = await clustering_service.add_article_to_existing_story_if_similar(
             article_id, mock_db_session
         )
         assert merged is True
-        mock_incr_update.assert_called_once()
+        mock_synthesize.assert_called_once()
         mock_trend.assert_called_once()
 
     # In Case B, the event in the story is completely different (e.g. in Miami, different type/actors)
@@ -197,16 +212,18 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
         event_time=datetime.datetime(2026, 6, 10),
     )
     current_story_events = [evt_different]
+    story.story_embedding = [-0.1] * 128
 
     # 3. Case B: Event similarity is low (< 0.80) -> Merge rejected
-    with patch.object(
-        clustering_service, "update_story_incrementally", AsyncMock()
-    ) as mock_incr_update:
+    with patch(
+        "app.services.story_synthesis_service.story_synthesis_orchestrator.synthesize_story",
+        AsyncMock(),
+    ) as mock_synthesize:
         merged = await clustering_service.add_article_to_existing_story_if_similar(
             article_id, mock_db_session
         )
         assert merged is False
-        mock_incr_update.assert_not_called()
+        mock_synthesize.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -252,8 +269,9 @@ async def test_batch_clustering_validation_split(
         res.scalar_one.return_value = 0
         res.scalar.return_value = None
         res.scalars.return_value.all.return_value = []
-        if "from articles" in stmt_str or "from article " in stmt_str:
+        if "from articles" in stmt_str or "from article " in stmt_str or "discovery_queue" in stmt_str:
             res.scalars.return_value.all.return_value = [art1, art2]
+            res.all.return_value = [(art1, MagicMock(id=uuid.uuid4(), state="ready")), (art2, MagicMock(id=uuid.uuid4(), state="ready"))]
         elif "from article_events" in stmt_str:
             if any(v == art1_id for v in params.values()):
                 res.scalar_one_or_none.return_value = evt1

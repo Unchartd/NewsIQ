@@ -1,9 +1,9 @@
-import pytest
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import app.core.database
-from app.models.models import Article, Source, Story
+import pytest
+
+from app.models.models import Article, Story
 from app.services.clustering_service import clustering_service
 
 

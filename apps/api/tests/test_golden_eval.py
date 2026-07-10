@@ -3,14 +3,21 @@ import os
 import time
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from app.models.models import Article, Category, Source, Story, StoryTimelineEvent, StoryEntity, StoryContradiction
+from app.models.models import (
+    Article,
+    Category,
+    Source,
+    Story,
+)
 from app.services.ai_service import StorySummaryResponse
 from app.services.clustering_service import clustering_service
 from app.services.contradiction_service import contradiction_service
-from app.services.source_comparison_service import source_comparison_service
 from app.services.pipeline_cache import pipeline_cache
+from app.services.source_comparison_service import source_comparison_service
+
 
 def load_golden_stories():
     stories = []
@@ -41,7 +48,7 @@ async def test_golden_stories_evaluation(mock_db_session):
         # ── 1. Reconstruct database objects ──
         cat_id = uuid.uuid4()
         mock_category = Category(id=cat_id, name=story_data["category"].capitalize(), slug=story_data["category"])
-        
+
         src_id = uuid.uuid4()
         mock_source = Source(id=src_id, name="TestPublisher")
 
@@ -67,7 +74,7 @@ async def test_golden_stories_evaluation(mock_db_session):
             res.scalar_one.return_value = 0
             res.scalar.return_value = None
             res.scalars.return_value.all.return_value = []
-            
+
             if "from categories" in stmt_str:
                 res.scalar_one_or_none.return_value = mock_category
             elif "from sources" in stmt_str:
@@ -75,12 +82,12 @@ async def test_golden_stories_evaluation(mock_db_session):
             return res
 
         mock_db_session.execute.side_effect = mock_execute
-        
+
         story = Story(id=uuid.uuid4(), story_status="pending")
 
         # ── 2. LLM Execution (Mocked or Live) ──
         start_time = time.time()
-        
+
         if is_live:
             # Clear pipeline cache to force fresh LLM calls
             pipeline_cache._is_enabled = MagicMock(return_value=False)
@@ -89,7 +96,7 @@ async def test_golden_stories_evaluation(mock_db_session):
         else:
             # Simulate high-quality response based on expected outputs in golden story
             mock_summary_res = StorySummaryResponse(
-                headline=f"Acme Corp to Acquire Widget Ltd in Mega $12 Billion Deal" if story_data["category"] == "business"
+                headline="Acme Corp to Acquire Widget Ltd in Mega $12 Billion Deal" if story_data["category"] == "business"
                          else "Prime Minister Announces Corporate Tax Reform Bill" if story_data["category"] == "politics"
                          else "Severe 7.2 Magnitude Earthquake Strikes Florida Big Bend",
                 one_line_summary=f"Objective summary for {name}.",
@@ -98,7 +105,7 @@ async def test_golden_stories_evaluation(mock_db_session):
                 key_facts=[f"Fact {i}: expected detail is present." for i in range(3)],
                 category=expected["category"]
             )
-            
+
             with (
                 patch("app.services.ai_service.ai_service.summarize_story_from_kg", AsyncMock(return_value=mock_summary_res)),
                 patch("app.services.ner_service_v2.ner_service_v2.extract_entities", AsyncMock(return_value=[])),
@@ -153,7 +160,7 @@ async def test_golden_stories_evaluation(mock_db_session):
             f"Headline: {r['headline_score']:.1f}% | Entity: {r['entity_score']:.1f}% | "
             f"Total: {r['total_score']:.1f}% ({status})"
         )
-    
+
     pass_rate = (total_passed / len(results)) * 100.0
     print(f"Pass Rate: {pass_rate:.1f}%")
     print("=========================================")

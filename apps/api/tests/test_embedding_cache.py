@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import app.ai.gateway
 from app.services.embedding_service import EMBEDDING_DIM, EmbeddingService
 
 
