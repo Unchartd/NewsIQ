@@ -1278,3 +1278,53 @@ All of the following are well-implemented and require no changes:
 ✅ **Circuit breaker** — `ProviderHealthTracker`: trips at 3 failures, 5-min reset, half-open probe
 ✅ **Model routing** — `model_router.py` selects cheaper models when budget exceeded
 ✅ **GNews Redis lock** — 25-min TTL prevents duplicate category fetches
+
+---
+
+# Epic 2: Branding Migration
+
+This Epic aims to centralize the NewsIQ branding system, ensuring consistency across all applications (`apps/web`, `apps/admin`, and `apps/api`) and removing all hardcoded branding strings, colors, SVGs, and metadata.
+
+## User Review Required
+> [!IMPORTANT]
+> The overall migration plan is approved, but the introduction of a shared `packages/branding` module is postponed as per user feedback. The repository is not yet a proper workspace, so adding a local shared package introduces unnecessary complexity. The branding implementation will be kept within the existing project structure for now. Assets will be migrated first, and deprecated branding will only be removed after successful validation.
+
+## Proposed Changes
+
+### [Backend - apps/api]
+Update the backend to remove hardcoded strings and colors, specifically from email templates.
+- **[MODIFY]** `apps/api/app/services/email_service.py` - Replace hardcoded "#C41E3A", "⚡", and "NewsIQ" with configuration variables injected from `settings`.
+- **[MODIFY]** `apps/api/app/core/config.py` - Add central branding configurations (Brand Name, Colors, URLs) to `Settings`.
+
+### [Frontend Web - apps/web]
+Migrate existing branding to use semantic color tokens and ensure centralized assets without external packages. Scope strictly to branding.
+- **[MODIFY]** `apps/web/src/app/globals.css`, `landing.css`, `legal.css` - Replace raw hex values (`#C41E3A` and `#EF4444`) with semantic CSS variable tokens (e.g., `--brand-primary`).
+- **[MODIFY]** `apps/web/src/app/landing-client.tsx`, `digest/setup/page.tsx` - Use semantic color tokens instead of raw hex values.
+- **[MODIFY]** `apps/web/public/manifest.json` - Ensure `theme_color` is strictly matched to the semantic primary color.
+- **[MODIFY]** `apps/web/src/app/icon.tsx`, `apple-icon.tsx`, `icon-[size]/route.tsx` - Preserve SVG files as the source of truth for assets. Ensure they are correctly exported and used.
+
+### [Frontend Admin - apps/admin]
+Migrate the admin app to use consistent branding matching the web app.
+- **[MODIFY]** `apps/admin/src/app/globals.css` - Replace hardcoded `#EF4444` with semantic CSS variables (e.g., `--brand-primary`).
+- **[MODIFY]** `apps/admin/src/app/page.tsx`, `apps/admin/src/app/admin/layout.tsx` - Preserve SVG files as the source of truth for assets and use them instead of inline SVGs where applicable, or standardise the inline SVGs with semantic color tokens. Remove hardcoded "NewsIQ" strings and use constants.
+- **[MODIFY]** `apps/admin/src/app/admin/failure-analytics/page.tsx` - Remove any hardcoded colors or strings.
+
+## Verification Plan
+
+### Automated Tests
+- Run backend tests `pytest` to ensure email service config changes don't break functionality.
+- Run `npm run build` on both `apps/web` and `apps/admin` to verify successful builds.
+
+### SEO/Metadata Verification Checklist
+- [ ] Verify `title` tags on all major pages (`apps/web` and `apps/admin`).
+- [ ] Verify `meta description` tags on `apps/web`.
+- [ ] Verify Open Graph (`og:title`, `og:description`, `og:image`) metadata.
+- [ ] Verify Twitter Card (`twitter:title`, `twitter:description`, `twitter:image`) metadata.
+- [ ] Check `robots.txt` and `sitemap.xml` for correct branding URLs (if applicable).
+- [ ] Verify `manifest.json` `theme_color` and `background_color` match branding semantic tokens.
+- [ ] Verify favicon (`favicon.ico`, `icon.tsx`, `apple-icon.tsx`) rendering and resolution across devices.
+
+### Manual Verification
+- Verify the Email Verification and Password Reset HTML outputs in terminal/logs contain the correct branding.
+- Load `apps/web` and `apps/admin` locally and ensure the logos, favicons, and primary colors render correctly.
+- Ensure that old branding assets are only removed *after* successful validation of the new ones.

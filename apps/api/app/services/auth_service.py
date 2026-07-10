@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -29,6 +30,8 @@ from app.repositories.user_repository import UserRepository
 from app.services.cache_service import cache_service
 from app.services.email_service import EmailService
 from app.services.session_service import SessionService
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:

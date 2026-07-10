@@ -499,6 +499,8 @@ class AIGateway:
 
     def _apply_token_budget_guard(self, messages: list[dict[str, Any]], model_name: str) -> list[dict[str, Any]]:
         """Count prompt tokens and truncate if budget for Pro models is exceeded."""
+        from app.core.config import settings
+
         if "pro" not in model_name.lower():
             return messages
 
