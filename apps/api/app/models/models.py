@@ -145,8 +145,12 @@ class DiscoveryQueue(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
-    article_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("articles.id"), unique=True)
-    state: Mapped[DiscoveryState] = mapped_column(String(50), default=DiscoveryState.PENDING, index=True)
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id"), unique=True
+    )
+    state: Mapped[DiscoveryState] = mapped_column(
+        String(50), default=DiscoveryState.PENDING, index=True
+    )
     cluster_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -184,7 +188,9 @@ class Article(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     semantic_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     fingerprint_version: Mapped[int] = mapped_column(Integer, default=1)
-    duplicate_of_article_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("articles.id"), nullable=True)
+    duplicate_of_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id"), nullable=True
+    )
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     source: Mapped["Source"] = relationship(back_populates="articles")
@@ -288,6 +294,7 @@ class ArticleEntity(Base):
 # Stories & Related
 # ──────────────────────────────────────────────
 
+
 class EventAlias(Base):
     """Tracks merged or redirected canonical event IDs to preserve history."""
 
@@ -340,7 +347,11 @@ class Story(Base):
     )
     canonical_event_id: Mapped[str | None] = mapped_column(String(100), index=True)
     canonical_event_slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("story_versions.id", use_alter=True, name="fk_stories_current_version_id"), nullable=True)
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("story_versions.id", use_alter=True, name="fk_stories_current_version_id"),
+        nullable=True,
+    )
     version: Mapped[int] = mapped_column(Integer, default=1)
     transition_reason: Mapped[str | None] = mapped_column(Text)
 
@@ -348,9 +359,7 @@ class Story(Base):
     lifecycle_changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, index=True
     )
-    last_discovery_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), index=True
-    )
+    last_discovery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     last_significant_update_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now
     )
@@ -361,7 +370,6 @@ class Story(Base):
     freshness_score: Mapped[float | None] = mapped_column(Float, index=True)
     source_diversity_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
     contradiction_score: Mapped[float | None] = mapped_column(Float, index=True)
-
 
     category: Mapped["Category | None"] = relationship()
     articles: Mapped[list["StoryArticle"]] = relationship(
@@ -658,7 +666,9 @@ class SynthesisArtifact(Base):
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
     story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
-    artifact_type: Mapped[str] = mapped_column(String(50))  # summary, timeline, knowledge_graph, source_comparison, contradictions
+    artifact_type: Mapped[str] = mapped_column(
+        String(50)
+    )  # summary, timeline, knowledge_graph, source_comparison, contradictions
     content_hash: Mapped[str] = mapped_column(String(64))
     payload: Mapped[dict] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(default=_now)
@@ -679,11 +689,21 @@ class StoryVersion(Base):
     version_number: Mapped[int] = mapped_column(Integer)
     pipeline_version: Mapped[str] = mapped_column(String(20))
 
-    summary_artifact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id"))
-    timeline_artifact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id"))
-    kg_artifact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id"))
-    source_comparison_artifact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id"))
-    contradiction_artifact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id"))
+    summary_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    timeline_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    kg_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    source_comparison_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
+    contradiction_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("synthesis_artifacts.id")
+    )
 
     llm_cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), default=0.0)
     trigger: Mapped[str] = mapped_column(String(50))
@@ -703,8 +723,12 @@ class StoryReview(Base):
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
     story_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("stories.id"))
-    story_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("story_versions.id"))
-    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    story_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("story_versions.id")
+    )
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
     summary_quality: Mapped[int] = mapped_column(Integer)
     hallucination_count: Mapped[int] = mapped_column(Integer, default=0)
     missing_facts_count: Mapped[int] = mapped_column(Integer, default=0)

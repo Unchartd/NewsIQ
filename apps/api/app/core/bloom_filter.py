@@ -9,6 +9,7 @@ from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
 
+
 class URLBloomFilter:
     """
     Bloom filter for fast URL deduplication checks.
@@ -34,7 +35,7 @@ class URLBloomFilter:
         Returns True if it was added (wasn't there), False if it might already exist.
         """
         if not self.redis:
-            return True # Fail open
+            return True  # Fail open
 
         try:
             if self.use_bloom:
@@ -46,13 +47,15 @@ class URLBloomFilter:
                 return res == 1
         except ResponseError as e:
             if "unknown command" in str(e).lower() and self.use_bloom:
-                logger.warning("RedisBloom not available. Falling back to SADD for URL deduplication.")
+                logger.warning(
+                    "RedisBloom not available. Falling back to SADD for URL deduplication."
+                )
                 self.use_bloom = False
                 self.metrics["fallback_used"] = True
                 res = await self.redis.sadd(self.KEY_SET, url_hash)  # type: ignore[misc]
                 return res == 1
             logger.error("Redis error adding to URL filter: %s", e)
-            return True # Fail open
+            return True  # Fail open
         except Exception as e:
             logger.error("Error adding to URL filter: %s", e)
             return True
@@ -63,7 +66,7 @@ class URLBloomFilter:
         Returns True if it might exist, False if it definitely does not.
         """
         if not self.redis:
-            return False # Fail open, assume miss so we check DB
+            return False  # Fail open, assume miss so we check DB
 
         try:
             if self.use_bloom:
@@ -88,7 +91,7 @@ class URLBloomFilter:
                 res = await self.redis.sismember(self.KEY_SET, url_hash)  # type: ignore[misc]
                 return bool(res)
             logger.error("Redis error checking URL filter: %s", e)
-            return False # Fail open
+            return False  # Fail open
         except Exception as e:
             logger.error("Error checking URL filter: %s", e)
             return False

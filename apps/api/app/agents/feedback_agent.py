@@ -13,32 +13,23 @@ logger = logging.getLogger(__name__)
 
 class FeedbackReport(BaseModel):
     action: str = Field(
-        ...,
-        description="Action to take: 'publish', 'regenerate_summary', 'request_human_review'"
+        ..., description="Action to take: 'publish', 'regenerate_summary', 'request_human_review'"
     )
-    score: float = Field(
-        ...,
-        description="Quality score between 0.0 (unusable) and 1.0 (perfect)"
-    )
-    explanation: str = Field(
-        ...,
-        description="Detailed rationale behind the action decision"
-    )
+    score: float = Field(..., description="Quality score between 0.0 (unusable) and 1.0 (perfect)")
+    explanation: str = Field(..., description="Detailed rationale behind the action decision")
     hallucination_detected: bool = Field(
-        ...,
-        description="True if summary contains claims not supported by the KG"
+        ..., description="True if summary contains claims not supported by the KG"
     )
     hallucinated_claims: list[str] = Field(
-        default_factory=list,
-        description="List of hallucinated claims found"
+        default_factory=list, description="List of hallucinated claims found"
     )
     missing_elements: list[str] = Field(
         default_factory=list,
-        description="List of critical elements (facts/entities) missing from the summary"
+        description="List of critical elements (facts/entities) missing from the summary",
     )
     targeted_corrections: list[str] = Field(
         default_factory=list,
-        description="Section-level instructions for correction (e.g. 'Update Key Facts with missing entity X')"
+        description="Section-level instructions for correction (e.g. 'Update Key Facts with missing entity X')",
     )
 
 
@@ -93,15 +84,15 @@ async def check_clustering_similarity(articles: list[Article]) -> float:
     vec_keys = list(vectors.keys())
 
     def cosine_similarity(v1, v2):
-        dot = sum(a*b for a, b in zip(v1, v2))
-        norm_a = math.sqrt(sum(a*a for a in v1))
-        norm_b = math.sqrt(sum(b*b for b in v2))
+        dot = sum(a * b for a, b in zip(v1, v2))
+        norm_a = math.sqrt(sum(a * a for a in v1))
+        norm_b = math.sqrt(sum(b * b for b in v2))
         if norm_a == 0 or norm_b == 0:
             return 0.0
         return dot / (norm_a * norm_b)
 
     for i in range(len(vec_keys)):
-        for j in range(i+1, len(vec_keys)):
+        for j in range(i + 1, len(vec_keys)):
             sim = cosine_similarity(vectors[vec_keys[i]], vectors[vec_keys[j]])
             if sim < min_sim:
                 min_sim = sim
@@ -143,13 +134,15 @@ async def evaluate_story_quality(
     missing_ents = check_missing_entities(kg, summary_text)
 
     # Calculate unique event IDs to detect multi-event leakage using event fingerprints
-    unique_events = len({
-        evt.event_fingerprint
-        for art in articles
-        if hasattr(art, "events") and art.events
-        for evt in art.events
-        if getattr(evt, "event_fingerprint", None)
-    })
+    unique_events = len(
+        {
+            evt.event_fingerprint
+            for art in articles
+            if hasattr(art, "events") and art.events
+            for evt in art.events
+            if getattr(evt, "event_fingerprint", None)
+        }
+    )
 
     # Determine base programmatic score
     prog_score = 1.0
@@ -219,10 +212,7 @@ async def evaluate_story_quality(
 
     try:
         run_output = await run_agent_with_observability(
-            agent=feedback_llm_agent,
-            prompt=prompt,
-            stage="feedback_agent",
-            story_id=str(story.id)
+            agent=feedback_llm_agent, prompt=prompt, stage="feedback_agent", story_id=str(story.id)
         )
 
         # Parse result
@@ -232,6 +222,7 @@ async def evaluate_story_quality(
             report = run_output.parsed
         elif isinstance(run_output.content, str):
             import json
+
             data = json.loads(run_output.content)
             report = FeedbackReport.model_validate(data)
         else:
@@ -245,7 +236,9 @@ async def evaluate_story_quality(
         return report
 
     except Exception as e:
-        logger.error("LLM Feedback QA agent call failed: %s. Falling back to programmatic verdict.", e)
+        logger.error(
+            "LLM Feedback QA agent call failed: %s. Falling back to programmatic verdict.", e
+        )
         # Fallback to programmatic verdict
         fallback_action = "publish" if prog_score >= 0.7 else "request_human_review"
         return FeedbackReport(

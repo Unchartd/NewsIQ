@@ -24,6 +24,7 @@ with open(config_path) as f:
     config = yaml.safe_load(f)
 DISCOVERY_EXPIRATION_HOURS = config.get("discovery", {}).get("expiration_hours", {})
 
+
 class DiscoveryManager:
     """
     Manages the lifecycle of the Discovery Queue.
@@ -55,19 +56,24 @@ class DiscoveryManager:
                 .join(Article, DiscoveryQueue.article_id == Article.id)
                 .where(
                     Article.content_hash == article.content_hash,
-                    DiscoveryQueue.state.in_([DiscoveryState.PENDING, DiscoveryState.GROUPING, DiscoveryState.READY])
+                    DiscoveryQueue.state.in_(
+                        [DiscoveryState.PENDING, DiscoveryState.GROUPING, DiscoveryState.READY]
+                    ),
                 )
                 .limit(1)
             )
             is_dup = (await session.execute(dup_stmt)).scalar_one_or_none()
             if is_dup:
-                logger.info("Skipping enqueue for article %s (Duplicate found in Discovery Queue)", article_id)
+                logger.info(
+                    "Skipping enqueue for article %s (Duplicate found in Discovery Queue)",
+                    article_id,
+                )
                 return False
 
         # 2. Determine Expiration Window
         expire_hours = DISCOVERY_EXPIRATION_HOURS.get("default", 24)
 
-        if hasattr(article, 'category') and article.category:
+        if hasattr(article, "category") and article.category:
             slug = article.category.slug
             if slug in DISCOVERY_EXPIRATION_HOURS:
                 expire_hours = DISCOVERY_EXPIRATION_HOURS[slug]
@@ -79,12 +85,16 @@ class DiscoveryManager:
             article_id=article_id,
             state=DiscoveryState.PENDING,
             expires_at=expires_at,
-            next_retry_at=datetime.now(UTC).replace(tzinfo=None)
+            next_retry_at=datetime.now(UTC).replace(tzinfo=None),
         )
         session.add(new_entry)
         await session.commit()
-        logger.info("Enqueued article %s to Discovery Queue (expires in %dh)", article_id, expire_hours)
-        newsiq_discovery_articles_total.labels(reason="stage_a_fail").inc()  # Assuming stage_a_fail by default
+        logger.info(
+            "Enqueued article %s to Discovery Queue (expires in %dh)", article_id, expire_hours
+        )
+        newsiq_discovery_articles_total.labels(
+            reason="stage_a_fail"
+        ).inc()  # Assuming stage_a_fail by default
         return True
 
     async def process_expirations(self, session: AsyncSession) -> int:
@@ -94,7 +104,7 @@ class DiscoveryManager:
             update(DiscoveryQueue)
             .where(
                 DiscoveryQueue.state.in_([DiscoveryState.PENDING, DiscoveryState.GROUPING]),
-                DiscoveryQueue.expires_at <= now
+                DiscoveryQueue.expires_at <= now,
             )
             .values(state=DiscoveryState.EXPIRED, updated_at=now)
         )
@@ -110,7 +120,9 @@ class DiscoveryManager:
         Event-driven trigger logic:
         Run HDBSCAN if Queue size >= N OR Oldest article > X minutes OR force=True (cron)
         """
-        count_stmt = select(func.count(DiscoveryQueue.id)).where(DiscoveryQueue.state == DiscoveryState.PENDING)
+        count_stmt = select(func.count(DiscoveryQueue.id)).where(
+            DiscoveryQueue.state == DiscoveryState.PENDING
+        )
         pending_count = (await session.execute(count_stmt)).scalar() or 0
         newsiq_discovery_queue_size.labels(state="pending").set(pending_count)
 
@@ -128,10 +140,17 @@ class DiscoveryManager:
             age_minutes = (now - oldest_dt).total_seconds() / 60.0
 
         if force or pending_count >= 50 or age_minutes > 15:
-            logger.info("Triggering HDBSCAN grouping (Pending: %d, Oldest Age: %.1fm, Force: %s)", pending_count, age_minutes, force)
+            logger.info(
+                "Triggering HDBSCAN grouping (Pending: %d, Oldest Age: %.1fm, Force: %s)",
+                pending_count,
+                age_minutes,
+                force,
+            )
             await self._run_hdbscan_clustering(session)
         else:
-            logger.debug("Skipping grouping (Pending: %d, Oldest Age: %.1fm)", pending_count, age_minutes)
+            logger.debug(
+                "Skipping grouping (Pending: %d, Oldest Age: %.1fm)", pending_count, age_minutes
+            )
 
     async def _run_hdbscan_clustering(self, session: AsyncSession):
         stmt = select(DiscoveryQueue).where(DiscoveryQueue.state == DiscoveryState.PENDING)
@@ -150,10 +169,7 @@ class DiscoveryManager:
 
     async def promote_clusters(self, session: AsyncSession):
         """Converts READY clusters into new Stories, generating initial Story Anchors."""
-        stmt = (
-            select(DiscoveryQueue)
-            .where(DiscoveryQueue.state == DiscoveryState.READY)
-        )
+        stmt = select(DiscoveryQueue).where(DiscoveryQueue.state == DiscoveryState.READY)
         ready_items = (await session.execute(stmt)).scalars().all()
 
         if not ready_items:
@@ -173,7 +189,7 @@ class DiscoveryManager:
             new_story = Story(
                 headline=f"New Event Cluster {cluster_id}",
                 lifecycle_state="developing",
-                last_updated_at=datetime.now(UTC).replace(tzinfo=None)
+                last_updated_at=datetime.now(UTC).replace(tzinfo=None),
             )
             session.add(new_story)
             await session.flush()

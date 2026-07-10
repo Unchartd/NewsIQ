@@ -227,6 +227,7 @@ class PipelineCache:
             import redis
 
             from app.core.config import settings
+
             r = redis.from_url(settings.REDIS_URL)
             r.hincrby("newsiq:cache:stats", operation, 1)
         except Exception:

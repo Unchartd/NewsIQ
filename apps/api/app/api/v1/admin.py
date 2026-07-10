@@ -678,7 +678,7 @@ async def get_dashboard_metrics(
             "provider_health": {},
             "stage_health": {},
             "alerts": [],
-            "last_updated": None
+            "last_updated": None,
         }
 
     return json.loads(raw)
@@ -708,11 +708,10 @@ async def get_article_trace(
             "completed_at": s.completed_at.isoformat() if s.completed_at else None,
             "latency_ms": s.latency_ms,
             "error": s.error,
-            "metadata": s.metadata_payload or {}
+            "metadata": s.metadata_payload or {},
         }
         for s in stages
     ]
-
 
 
 class EntityOverrideRequest(BaseModel):
@@ -1391,7 +1390,11 @@ async def list_story_versions(
     """List all version snapshots for a story (admin only)."""
     from app.models.models import StoryVersion
 
-    stmt = select(StoryVersion).where(StoryVersion.story_id == story_id).order_by(StoryVersion.version_number.desc())
+    stmt = (
+        select(StoryVersion)
+        .where(StoryVersion.story_id == story_id)
+        .order_by(StoryVersion.version_number.desc())
+    )
     res = await db.execute(stmt)
     versions = res.scalars().all()
 
@@ -1423,7 +1426,11 @@ async def list_story_traces(
     """List execution traces for all pipeline stages for a story (admin only)."""
     from app.models.observability_models import PipelineTraceModel
 
-    stmt = select(PipelineTraceModel).where(PipelineTraceModel.story_id == story_id).order_by(PipelineTraceModel.created_at.desc())
+    stmt = (
+        select(PipelineTraceModel)
+        .where(PipelineTraceModel.story_id == story_id)
+        .order_by(PipelineTraceModel.created_at.desc())
+    )
     res = await db.execute(stmt)
     traces = res.scalars().all()
 
@@ -1468,8 +1475,7 @@ async def rollback_story_version(
 
     # 1. Fetch target StoryVersion
     stmt = select(StoryVersion).where(
-        StoryVersion.story_id == story_id,
-        StoryVersion.version_number == version_number
+        StoryVersion.story_id == story_id, StoryVersion.version_number == version_number
     )
     res = await db.execute(stmt)
     story_version = res.scalar_one_or_none()
@@ -1489,7 +1495,7 @@ async def rollback_story_version(
         story_version.timeline_artifact_id,
         story_version.kg_artifact_id,
         story_version.source_comparison_artifact_id,
-        story_version.contradiction_artifact_id
+        story_version.contradiction_artifact_id,
     ]
     # Filter out None values
     artifact_ids = [aid for aid in artifact_ids if aid is not None]
@@ -1499,11 +1505,13 @@ async def rollback_story_version(
     artifacts = {art.artifact_type: art.payload for art in art_res.scalars().all()}
 
     # Check if we have all necessary artifacts
-    if "summary" not in artifacts or "timeline" not in artifacts or "contradictions" not in artifacts or "source_comparison" not in artifacts:
-        raise HTTPException(
-            status_code=500,
-            detail="Referenced artifacts are missing or corrupt."
-        )
+    if (
+        "summary" not in artifacts
+        or "timeline" not in artifacts
+        or "contradictions" not in artifacts
+        or "source_comparison" not in artifacts
+    ):
+        raise HTTPException(status_code=500, detail="Referenced artifacts are missing or corrupt.")
 
     # 4. Atomic transaction update: clear active tables and populate from artifacts
     await db.execute(delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story_id))
@@ -1550,7 +1558,7 @@ async def rollback_story_version(
             fact_type=entry["fact_type"],
             description=entry["description"],
             confidence=entry["confidence"],
-            source_attribution=entry["source_attribution"]
+            source_attribution=entry["source_attribution"],
         )
         db.add(contra)
 
@@ -1582,6 +1590,7 @@ async def rollback_story_version(
 
     # Record trace
     from app.services.story_synthesis_service import story_synthesis_orchestrator
+
     await story_synthesis_orchestrator.record_trace(
         session=db,
         story_id=story_id,
@@ -1598,10 +1607,11 @@ async def rollback_story_version(
 
     # Invalidate cache
     from app.services.cache_service import cache_service
+
     await cache_service.invalidate_story(str(story_id))
 
     return {
         "message": f"Story successfully rolled back to version {version_number}",
         "story_id": story_id,
-        "version_number": version_number
+        "version_number": version_number,
     }

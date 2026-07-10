@@ -1,4 +1,5 @@
 """Rules Engine for Story Lifecycle Transitions."""
+
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,7 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "lifecycle_rul
 @dataclass
 class TransitionDecision:
     """Represents a decision made by the Rules Engine."""
+
     target_state: StoryLifecycleState
     reason: str
     should_transition: bool
@@ -35,9 +37,19 @@ class LifecycleRulesEngine:
             return {
                 "transitions": {
                     "developing": {"min_articles": 3},
-                    "monitoring": {"min_confidence": 0.80, "inactivity_hours": 6, "min_sources": 3, "max_contradiction": 0.2},
-                    "stable": {"min_confidence": 0.95, "inactivity_hours": 24, "min_sources": 5, "max_contradiction": 0.1},
-                    "archived": {"inactivity_hours": 168, "no_recent_discovery_hours": 168}
+                    "monitoring": {
+                        "min_confidence": 0.80,
+                        "inactivity_hours": 6,
+                        "min_sources": 3,
+                        "max_contradiction": 0.2,
+                    },
+                    "stable": {
+                        "min_confidence": 0.95,
+                        "inactivity_hours": 24,
+                        "min_sources": 5,
+                        "max_contradiction": 0.1,
+                    },
+                    "archived": {"inactivity_hours": 168, "no_recent_discovery_hours": 168},
                 }
             }
 
@@ -47,7 +59,9 @@ class LifecycleRulesEngine:
 
         if current_state == StoryLifecycleState.ARCHIVED:
             # Cannot transition out of archived automatically
-            return TransitionDecision(StoryLifecycleState.ARCHIVED, "Story is already archived.", False)
+            return TransitionDecision(
+                StoryLifecycleState.ARCHIVED, "Story is already archived.", False
+            )
 
         now = datetime.now(UTC)
 
@@ -67,7 +81,7 @@ class LifecycleRulesEngine:
                 last_discovery = last_discovery.replace(tzinfo=UTC)
             hours_since_discovery = (now - last_discovery).total_seconds() / 3600.0
         else:
-            hours_since_discovery = float('inf')
+            hours_since_discovery = float("inf")
 
         confidence = story.confidence_score or 0.0
         sources = story.source_diversity_count or 0
@@ -75,7 +89,9 @@ class LifecycleRulesEngine:
         # Number of articles isn't directly on the story model without loading the relationship,
         # but if we need it for 'developing', we could just use source_diversity_count as proxy,
         # or assume len(story.articles) if eagerly loaded.
-        articles_count = len(story.articles) if hasattr(story, 'articles') and story.articles else sources
+        articles_count = (
+            len(story.articles) if hasattr(story, "articles") and story.articles else sources
+        )
 
         # Evaluate emerging -> developing
         if current_state == StoryLifecycleState.EMERGING:
@@ -85,44 +101,49 @@ class LifecycleRulesEngine:
                 return TransitionDecision(
                     target_state=StoryLifecycleState.DEVELOPING,
                     reason=f"Articles count ({articles_count}) met threshold ({min_articles})",
-                    should_transition=True
+                    should_transition=True,
                 )
 
         # Evaluate developing -> monitoring
         if current_state == StoryLifecycleState.DEVELOPING:
             conf = self.transitions_config.get("monitoring", {})
-            if (confidence >= conf.get("min_confidence", 0.80) and
-                hours_since_update >= conf.get("inactivity_hours", 6) and
-                sources >= conf.get("min_sources", 3) and
-                contradiction <= conf.get("max_contradiction", 0.2)):
+            if (
+                confidence >= conf.get("min_confidence", 0.80)
+                and hours_since_update >= conf.get("inactivity_hours", 6)
+                and sources >= conf.get("min_sources", 3)
+                and contradiction <= conf.get("max_contradiction", 0.2)
+            ):
                 return TransitionDecision(
                     target_state=StoryLifecycleState.MONITORING,
                     reason=f"Inactivity {hours_since_update:.1f}h, Conf {confidence:.2f}, Sources {sources}, Contradiction {contradiction:.2f}",
-                    should_transition=True
+                    should_transition=True,
                 )
 
         # Evaluate monitoring -> stable
         if current_state == StoryLifecycleState.MONITORING:
             conf = self.transitions_config.get("stable", {})
-            if (confidence >= conf.get("min_confidence", 0.95) and
-                hours_since_update >= conf.get("inactivity_hours", 24) and
-                sources >= conf.get("min_sources", 5) and
-                contradiction <= conf.get("max_contradiction", 0.1)):
+            if (
+                confidence >= conf.get("min_confidence", 0.95)
+                and hours_since_update >= conf.get("inactivity_hours", 24)
+                and sources >= conf.get("min_sources", 5)
+                and contradiction <= conf.get("max_contradiction", 0.1)
+            ):
                 return TransitionDecision(
                     target_state=StoryLifecycleState.STABLE,
                     reason=f"Inactivity {hours_since_update:.1f}h, Conf {confidence:.2f}, Sources {sources}, Contradiction {contradiction:.2f}",
-                    should_transition=True
+                    should_transition=True,
                 )
 
         # Evaluate stable -> archived
         if current_state == StoryLifecycleState.STABLE:
             conf = self.transitions_config.get("archived", {})
-            if (hours_since_update >= conf.get("inactivity_hours", 168) and
-                hours_since_discovery >= conf.get("no_recent_discovery_hours", 168)):
+            if hours_since_update >= conf.get(
+                "inactivity_hours", 168
+            ) and hours_since_discovery >= conf.get("no_recent_discovery_hours", 168):
                 return TransitionDecision(
                     target_state=StoryLifecycleState.ARCHIVED,
                     reason=f"No updates for {hours_since_update:.1f}h, no discovery for {hours_since_discovery:.1f}h",
-                    should_transition=True
+                    should_transition=True,
                 )
 
         # No transition needed

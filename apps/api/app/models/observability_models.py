@@ -527,11 +527,17 @@ class PipelineTraceModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=_generate_uuid
     )
-    story_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
-    article_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), index=True, nullable=True
+    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), index=True, nullable=True
+    )
     canonical_event_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
 
-    stage: Mapped[str] = mapped_column(String(50), index=True)  # e.g., summary_generation, feedback_agent
+    stage: Mapped[str] = mapped_column(
+        String(50), index=True
+    )  # e.g., summary_generation, feedback_agent
     started_at: Mapped[datetime] = mapped_column(default=_now)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
@@ -539,10 +545,10 @@ class PipelineTraceModel(Base):
     cache_hit: Mapped[bool] = mapped_column(Boolean, default=False)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    decision: Mapped[str | None] = mapped_column(String(50), nullable=True)  # e.g., publish, regenerate
+    decision: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # e.g., publish, regenerate
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
 
-    __table_args__ = (
-        Index("idx_pipeline_traces_story_stage", "story_id", "stage"),
-    )
+    __table_args__ = (Index("idx_pipeline_traces_story_stage", "story_id", "stage"),)

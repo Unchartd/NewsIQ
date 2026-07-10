@@ -54,9 +54,7 @@ class TimelineCompiler:
 
             src_name = article_source_map.get(evt.article_id, "Unknown Source")
             evt_type = (
-                (evt.event_type_canonical or evt.event_type or "Event")
-                .replace("_", " ")
-                .title()
+                (evt.event_type_canonical or evt.event_type or "Event").replace("_", " ").title()
             )
 
             details = []
@@ -73,11 +71,13 @@ class TimelineCompiler:
             details_str = f" ({'; '.join(details)})" if details else ""
             desc = f"{evt_type} reported by {src_name}{details_str}."
 
-            timeline_entries.append({
-                "event_time": t,
-                "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                "description": desc,
-            })
+            timeline_entries.append(
+                {
+                    "event_time": t,
+                    "event_time_raw": evt.event_time_raw or t.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "description": desc,
+                }
+            )
 
         # Sort chronologically
         timeline_entries.sort(key=lambda x: cast(datetime, x["event_time"]))
@@ -95,6 +95,7 @@ class StorySynthesisOrchestrator:
 
     def __init__(self, ai_service: AIService | None = None) -> None:
         from app.services.ai_service import ai_service as global_ai_service
+
         self.ai_service = ai_service or global_ai_service
 
     async def get_or_create_artifact(
@@ -111,7 +112,7 @@ class StorySynthesisOrchestrator:
         stmt = select(SynthesisArtifact).where(
             SynthesisArtifact.story_id == story_id,
             SynthesisArtifact.artifact_type == artifact_type,
-            SynthesisArtifact.content_hash == content_hash
+            SynthesisArtifact.content_hash == content_hash,
         )
         res = await session.execute(stmt)
         existing = res.scalar_one_or_none()
@@ -137,6 +138,7 @@ class StorySynthesisOrchestrator:
             return True  # Bypass check if Redis is down
 
         from datetime import date
+
         day_str = date.today().isoformat()
         key = f"newsiq:budget:story:{story_id}:{day_str}"
 
@@ -156,6 +158,7 @@ class StorySynthesisOrchestrator:
             return
 
         from datetime import date
+
         day_str = date.today().isoformat()
         key = f"newsiq:budget:story:{story_id}:{day_str}"
 
@@ -163,6 +166,7 @@ class StorySynthesisOrchestrator:
             await cache_service.incr_by_float(key, cost, ttl=86400)
             # Track overall budget through main budget manager too
             from app.services.cost_budget import cost_budget_manager
+
             await cost_budget_manager.add_story_cost(str(story_id), cost)
         except Exception as e:
             logger.warning("Failed to update story daily cost in Redis: %s", e)
@@ -204,6 +208,7 @@ class StorySynthesisOrchestrator:
         # Update Story Metric counters if prometheus is enabled
         try:
             from app.core.metrics import newsiq_story_stages_total
+
             status = "success" if decision != "error" else "failed"
             newsiq_story_stages_total.labels(stage=stage, status=status).inc()
         except Exception:
@@ -230,10 +235,7 @@ class StorySynthesisOrchestrator:
         kg_dict = kg.to_dict()
 
         artifact_id = await self.get_or_create_artifact(
-            session=session,
-            story_id=story_id,
-            artifact_type="knowledge_graph",
-            payload=kg_dict
+            session=session, story_id=story_id, artifact_type="knowledge_graph", payload=kg_dict
         )
 
         await self.record_trace(
@@ -264,6 +266,7 @@ class StorySynthesisOrchestrator:
         started_at = _now()
 
         from app.services.prompt_registry import prompt_registry
+
         prompt_tmpl = prompt_registry.get("contradiction_detection")
         model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-flash-lite"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
@@ -280,19 +283,21 @@ class StorySynthesisOrchestrator:
         # Build payload & expunge objects so they don't commit until PublisherStage
         contras_payload = []
         for c in contras:
-            contras_payload.append({
-                "fact_type": c.fact_type,
-                "description": c.description,
-                "confidence": float(c.confidence) if c.confidence else 1.0,
-                "source_attribution": c.source_attribution,
-            })
+            contras_payload.append(
+                {
+                    "fact_type": c.fact_type,
+                    "description": c.description,
+                    "confidence": float(c.confidence) if c.confidence else 1.0,
+                    "source_attribution": c.source_attribution,
+                }
+            )
             session.expunge(c)
 
         artifact_id = await self.get_or_create_artifact(
             session=session,
             story_id=story_id,
             artifact_type="contradictions",
-            payload=contras_payload
+            payload=contras_payload,
         )
 
         # Calculate cost
@@ -330,6 +335,7 @@ class StorySynthesisOrchestrator:
         started_at = _now()
 
         from app.services.prompt_registry import prompt_registry
+
         prompt_tmpl = prompt_registry.get("source_comparison")
         model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-flash-lite"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
@@ -343,7 +349,7 @@ class StorySynthesisOrchestrator:
                     fact_type=cp["fact_type"],
                     description=cp["description"],
                     confidence=cp["confidence"],
-                    source_attribution=cp["source_attribution"]
+                    source_attribution=cp["source_attribution"],
                 )
             )
 
@@ -359,8 +365,7 @@ class StorySynthesisOrchestrator:
 
         # Expunge and serialize
         cov_serialized = [
-            {"source_id": str(c.source_id), "focus_area": c.focus_area}
-            for c in cov_list
+            {"source_id": str(c.source_id), "focus_area": c.focus_area} for c in cov_list
         ]
         diff_serialized = [
             {
@@ -377,16 +382,10 @@ class StorySynthesisOrchestrator:
         for d in diff_list:
             session.expunge(d)
 
-        payload = {
-            "coverage": cov_serialized,
-            "differences": diff_serialized
-        }
+        payload = {"coverage": cov_serialized, "differences": diff_serialized}
 
         artifact_id = await self.get_or_create_artifact(
-            session=session,
-            story_id=story_id,
-            artifact_type="source_comparison",
-            payload=payload
+            session=session, story_id=story_id, artifact_type="source_comparison", payload=payload
         )
 
         cost = 0.0015  # Fallback source comparison cost projection
@@ -428,10 +427,7 @@ class StorySynthesisOrchestrator:
         ]
 
         artifact_id = await self.get_or_create_artifact(
-            session=session,
-            story_id=story_id,
-            artifact_type="timeline",
-            payload=timeline_entries
+            session=session, story_id=story_id, artifact_type="timeline", payload=timeline_entries
         )
 
         await self.record_trace(
@@ -465,6 +461,7 @@ class StorySynthesisOrchestrator:
         started_at = _now()
 
         from app.services.prompt_registry import prompt_registry
+
         prompt_tmpl = prompt_registry.get("summary_generation")
         model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-pro"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
@@ -499,6 +496,7 @@ class StorySynthesisOrchestrator:
             """
 
             from app.ai.gateway import ai_gateway
+
             response = await ai_gateway.execute_request(
                 model=model,
                 stage="summary_refinement",
@@ -519,7 +517,7 @@ class StorySynthesisOrchestrator:
                 content_hash=story_input_hash,
                 model=model,
                 prompt_version=prompt_version,
-                temperature=0.1
+                temperature=0.1,
             )
 
             if cached_sum is not None:
@@ -549,16 +547,13 @@ class StorySynthesisOrchestrator:
                     result_data=summary_dict,
                     model=model,
                     prompt_version=prompt_version,
-                    temperature=0.1
+                    temperature=0.1,
                 )
                 cache_hit = False
                 cost = 0.003  # Average cost of Gemini 2.5 Pro summarization
 
         artifact_id = await self.get_or_create_artifact(
-            session=session,
-            story_id=story_id,
-            artifact_type="summary",
-            payload=summary_dict
+            session=session, story_id=story_id, artifact_type="summary", payload=summary_dict
         )
 
         await self.record_cost(story_id, cost)
@@ -573,7 +568,9 @@ class StorySynthesisOrchestrator:
             model=model,
             prompt_version=prompt_version,
             decision="success",
-            reason="Generated summaries and headline." if not corrections else "Refined summaries based on QA feedback.",
+            reason="Generated summaries and headline."
+            if not corrections
+            else "Refined summaries based on QA feedback.",
         )
         return artifact_id, summary_dict
 
@@ -592,10 +589,16 @@ class StorySynthesisOrchestrator:
         started_at = _now()
 
         # Clear existing tables inside the single transaction
-        await session.execute(delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id))
-        await session.execute(delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story.id))
+        await session.execute(
+            delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
+        )
+        await session.execute(
+            delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story.id)
+        )
         await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story.id))
-        await session.execute(delete(StoryContradiction).where(StoryContradiction.story_id == story.id))
+        await session.execute(
+            delete(StoryContradiction).where(StoryContradiction.story_id == story.id)
+        )
         await session.flush()
 
         # 1. Update Story fields
@@ -635,7 +638,7 @@ class StorySynthesisOrchestrator:
                 fact_type=entry["fact_type"],
                 description=entry["description"],
                 confidence=entry["confidence"],
-                source_attribution=entry["source_attribution"]
+                source_attribution=entry["source_attribution"],
             )
             session.add(contra)
 
@@ -726,6 +729,7 @@ class StorySynthesisOrchestrator:
         else:
             # Load active articles
             from app.models.models import StoryArticle
+
             stmt = select(Article).join(StoryArticle).where(StoryArticle.story_id == story_id)
             art_res = await session.execute(stmt)
             articles = list(art_res.scalars().all())
@@ -794,7 +798,14 @@ class StorySynthesisOrchestrator:
 
         # Stage 3: Source Comparison
         source_comp_artifact_id, source_comp_payload = await self.run_source_comparison_stage(
-            session, story_id, story_input_hash, articles, article_events, article_source_map, sources_list, contras_payload
+            session,
+            story_id,
+            story_input_hash,
+            articles,
+            article_events,
+            article_source_map,
+            sources_list,
+            contras_payload,
         )
 
         # Stage 4: Timeline
@@ -804,7 +815,13 @@ class StorySynthesisOrchestrator:
 
         # Stage 5: Summary Generation (First Pass)
         summary_artifact_id, summary_payload = await self.run_summary_stage(
-            session, story_id, story_input_hash, kg_dict, contras_payload, timeline_payload, source_comp_payload.get("differences", [])
+            session,
+            story_id,
+            story_input_hash,
+            kg_dict,
+            contras_payload,
+            timeline_payload,
+            source_comp_payload.get("differences", []),
         )
 
         # Stage 6: Quality check & Feedback loop
@@ -820,13 +837,16 @@ class StorySynthesisOrchestrator:
             timeline=timeline_payload,
             summary_text=summary_text,
             category_slug=category_slug,
-            regeneration_count=regeneration_count
+            regeneration_count=regeneration_count,
         )
 
         # If action requires regeneration, re-execute SummaryStage once with corrections
         if feedback_report.action == "regenerate_summary":
             regeneration_count += 1
-            logger.info("FeedbackAgent requested summary regeneration. Corrections: %s", feedback_report.targeted_corrections)
+            logger.info(
+                "FeedbackAgent requested summary regeneration. Corrections: %s",
+                feedback_report.targeted_corrections,
+            )
 
             # Rerun Stage 5 summary with section-level corrections
             summary_artifact_id, summary_payload = await self.run_summary_stage(
@@ -838,7 +858,7 @@ class StorySynthesisOrchestrator:
                 timeline=timeline_payload,
                 source_comparisons=source_comp_payload.get("differences", []),
                 corrections=feedback_report.targeted_corrections,
-                existing_summary_payload=summary_payload
+                existing_summary_payload=summary_payload,
             )
 
             # Re-evaluate
@@ -851,16 +871,26 @@ class StorySynthesisOrchestrator:
                 timeline=timeline_payload,
                 summary_text=summary_text,
                 category_slug=category_slug,
-                regeneration_count=regeneration_count
+                regeneration_count=regeneration_count,
             )
 
         # Retrieve next version number
-        ver_stmt = select(text("COALESCE(MAX(version_number), 0) + 1")).select_from(text("story_versions")).where(text("story_id = :sid")).params(sid=story_id)
+        ver_stmt = (
+            select(text("COALESCE(MAX(version_number), 0) + 1"))
+            .select_from(text("story_versions"))
+            .where(text("story_id = :sid"))
+            .params(sid=story_id)
+        )
         ver_res = await session.execute(ver_stmt)
         next_ver = ver_res.scalar() or 1
 
         # Fetch costs trace summary
-        trace_stmt = select(text("COALESCE(SUM(cost_usd), 0.0)")).select_from(text("pipeline_traces")).where(text("story_id = :sid")).params(sid=story_id)
+        trace_stmt = (
+            select(text("COALESCE(SUM(cost_usd), 0.0)"))
+            .select_from(text("pipeline_traces"))
+            .where(text("story_id = :sid"))
+            .params(sid=story_id)
+        )
         trace_res = await session.execute(trace_stmt)
         accumulated_cost = float(trace_res.scalar() or 0.0)
 
@@ -907,12 +937,17 @@ class StorySynthesisOrchestrator:
                 timeline_payload=timeline_payload,
                 contradictions_payload=contras_payload,
                 source_comp_payload=source_comp_payload,
-                story_version_id=story_version.id
+                story_version_id=story_version.id,
             )
         else:
             # Mark story review status as failed or pending review
             story.story_status = "failed"
-            logger.info("Story %s was not published. Status: %s. Action: %s.", story_id, story.story_status, feedback_report.action)
+            logger.info(
+                "Story %s was not published. Status: %s. Action: %s.",
+                story_id,
+                story.story_status,
+                feedback_report.action,
+            )
 
         # Update guard hash
         try:

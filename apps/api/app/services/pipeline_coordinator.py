@@ -35,12 +35,13 @@ class PipelineCoordinator:
         # Note: add_article_to_existing_story_if_similar handles Candidate Retrieval,
         # Stage A, Embedding (if Stage A passes), Stage B, and LLM Reflection.
         merged_story_id = await clustering_service.add_article_to_existing_story_if_similar(
-            article_id=article_id,
-            session=session
+            article_id=article_id, session=session
         )
 
         if merged_story_id:
-            logger.info("PipelineCoordinator: Article %s merged into Story %s", article_id, merged_story_id)
+            logger.info(
+                "PipelineCoordinator: Article %s merged into Story %s", article_id, merged_story_id
+            )
 
             # 2. Lifecycle & B3 Graduation (automatic via transition logic)
             stmt = select(Story).where(Story.id == uuid.UUID(str(merged_story_id)))
@@ -52,7 +53,9 @@ class PipelineCoordinator:
             return True
 
         else:
-            logger.info("PipelineCoordinator: Article %s did not match, sending to Discovery", article_id)
+            logger.info(
+                "PipelineCoordinator: Article %s did not match, sending to Discovery", article_id
+            )
 
             # 5. Discovery
             await self.discovery_manager.enqueue_article(session, article_id)

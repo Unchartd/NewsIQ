@@ -84,7 +84,7 @@ class IngestionService:
             url = canonicalize_url(raw_url)
 
             # Stage 1: URL Bloom Filter
-            url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
+            url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
             might_exist = await url_bloom_filter.exists(url_hash)
 
             if might_exist:
@@ -104,7 +104,9 @@ class IngestionService:
         # Crawl concurrently with a semaphore
         sem = asyncio.Semaphore(5)
 
-        async def crawl_with_semaphore(e: Any, u: str, existing: Any) -> tuple[Any, str, dict[str, Any] | None, Any]:
+        async def crawl_with_semaphore(
+            e: Any, u: str, existing: Any
+        ) -> tuple[Any, str, dict[str, Any] | None, Any]:
             async with sem:
                 try:
                     crawled = await crawler_service.crawl_article(u)
@@ -157,7 +159,7 @@ class IngestionService:
             fingerprints = compute_fingerprints(
                 url,
                 title.lower().strip() if title else "",
-                content.lower().strip() if content else ""
+                content.lower().strip() if content else "",
             )
             url_hash = fingerprints["url_hash"]
             content_hash = fingerprints["content_hash"]

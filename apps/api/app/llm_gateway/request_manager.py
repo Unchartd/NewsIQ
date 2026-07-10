@@ -87,9 +87,13 @@ class RequestManager:
     ) -> GatewayResponse:
         """Asynchronously execute LLM requests through the gateway's fallback chain."""
         from app.core.config import settings
+
         if settings.USE_NEW_GATEWAY:
-            logger.warning("DEPRECATION: execute_request called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
+            logger.warning(
+                "DEPRECATION: execute_request called on old Gateway B (llm_gateway). Forwarding to new AIGateway."
+            )
             from app.ai.gateway import ai_gateway
+
             return await ai_gateway.execute_request(  # type: ignore[return-value]
                 model=model,
                 stage=stage,
@@ -321,9 +325,13 @@ class RequestManager:
     ) -> GatewayResponse:
         """Synchronously execute LLM requests through the gateway's fallback chain."""
         from app.core.config import settings
+
         if settings.USE_NEW_GATEWAY:
-            logger.warning("DEPRECATION: execute_request_sync called on old Gateway B (llm_gateway). Forwarding to new AIGateway.")
+            logger.warning(
+                "DEPRECATION: execute_request_sync called on old Gateway B (llm_gateway). Forwarding to new AIGateway."
+            )
             from app.ai.gateway import ai_gateway
+
             return ai_gateway.execute_request_sync(  # type: ignore[return-value]
                 model=model,
                 stage=stage,

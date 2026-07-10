@@ -13,6 +13,7 @@ import yaml
 # Try to load spaCy for fast entity extraction
 try:
     import spacy
+
     try:
         nlp = spacy.load("en_core_web_sm")
     except OSError:
@@ -27,6 +28,7 @@ try:
         newsiq_event_validation_latency_seconds,
         newsiq_event_validation_savings_total,
     )
+
     METRICS_AVAILABLE = True
 except ImportError:
     METRICS_AVAILABLE = False
@@ -53,6 +55,7 @@ class DecisionLog:
 @dataclass
 class StoryAnchor:
     """Represents the centroid and metadata of an existing Story."""
+
     story_id: str
     headline: str
     first_seen_at: datetime
@@ -87,13 +90,11 @@ class EventValidationService:
                         "location": 20,
                         "time_proximity": 15,
                         "title_similarity": 20,
-                        "publisher_trust": 10
+                        "publisher_trust": 10,
                     },
-                    "thresholds": {"pass": 60, "maybe": 45}
+                    "thresholds": {"pass": 60, "maybe": 45},
                 },
-                "stage_b": {
-                    "thresholds": {"cosine": 0.72, "entity_overlap": 2}
-                }
+                "stage_b": {"thresholds": {"cosine": 0.72, "entity_overlap": 2}},
             }
 
     def _extract_entities(self, text: str) -> set[str]:
@@ -102,7 +103,11 @@ class EventValidationService:
             return set()
         if nlp:
             doc = nlp(text)
-            return {ent.text.lower() for ent in doc.ents if ent.label_ in ("PERSON", "ORG", "GPE", "LOC", "PRODUCT", "EVENT")}
+            return {
+                ent.text.lower()
+                for ent in doc.ents
+                if ent.label_ in ("PERSON", "ORG", "GPE", "LOC", "PRODUCT", "EVENT")
+            }
         # Fallback to crude capitalization-based extraction if spacy model not loaded
         words = text.split()
         return {w.lower() for w in words if w.istitle() and len(w) > 3}
@@ -142,7 +147,10 @@ class EventValidationService:
         # If anchor has no primary entities yet, we score proportionally or give partial credit
         ent_weight = self.stage_a_weights.get("entity_overlap", 35)
         if anchor.primary_entities:
-            ent_score = (len(shared_entities) / min(len(article_title_entities) or 1, len(anchor.primary_entities))) * ent_weight
+            ent_score = (
+                len(shared_entities)
+                / min(len(article_title_entities) or 1, len(anchor.primary_entities))
+            ) * ent_weight
         else:
             ent_score = ent_weight * 0.5  # Neutral if anchor is empty
         score += ent_score
@@ -154,7 +162,9 @@ class EventValidationService:
         loc_weight = self.stage_a_weights.get("location", 20)
         shared_locs = article_title_entities.intersection(anchor.top_locations)
         if anchor.top_locations:
-            loc_score = (len(shared_locs) / min(len(article_title_entities) or 1, len(anchor.top_locations))) * loc_weight
+            loc_score = (
+                len(shared_locs) / min(len(article_title_entities) or 1, len(anchor.top_locations))
+            ) * loc_weight
         else:
             loc_score = loc_weight * 0.5
         score += loc_score
@@ -207,11 +217,11 @@ class EventValidationService:
         # Weighted Score
         w = self.stage_a_weights
         final_score = (
-            ent_score +
-            loc_score +
-            time_score +
-            title_score +
-            (trust_score * (w.get("publisher_trust", 10) / 100.0))
+            ent_score
+            + loc_score
+            + time_score
+            + title_score
+            + (trust_score * (w.get("publisher_trust", 10) / 100.0))
         )
 
         details = {
@@ -220,7 +230,7 @@ class EventValidationService:
             "time_proximity_score": time_score,
             "title_similarity_score": title_score,
             "publisher_trust_score": trust_score,
-            "tier": tier
+            "tier": tier,
         }
 
         pass_thresh = self.stage_a_thresh.get("pass", 60)
@@ -231,7 +241,9 @@ class EventValidationService:
             reason = f"High score ({final_score:.1f} >= {pass_thresh})."
         elif final_score >= maybe_thresh:
             outcome = ValidationOutcome.MAYBE
-            reason = f"Borderline score ({final_score:.1f} between {maybe_thresh} and {pass_thresh})."
+            reason = (
+                f"Borderline score ({final_score:.1f} between {maybe_thresh} and {pass_thresh})."
+            )
         else:
             outcome = ValidationOutcome.FAIL
             reason = f"Low score ({final_score:.1f} < {maybe_thresh})."
@@ -241,7 +253,9 @@ class EventValidationService:
         if METRICS_AVAILABLE:
             try:
                 newsiq_event_validation_latency_seconds.labels(stage="stage_a").observe(latency)
-                newsiq_event_validation_decisions_total.labels(stage="stage_a", outcome=outcome.value).inc()
+                newsiq_event_validation_decisions_total.labels(
+                    stage="stage_a", outcome=outcome.value
+                ).inc()
                 if outcome == ValidationOutcome.FAIL:
                     newsiq_event_validation_savings_total.labels(resource="llm_calls").inc()
                     newsiq_event_validation_savings_total.labels(resource="embeddings").inc()
@@ -253,10 +267,16 @@ class EventValidationService:
             stage="Stage A (Pre-Embedding)",
             score=final_score,
             details=details,
-            reason=reason
+            reason=reason,
         )
 
-    def validate_stage_b(self, article: Any, anchor: StoryAnchor, article_vector: list[float], article_canonical_entity_ids: set[str]) -> DecisionLog:
+    def validate_stage_b(
+        self,
+        article: Any,
+        anchor: StoryAnchor,
+        article_vector: list[float],
+        article_canonical_entity_ids: set[str],
+    ) -> DecisionLog:
         """
         Stage B - Post-Embedding validation.
         Requires vector lookup and entity graph intersection.
@@ -290,7 +310,9 @@ class EventValidationService:
         if METRICS_AVAILABLE:
             try:
                 newsiq_event_validation_latency_seconds.labels(stage="stage_b").observe(latency)
-                newsiq_event_validation_decisions_total.labels(stage="stage_b", outcome=outcome.value).inc()
+                newsiq_event_validation_decisions_total.labels(
+                    stage="stage_b", outcome=outcome.value
+                ).inc()
                 if outcome == ValidationOutcome.FAIL:
                     newsiq_event_validation_savings_total.labels(resource="llm_calls").inc()
             except Exception as e:
@@ -302,7 +324,8 @@ class EventValidationService:
             stage="Stage B (Post-Embedding)",
             score=cosine,
             details=details,
-            reason=reason
+            reason=reason,
         )
+
 
 event_validation_service = EventValidationService()

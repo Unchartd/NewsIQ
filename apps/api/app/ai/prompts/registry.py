@@ -22,6 +22,7 @@ class PromptTemplate:
     def model(self) -> str:
         """Return the default/primary model mapped to this capability stage."""
         from app.ai.config import CAPABILITY_ROUTING
+
         route = CAPABILITY_ROUTING.get(self.stage)
         if route and "primary" in route:
             return route["primary"]["model"]

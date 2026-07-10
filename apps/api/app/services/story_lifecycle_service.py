@@ -2,6 +2,7 @@
 
 Manages state transitions for stories using the LifecycleRulesEngine and publishes events.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -62,8 +63,12 @@ class StoryLifecycleManager:
             if not story.canonical_event_id or story.canonical_event_id.startswith("tmp_evt_"):
                 story.canonical_event_id = event_identity_service.generate_canonical_id()
                 if story.headline:
-                    story.canonical_event_slug = event_identity_service.generate_display_slug(story.headline, now.year)
-                logger.info("Assigned canonical ID %s to Story %s", story.canonical_event_id, story.id)
+                    story.canonical_event_slug = event_identity_service.generate_display_slug(
+                        story.headline, now.year
+                    )
+                logger.info(
+                    "Assigned canonical ID %s to Story %s", story.canonical_event_id, story.id
+                )
 
         # Only bump version on meaningful state change or content update.
         story.version += 1
@@ -74,14 +79,16 @@ class StoryLifecycleManager:
         db.add(story)
         await db.flush()
 
-        logger.info(f"Story {story.id} transitioned from {old_state} to {target_state}. Reason: {reason}")
+        logger.info(
+            f"Story {story.id} transitioned from {old_state} to {target_state}. Reason: {reason}"
+        )
 
         # Construct and publish strongly typed domain event
         health_metrics = {
             "confidence_score": story.confidence_score,
             "freshness_score": story.freshness_score,
             "source_diversity_count": story.source_diversity_count,
-            "contradiction_score": story.contradiction_score
+            "contradiction_score": story.contradiction_score,
         }
 
         event = StoryLifecycleChanged(
@@ -91,7 +98,7 @@ class StoryLifecycleManager:
             new_state=target_state,
             reason=reason,
             story_version=story.version,
-            health_metrics=health_metrics
+            health_metrics=health_metrics,
         )
 
         # In a transactional outbox pattern, we would save this to the DB first.
@@ -100,8 +107,11 @@ class StoryLifecycleManager:
 
         # Basic observability metric logging
         # (In a real implementation, this would push to Prometheus/StatsD)
-        logger.info(f"METRIC: lifecycle_transition_count{{from=\"{old_state}\", to=\"{target_state}\"}} 1")
+        logger.info(
+            f'METRIC: lifecycle_transition_count{{from="{old_state}", to="{target_state}"}} 1'
+        )
 
         return True
+
 
 story_lifecycle_service = StoryLifecycleManager()

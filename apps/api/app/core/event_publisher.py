@@ -3,6 +3,7 @@
 Provides an interface for publishing events to an Event Bus (e.g., Redis Streams/Kafka).
 Currently implemented as a LoggingEventPublisher until the actual bus is wired in Phase B8.
 """
+
 import logging
 import uuid
 from datetime import datetime
@@ -13,8 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
+
 class DomainEvent(BaseModel):
     """Base schema for all domain events."""
+
     event_id: UUID = Field(default_factory=uuid.uuid4)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     version: int = 1
@@ -24,6 +27,7 @@ class DomainEvent(BaseModel):
 
 class StoryLifecycleChanged(DomainEvent):
     """Event emitted when a story's lifecycle state transitions."""
+
     story_id: UUID
     canonical_event_id: str | None
     old_state: str
@@ -49,6 +53,7 @@ class LoggingEventPublisher(EventPublisher):
             logger.info(f"EVENT_PUBLISHED [{topic}]: {event_json}")
         except Exception as e:
             logger.error(f"Failed to log event for topic {topic}: {str(e)}")
+
 
 # Global singleton
 event_publisher = LoggingEventPublisher()

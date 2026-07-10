@@ -10,6 +10,7 @@ from app.models.models import EventAlias
 
 logger = logging.getLogger(__name__)
 
+
 class EventIdentityService:
     """
     Manages generation, lifecycle, and merging of Canonical Event IDs.
@@ -21,7 +22,7 @@ class EventIdentityService:
             "tmp_ids_created": 0,
             "canonical_ids_created": 0,
             "aliases_created": 0,
-            "merges_handled": 0
+            "merges_handled": 0,
         }
 
     def generate_temporary_id(self) -> str:
@@ -41,7 +42,7 @@ class EventIdentityService:
         """
         u = uuid.uuid4()
         # Crockford's Base32 encoding mapping (no padding)
-        b32 = base64.b32encode(u.bytes).decode('ascii').rstrip('=')
+        b32 = base64.b32encode(u.bytes).decode("ascii").rstrip("=")
         # Standardize for readability (omit O, I, L, U to avoid confusion if needed,
         # but standard base32 is fine for internal immutable ID)
         self.metrics["canonical_ids_created"] += 1
@@ -57,10 +58,10 @@ class EventIdentityService:
             return f"event-{uuid.uuid4().hex[:8]}-{year}"
 
         # Lowercase, replace non-alphanumerics with hyphens, collapse multiple hyphens
-        slug = re.sub(r'[^a-z0-9]+', '-', headline.lower()).strip('-')
+        slug = re.sub(r"[^a-z0-9]+", "-", headline.lower()).strip("-")
 
         # Truncate to avoid massive slugs, add year
-        slug = slug[:50].strip('-')
+        slug = slug[:50].strip("-")
         if not slug:
             return f"event-{uuid.uuid4().hex[:8]}-{year}"
 
@@ -81,15 +82,10 @@ class EventIdentityService:
             return
 
         logger.info(
-            "Merging event IDs: alias=%s -> canonical=%s (reason=%s)",
-            old_id, new_id, reason
+            "Merging event IDs: alias=%s -> canonical=%s (reason=%s)", old_id, new_id, reason
         )
 
-        alias = EventAlias(
-            alias_event_id=old_id,
-            canonical_event_id=new_id,
-            reason=reason
-        )
+        alias = EventAlias(alias_event_id=old_id, canonical_event_id=new_id, reason=reason)
         session.add(alias)
 
         self.metrics["aliases_created"] += 1
@@ -121,5 +117,6 @@ class EventIdentityService:
                 break
 
         return current_id
+
 
 event_identity_service = EventIdentityService()
