@@ -647,6 +647,74 @@ async def metrics_summary(
     return await admin_service.get_metrics_summary(db)
 
 
+@router.get("/pipeline/dashboard-metrics")
+async def get_dashboard_metrics(
+    _admin: User = Depends(require_admin),
+):
+    """Retrieve precomputed dashboard metrics from Redis (admin only)."""
+    import json
+
+    import redis.asyncio as aioredis
+
+    from app.core.config import settings
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    raw = await r.get("newsiq:pipeline:dashboard_metrics")
+    await r.aclose()
+
+    if not raw:
+        # Return fallback empty state if not computed yet
+        return {
+            "rss_throughput": [],
+            "queue_size": 0,
+            "discovery_backlog": 0,
+            "active_stories_count": 0,
+            "lifecycle_distribution": {},
+            "reflection_requests_count": 0,
+            "llm_usage": {},
+            "cache_hit_rate": 0.0,
+            "cost_per_day": [],
+            "latencies": [],
+            "provider_health": {},
+            "stage_health": {},
+            "alerts": [],
+            "last_updated": None
+        }
+
+    return json.loads(raw)
+
+
+@router.get("/articles/{article_id}/trace")
+async def get_article_trace(
+    article_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve end-to-end trace details for an article (admin only)."""
+    stmt = (
+        select(StageRunModel)
+        .where(StageRunModel.article_id == article_id)
+        .order_by(StageRunModel.started_at.asc())
+    )
+    res = await db.execute(stmt)
+    stages = res.scalars().all()
+
+    return [
+        {
+            "id": str(s.id),
+            "stage": s.stage,
+            "status": s.status,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+            "latency_ms": s.latency_ms,
+            "error": s.error,
+            "metadata": s.metadata_payload or {}
+        }
+        for s in stages
+    ]
+
+
+
 class EntityOverrideRequest(BaseModel):
     wikidata_id: str | None = Field(None, max_length=50)
 
@@ -1312,3 +1380,228 @@ async def trigger_evaluation_run(
         raise HTTPException(
             status_code=500, detail=f"Failed to execute evaluation runner: {str(e)}"
         )
+
+
+@router.get("/pipeline/story/{story_id}/versions")
+async def list_story_versions(
+    story_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all version snapshots for a story (admin only)."""
+    from app.models.models import StoryVersion
+
+    stmt = select(StoryVersion).where(StoryVersion.story_id == story_id).order_by(StoryVersion.version_number.desc())
+    res = await db.execute(stmt)
+    versions = res.scalars().all()
+
+    return [
+        {
+            "id": v.id,
+            "story_id": v.story_id,
+            "version_number": v.version_number,
+            "pipeline_version": v.pipeline_version,
+            "summary_artifact_id": v.summary_artifact_id,
+            "timeline_artifact_id": v.timeline_artifact_id,
+            "kg_artifact_id": v.kg_artifact_id,
+            "source_comparison_artifact_id": v.source_comparison_artifact_id,
+            "contradiction_artifact_id": v.contradiction_artifact_id,
+            "llm_cost_usd": float(v.llm_cost_usd),
+            "trigger": v.trigger,
+            "created_at": v.created_at,
+        }
+        for v in versions
+    ]
+
+
+@router.get("/pipeline/story/{story_id}/traces")
+async def list_story_traces(
+    story_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List execution traces for all pipeline stages for a story (admin only)."""
+    from app.models.observability_models import PipelineTraceModel
+
+    stmt = select(PipelineTraceModel).where(PipelineTraceModel.story_id == story_id).order_by(PipelineTraceModel.created_at.desc())
+    res = await db.execute(stmt)
+    traces = res.scalars().all()
+
+    return [
+        {
+            "id": t.id,
+            "stage": t.stage,
+            "started_at": t.started_at,
+            "completed_at": t.completed_at,
+            "latency_ms": t.latency_ms,
+            "cost_usd": float(t.cost_usd),
+            "cache_hit": t.cache_hit,
+            "model": t.model,
+            "prompt_version": t.prompt_version,
+            "decision": t.decision,
+            "reason": t.reason,
+        }
+        for t in traces
+    ]
+
+
+@router.post("/pipeline/story/{story_id}/rollback/{version_number}")
+async def rollback_story_version(
+    story_id: uuid.UUID,
+    version_number: int,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atomically roll back a story to a specific version number (admin only)."""
+    from sqlalchemy import delete
+
+    from app.models.models import (
+        Category,
+        Story,
+        StoryContradiction,
+        StoryDifference,
+        StorySourceCoverage,
+        StoryTimelineEvent,
+        StoryVersion,
+        SynthesisArtifact,
+    )
+
+    # 1. Fetch target StoryVersion
+    stmt = select(StoryVersion).where(
+        StoryVersion.story_id == story_id,
+        StoryVersion.version_number == version_number
+    )
+    res = await db.execute(stmt)
+    story_version = res.scalar_one_or_none()
+    if not story_version:
+        raise HTTPException(status_code=404, detail=f"Story version {version_number} not found.")
+
+    # 2. Fetch target Story
+    story_stmt = select(Story).where(Story.id == story_id)
+    story_res = await db.execute(story_stmt)
+    story = story_res.scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    # 3. Retrieve all referenced SynthesisArtifacts
+    artifact_ids = [
+        story_version.summary_artifact_id,
+        story_version.timeline_artifact_id,
+        story_version.kg_artifact_id,
+        story_version.source_comparison_artifact_id,
+        story_version.contradiction_artifact_id
+    ]
+    # Filter out None values
+    artifact_ids = [aid for aid in artifact_ids if aid is not None]
+
+    art_stmt = select(SynthesisArtifact).where(SynthesisArtifact.id.in_(artifact_ids))
+    art_res = await db.execute(art_stmt)
+    artifacts = {art.artifact_type: art.payload for art in art_res.scalars().all()}
+
+    # Check if we have all necessary artifacts
+    if "summary" not in artifacts or "timeline" not in artifacts or "contradictions" not in artifacts or "source_comparison" not in artifacts:
+        raise HTTPException(
+            status_code=500,
+            detail="Referenced artifacts are missing or corrupt."
+        )
+
+    # 4. Atomic transaction update: clear active tables and populate from artifacts
+    await db.execute(delete(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story_id))
+    await db.execute(delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id))
+    await db.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
+    await db.execute(delete(StoryContradiction).where(StoryContradiction.story_id == story_id))
+    await db.flush()
+
+    # Re-populate from artifact payloads
+    summary_payload = artifacts["summary"]
+    story.headline = summary_payload.get("headline", story.headline)
+    story.one_line_summary = summary_payload.get("one_line_summary", story.one_line_summary)
+    story.short_summary = summary_payload.get("short_summary", story.short_summary)
+    story.detailed_summary = summary_payload.get("detailed_summary", story.detailed_summary)
+    story.key_facts = summary_payload.get("key_facts", story.key_facts)
+    story.current_version_id = story_version.id
+
+    # Category update
+    cat_slug = summary_payload.get("category", "world")
+    cat_stmt = select(Category).where(Category.slug == cat_slug)
+    cat_res = await db.execute(cat_stmt)
+    cat_obj = cat_res.scalar_one_or_none()
+    if cat_obj:
+        story.category_id = cat_obj.id
+
+    # Timeline re-populate
+    for entry in artifacts["timeline"]:
+        t = datetime.fromisoformat(entry["event_time"])
+        tl_event = StoryTimelineEvent(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            event_time=t,
+            event_time_raw=entry["event_time_raw"],
+            description=entry["description"],
+            created_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+        db.add(tl_event)
+
+    # Contradictions re-populate
+    for entry in artifacts["contradictions"]:
+        contra = StoryContradiction(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            fact_type=entry["fact_type"],
+            description=entry["description"],
+            confidence=entry["confidence"],
+            source_attribution=entry["source_attribution"]
+        )
+        db.add(contra)
+
+    # Source Coverage & Differences re-populate
+    source_comp_payload = artifacts["source_comparison"]
+    for cov_entry in source_comp_payload.get("coverage", []):
+        cov = StorySourceCoverage(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            source_id=uuid.UUID(cov_entry["source_id"]),
+            focus_area=cov_entry["focus_area"],
+            created_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+        db.add(cov)
+
+    for diff_entry in source_comp_payload.get("differences", []):
+        diff = StoryDifference(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            source_id=uuid.UUID(diff_entry["source_id"]),
+            unique_information=diff_entry["unique_information"],
+            missing_information=diff_entry["missing_information"],
+            contradictions=diff_entry["contradictions"],
+            created_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+        db.add(diff)
+
+    await db.commit()
+
+    # Record trace
+    from app.services.story_synthesis_service import story_synthesis_orchestrator
+    await story_synthesis_orchestrator.record_trace(
+        session=db,
+        story_id=story_id,
+        stage="rollback",
+        started_at=datetime.now(UTC).replace(tzinfo=None),
+        completed_at=datetime.now(UTC).replace(tzinfo=None),
+        cost_usd=0.0,
+        cache_hit=False,
+        model=None,
+        prompt_version=None,
+        decision="success",
+        reason=f"Manually rolled back story to version {version_number}",
+    )
+
+    # Invalidate cache
+    from app.services.cache_service import cache_service
+    await cache_service.invalidate_story(str(story_id))
+
+    return {
+        "message": f"Story successfully rolled back to version {version_number}",
+        "story_id": story_id,
+        "version_number": version_number
+    }

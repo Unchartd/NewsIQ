@@ -804,7 +804,9 @@ def recover_stuck_embeddings_task() -> int:
 
     async def _run():
         from datetime import datetime, timedelta
+
         from sqlalchemy import update
+
         from app.models.models import Article
 
         cutoff = datetime.utcnow() - timedelta(minutes=30)

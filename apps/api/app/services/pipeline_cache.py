@@ -215,13 +215,22 @@ class PipelineCache:
 
     @staticmethod
     def _record_metric(stage: str, operation: str) -> None:
-        """Record a pipeline cache operation in Prometheus."""
+        """Record a pipeline cache operation in Prometheus and Redis."""
         try:
             from app.core.metrics import newsiq_pipeline_cache_operations
 
             newsiq_pipeline_cache_operations.labels(stage=stage, operation=operation).inc()
         except Exception:
             pass  # Metrics are best-effort
+
+        try:
+            import redis
+
+            from app.core.config import settings
+            r = redis.from_url(settings.REDIS_URL)
+            r.hincrby("newsiq:cache:stats", operation, 1)
+        except Exception:
+            pass
 
     # ── Feature Flag ───────────────────────────────────────────────────────────
 

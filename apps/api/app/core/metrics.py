@@ -41,6 +41,37 @@ newsiq_latency_seconds = Histogram(
     buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, float("inf")),
 )
 
+# ── Discovery & Validation Metrics ───────────────────────────────────────────
+
+newsiq_discovery_queue_size = Gauge(
+    "newsiq_discovery_queue_size",
+    "Current number of articles in the Discovery Queue by state.",
+    ["state"],
+)
+
+newsiq_discovery_articles_total = Counter(
+    "newsiq_discovery_articles_total",
+    "Total number of articles sent to the Discovery Queue.",
+    ["reason"],  # e.g., stage_a_fail, stage_b_fail, reflection_fail
+)
+
+newsiq_discovery_clusters_total = Counter(
+    "newsiq_discovery_clusters_total",
+    "Total number of new story clusters created by HDBSCAN.",
+)
+
+newsiq_reflection_requests_total = Counter(
+    "newsiq_reflection_requests_total",
+    "Total number of LLM reflection requests triggered.",
+    ["outcome"],  # e.g., merged, rejected
+)
+
+newsiq_stage_a_validation_total = Counter(
+    "newsiq_stage_a_validation_total",
+    "Total number of Stage A validation checks.",
+    ["outcome"],  # e.g., pass, maybe, rejected
+)
+
 # ── LLM & Cost Metrics ───────────────────────────────────────────────────────
 
 newsiq_token_usage_total = Counter(
@@ -97,6 +128,27 @@ newsiq_task_worker_time_seconds = Histogram(
     "Time a Celery task spent executing in the worker.",
     ["task_name"],
     buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, float("inf")),
+)
+
+# ── Event Validation Metrics ─────────────────────────────────────────────────
+
+newsiq_event_validation_decisions_total = Counter(
+    "newsiq_event_validation_decisions_total",
+    "Total number of event validation decisions by stage and outcome.",
+    ["stage", "outcome"],  # stage: stage_a, stage_b. outcome: PASS, FAIL, MAYBE
+)
+
+newsiq_event_validation_savings_total = Counter(
+    "newsiq_event_validation_savings_total",
+    "Costly operations avoided due to early event validation rejection.",
+    ["resource"],  # resource: llm_calls, embeddings
+)
+
+newsiq_event_validation_latency_seconds = Histogram(
+    "newsiq_event_validation_latency_seconds",
+    "Latency of event validation stages.",
+    ["stage"],
+    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, float("inf")),
 )
 
 # ── LLM Gateway Fallback Metrics ─────────────────────────────────────────────

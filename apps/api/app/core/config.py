@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     USE_NEW_GATEWAY: bool = True
     MAX_PRO_MODEL_TOKENS: int = 30000
 
+    # ── Branding ─────────────────────────────────────────────────────────────
+    BRAND_NAME: str = "NewsIQ"
+    BRAND_COLOR_PRIMARY: str = "#C41E3A"
+    BRAND_ICON: str = "⚡"
+
     # ── Database — Neon PostgreSQL ────────────────────────────────────────────
     # DATABASE_URL       → Pooled endpoint (PgBouncer). Used by FastAPI + Celery.
     # DATABASE_DIRECT_URL → Non-pooled direct connection. Used by Alembic only.
