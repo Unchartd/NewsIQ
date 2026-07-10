@@ -311,9 +311,9 @@ export default function DigestSetupPage() {
                   <div style={{ padding: "40px 0 32px", textAlign: "center" }}>
                     <div style={{ 
                       width: 72, height: 72, borderRadius: "var(--r16)", 
-                      background: "linear-gradient(135deg, #C41E3A, #8B1429)",
+                      background: "linear-gradient(135deg, var(--brand-primary-dark), var(--brand-secondary))",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      margin: "0 auto 20px", fontSize: 30, boxShadow: "0 8px 24px rgba(196,30,58,0.3)"
+                      margin: "0 auto 20px", fontSize: 30, boxShadow: "0 8px 24px rgba(var(--brand-primary-dark-rgb), 0.3)"
                     }}>📰</div>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--primary)", marginBottom: 12 }}>
                       NewsIQ Daily Digest
@@ -347,7 +347,7 @@ export default function DigestSetupPage() {
 
                   <div className="slbl">What it looks like</div>
                   <div style={{ border: "1px solid var(--border)", borderRadius: "var(--r10)", overflow: "hidden", marginBottom: 28, boxShadow: "var(--sh1)" }}>
-                    <div style={{ background: "linear-gradient(135deg, #C41E3A, #8B1429)", padding: "16px 18px", color: "#fff" }}>
+                    <div style={{ background: "linear-gradient(135deg, var(--brand-primary-dark), var(--brand-secondary))", padding: "16px 18px", color: "#fff" }}>
                       <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 4, fontWeight: 600, letterSpacing: ".05em" }}>NEWSIQ · MORNING DIGEST</div>
                       <div style={{ fontFamily: "var(--fd)", fontSize: 18, fontWeight: 600 }}>Monday, June 16 · 7:00 AM</div>
                       <div style={{ fontSize: 12, opacity: 0.7, marginTop: 3 }}>Top 5 stories · ~3 min read · 8 sources avg</div>
@@ -402,7 +402,7 @@ export default function DigestSetupPage() {
 
                   <div className="slbl">
                     Choose categories 
-                    <span id="topicCount" style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", background: "rgba(196,30,58,0.1)", padding: "1px 6px", borderRadius: 99, marginLeft: 4 }}>
+                    <span id="topicCount" style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", background: "rgba(var(--brand-primary-dark-rgb), 0.1)", padding: "1px 6px", borderRadius: 99, marginLeft: 4 }}>
                       {selectedCats.size} selected
                     </span>
                   </div>
@@ -677,7 +677,7 @@ export default function DigestSetupPage() {
                   </div>
 
                   <div className={`channel-opt ${channels.push ? "sel" : ""}`} onClick={() => setChannels({...channels, push: !channels.push})} style={{ marginBottom: 24 }}>
-                    <div className="ch-icon" style={{ background: "rgba(196,30,58,0.1)" }}><Smartphone size={22} color="var(--primary)" /></div>
+                    <div className="ch-icon" style={{ background: "rgba(var(--brand-primary-dark-rgb), 0.1)" }}><Smartphone size={22} color="var(--primary)" /></div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                         <div className="ch-name">Push notification</div>
@@ -773,7 +773,7 @@ export default function DigestSetupPage() {
 
                   <div className="crd" style={{ marginBottom: 20, overflow: "hidden" }}>
                     <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: 12 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(196,30,58,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>🎯</div>
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(var(--brand-primary-dark-rgb), 0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>🎯</div>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 5, fontWeight: 600 }}>TOPICS · {selectedCats.size} SELECTED</div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -853,7 +853,7 @@ export default function DigestSetupPage() {
                     <div className="sc-row"><div className="sc-icon"><Clock size={16} /></div><div><div className="sc-lbl">Delivery time</div><div className="sc-val">7:00 AM · First on Jun 16</div></div></div>
                     <div className="sc-row"><div className="sc-icon"><Smartphone size={16} /></div><div><div className="sc-lbl">Stories per digest</div><div className="sc-val">{storyCount} stories · ~{Math.ceil(storyCount * 0.6)} min read</div></div></div>
                     <div className="sc-row"><div className="sc-icon"><Mail size={16} /></div><div><div className="sc-lbl">Sending to</div><div className="sc-val">{user?.email || "aarav.mehta@gmail.com"}</div></div></div>
-                    <div className="sc-row" style={{ borderBottom: "none" }}><div className="sc-icon" style={{ background: "rgba(196,30,58,0.08)" }}><Sparkles size={14} color="var(--primary)" /></div><div><div className="sc-lbl">Topics</div><div className="sc-val">{Array.from(selectedCats).map(c => CATEGORIES.find(cat => cat.id === c)?.name).join(" · ")}</div></div></div>
+                    <div className="sc-row" style={{ borderBottom: "none" }}><div className="sc-icon" style={{ background: "rgba(var(--brand-primary-dark-rgb), 0.08)" }}><Sparkles size={14} color="var(--primary)" /></div><div><div className="sc-lbl">Topics</div><div className="sc-val">{Array.from(selectedCats).map(c => CATEGORIES.find(cat => cat.id === c)?.name).join(" · ")}</div></div></div>
                   </div>
                   <div style={{ textAlign: "left", width: "100%", maxWidth: 420, marginBottom: 28 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".09em", textTransform: "uppercase", color: "var(--ink3)", marginBottom: 12 }}>While you wait…</div>

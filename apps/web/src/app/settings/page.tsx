@@ -1140,7 +1140,7 @@ function SettingsContent() {
             </div>
 
             {!isPro && (
-              <div className="pcrd pcrd-p" style={{ marginTop: 20, border: "1.5px solid var(--primary)", background: "rgba(196,30,58,.03)" }}>
+              <div className="pcrd pcrd-p" style={{ marginTop: 20, border: "1.5px solid var(--primary)", background: "rgba(var(--brand-primary-dark-rgb), .03)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>Upgrade to NewsIQ Pro</div>
@@ -1290,7 +1290,7 @@ function SettingsContent() {
               {([
                 { key: "morning", label: "Morning Digest", desc: "Top 10 stories. 3-minute read.", time: "Every day at 7 AM", icon: "🌅", accent: "var(--amber)", accentBg: "rgba(217,119,6,.06)" },
                 { key: "midday",  label: "Midday Brief",   desc: "Quick catch-up on what's moving.", time: "Every day at 1 PM", icon: "☀️", accent: "var(--blue)", accentBg: "rgba(59,130,246,.06)" },
-                { key: "evening", label: "Evening Wrap",   desc: "What you missed today.",          time: "Every day at 6 PM", icon: "🌆", accent: "var(--primary)", accentBg: "rgba(196,30,58,.05)" },
+                { key: "evening", label: "Evening Wrap",   desc: "What you missed today.",          time: "Every day at 6 PM", icon: "🌆", accent: "var(--primary)", accentBg: "rgba(var(--brand-primary-dark-rgb), .05)" },
                 { key: "weekly",  label: "Weekly Summary", desc: "Biggest stories of the week.",    time: "Every Sunday",     icon: "📋", accent: "var(--green)", accentBg: "rgba(22,163,74,.06)" },
               ] as const).map((ed) => {
                 const isSubscribed = digestSubscriptions.some(
@@ -2472,7 +2472,7 @@ function SettingsContent() {
             {/* Bengaluru */}
             {("bengaluru").includes(locSearchQuery.toLowerCase()) && (
               <div
-                style={{ padding: "10px 12px", border: "1.5px solid var(--primary)", borderRadius: "var(--r6)", backgroundColor: "rgba(196,30,58,.04)", fontSize: 14, cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}
+                style={{ padding: "10px 12px", border: "1.5px solid var(--primary)", borderRadius: "var(--r6)", backgroundColor: "rgba(var(--brand-primary-dark-rgb), .04)", fontSize: 14, cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}
                 onClick={() => addLocation("city", "Bengaluru")}
               >
                 <span>🇮🇳</span>Bengaluru, Karnataka · City

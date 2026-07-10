@@ -10,7 +10,10 @@ export const brandColors = {
   primary: "#EF4444",
 
   /** Primary hover/active state */
-  primaryDark: "#DC2626",
+  primaryDark: "#C41E3A",
+
+  /** Secondary brand color */
+  secondary: "#8B1429",
 
   /** Primary light (background tints) */
   primaryLight: "#FEE2E2",

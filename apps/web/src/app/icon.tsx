@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { brandColors } from "@/branding/colors";
 
 export const sizes = { width: 32, height: 32 };
 export const contentType = "image/png";
@@ -11,7 +12,7 @@ export default function Icon() {
           width: 32,
           height: 32,
           borderRadius: 7,
-          background: "#EF4444",
+          background: brandColors.primary,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -26,7 +27,7 @@ export default function Icon() {
           fill="none"
         >
           <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="#FFFFFF" />
-          <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill="#EF4444" />
+          <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill={brandColors.primary} />
         </svg>
       </div>
     ),

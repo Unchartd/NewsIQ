@@ -1,0 +1,44 @@
+[
+  {
+    "timestamp": "2026-07-10T14:26:57.985630+00:00",
+    "dataset": "historical",
+    "live": false,
+    "articles_processed": 10,
+    "success_count": 10,
+    "merged_count": 0,
+    "discovery_count": 10,
+    "cluster_count": 0,
+    "outliers_count": 10,
+    "avg_cluster_size": 0.0,
+    "silhouette_score": 0.0,
+    "cluster_latency_ms": 123.94940003287047
+  },
+  {
+    "timestamp": "2026-07-10T14:27:24.705657+00:00",
+    "dataset": "historical",
+    "live": false,
+    "articles_processed": 10,
+    "success_count": 10,
+    "merged_count": 0,
+    "discovery_count": 10,
+    "cluster_count": 0,
+    "outliers_count": 10,
+    "avg_cluster_size": 0.0,
+    "silhouette_score": 0.0,
+    "cluster_latency_ms": 112.70860000513494
+  },
+  {
+    "timestamp": "2026-07-10T17:26:58.698537+00:00",
+    "dataset": "historical",
+    "live": false,
+    "articles_processed": 10,
+    "success_count": 10,
+    "merged_count": 0,
+    "discovery_count": 10,
+    "cluster_count": 0,
+    "outliers_count": 10,
+    "avg_cluster_size": 0.0,
+    "silhouette_score": 0.0,
+    "cluster_latency_ms": 106.18340002838522
+  }
+]
