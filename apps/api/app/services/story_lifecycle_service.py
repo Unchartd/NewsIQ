@@ -116,10 +116,15 @@ class StoryLifecycleManager:
     async def evaluate_all_active_stories(self, db: AsyncSession) -> int:
         """Query all non-archived stories and evaluate transitions for each."""
         from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
 
         from app.models.models import Story, StoryLifecycleState
 
-        stmt = select(Story).where(Story.lifecycle_state != StoryLifecycleState.ARCHIVED)
+        stmt = (
+            select(Story)
+            .where(Story.lifecycle_state != StoryLifecycleState.ARCHIVED)
+            .options(selectinload(Story.articles))
+        )
         result = await db.execute(stmt)
         stories = result.scalars().all()
 
