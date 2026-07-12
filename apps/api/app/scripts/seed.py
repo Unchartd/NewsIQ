@@ -477,7 +477,12 @@ async def seed():
                 session.add(source)
                 print(f"  ✅ Source: {src_data['name']}")
             else:
-                print(f"  ⏭️  Source already exists: {src_data['name']}")
+                if existing.rss_url != src_data["rss_url"]:
+                    existing.rss_url = src_data["rss_url"]
+                    session.add(existing)
+                    print(f"  🔄 Updated Source rss_url: {src_data['name']}")
+                else:
+                    print(f"  ⏭️  Source already exists: {src_data['name']}")
 
         # Seed prompt templates
         for p_data in PROMPT_TEMPLATES:

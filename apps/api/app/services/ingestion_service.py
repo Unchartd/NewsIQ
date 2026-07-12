@@ -1,7 +1,6 @@
 """Service for ingesting news articles from RSS feeds and other news APIs."""
 
 import asyncio
-import hashlib
 import logging
 import time
 from datetime import UTC, datetime
@@ -77,27 +76,33 @@ class IngestionService:
         parsed_feed = feedparser.parse(feed_data)
         new_articles_count = 0
 
-        # Identify new entries to process
-        new_entries = []
+        # Collect all URLs in the feed
+        feed_urls = []
+        url_to_entry = {}
         for entry in parsed_feed.entries:
             raw_url = getattr(entry, "link", None)
             if not raw_url:
                 continue
             url = canonicalize_url(raw_url)
+            feed_urls.append(url)
+            url_to_entry[url] = entry
 
-            # Stage 1: URL Bloom Filter
-            url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
-            might_exist = await url_bloom_filter.exists(url_hash)
+        # Batch query database to find existing articles by URL
+        existing_articles = {}
+        if feed_urls:
+            stmt = select(Article).where(Article.url.in_(feed_urls))
+            res = await session.execute(stmt)
+            for art in res.scalars().all():
+                existing_articles[art.url] = art
 
-            if might_exist:
-                stmt = select(Article).where(Article.url_hash == url_hash)
-                res = await session.execute(stmt)
-                existing_article = res.scalar_one_or_none()
-                if existing_article:
-                    new_entries.append((entry, url, existing_article))
-                    continue
-
-            new_entries.append((entry, url, None))
+        new_entries = []
+        for url in feed_urls:
+            entry = url_to_entry[url]
+            existing_article = existing_articles.get(url)
+            if existing_article:
+                new_entries.append((entry, url, existing_article))
+            else:
+                new_entries.append((entry, url, None))
 
         if not new_entries:
             logger.info("No new articles found for '%s'", source_name)
@@ -240,6 +245,7 @@ class IngestionService:
                 results[source_name] = count
             except Exception as e:
                 logger.error("Error during ingestion for %s: %s", source_name, e)
+                await session.rollback()
                 results[source_name] = 0
 
         return results
