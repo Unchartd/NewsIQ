@@ -92,6 +92,6 @@ class AIProvider(Protocol):
         """Count tokens locally or via provider APIs."""
         ...
 
-    async def embeddings(self, text: str, api_key: APIKey) -> list[float]:
+    async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         """Generate vector embedding."""
         ...

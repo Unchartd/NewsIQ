@@ -563,6 +563,208 @@ class AdminService:
             active_jobs_count=0,  # Fallback since workers query requires control plane
         )
 
+    async def compute_dashboard_metrics(self, db: AsyncSession) -> dict:
+        """Compute comprehensive dashboard metrics and cache them in Redis."""
+        import json
+        from datetime import UTC, datetime, timedelta
+
+        import redis.asyncio as aioredis
+        from sqlalchemy import case, func, select, text
+
+        from app.core.config import settings
+        from app.models.models import Article, Story, StoryLifecycleState
+        from app.models.observability_models import LLMTraceModel, StageRunModel
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        one_day_ago = now - timedelta(hours=24)
+        seven_days_ago = now - timedelta(days=7)
+
+        # 1. RSS Throughput
+        rss_stmt = (
+            select(
+                func.date_trunc("hour", Article.crawled_at).label("hour"),
+                func.count(Article.id).label("count"),
+            )
+            .where(Article.crawled_at >= one_day_ago)
+            .group_by(text("hour"))
+            .order_by(text("hour"))
+        )
+        rss_res = await db.execute(rss_stmt)
+        rss_throughput = [
+            {"hour": row.hour.strftime("%Y-%m-%d %H:00"), "count": row.count}
+            for row in rss_res.all()
+            if row.hour is not None
+        ]
+
+        # 2. Queue Size
+        try:
+            r_broker = aioredis.from_url(settings.CELERY_BROKER_URL)
+            queue_size = await r_broker.llen("celery")
+            await r_broker.aclose()
+        except Exception:
+            queue_size = 0
+
+        # 3. Backlog
+        backlog_stmt = select(func.count(Article.id)).where(Article.embedding_status == "pending")
+        discovery_backlog = (await db.execute(backlog_stmt)).scalar_one() or 0
+
+        # 4. Active Stories
+        active_stories_stmt = select(func.count(Story.id)).where(
+            Story.lifecycle_state != StoryLifecycleState.ARCHIVED
+        )
+        active_stories_count = (await db.execute(active_stories_stmt)).scalar_one() or 0
+
+        # 5. Lifecycle Distribution
+        dist_stmt = select(Story.lifecycle_state, func.count(Story.id)).group_by(
+            Story.lifecycle_state
+        )
+        dist_res = await db.execute(dist_stmt)
+        lifecycle_distribution = {row.lifecycle_state: row.count for row in dist_res.all()}
+
+        # 6. Reflection Requests
+        reflection_stmt = select(func.count(LLMTraceModel.id)).where(
+            LLMTraceModel.stage.like("%reflection%")
+        )
+        reflection_requests_count = (await db.execute(reflection_stmt)).scalar_one() or 0
+
+        # 7. LLM Usage
+        total_usage_stmt = select(
+            func.sum(LLMTraceModel.cost_usd).label("cost"),
+            func.sum(LLMTraceModel.input_tokens + LLMTraceModel.output_tokens).label("tokens"),
+        )
+        total_usage_res = (await db.execute(total_usage_stmt)).one()
+        total_cost = float(total_usage_res.cost or 0.0)
+        total_tokens = int(total_usage_res.tokens or 0)
+
+        # By model cost
+        by_model_stmt = select(LLMTraceModel.model, func.sum(LLMTraceModel.cost_usd)).group_by(
+            LLMTraceModel.model
+        )
+        by_model_res = await db.execute(by_model_stmt)
+        by_model = {row.model: float(row.sum or 0.0) for row in by_model_res.all()}
+
+        # By stage cost
+        by_stage_stmt = select(LLMTraceModel.stage, func.sum(LLMTraceModel.cost_usd)).group_by(
+            LLMTraceModel.stage
+        )
+        by_stage_res = await db.execute(by_stage_stmt)
+        by_stage = {row.stage: float(row.sum or 0.0) for row in by_stage_res.all()}
+
+        # Cost today
+        start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        cost_today_stmt = select(func.sum(LLMTraceModel.cost_usd)).where(
+            LLMTraceModel.created_at >= start_of_today
+        )
+        cost_today = float((await db.execute(cost_today_stmt)).scalar_one() or 0.0)
+
+        # Projections
+        hours_passed = now.hour + now.minute / 60.0
+        if hours_passed < 0.5:
+            hours_passed = 0.5
+        hourly_projection = cost_today / hours_passed
+        daily_projection = hourly_projection * 24.0
+        monthly_projection = daily_projection * 30.0
+
+        # 8. Cost per day
+        cost_per_day_stmt = (
+            select(
+                func.date_trunc("day", LLMTraceModel.created_at).label("day"),
+                func.sum(LLMTraceModel.cost_usd).label("cost"),
+            )
+            .where(LLMTraceModel.created_at >= seven_days_ago)
+            .group_by(text("day"))
+            .order_by(text("day"))
+        )
+        cost_per_day_res = await db.execute(cost_per_day_stmt)
+        cost_per_day = [
+            {"day": row.day.strftime("%Y-%m-%d"), "cost": float(row.cost or 0.0)}
+            for row in cost_per_day_res.all()
+            if row.day is not None
+        ]
+
+        # 9. Latencies
+        latency_stmt = select(LLMTraceModel.stage, func.avg(LLMTraceModel.latency_ms)).group_by(
+            LLMTraceModel.stage
+        )
+        latency_res = await db.execute(latency_stmt)
+        latencies = [
+            {"stage": row.stage, "avg_latency_ms": float(row.avg or 0.0)}
+            for row in latency_res.all()
+        ]
+
+        # 10. Provider Health
+        provider_health_stmt = select(
+            LLMTraceModel.provider,
+            func.count(LLMTraceModel.id).label("total"),
+            func.sum(case((LLMTraceModel.status == "failed", 1), else_=0)).label("failed"),
+            func.avg(LLMTraceModel.latency_ms).label("latency"),
+        ).group_by(LLMTraceModel.provider)
+        provider_health_res = await db.execute(provider_health_stmt)
+        provider_health = {}
+        for row in provider_health_res.all():
+            total = int(row.total or 0)
+            failed = int(row.failed or 0)
+            err_rate = failed / total if total > 0 else 0.0
+            provider_health[row.provider] = {
+                "calls": total,
+                "error_rate": err_rate,
+                "avg_latency_ms": float(row.latency or 0.0),
+                "status": "degraded" if err_rate > 0.1 else "healthy",
+            }
+
+        # 11. Stage Health
+        stage_health_stmt = select(
+            StageRunModel.stage,
+            func.avg(StageRunModel.latency_ms).label("latency"),
+            func.sum(case((StageRunModel.status == "failed", 1), else_=0)).label("failed"),
+        ).group_by(StageRunModel.stage)
+        stage_health_res = await db.execute(stage_health_stmt)
+        stage_health = {}
+        for row in stage_health_res.all():
+            stage_health[row.stage] = {
+                "status": "degraded" if int(row.failed or 0) > 0 else "healthy",
+                "avg_latency_ms": float(row.latency or 0.0),
+                "recent_failures": int(row.failed or 0),
+            }
+
+        metrics = {
+            "rss_throughput": rss_throughput,
+            "queue_size": queue_size,
+            "discovery_backlog": discovery_backlog,
+            "active_stories_count": active_stories_count,
+            "lifecycle_distribution": lifecycle_distribution,
+            "reflection_requests_count": reflection_requests_count,
+            "llm_usage": {
+                "total_cost": round(total_cost, 6),
+                "total_tokens": total_tokens,
+                "by_model": by_model,
+                "by_stage": by_stage,
+                "cost_today": round(cost_today, 6),
+                "hourly_projection": round(hourly_projection, 6),
+                "daily_projection": round(daily_projection, 6),
+                "monthly_projection": round(monthly_projection, 6),
+                "cache_savings": 0.0,
+                "stage_a_savings": 0.0,
+            },
+            "cache_hit_rate": 0.0,
+            "cost_per_day": cost_per_day,
+            "latencies": latencies,
+            "provider_health": provider_health,
+            "stage_health": stage_health,
+            "alerts": [],
+            "last_updated": now.isoformat(),
+        }
+
+        # Save to Redis
+        try:
+            r_cache = aioredis.from_url(settings.REDIS_URL)
+            await r_cache.set("newsiq:pipeline:dashboard_metrics", json.dumps(metrics))
+            await r_cache.aclose()
+        except Exception as cache_err:
+            logger.error("Failed to save dashboard metrics to Redis: %s", cache_err)
+
+        return metrics
+
 
 def _now() -> datetime:
     from datetime import UTC

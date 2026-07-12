@@ -484,7 +484,7 @@ class AIGateway:
         for client, api_key, route_cfg in chain:
             provider_name = route_cfg["provider"]
             try:
-                return await client.embeddings(text, api_key)
+                return await client.embeddings(text, api_key, model=route_cfg.get("model"))
             except Exception as e:
                 logger.warning("Embedding failed for provider %s: %s", provider_name, e)
                 last_err = e

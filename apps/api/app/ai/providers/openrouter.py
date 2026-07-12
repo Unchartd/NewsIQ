@@ -151,12 +151,11 @@ class OpenRouterProvider(AIProvider):
         except ImportError:
             return len(text) // 4
 
-    async def embeddings(self, text: str, api_key: APIKey) -> list[float]:
+    async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         try:
+            model_name = model or "nomic/nomic-embed-text-v1.5"
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
-            response = await client.embeddings.create(
-                input=[text], model="nomic/nomic-embed-text-v1.5"
-            )
+            response = await client.embeddings.create(input=[text], model=model_name)
             raw = response.data[0].embedding
             return raw[:768]
         except Exception as e:

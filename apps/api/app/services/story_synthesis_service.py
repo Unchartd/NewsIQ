@@ -272,27 +272,50 @@ class StorySynthesisOrchestrator:
         model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-flash-lite"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
-        # Call contradiction service (we expunge the database additions to manage state immutably)
-        contras = await contradiction_service.detect_and_save_contradictions(
-            story_id=story_id,
-            session=session,
-            articles=articles,
-            article_events=article_events,
-            article_source_map=article_source_map,
+        # Check Cache
+        cached_res = await pipeline_cache.get_stage_result(
+            stage="contradictions",
+            content_hash=story_input_hash,
+            model=model,
+            prompt_version=prompt_version,
+            temperature=0.1,
         )
-
-        # Build payload & expunge objects so they don't commit until PublisherStage
-        contras_payload = []
-        for c in contras:
-            contras_payload.append(
-                {
-                    "fact_type": c.fact_type,
-                    "description": c.description,
-                    "confidence": float(c.confidence) if c.confidence else 1.0,
-                    "source_attribution": c.source_attribution,
-                }
+        cache_hit = False
+        if cached_res is not None:
+            contras_payload = cached_res
+            cache_hit = True
+            logger.info("Stage-level cache HIT for contradictions in story %s", story_id)
+        else:
+            # Call contradiction service (we expunge the database additions to manage state immutably)
+            contras = await contradiction_service.detect_and_save_contradictions(
+                story_id=story_id,
+                session=session,
+                articles=articles,
+                article_events=article_events,
+                article_source_map=article_source_map,
             )
-            session.expunge(c)
+
+            # Build payload & expunge objects so they don't commit until PublisherStage
+            contras_payload = []
+            for c in contras:
+                contras_payload.append(
+                    {
+                        "fact_type": c.fact_type,
+                        "description": c.description,
+                        "confidence": float(c.confidence) if c.confidence else 1.0,
+                        "source_attribution": c.source_attribution,
+                    }
+                )
+                session.expunge(c)
+
+            await pipeline_cache.set_stage_result(
+                stage="contradictions",
+                content_hash=story_input_hash,
+                result_data=contras_payload,
+                model=model,
+                prompt_version=prompt_version,
+                temperature=0.1,
+            )
 
         artifact_id = await self.get_or_create_artifact(
             session=session,
@@ -303,7 +326,9 @@ class StorySynthesisOrchestrator:
 
         # Calculate cost
         # (Assuming contradiction_service tracks cost internally or we project cost/token usage)
-        cost = 0.0001 * len(contras)  # Simple fallback cost projection
+        cost = (
+            0.0 if cache_hit else 0.0001 * len(contras_payload)
+        )  # Simple fallback cost projection
         await self.record_cost(story_id, cost)
 
         await self.record_trace(
@@ -313,7 +338,7 @@ class StorySynthesisOrchestrator:
             started_at=started_at,
             completed_at=_now(),
             cost_usd=cost,
-            cache_hit=False,  # Checked internally by contradiction service
+            cache_hit=cache_hit,
             model=model,
             prompt_version=prompt_version,
             decision="success",
@@ -334,62 +359,84 @@ class StorySynthesisOrchestrator:
     ) -> tuple[uuid.UUID, dict]:
         """Stage 3: Publisher coverage and angle differences (cached)."""
         started_at = _now()
-
         from app.services.prompt_registry import prompt_registry
 
         prompt_tmpl = prompt_registry.get("source_comparison")
         model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-flash-lite"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
-        # Re-materialize contradiction objects temporarily for comparison service signature
-        temp_contras = []
-        for cp in precomputed_contradictions:
-            temp_contras.append(
-                StoryContradiction(
-                    story_id=story_id,
-                    fact_type=cp["fact_type"],
-                    description=cp["description"],
-                    confidence=cp["confidence"],
-                    source_attribution=cp["source_attribution"],
+        # Check Cache
+        cached_res = await pipeline_cache.get_stage_result(
+            stage="source_comparison",
+            content_hash=story_input_hash,
+            model=model,
+            prompt_version=prompt_version,
+            temperature=0.1,
+        )
+        cache_hit = False
+        if cached_res is not None:
+            payload = cached_res
+            cache_hit = True
+            logger.info("Stage-level cache HIT for source comparison in story %s", story_id)
+        else:
+            # Re-materialize contradiction objects temporarily for comparison service signature
+            temp_contras = []
+            for cp in precomputed_contradictions:
+                temp_contras.append(
+                    StoryContradiction(
+                        story_id=story_id,
+                        fact_type=cp["fact_type"],
+                        description=cp["description"],
+                        confidence=cp["confidence"],
+                        source_attribution=cp["source_attribution"],
+                    )
                 )
+
+            cov_list, diff_list = await source_comparison_service.compare_sources_and_save(
+                story_id=story_id,
+                session=session,
+                articles=articles,
+                article_events=article_events,
+                article_source_map=article_source_map,
+                sources_list=sources_list,
+                precomputed_contradictions=temp_contras,
             )
 
-        cov_list, diff_list = await source_comparison_service.compare_sources_and_save(
-            story_id=story_id,
-            session=session,
-            articles=articles,
-            article_events=article_events,
-            article_source_map=article_source_map,
-            sources_list=sources_list,
-            precomputed_contradictions=temp_contras,
-        )
+            # Expunge and serialize
+            cov_serialized = [
+                {"source_id": str(c.source_id), "focus_area": c.focus_area} for c in cov_list
+            ]
+            diff_serialized = [
+                {
+                    "source_id": str(d.source_id),
+                    "unique_information": d.unique_information,
+                    "missing_information": d.missing_information,
+                    "contradictions": d.contradictions,
+                }
+                for d in diff_list
+            ]
 
-        # Expunge and serialize
-        cov_serialized = [
-            {"source_id": str(c.source_id), "focus_area": c.focus_area} for c in cov_list
-        ]
-        diff_serialized = [
-            {
-                "source_id": str(d.source_id),
-                "unique_information": d.unique_information,
-                "missing_information": d.missing_information,
-                "contradictions": d.contradictions,
-            }
-            for d in diff_list
-        ]
+            for c in cov_list:
+                session.expunge(c)
+            for d in diff_list:
+                session.expunge(d)
 
-        for c in cov_list:
-            session.expunge(c)
-        for d in diff_list:
-            session.expunge(d)
+            payload = {"coverage": cov_serialized, "differences": diff_serialized}
 
-        payload = {"coverage": cov_serialized, "differences": diff_serialized}
+            await pipeline_cache.set_stage_result(
+                stage="source_comparison",
+                content_hash=story_input_hash,
+                result_data=payload,
+                model=model,
+                prompt_version=prompt_version,
+                temperature=0.1,
+            )
 
         artifact_id = await self.get_or_create_artifact(
             session=session, story_id=story_id, artifact_type="source_comparison", payload=payload
         )
 
-        cost = 0.0015  # Fallback source comparison cost projection
+        cost = 0.0 if cache_hit else 0.0015  # Fallback source comparison cost projection
         await self.record_cost(story_id, cost)
 
         await self.record_trace(
@@ -399,11 +446,11 @@ class StorySynthesisOrchestrator:
             started_at=started_at,
             completed_at=_now(),
             cost_usd=cost,
-            cache_hit=False,
+            cache_hit=cache_hit,
             model=model,
             prompt_version=prompt_version,
             decision="success",
-            reason=f"Compared {len(cov_serialized)} source focus areas and differences.",
+            reason=f"Compared {len(payload.get('coverage', []))} source focus areas and differences.",
         )
         return artifact_id, payload
 

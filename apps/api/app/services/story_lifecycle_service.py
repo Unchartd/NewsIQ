@@ -113,5 +113,26 @@ class StoryLifecycleManager:
 
         return True
 
+    async def evaluate_all_active_stories(self, db: AsyncSession) -> int:
+        """Query all non-archived stories and evaluate transitions for each."""
+        from sqlalchemy import select
+
+        from app.models.models import Story, StoryLifecycleState
+
+        stmt = select(Story).where(Story.lifecycle_state != StoryLifecycleState.ARCHIVED)
+        result = await db.execute(stmt)
+        stories = result.scalars().all()
+
+        transition_count = 0
+        for story in stories:
+            try:
+                transitioned = await self.evaluate_and_transition(db, story)
+                if transitioned:
+                    transition_count += 1
+            except Exception as e:
+                logger.error("Failed to evaluate/transition story %s: %s", story.id, e)
+
+        return transition_count
+
 
 story_lifecycle_service = StoryLifecycleManager()
