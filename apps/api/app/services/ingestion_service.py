@@ -58,7 +58,9 @@ class IngestionService:
         source_id = source.id
 
         if not source.rss_url:
-            logger.warning("Source '%s' does not have an RSS URL.", source_name)
+            logger.info(
+                "Source '%s' does not have an RSS URL; skipping RSS ingestion.", source_name
+            )
             return 0
 
         logger.info("Starting ingestion for source: %s (%s)", source_name, source.rss_url)
