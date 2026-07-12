@@ -178,8 +178,13 @@ class CapabilityRouter:
             "lastFallback",
         ]
         for level in levels:
-            cfg = route_config[level]
+            cfg = route_config[level].copy()
             provider = cfg["provider"]
+
+            # Dynamically override embedding model if settings specify a preferred one
+            if capability == "embedding" and provider == "gemini" and settings.EMBEDDING_MODEL:
+                cfg["model"] = settings.EMBEDDING_MODEL
+
             tracker = self.health_trackers[provider]
 
             if not tracker.is_available():
