@@ -434,8 +434,12 @@ class GNewsService:
                 if self._redis:
                     try:
                         await self._redis.delete(lock_key)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to release Redis search lock '%s': %s",
+                            lock_key,
+                            exc,
+                        )
                 search_end = time.perf_counter()
                 search_latency_ms = int((search_end - search_start) * 1000)
                 await self._add_latency_metric("search_latency", search_latency_ms)
@@ -637,8 +641,8 @@ class GNewsService:
             fuzzy_ratio = 0.0
             try:
                 fuzzy_ratio = rapidfuzz.fuzz.token_set_ratio(orig_clean, title_clean) / 100.0
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to compute fuzzy title similarity; defaulting to 0.0: %s", exc)
             score += fuzzy_ratio * 40.0
 
             # Entity and location overlap
@@ -716,8 +720,13 @@ class GNewsService:
                 try:
                     raw = await self._redis.hgetall(f"discovery:metrics:{date_str}")  # type: ignore
                     metrics = {k: int(v) for k, v in raw.items()}
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to load discovery metrics for %s from Redis; using empty defaults: %s",
+                        date_str,
+                        exc,
+                    )
+                    metrics = {}
             return metrics
 
         async def get_sources_per_story_stats() -> tuple[float, float]:

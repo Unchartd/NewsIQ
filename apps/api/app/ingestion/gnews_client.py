@@ -91,8 +91,11 @@ class GNewsClient:
                     published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(
                         tzinfo=None
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to parse published date from feed entry; using default timestamp: %s",
+                        exc,
+                    )
 
             # Extract source information
             source_name = None
@@ -171,8 +174,14 @@ class GNewsClient:
                     published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(
                         tzinfo=None
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to parse published date for Google News entry '%s' (parsed_date=%r): %s. "
+                        "Using current UTC time fallback.",
+                        title,
+                        parsed_date,
+                        exc,
+                    )
 
             source_name = None
             source_url = None

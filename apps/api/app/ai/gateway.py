@@ -398,8 +398,14 @@ class AIGateway:
                             newsiq_prompt_executions_total.labels(
                                 stage=stage, version=manifest.version, status="failed"
                             ).inc()
-                        except Exception:
-                            pass
+                        except Exception as metrics_err:
+                            logger.debug(
+                                "Failed to record prompt execution failure metric [stage=%s, provider=%s, model=%s]: %s",
+                                stage,
+                                provider_name,
+                                model_name,
+                                metrics_err,
+                            )
                         newsiq_ai_gateway_calls_total.labels(
                             provider=provider_name,
                             model=model_name,
