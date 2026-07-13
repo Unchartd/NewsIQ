@@ -14,15 +14,20 @@ from app.ai.errors import (
     TimeoutError,
 )
 from app.ai.interfaces import AIProvider, APIKey, GatewayRequest, GatewayResponse, HealthStatus
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class NvidiaProvider(AIProvider):
-    """NVIDIA NIM Client Provider using the AsyncOpenAI SDK wrapper."""
+class BedrockProvider(AIProvider):
+    """AWS Bedrock Provider using the OpenAI-compatible Mantle API endpoint."""
 
-    def __init__(self, base_url: str = "https://integrate.api.nvidia.com/v1") -> None:
-        self.base_url = base_url
+    def __init__(self, base_url: str | None = None) -> None:
+        self.base_url = (
+            base_url
+            or settings.AWS_BEDROCK_BASE_URL
+            or "https://bedrock-mantle.us-east-1.api.aws/v1"
+        )
 
     def _prepare_params(self, request: GatewayRequest) -> dict[str, Any]:
         """Convert GatewayRequest to OpenAI completion params."""
@@ -36,7 +41,6 @@ class NvidiaProvider(AIProvider):
         # Handle JSON / Structured Outputs
         if request.response_format:
             params["response_format"] = {"type": "json_object"}
-            # Ensure "json" is explicitly mentioned in system/user messages for JSON mode compliance
             has_json = any("json" in str(m.get("content", "")).lower() for m in messages)
             if not has_json:
                 params["messages"] = messages + [
@@ -50,16 +54,16 @@ class NvidiaProvider(AIProvider):
 
     def _handle_exception(self, e: Exception) -> Exception:
         if isinstance(e, APITimeoutError):
-            return TimeoutError(f"NVIDIA request timed out: {e}")
+            return TimeoutError(f"Bedrock request timed out: {e}")
         elif isinstance(e, APIError):
             status = getattr(e, "status_code", None)
             if status == 401:
-                return AuthenticationError(f"NVIDIA authentication failed: {e}")
+                return AuthenticationError(f"Bedrock authentication failed: {e}")
             elif status == 429:
-                return RateLimitError(f"NVIDIA rate limit exceeded: {e}")
+                return RateLimitError(f"Bedrock rate limit exceeded: {e}")
             else:
-                return ProviderUnavailableError(f"NVIDIA unavailable: {e}")
-        return ProviderUnavailableError(f"NVIDIA error: {str(e)}")
+                return ProviderUnavailableError(f"Bedrock unavailable: {e}")
+        return ProviderUnavailableError(f"Bedrock error: {str(e)}")
 
     async def generate(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
         t0 = time.perf_counter()
@@ -87,7 +91,7 @@ class NvidiaProvider(AIProvider):
                     else:
                         parsed = data
                 except Exception as parse_err:
-                    logger.warning("NVIDIA parsing failed: %s, content: %s", parse_err, content)
+                    logger.warning("Bedrock parsing failed: %s, content: %s", parse_err, content)
 
             return GatewayResponse(
                 content=content,
@@ -96,7 +100,7 @@ class NvidiaProvider(AIProvider):
                 output_tokens=output_tokens,
                 total_tokens=input_tokens + output_tokens,
                 latency_ms=latency_ms,
-                provider="nvidia",
+                provider="bedrock",
                 model=request.model,
                 key_used=api_key.get_masked(),
             )
@@ -124,7 +128,7 @@ class NvidiaProvider(AIProvider):
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
             # Lightweight verification call
             await client.chat.completions.create(
-                model="deepseek-ai/deepseek-v4-flash",
+                model="qwen.qwen3-vl-235b-a22b-instruct",
                 messages=[{"role": "user", "content": "ping"}],
                 max_tokens=5,
                 temperature=0.0,
@@ -134,7 +138,7 @@ class NvidiaProvider(AIProvider):
             return HealthStatus(
                 healthy=True,
                 latency_ms=latency_ms,
-                supported_models=["deepseek-ai/deepseek-v4-flash", "deepseek-ai/deepseek-v4-pro"],
+                supported_models=["qwen.qwen3-vl-235b-a22b-instruct", "qwen.qwen3-32b"],
             )
         except Exception as e:
             latency_ms = (time.perf_counter() - t0) * 1000
@@ -153,9 +157,8 @@ class NvidiaProvider(AIProvider):
 
     async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         try:
-            model_name = model or "nvidia/llama-3.2-nv-embedqa-4b-v1"
+            model_name = model or "nomic/nomic-embed-text-v1.5"
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
-            # For NVIDIA, we use their default/configured embed model, or fallback
             response = await client.embeddings.create(input=[text], model=model_name)
             raw = response.data[0].embedding
             return raw[:768]

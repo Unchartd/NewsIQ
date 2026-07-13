@@ -823,3 +823,35 @@ def recover_stuck_embeddings_task() -> int:
             return rowcount
 
     return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.evaluate_story_lifecycles_task")
+def evaluate_story_lifecycles_task() -> int:
+    """Periodically evaluate transitions for all active stories."""
+    logger.info("Celery task: Evaluating story lifecycles.")
+
+    async def _run():
+        from app.services.story_lifecycle_service import story_lifecycle_service
+
+        async with async_session_factory() as session:
+            count = await story_lifecycle_service.evaluate_all_active_stories(session)
+            await session.commit()
+            if count > 0:
+                logger.info("Transitioned %d stories during periodic evaluation.", count)
+            return count
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.aggregate_pipeline_metrics_task")
+def aggregate_pipeline_metrics_task() -> dict:
+    """Periodically compute and cache comprehensive pipeline dashboard metrics in Redis."""
+    logger.info("Celery task: Aggregating pipeline dashboard metrics.")
+
+    async def _run():
+        from app.services.admin_service import admin_service
+
+        async with async_session_factory() as session:
+            return await admin_service.compute_dashboard_metrics(session)
+
+    return run_async(_run())

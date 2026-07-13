@@ -1,6 +1,5 @@
 "use client";
 
-import { BRANDING } from "@/branding/constants";
 import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import { UserCheck, GitMerge, Scissors, Edit3, ExternalLink } from "lucide-react";
@@ -33,7 +32,7 @@ export default function ReviewPage() {
         id: r.id,
         action_type: r.action,
         story_id: r.story_id,
-        user_email: BRANDING.SUPPORT_EMAIL,
+        user_email: "admin@newsiq.com",
         created_at: r.created_at,
         before: r.before_value,
         after: r.after_value,

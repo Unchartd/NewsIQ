@@ -155,7 +155,7 @@ class MockProvider(AIProvider):
     def count_tokens(self, text: str) -> int:
         return len(text) // 4
 
-    async def embeddings(self, text: str, api_key: APIKey) -> list[float]:
+    async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         # Return a deterministic mock embedding of length 768
         import hashlib
 

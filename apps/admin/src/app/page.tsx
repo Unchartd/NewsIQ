@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { BRANDING } from "@/branding/constants";
 import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { Loader2 } from "lucide-react";
@@ -133,7 +132,7 @@ export default function LoginPage() {
         }
 
         .brand-name span {
-          color: var(--brand-primary);
+          color: #EF4444;
         }
 
         .console-label {
@@ -219,8 +218,8 @@ export default function LoginPage() {
         }
 
         .input-field:focus {
-          border-color: var(--brand-primary);
-          box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb), 0.08);
+          border-color: #EF4444;
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
         }
 
         .input-field::placeholder {
@@ -250,7 +249,7 @@ export default function LoginPage() {
         .sign-in-btn {
           width: 100%;
           height: 42px;
-          background: var(--brand-primary);
+          background: #EF4444;
           border: none;
           border-radius: 8px;
           font-size: 13.5px;
@@ -282,8 +281,8 @@ export default function LoginPage() {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: rgba(var(--brand-primary-rgb), 0.13);
-          border: 1px solid rgba(var(--brand-primary-rgb), 0.27);
+          background: rgba(239, 68, 68, 0.13);
+          border: 1px solid rgba(239, 68, 68, 0.27);
           flex-shrink: 0;
         }
 
@@ -330,13 +329,13 @@ export default function LoginPage() {
           <div className="card-header">
             <div className="logo-wrap">
               <svg viewBox="0 0 64 64" width="22" height="22" fill="none">
-                <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="var(--brand-primary)"/>
+                <path d="M38 2L14 34h14l-6 28L46 30H32l6-28z" fill="#EF4444"/>
                 <path d="M24 28h4l4 8V28h4v16h-4l-4-8v8h-4V28z" fill="#FFFFFF"/>
               </svg>
             </div>
 
             <div>
-              <div className="brand-name">{BRANDING.NAME.slice(0, 4)}<span>{BRANDING.NAME.slice(4)}</span></div>
+              <div className="brand-name">News<span>IQ</span></div>
             </div>
 
             <div className="console-label">Admin Console</div>
@@ -362,10 +361,10 @@ export default function LoginPage() {
                   </svg>
                 </span>
                 <input
-                  id="email"
-                  className="bg-[#1C1C1A] border-[#2E2E2A] text-[#F0EFE9] placeholder:text-[#6B6B62] focus-visible:ring-red-500 h-11 input-field"
+                  id="admin-email"
+                  className="input-field"
                   type="email"
-                  placeholder={BRANDING.SUPPORT_EMAIL}
+                  placeholder="admin@newsiq.io"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

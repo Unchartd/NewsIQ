@@ -392,7 +392,14 @@ class AIGateway:
                         capability,
                         err,
                     )
-                    capability_router.health_trackers[provider_name].report_failure(str(err))
+                    # Rate limit errors are transient quota limits; do not trip the circuit breaker for them globally
+                    if not isinstance(err, RateLimitError):
+                        capability_router.health_trackers[provider_name].report_failure(str(err))
+                    else:
+                        logger.info(
+                            "Gateway: RateLimitError encountered for %s. Skipping circuit breaker health degradation.",
+                            provider_name,
+                        )
                     last_error = err
 
                     # Record prompt metrics on failure
@@ -484,7 +491,7 @@ class AIGateway:
         for client, api_key, route_cfg in chain:
             provider_name = route_cfg["provider"]
             try:
-                return await client.embeddings(text, api_key)
+                return await client.embeddings(text, api_key, model=route_cfg.get("model"))
             except Exception as e:
                 logger.warning("Embedding failed for provider %s: %s", provider_name, e)
                 last_err = e

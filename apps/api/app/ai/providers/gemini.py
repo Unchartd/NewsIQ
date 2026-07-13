@@ -196,19 +196,23 @@ class GeminiProvider(AIProvider):
         except ImportError:
             return len(text) // 4
 
-    async def embeddings(self, text: str, api_key: APIKey) -> list[float]:
+    async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         try:
+            model_name = model or "text-embedding-004"
             client = google_genai.Client(api_key=api_key.key)
-            response = client.models.embed_content(
-                model="text-embedding-004",
+            config = {"task_type": "RETRIEVAL_DOCUMENT"}
+            if "embedding-2" in model_name:
+                config["output_dimensionality"] = 768
+            response = await client.aio.models.embed_content(
+                model=model_name,
                 contents=text,
-                config={"task_type": "RETRIEVAL_DOCUMENT"},
+                config=config,
             )
             if response.embeddings:
                 raw_val = response.embeddings[0].values
                 if raw_val is not None:
                     # Target dimension is 768
                     return raw_val[:768]
-            raise ValueError("No embeddings returned from Gemini API")
+            raise ValueError(f"No embeddings returned from Gemini API for model {model_name}")
         except Exception as e:
             raise self._handle_exception(e)

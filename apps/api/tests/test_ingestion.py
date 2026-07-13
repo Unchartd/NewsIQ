@@ -23,9 +23,6 @@ def test_clean_html_none():
     assert ingestion_service.clean_html(None) == ""
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_ingest_rss_source_no_new(mock_db_session):
     """Verify that ingestion service handles duplicate URLs (returns 0 new)."""
@@ -41,8 +38,9 @@ async def test_ingest_rss_source_no_new(mock_db_session):
     # Mock DB query to return an existing article (simulating a duplicate URL)
     existing_article = MagicMock()
     existing_article.content_hash = "hash1"
+    existing_article.url = "http://example.com/article1"
     mock_execute_result = MagicMock()
-    mock_execute_result.scalar_one_or_none.return_value = existing_article
+    mock_execute_result.scalars.return_value.all.return_value = [existing_article]
     mock_db_session.execute.return_value = mock_execute_result
 
     # Mock RSS Feed XML
@@ -74,8 +72,13 @@ async def test_ingest_rss_source_no_new(mock_db_session):
     # Patch httpx.AsyncClient.get to return our mock XML, bloom filter to return True, and compute_fingerprints to match
     with (
         patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
-        patch("app.services.ingestion_service.url_bloom_filter.exists", AsyncMock(return_value=True)),
-        patch("app.services.ingestion_service.compute_fingerprints", return_value={"url_hash": "hash1", "content_hash": "hash1"}),
+        patch(
+            "app.services.ingestion_service.url_bloom_filter.exists", AsyncMock(return_value=True)
+        ),
+        patch(
+            "app.services.ingestion_service.compute_fingerprints",
+            return_value={"url_hash": "hash1", "content_hash": "hash1"},
+        ),
     ):
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 0

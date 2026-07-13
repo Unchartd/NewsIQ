@@ -24,11 +24,6 @@ class Settings(BaseSettings):
     USE_NEW_GATEWAY: bool = True
     MAX_PRO_MODEL_TOKENS: int = 30000
 
-    # ── Branding ─────────────────────────────────────────────────────────────
-    BRAND_NAME: str = "NewsIQ"
-    BRAND_COLOR_PRIMARY: str = "#C41E3A"
-    BRAND_ICON: str = "⚡"
-
     # ── Database — Neon PostgreSQL ────────────────────────────────────────────
     # DATABASE_URL       → Pooled endpoint (PgBouncer). Used by FastAPI + Celery.
     # DATABASE_DIRECT_URL → Non-pooled direct connection. Used by Alembic only.
@@ -110,8 +105,10 @@ class Settings(BaseSettings):
     CEREBRAS_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    AWS_BEDROCK_BASE_URL: str = "https://bedrock-mantle.us-east-1.api.aws/v1"
+    AWS_BEDROCK_API_KEY: str = ""
     EMBEDDING_MODEL: str = "gemini-embedding-2"
-    SUMMARIZATION_MODEL: str = "gemini-2.5-flash"
+    SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────
     PIPELINE_VERSION: str = "1.0.0"
@@ -221,7 +218,8 @@ class Settings(BaseSettings):
             "  Langfuse enabled: %s\n"
             "  Sentry enabled:   %s\n"
             "  Gemini key:       %s\n"
-            "  OpenRouter key:   %s",
+            "  OpenRouter key:   %s\n"
+            "  Bedrock key:      %s",
             self.BACKEND_SERVICE_ROLE,
             self.DEBUG,
             self.DATABASE_URL.split("@")[-1] if "@" in self.DATABASE_URL else self.DATABASE_URL,
@@ -236,6 +234,7 @@ class Settings(BaseSettings):
             bool(self.SENTRY_DSN),
             "set" if self.GEMINI_API_KEY else "not set",
             "set" if self.OPENROUTER_API_KEY else "not set",
+            "set" if self.AWS_BEDROCK_API_KEY else "not set",
         )
 
     model_config = {
