@@ -175,17 +175,32 @@ def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> 
                 async with async_session_factory() as session:
                     results = await ingestion_service.ingest_all_active_sources(session)
                     total_new = sum(results.values())
+                    
+                    # Generate daily/hourly/rolling discovery report and log it
+                    discovery_report = {}
+                    disc_persisted = 0
+                    try:
+                        from app.services.gnews_service import gnews_service
+                        discovery_report = await gnews_service.generate_discovery_reports(session)
+                        # The persisted count is from today's daily report
+                        disc_persisted = discovery_report.get("daily", {}).get("articles_persisted", 0)
+                    except Exception as report_exc:
+                        logger.error("Failed to generate discovery reports: %s", report_exc)
+                        
                     span.set_metadata(
                         {
                             "articles_ingested": total_new,
                             "sources_processed": len(results),
                             "per_source": {str(k): v for k, v in results.items()},
+                            "discovery": discovery_report,
                         }
                     )
-                    if total_new > 0:
+                    # We trigger embedding task if either new RSS articles OR discovered articles were persisted!
+                    total_including_discovery = total_new + disc_persisted
+                    if total_including_discovery > 0:
                         logger.info(
-                            "RSS ingestion complete",
-                            extra={"articles_ingested": total_new},
+                            "RSS ingestion and discovery complete",
+                            extra={"articles_ingested": total_new, "discovery_persisted": disc_persisted},
                         )
                         process_pending_embeddings_task.delay(run.id, run.trace_id)
                     else:
