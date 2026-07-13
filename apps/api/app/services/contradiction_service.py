@@ -61,12 +61,12 @@ class ContradictionService:
         Pipeline: cache check → Agno Agent → LLM Gateway fallback → heuristic fallback.
         """
         from app.services.pipeline_cache import pipeline_cache
-        from app.services.prompt_registry import prompt_registry
+        from app.ai.prompts.repository import prompt_repository
 
         # ── Cache check ───────────────────────────────────────────────────────
-        prompt_tmpl = prompt_registry.get("contradiction_detection")
+        prompt_tmpl = prompt_repository.get("contradiction_detection")
         prompt_version = prompt_tmpl.version
-        model = prompt_tmpl.model
+        model = prompt_repository.model_config("contradiction_detection").model
 
         content_hash = pipeline_cache.composite_hash(
             fact_type, str(val1), str(val2), context[:1000]
@@ -120,11 +120,10 @@ class ContradictionService:
                     "context": context[:3000],
                 }
 
-                response = await ai_gateway.generate(
-                    capability="contradiction_analysis",
+                response = await ai_gateway.generate_stage(
+                    stage="contradiction_detection",
                     prompt_variables=prompt_variables,
                     schema=ContradictionResolution,
-                    temperature=0.1,
                 )
 
                 if response.parsed:

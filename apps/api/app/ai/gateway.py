@@ -142,6 +142,263 @@ class AIGateway:
         output_cost = (output_tokens / 1_000_000) * pricing["output"]
         return round(input_cost + output_cost, 8)
 
+    async def generate_stage(
+        self,
+        stage: str,
+        prompt_variables: dict[str, Any],
+        schema: type[BaseModel] | None = None,
+        story_id: str = "",
+        article_id: str = "",
+    ) -> GatewayResponse:
+        """
+        Execute a prompt stage through the gateway. Model, temperature, fallbacks,
+        and cache policy are resolved entirely from PromptRepository.
+
+        This is the canonical entrypoint. Callers never specify a model.
+
+        Args:
+            stage: Prompt stage name. e.g. 'summary_generation'
+            prompt_variables: Template variables to fill {placeholders}.
+            schema: Optional Pydantic model for structured output validation.
+                    If None, the manifest's response_model is used if declared.
+            story_id: For cost tracking and tracing.
+            article_id: For cost tracking and tracing.
+        """
+        from app.ai.prompts.repository import prompt_repository
+
+        if prompt_repository is None:
+            raise AIGatewayError(
+                "PromptRepository is not initialized. "
+                "Ensure startup validation completed successfully."
+            )
+
+        manifest = prompt_repository.get(stage)
+        cfg = prompt_repository.model_config(stage)
+        messages = prompt_repository.messages(stage, **prompt_variables)
+
+        system_prompt = manifest.system
+        user_prompt = manifest.template.format(**prompt_variables)
+
+        # Resolve schema: explicit arg wins, then manifest response_model
+        resolved_schema = schema
+        if resolved_schema is None and manifest.response_model:
+            try:
+                import importlib
+                module = importlib.import_module("app.models.llm_responses")
+                resolved_schema = getattr(module, manifest.response_model, None)
+            except Exception as schema_exc:
+                logger.warning(
+                    "Could not auto-resolve response_model '%s' for stage '%s': %s",
+                    manifest.response_model, stage, schema_exc
+                )
+
+        s_id = story_id or story_id_ctx.get("")
+        a_id = article_id or article_id_ctx.get("")
+
+        prompt_text = system_prompt + "\n" + user_prompt
+
+        # Cache check (only for cacheable prompts)
+        if manifest.is_cacheable():
+            cached_response = await ai_cache.get(
+                capability=stage,
+                model=cfg.model,
+                prompt_version=manifest.version,
+                prompt_text=prompt_text,
+                temperature=cfg.temperature,
+            )
+            if cached_response is not None:
+                newsiq_ai_gateway_cache_total.labels(capability=stage, status="hit").inc()
+                parsed = None
+                if resolved_schema:
+                    try:
+                        parsed = resolved_schema.model_validate(cached_response["parsed"])
+                    except Exception as e:
+                        logger.warning("Cache deserialization failed for stage '%s': %s", stage, e)
+                return GatewayResponse(
+                    content=cached_response["content"],
+                    parsed=parsed,
+                    provider=cached_response["provider"],
+                    model=cached_response["model"],
+                    latency_ms=0.0,
+                    cost_usd=0.0,
+                )
+
+        newsiq_ai_gateway_cache_total.labels(capability=stage, status="miss").inc()
+
+        # Build fallback chain from manifest: preferred_model + fallback_models
+        all_models = [cfg.model] + list(cfg.fallback_models)
+        last_error: Exception | None = None
+
+        for idx, model_name in enumerate(all_models):
+            chain = capability_router.get_model_route(model_name)
+            level_name = "primary" if idx == 0 else "fallback" if idx == 1 else "lastFallback"
+
+            for client, api_key, route_cfg in chain:
+                provider_name = route_cfg["provider"]
+
+                newsiq_provider_fallback_executions_total.labels(
+                    provider=provider_name, stage=stage, level=level_name
+                ).inc()
+
+                max_attempts = 3
+                backoff = 1.0
+
+                for attempt in range(max_attempts):
+                    try:
+                        req = GatewayRequest(
+                            model=model_name,
+                            messages=messages,
+                            temperature=cfg.temperature,
+                            response_format=resolved_schema,
+                            stage=stage,
+                            story_id=s_id,
+                            article_id=a_id,
+                            timeout=cfg.timeout_seconds,
+                        )
+
+                        logger.info(
+                            "Gateway [stage=%s] provider=%s model=%s (attempt %d/%d)",
+                            stage, provider_name, model_name, attempt + 1, max_attempts,
+                        )
+
+                        async with track_llm_call(
+                            provider=provider_name,
+                            model=model_name,
+                            stage=stage,
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            temperature=cfg.temperature,
+                            story_id=s_id,
+                            article_id=a_id,
+                        ) as trace_call:
+                            response = await client.generate(req, api_key)
+
+                            trace_call.response_text = response.content or response.error
+                            trace_call.input_tokens = response.input_tokens
+                            trace_call.output_tokens = response.output_tokens
+                            trace_call.total_tokens = response.total_tokens
+
+                            if response.error:
+                                trace_call.status = "error"
+                                trace_call.error = response.error
+                                raise ProviderUnavailableError(response.error)
+
+                            if resolved_schema and response.parsed is None:
+                                try:
+                                    data = json.loads(response.content)
+                                    cleaned = clean_json_for_schema(data, resolved_schema)
+                                    response.parsed = resolved_schema.model_validate(cleaned)
+                                except (ValueError, PydanticValidationError) as val_err:
+                                    newsiq_ai_gateway_validation_failures_total.labels(
+                                        capability=stage, model=model_name
+                                    ).inc()
+                                    raise ValidationError(
+                                        f"[{stage}] Response validation failed: {val_err}"
+                                    )
+
+                            cost = self._calculate_cost(
+                                model_name, response.input_tokens, response.output_tokens
+                            )
+                            response.cost_usd = cost
+                            trace_call.cost_usd = cost
+
+                            if s_id:
+                                try:
+                                    await cost_budget_manager.add_story_cost(s_id, cost)
+                                except Exception as cost_exc:
+                                    logger.warning("Failed to record story cost: %s", cost_exc)
+
+                        # Prometheus metrics
+                        try:
+                            newsiq_prompt_executions_total.labels(
+                                stage=stage, version=manifest.version, status="success"
+                            ).inc()
+                            newsiq_prompt_latency_seconds.labels(
+                                stage=stage, version=manifest.version
+                            ).observe(response.latency_ms / 1000.0)
+                            newsiq_prompt_tokens_total.labels(
+                                stage=stage, version=manifest.version, token_type="input"
+                            ).inc(response.input_tokens)
+                            newsiq_prompt_tokens_total.labels(
+                                stage=stage, version=manifest.version, token_type="output"
+                            ).inc(response.output_tokens)
+                        except Exception as prom_exc:
+                            logger.debug("Prompt metrics failed (stage=%s): %s", stage, prom_exc)
+
+                        newsiq_ai_gateway_calls_total.labels(
+                            provider=provider_name, model=model_name,
+                            capability=stage, status="success",
+                        ).inc()
+                        newsiq_ai_gateway_cost_usd.labels(
+                            provider=provider_name, model=model_name, capability=stage
+                        ).inc(cost)
+
+                        capability_router.health_trackers[provider_name].report_success()
+
+                        # Store in cache if cacheable
+                        if manifest.is_cacheable():
+                            await ai_cache.set(
+                                capability=stage,
+                                model=model_name,
+                                prompt_version=manifest.version,
+                                prompt_text=prompt_text,
+                                response_data={
+                                    "content": response.content,
+                                    "parsed": response.parsed.model_dump(mode="json")
+                                    if isinstance(response.parsed, BaseModel)
+                                    else response.parsed,
+                                    "provider": provider_name,
+                                    "model": model_name,
+                                },
+                                temperature=cfg.temperature,
+                            )
+
+                        return response
+
+                    except ValidationError as ve:
+                        last_error = ve
+                        newsiq_ai_gateway_retries_total.labels(
+                            provider=provider_name, model=model_name,
+                            capability=stage, reason="validation_failure",
+                        ).inc()
+                        if attempt == max_attempts - 1:
+                            break
+                        await asyncio.sleep(backoff)
+                        backoff *= 2.0
+
+                    except (RateLimitError, TimeoutError, ProviderUnavailableError, AuthenticationError) as err:
+                        logger.warning(
+                            "Gateway [stage=%s] provider=%s model=%s failed: %s",
+                            stage, provider_name, model_name, err,
+                        )
+                        if not isinstance(err, RateLimitError):
+                            capability_router.health_trackers[provider_name].report_failure(str(err))
+                        try:
+                            newsiq_prompt_executions_total.labels(
+                                stage=stage, version=manifest.version, status="failed"
+                            ).inc()
+                        except Exception:
+                            pass
+                        newsiq_ai_gateway_calls_total.labels(
+                            provider=provider_name, model=model_name,
+                            capability=stage, status="error",
+                        ).inc()
+                        if isinstance(err, TimeoutError):
+                            newsiq_ai_gateway_timeouts_total.labels(
+                                provider=provider_name, model=model_name, capability=stage
+                            ).inc()
+                        newsiq_ai_gateway_retries_total.labels(
+                            provider=provider_name, model=model_name,
+                            capability=stage, reason=err.__class__.__name__,
+                        ).inc()
+                        last_error = err
+                        await asyncio.sleep(backoff)
+                        backoff *= 2.0
+
+        raise AIGatewayError(
+            f"All providers failed for stage='{stage}'. Last error: {last_error}"
+        )
+
     async def generate(
         self,
         capability: str,
@@ -152,7 +409,20 @@ class AIGateway:
         article_id: str = "",
         variant: str | None = None,
     ) -> GatewayResponse:
-        """Execute a text generation call through the gateway fallback chain."""
+        """Execute a text generation call through the gateway fallback chain.
+
+        .. deprecated::
+            Use ``generate_stage(stage=..., prompt_variables=...)`` instead.
+            Model, temperature, and routing are now resolved from PromptRepository.
+            This method will be removed after all callers are migrated.
+        """
+        logger.warning(
+            "DEPRECATION: ai_gateway.generate(capability='%s') is deprecated. "
+            "Migrate to ai_gateway.generate_stage(stage='%s', prompt_variables={...}). "
+            "This method will be removed in a future release.",
+            capability, capability,
+        )
+
         # 1. Load prompt template
         prompt_template = prompt_registry.get(capability, variant)
         messages = prompt_template.messages(**prompt_variables)
@@ -568,7 +838,20 @@ class AIGateway:
         """Execute custom requests (directly by model name) using the fallback routing logic.
 
         Used by Agno agents and services requiring non-templated generation.
+
+        .. deprecated::
+            For prompt-backed stages, use ``generate_stage(stage=..., prompt_variables=...)``.
+            For agent-driven non-templated calls, this method will remain available
+            until a dedicated agent entrypoint is introduced.
+            This method logs a deprecation warning to track migration progress.
         """
+        logger.warning(
+            "DEPRECATION: ai_gateway.execute_request(model='%s', stage='%s') is deprecated. "
+            "If this stage has a PromptManifest, migrate to generate_stage(stage='%s'). "
+            "grep for 'execute_request' to find remaining callers.",
+            model, stage, stage,
+        )
+
         # 1. Resolve fallback chain for this model name
         chain = capability_router.get_model_route(model)
 

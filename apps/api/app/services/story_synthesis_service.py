@@ -25,6 +25,8 @@ from app.models.models import (
     SynthesisArtifact,
 )
 from app.models.observability_models import PipelineTraceModel
+from app.core.trace import PipelineStage
+
 from app.services.ai_service import AIService, StorySummaryResponse
 from app.services.cache_service import cache_service
 from app.services.contradiction_service import contradiction_service
@@ -242,7 +244,7 @@ class StorySynthesisOrchestrator:
         await self.record_trace(
             session=session,
             story_id=story_id,
-            stage="knowledge_graph",
+            stage=PipelineStage.KNOWLEDGE_GRAPH.value,
             started_at=started_at,
             completed_at=_now(),
             cost_usd=0.0,
@@ -266,15 +268,15 @@ class StorySynthesisOrchestrator:
         """Stage 2: Hybrid contradiction detection (cached)."""
         started_at = _now()
 
-        from app.services.prompt_registry import prompt_registry
+        from app.ai.prompts.repository import prompt_repository
 
-        prompt_tmpl = prompt_registry.get("contradiction_detection")
-        model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-flash-lite"
+        prompt_tmpl = prompt_repository.get("contradiction_detection")
+        model = prompt_repository.model_config("contradiction_detection").model if prompt_tmpl else "gemini-2.5-flash-lite"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
         # Check Cache
         cached_res = await pipeline_cache.get_stage_result(
-            stage="contradictions",
+            stage=PipelineStage.CONTRADICTION_DETECTION.value,
             content_hash=story_input_hash,
             model=model,
             prompt_version=prompt_version,
@@ -309,7 +311,7 @@ class StorySynthesisOrchestrator:
                 session.expunge(c)
 
             await pipeline_cache.set_stage_result(
-                stage="contradictions",
+                stage=PipelineStage.CONTRADICTION_DETECTION.value,
                 content_hash=story_input_hash,
                 result_data=contras_payload,
                 model=model,
@@ -334,7 +336,7 @@ class StorySynthesisOrchestrator:
         await self.record_trace(
             session=session,
             story_id=story_id,
-            stage="contradiction_detection",
+            stage=PipelineStage.CONTRADICTION_DETECTION.value,
             started_at=started_at,
             completed_at=_now(),
             cost_usd=cost,
@@ -359,15 +361,15 @@ class StorySynthesisOrchestrator:
     ) -> tuple[uuid.UUID, dict]:
         """Stage 3: Publisher coverage and angle differences (cached)."""
         started_at = _now()
-        from app.services.prompt_registry import prompt_registry
+        from app.ai.prompts.repository import prompt_repository
 
-        prompt_tmpl = prompt_registry.get("source_comparison")
-        model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-flash-lite"
+        prompt_tmpl = prompt_repository.get("source_comparison")
+        model = prompt_repository.model_config("source_comparison").model if prompt_tmpl else "gemini-2.5-flash-lite"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
         # Check Cache
         cached_res = await pipeline_cache.get_stage_result(
-            stage="source_comparison",
+            stage=PipelineStage.SOURCE_COMPARISON.value,
             content_hash=story_input_hash,
             model=model,
             prompt_version=prompt_version,
@@ -424,7 +426,7 @@ class StorySynthesisOrchestrator:
             payload = {"coverage": cov_serialized, "differences": diff_serialized}
 
             await pipeline_cache.set_stage_result(
-                stage="source_comparison",
+                stage=PipelineStage.SOURCE_COMPARISON.value,
                 content_hash=story_input_hash,
                 result_data=payload,
                 model=model,
@@ -442,7 +444,7 @@ class StorySynthesisOrchestrator:
         await self.record_trace(
             session=session,
             story_id=story_id,
-            stage="source_comparison",
+            stage=PipelineStage.SOURCE_COMPARISON.value,
             started_at=started_at,
             completed_at=_now(),
             cost_usd=cost,
@@ -481,7 +483,7 @@ class StorySynthesisOrchestrator:
         await self.record_trace(
             session=session,
             story_id=story_id,
-            stage="timeline",
+            stage=PipelineStage.TIMELINE_GENERATION.value,
             started_at=started_at,
             completed_at=_now(),
             cost_usd=0.0,
@@ -508,52 +510,34 @@ class StorySynthesisOrchestrator:
         """Stage 5: Narrative summarization, supporting section-level regeneration corrections."""
         started_at = _now()
 
-        from app.services.prompt_registry import prompt_registry
+        from app.ai.prompts.repository import prompt_repository
 
-        prompt_tmpl = prompt_registry.get("summary_generation")
-        model = prompt_tmpl.model if prompt_tmpl else "gemini-2.5-pro"
+        prompt_tmpl = prompt_repository.get("summary_generation")
+        model = prompt_repository.model_config("summary_generation").model if prompt_tmpl else "gemini-2.5-pro"
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
         # Adapt prompt if we are doing targeted section refinement
         if corrections and existing_summary_payload:
             logger.info("Performing section-level refinement for story %s", story_id)
 
-            # Formulate refinement prompt
-            refine_prompt = f"""
-            You are an expert news editor. Your task is to update/correct an existing story summary based on feedback corrections.
-            Please preserve the existing text and only modify/update the affected parts (e.g. key_facts, timeline, short_summary).
-
-            Existing Summary Data:
-            {existing_summary_payload}
-
-            Feedback Corrections:
-            {corrections}
-
-            Knowledge Graph Ground Truth:
-            {kg}
-
-            Respond with ONLY a valid JSON object matching this exact schema:
-            {{
-              "headline": "<neutral headline>",
-              "one_line_summary": "<1-sentence summary>",
-              "short_summary": "<1-paragraph summary>",
-              "detailed_summary": "<multi-paragraph detailed summary>",
-              "key_facts": ["fact1", "fact2", "fact3"],
-              "category": "<one of: politics, world, business, technology, sports, entertainment, lifestyle, travel, education, health, science, weather>"
-            }}
-            """
-
             from app.ai.gateway import ai_gateway
+            from app.models.llm_responses import StorySummaryResponse
 
-            response = await ai_gateway.execute_request(
-                model=model,
+            response = await ai_gateway.generate_stage(
                 stage="summary_refinement",
-                messages=[{"role": "user", "content": refine_prompt}],
-                temperature=0.1,
+                prompt_variables={
+                    "existing_summary": str(existing_summary_payload),
+                    "corrections": str(corrections),
+                    "knowledge_graph": str(kg),
+                },
+                schema=StorySummaryResponse,
                 story_id=str(story_id),
             )
 
-            summary_dict = json.loads(response.content)
+            if response.parsed:
+                summary_dict = response.parsed.model_dump()
+            else:
+                summary_dict = json.loads(response.content)
             cache_hit = False
             cost = response.cost_usd or 0.002
 
@@ -590,7 +574,7 @@ class StorySynthesisOrchestrator:
                 }
 
                 await pipeline_cache.set_stage_result(
-                    stage="summary_generation",
+                    stage=PipelineStage.SUMMARY_GENERATION.value,
                     content_hash=story_input_hash,
                     result_data=summary_dict,
                     model=model,
@@ -608,7 +592,7 @@ class StorySynthesisOrchestrator:
         await self.record_trace(
             session=session,
             story_id=story_id,
-            stage="summary_generation",
+            stage=PipelineStage.SUMMARY_GENERATION.value,
             started_at=started_at,
             completed_at=_now(),
             cost_usd=cost,
@@ -719,7 +703,7 @@ class StorySynthesisOrchestrator:
         await self.record_trace(
             session=session,
             story_id=story.id,
-            stage="publisher",
+            stage=PipelineStage.PUBLISHER.value,
             started_at=started_at,
             completed_at=_now(),
             cost_usd=0.0,
@@ -747,7 +731,7 @@ class StorySynthesisOrchestrator:
             await self.record_trace(
                 session=session,
                 story_id=story_id,
-                stage="synthesis_orchestrator",
+                stage=PipelineStage.SYNTHESIS_ORCHESTRATOR.value,
                 started_at=_now(),
                 completed_at=_now(),
                 cost_usd=0.0,
@@ -964,7 +948,7 @@ class StorySynthesisOrchestrator:
         await self.record_trace(
             session=session,
             story_id=story_id,
-            stage="feedback_agent",
+            stage=PipelineStage.FEEDBACK_AGENT.value,
             started_at=_now(),
             completed_at=_now(),
             cost_usd=0.0,

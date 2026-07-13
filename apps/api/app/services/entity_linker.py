@@ -282,11 +282,10 @@ class EntityLinker:
                 "context": context[:3000],
             }
 
-            response = await ai_gateway.generate(
-                capability="entity_linking",
+            response = await ai_gateway.generate_stage(
+                stage="entity_linking",
                 prompt_variables=prompt_variables,
                 schema=EntityResolution,
-                temperature=0.1,
                 story_id=story_id,
             )
 

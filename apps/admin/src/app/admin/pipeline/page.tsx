@@ -24,21 +24,23 @@ import {
   RotateCw,
   Copy,
   Check,
+  Sparkles,
+  Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
 
 // Frontend Node configuration
 const PIPELINE_STAGES = [
-  { id: "RSS", label: "RSS Ingestion", group: "ingestion" },
-  { id: "DISCOVERY", label: "Discovery Search", group: "discovery" },
-  { id: "CRAWL", label: "Crawl Queue", group: "discovery" },
-  { id: "CANDIDATE_RETRIEVAL", label: "Candidate Retrieval", group: "processing" },
-  { id: "STAGE_A", label: "Stage A Filters", group: "processing" },
-  { id: "STAGE_B", label: "Stage B LLM", group: "processing" },
-  { id: "CLUSTERING", label: "Story Clustering", group: "processing" },
-  { id: "SYNTHESIS", label: "Story Synthesis", group: "generation" },
-  { id: "FEEDBACK", label: "Feedback Agent", group: "generation" },
-  { id: "PUBLISHER", label: "Publisher Engine", group: "output" },
+  { id: "RSS", label: "RSS Ingestion", group: "ingestion", isAi: false },
+  { id: "DISCOVERY", label: "Discovery Search", group: "discovery", isAi: false },
+  { id: "CRAWL", label: "Crawl Queue", group: "discovery", isAi: false },
+  { id: "CANDIDATE_RETRIEVAL", label: "Candidate Retrieval", group: "processing", isAi: false },
+  { id: "STAGE_A", label: "Stage A Filters", group: "processing", isAi: false },
+  { id: "STAGE_B", label: "Stage B LLM", group: "processing", isAi: true },
+  { id: "CLUSTERING", label: "Story Clustering", group: "processing", isAi: false },
+  { id: "SYNTHESIS", label: "Story Synthesis", group: "generation", isAi: true },
+  { id: "FEEDBACK", label: "Feedback Agent", group: "generation", isAi: true },
+  { id: "PUBLISHER", label: "Publisher Engine", group: "output", isAi: false },
 ];
 
 const GROUP_COLORS: Record<string, { bg: string; border: string; text: string }> = {
@@ -182,11 +184,13 @@ function StageNode({
   stageStatus,
   onClick,
   isActive,
+  isDimmed,
 }: {
   stage: (typeof PIPELINE_STAGES)[0];
   stageStatus?: string;
   onClick: () => void;
   isActive: boolean;
+  isDimmed: boolean;
 }) {
   const status = stageStatus ?? "pending";
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
@@ -213,7 +217,9 @@ function StageNode({
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col gap-1 p-4 rounded-xl border text-left transition-all duration-200 glass-hover ${stateCls}`}
+      className={`flex flex-col gap-1 p-4 rounded-xl border text-left transition-all duration-200 glass-hover ${stateCls} ${
+        isDimmed ? "opacity-25 blur-[0.3px] scale-[0.97] pointer-events-none select-none" : ""
+      }`}
     >
       <div className="flex items-center justify-between gap-2 w-full">
         <span className="text-[12px] font-bold tracking-tight">
@@ -221,8 +227,23 @@ function StageNode({
         </span>
         <Icon className={`w-3.5 h-3.5 shrink-0 ${cfg.iconCls || ""}`} />
       </div>
-      <span className="text-[9px] font-mono text-slate-600 uppercase mt-0.5">{stage.id}</span>
-      <div className="flex items-center gap-1.5 mt-2">
+      
+      <div className="flex items-center justify-between w-full mt-1">
+        <span className="text-[9px] font-mono text-slate-550 uppercase">{stage.id}</span>
+        {stage.isAi ? (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/20">
+            <Sparkles className="w-2 h-2 shrink-0" />
+            AI Stage
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/20">
+            <Cpu className="w-2 h-2 shrink-0" />
+            Rule-Based
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-2.5">
         <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/30">
           {status}
         </span>
@@ -231,10 +252,34 @@ function StageNode({
   );
 }
 
+const PIPELINE_PHASES = [
+  {
+    title: "1. Ingestion & Discovery",
+    desc: "Fetch feeds & scrape content",
+    stages: ["RSS", "DISCOVERY", "CRAWL"],
+  },
+  {
+    title: "2. Deduplication & Extraction",
+    desc: "Filter duplicates & run entities",
+    stages: ["CANDIDATE_RETRIEVAL", "STAGE_A", "STAGE_B"],
+  },
+  {
+    title: "3. Clustering & Synthesis",
+    desc: "Group stories & generate summary",
+    stages: ["CLUSTERING", "SYNTHESIS"],
+  },
+  {
+    title: "4. Verification & Output",
+    desc: "Human review & database commit",
+    stages: ["FEEDBACK", "PUBLISHER"],
+  },
+];
+
 export default function PipelinePage() {
   const { lastEvent, events, status: sseStatus } = useSSE();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [wasAutoPinned, setWasAutoPinned] = useState(false);
+  const [dagFilter, setDagFilter] = useState<"all" | "ai" | "deterministic">("all");
 
   // Active stage drawer states
   const [activeStageId, setActiveStageId] = useState<string | null>(null); // e.g. "NLP_ANALYSIS"
@@ -617,25 +662,93 @@ export default function PipelinePage() {
 
       {/* Pipeline DAG */}
       <div className="glass rounded-2xl p-6 border border-slate-850">
-        <h2 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
-          <span>Pipeline Stage execution DAG</span>
-          {pipelineStatus?.status === "running" && (
-            <span className="flex items-center gap-1.5 text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full font-normal animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-              Executing
-            </span>
-          )}
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800/60">
+          <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+            <span>Pipeline Stage Execution DAG</span>
+            {pipelineStatus?.status === "running" && (
+              <span className="flex items-center gap-1.5 text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full font-normal animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                Executing
+              </span>
+            )}
+          </h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-          {PIPELINE_STAGES.map((stage) => (
-            <StageNode
-              key={stage.id}
-              stage={stage}
-              stageStatus={stageStatusMap[stage.id]}
-              onClick={() => handleOpenDrawer(stage.id)}
-              isActive={activeStageId === stage.id && isDrawerOpen}
-            />
+          {/* AI vs Deterministic Filter Toggles */}
+          <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-850 self-start">
+            <button
+              onClick={() => setDagFilter("all")}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                dagFilter === "all"
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setDagFilter("ai")}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                dagFilter === "ai"
+                  ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Sparkles className="w-2.5 h-2.5" />
+              AI Stages
+            </button>
+            <button
+              onClick={() => setDagFilter("deterministic")}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                dagFilter === "deterministic"
+                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Cpu className="w-2.5 h-2.5" />
+              Rule-Based
+            </button>
+          </div>
+        </div>
+
+        {/* Columns DAG Flow */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 relative">
+          {PIPELINE_PHASES.map((phase, phaseIdx) => (
+            <div key={phase.title} className="bg-slate-900/10 rounded-2xl p-4 border border-slate-800/80 flex flex-col gap-4 relative">
+              {/* Phase Header */}
+              <div>
+                <h3 className="text-xs font-bold text-slate-300">{phase.title}</h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">{phase.desc}</p>
+              </div>
+
+              {/* Phase Stages */}
+              <div className="flex flex-col gap-3.5 flex-grow">
+                {phase.stages.map((stageId) => {
+                  const stage = PIPELINE_STAGES.find((s) => s.id === stageId)!;
+                  const status = stageStatusMap[stageId];
+                  return (
+                    <StageNode
+                      key={stage.id}
+                      stage={stage}
+                      stageStatus={status}
+                      onClick={() => handleOpenDrawer(stage.id)}
+                      isActive={activeStageId === stage.id && isDrawerOpen}
+                      isDimmed={
+                        dagFilter === "ai" ? !stage.isAi :
+                        dagFilter === "deterministic" ? stage.isAi :
+                        false
+                      }
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Connector arrow between columns on desktop */}
+              {phaseIdx < 3 && (
+                <div className="hidden xl:flex absolute top-1/2 -right-3.5 transform -translate-y-1/2 z-10 items-center justify-center w-7 h-7 rounded-full bg-slate-950 border border-slate-800 text-slate-500 font-mono text-xs">
+                  →
+                </div>
+              )}
+            </div>
           ))}
         </div>
 

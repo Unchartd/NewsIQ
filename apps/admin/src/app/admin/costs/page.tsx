@@ -105,7 +105,7 @@ export default function CostsPage() {
         <div className="glass rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-slate-200 mb-4">Cost by Pipeline Stage</h2>
           {stageData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-655 text-sm">No data yet.</div>
+            <div className="h-48 flex items-center justify-center text-slate-500 text-sm">No data yet.</div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={stageData} layout="vertical" margin={{ left: 20, right: 20, top: 0, bottom: 0 }}>
@@ -125,7 +125,7 @@ export default function CostsPage() {
         <div className="glass rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-slate-200 mb-4">Cost Distribution by Model</h2>
           {modelData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-655 text-sm">No data yet.</div>
+            <div className="h-48 flex items-center justify-center text-slate-500 text-sm">No data yet.</div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>

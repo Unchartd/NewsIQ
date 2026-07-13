@@ -38,13 +38,13 @@ class PromptRegistry:
         # Hardcoded list corresponding to the YAML files
         return [
             "event_extraction",
+            "entity_extraction",
+            "entity_linking",
+            "cluster_verification",
             "contradiction_detection",
-            "contradiction_analysis",
             "source_comparison",
             "summary_generation",
             "summary_reflection",
-            "cluster_verification",
-            "entity_linking",
         ]
 
     def register(self, prompt: PromptTemplate) -> None:

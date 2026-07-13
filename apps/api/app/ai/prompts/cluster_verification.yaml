@@ -1,5 +1,10 @@
 stage: "cluster_verification"
-version: "v2"
+prompt_uri: "newsiq://prompt/cluster_verification"
+version: "v2.0.0"
+schema_version: "v1"
+response_version: "v1"
+response_model: "ClusterVerificationResponse"
+
 system: |
   You are a Staff Search and News Intelligence Engineer specializing in event validation.
 
@@ -25,3 +30,47 @@ template: |
   Knowledge Graph Context: {kg_nodes}
 
   Determine if they represent the same event.
+
+routing:
+  preferred_model: "gemini-3.1-flash-lite"
+  fallback_models:
+    - "qwen.qwen3-vl-235b-a22b-instruct"
+    - "deepseek-ai/deepseek-v4-flash"
+  temperature: 0.1
+  max_tokens: 512
+  timeout_seconds: 30.0
+
+cache:
+  cacheable: true
+  cache_ttl_seconds: 3600
+  cache_inputs:
+    - story_input_hash
+    - version
+
+dependencies:
+  prompt_dependencies:
+    - event_extraction
+
+lifecycle:
+  state: "production"
+  replay_policy: "replayable"
+
+lineage:
+  parent_uri: null
+  derived_from: null
+  created_at: "2026-07-14"
+  deprecated_at: null
+  deprecated_reason: null
+  superseded_by: null
+
+ownership:
+  owner: "clustering"
+  team: "ai"
+  created_by: "system"
+  last_reviewed: "2026-07-14"
+  documentation: null
+
+compatibility:
+  min_pipeline_version: ">=1.0"
+  min_schema_version: ">=1"
+  min_gateway_version: ">=2"

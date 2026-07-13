@@ -242,6 +242,14 @@ class AdminService:
                     version=p.version,
                     is_active=p.is_active,
                     created_at=p.created_at,
+                    prompt_uri=p.prompt_uri,
+                    schema_version=p.schema_version,
+                    preferred_model=p.preferred_model,
+                    lifecycle_state=p.lifecycle_state,
+                    parent_uri=p.parent_uri,
+                    deprecated_at=p.deprecated_at,
+                    deprecated_reason=p.deprecated_reason,
+                    superseded_by=p.superseded_by,
                 )
                 for p in prompts
             ]

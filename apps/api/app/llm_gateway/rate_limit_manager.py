@@ -14,7 +14,14 @@ class RateLimitManager:
     def __init__(self) -> None:
         self.redis_client = None
         try:
-            self.redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            client = redis.from_url(
+                settings.REDIS_URL,
+                decode_responses=True,
+                socket_timeout=1.0,
+                socket_connect_timeout=1.0,
+            )
+            client.ping()
+            self.redis_client = client
             logger.info("RateLimitManager configured with Redis backend.")
         except Exception as e:
             logger.warning(
