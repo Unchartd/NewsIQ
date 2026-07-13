@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     DISCOVERY_LOCK_TTL: int = 10 * 60    # 10 minutes in seconds
     DISCOVERY_MAX_CONCURRENT_DOWNLOADS: int = 5
     DISCOVERY_SCORE_THRESHOLD: float = 0.50
+    DISCOVERY_DAILY_SEARCH_BUDGET: int = 1000
+    DISCOVERY_DAILY_DOWNLOAD_BUDGET: int = 5000
+    DISCOVERY_MAX_RETRIES: int = 3
     
     # Discovery Candidate Scoring Weights
     DISCOVERY_FRESHNESS_WEIGHT: float = 0.20

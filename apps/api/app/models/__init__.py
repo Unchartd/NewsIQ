@@ -32,6 +32,10 @@ from app.models.models import (
     UserEvent,
     UserLocation,
     UserPreference,
+    DiscoveryTask,
+    DiscoveryTaskState,
+    CrawlTask,
+    CrawlTaskState,
 )
 from app.models.observability_models import (
     CostRecordModel,
@@ -82,6 +86,10 @@ __all__ = [
     "SynthesisArtifact",
     "StoryVersion",
     "StoryReview",
+    "DiscoveryTask",
+    "DiscoveryTaskState",
+    "CrawlTask",
+    "CrawlTaskState",
     # Observability models
     "PipelineRunModel",
     "PipelineTraceModel",

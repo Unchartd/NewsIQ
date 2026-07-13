@@ -367,7 +367,7 @@ class IngestionService:
             new_articles_count += 1
 
             if not existing_article and not duplicate_existing:
-                discovery_candidates.append((title, content, published_at))
+                discovery_candidates.append(article)
 
         if new_articles_count > 0:
             try:
@@ -376,44 +376,67 @@ class IngestionService:
                     "Ingested %d new articles for source '%s'", new_articles_count, source_name
                 )
                 
-                # Execute Google News search discovery for new unique articles
-                discovery_metadata_list = []
+                # Execute Google News search discovery asynchronously via DB tasks
                 if discovery_candidates:
                     from app.services.gnews_service import gnews_service
-                    for title_val, content_val, pub_at in discovery_candidates:
+                    from app.models.models import DiscoveryTask, DiscoveryTaskState
+                    from app.workers.tasks import discovery_search_task
+                    
+                    for art_obj in discovery_candidates:
                         # 1. Increment total processed metric
                         await gnews_service._incr_metric("rss_processed")
                         
                         # 2. Apply Quality/Prioritization Filters
-                        should_search, skip_reason = self.should_prioritize_discovery(title_val, content_val, pub_at, source_name)
+                        should_search, skip_reason = self.should_prioritize_discovery(
+                            art_obj.title, art_obj.content, art_obj.published_at, source_name
+                        )
                         if not should_search:
                             await gnews_service._incr_metric(f"search_skipped_{skip_reason}")
-                            discovery_metadata_list.append({
-                                "title": title_val,
-                                "searched": False,
-                                "skip_reason": skip_reason
-                            })
                             continue
+                            
+                        # 3. Create DiscoveryTask in the database
+                        normalized_query = self.normalize_headline(art_obj.title)
                         
-                        # 3. Trigger cached search and ingestion loop
+                        # Calculate priority (0-100) based on category/source
+                        priority = 50
+                        priority_reason = "Standard"
+                        source_lower = (source_name or "").lower()
+                        if any(x in source_lower for x in ("reuters", "apnews", "associated press", "bloomberg")):
+                            priority = 90
+                            priority_reason = "Trusted Source"
+                        
+                        import hashlib
+                        from datetime import UTC
+                        query_hash = hashlib.sha256(normalized_query.encode("utf-8")).hexdigest()
+                        date_bucket = datetime.now(UTC).strftime("%Y-%m-%d")
+                        idempotency_key = f"{settings.DISCOVERY_PROVIDER}:{query_hash}:{date_bucket}"
+                        
                         try:
-                            meta = await gnews_service.search_and_ingest_similar_articles(
-                                title=title_val,
-                                session=session,
-                                max_articles=7
+                            new_task = DiscoveryTask(
+                                article_id=art_obj.id,
+                                query=normalized_query,
+                                provider=settings.DISCOVERY_PROVIDER,
+                                priority=priority,
+                                priority_reason=priority_reason,
+                                status=DiscoveryTaskState.PENDING,
+                                idempotency_key=idempotency_key,
+                                created_at=datetime.now(UTC).replace(tzinfo=None),
                             )
-                            meta["title"] = title_val
-                            discovery_metadata_list.append(meta)
-                        except Exception as discovery_exc:
-                            logger.error("Discovery search failed for title '%s': %s", title_val, discovery_exc)
-                            await gnews_service._incr_metric("search_failed")
-                            discovery_metadata_list.append({
-                                "title": title_val,
-                                "searched": True,
-                                "error": str(discovery_exc)
-                            })
-                if discovery_metadata_list:
-                    self.last_discovery_metadata.extend(discovery_metadata_list)
+                            session.add(new_task)
+                            async with session.begin_nested():
+                                await session.flush()
+                                
+                            await session.commit()
+                            
+                            # Dispatch asynchronously to Celery search queue
+                            discovery_search_task.delay(str(new_task.id))
+                            logger.info("Enqueued asynchronous DiscoveryTask %s for article %s (Priority: %d)", 
+                                        new_task.id, art_obj.id, priority)
+                        except Exception as task_exc:
+                            # Unique violation or race condition; skip duplicate task creation safely
+                            logger.info("DiscoveryTask for query '%s' already exists (Idempotency key hit): %s", 
+                                        normalized_query, task_exc)
+                            await session.rollback()
             except Exception as e:
                 await session.rollback()
                 logger.error("Failed to save ingested articles for '%s': %s", source_name, e)
