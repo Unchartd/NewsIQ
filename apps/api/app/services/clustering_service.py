@@ -1199,7 +1199,14 @@ class ClusteringService:
         try:
             return await self._run_batch_clustering_locked(session)
         finally:
-            await session.execute(text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})"))
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            try:
+                await session.execute(text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})"))
+            except Exception as e:
+                logger.warning("Failed to release pg_advisory_unlock in finally block: %s", e)
 
     async def _run_batch_clustering_locked(self, session: AsyncSession) -> int:
         """Internal method running batch clustering under global lock."""
