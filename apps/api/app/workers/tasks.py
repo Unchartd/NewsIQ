@@ -517,6 +517,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
 
                             # Try real-time incremental merge into similar story
                             from app.services.clustering_service import clustering_service
+                            from app.services.pipeline_coordinator import discovery_manager
 
                             merged = (
                                 await clustering_service.add_article_to_existing_story_if_similar(
@@ -525,6 +526,8 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             )
                             if merged:
                                 merged_count += 1
+                            else:
+                                await discovery_manager.enqueue_article(session, article.id)
 
                         except Exception as e:
                             from app.llm_gateway.request_manager import QuotaExhaustedError
@@ -667,6 +670,10 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
                 async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
                     async with async_session_factory() as session:
                         from app.services.clustering_service import clustering_service
+                        from app.services.pipeline_coordinator import discovery_manager
+
+                        # Promote PENDING articles in DiscoveryQueue to READY state
+                        await discovery_manager.check_triggers_and_group(session, force=True)
 
                         try:
                             stories_created = await clustering_service.run_batch_clustering(session)
