@@ -1408,7 +1408,8 @@ export function LandingClientPage() {
               <div className="feat-title">Trending Intelligence</div>
               <div className="feat-desc">
                 Stories are scored by source count, recency, and velocity. See
-                what&apos;s gaining coverage right now — not just what&apos;s newest.
+                what&apos;s gaining coverage right now — not just what&apos;s
+                newest.
               </div>
             </div>
 
@@ -1563,8 +1564,8 @@ export function LandingClientPage() {
             <div className="eyebrow">Live example</div>
             <h2 className="section-title">See NewsIQ in action</h2>
             <p className="section-sub">
-              This is a real NewsIQ story — the same layout you&apos;ll see every day
-              in the app.
+              This is a real NewsIQ story — the same layout you&apos;ll see
+              every day in the app.
             </p>
           </div>
           <div className="demo-card reveal">
@@ -1799,7 +1800,9 @@ export function LandingClientPage() {
         <div className="container">
           <div className="section-header center reveal">
             <div className="eyebrow">Why NewsIQ</div>
-            <h2 className="section-title">Built for understanding, not clicks</h2>
+            <h2 className="section-title">
+              Built for understanding, not clicks
+            </h2>
             <p className="section-sub">
               Other aggregators surface articles. NewsIQ explains stories.
             </p>
@@ -1812,7 +1815,8 @@ export function LandingClientPage() {
                 <div className="why-card-icon why-icon-google">🔍</div>
                 <div className="why-card-name">Google News</div>
                 <div className="why-card-tagline">
-                  Lists article links from publishers. You click, you read, you repeat.
+                  Lists article links from publishers. You click, you read, you
+                  repeat.
                 </div>
               </div>
               <ul className="why-feat-list">
@@ -1853,13 +1857,14 @@ export function LandingClientPage() {
                 <div className="why-card-icon why-icon-newsiq">📰</div>
                 <div className="why-card-name">NewsIQ</div>
                 <div className="why-card-tagline">
-                  Understands stories. Surfaces contradictions. Gives you the full picture in 30 seconds.
+                  Understands stories. Surfaces contradictions. Gives you the
+                  full picture in 30 seconds.
                 </div>
               </div>
               <ul className="why-feat-list">
                 <li className="why-feat-item yes">
                   <span className="why-feat-icon why-icon-star">★</span>
-                  <span className="why-feat-txt">10,000+ sources</span>
+                  <span className="why-feat-txt">500+ sources</span>
                 </li>
                 <li className="why-feat-item yes">
                   <span className="why-feat-icon why-icon-star">★</span>
@@ -1883,7 +1888,9 @@ export function LandingClientPage() {
                 </li>
               </ul>
               <div className="why-center-cta">
-                <span className="why-cta-txt">The complete news experience</span>
+                <span className="why-cta-txt">
+                  The complete news experience
+                </span>
               </div>
             </div>
 
@@ -1893,7 +1900,8 @@ export function LandingClientPage() {
                 <div className="why-card-icon why-icon-traditional">📋</div>
                 <div className="why-card-name">Traditional Aggregators</div>
                 <div className="why-card-tagline">
-                  Curated headline lists. Human editors. Limited AI. Still requires you to read.
+                  Curated headline lists. Human editors. Limited AI. Still
+                  requires you to read.
                 </div>
               </div>
               <ul className="why-feat-list">
@@ -2173,7 +2181,7 @@ export function LandingClientPage() {
               },
               {
                 q: "Which publishers does NewsIQ cover?",
-                a: "We aggregate from 10,000+ sources globally, including Reuters, AP, BBC, Bloomberg, The Guardian, CNN, CNBC, and in India: NDTV, Times of India, The Hindu, Indian Express, Hindustan Times, Deccan Herald, and many more. We're constantly adding new sources. If you'd like a specific publication added, contact us at sources@newsiq.in.",
+                a: "We aggregate from 500+ sources globally, including Reuters, AP, BBC, Bloomberg, The Guardian, CNN, CNBC, and in India: NDTV, Times of India, The Hindu, Indian Express, Hindustan Times, Deccan Herald, and many more. We're constantly adding new sources. If you'd like a specific publication added, contact us at hello.newsiq@gmail.com.",
               },
               {
                 q: "Can I compare coverage between publishers?",
@@ -2292,8 +2300,8 @@ export function LandingClientPage() {
             <div className="footer-brand">
               <BrandLogo variant="full" size="sm" theme="dark" />
               <p className="footer-tagline">
-                AI-powered news intelligence. Understand the world&apos;s events in
-                under 30 seconds.
+                AI-powered news intelligence. Understand the world&apos;s events
+                in under 30 seconds.
               </p>
               <div className="footer-social">
                 <div
