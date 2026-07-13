@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const TABS = ["Overview", "Articles", "Entities", "LLM Traces", "Replay"] as const;
+const TABS = ["Overview", "Articles", "Entities", "LLM Traces", "Replay", "Versions"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function StoryInspectorPage() {
@@ -53,6 +53,29 @@ export default function StoryInspectorPage() {
     onError: () => {
       toast.error("Failed to update story status.");
     }
+  });
+
+  const { data: versions, refetch: refetchVersions } = useQuery<any[]>({
+    queryKey: ["story-versions", storyId],
+    queryFn: async () => {
+      const res = await apiClient.get(`/admin/pipeline/story/${storyId}/versions`);
+      return res.data;
+    },
+    enabled: !!storyId && tab === "Versions",
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: async (versionNumber: number) => {
+      await apiClient.post(`/admin/pipeline/story/${storyId}/rollback/${versionNumber}`);
+    },
+    onSuccess: () => {
+      toast.success("Story successfully rolled back!");
+      queryClient.invalidateQueries({ queryKey: ["story-inspect", storyId] });
+      refetchVersions();
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Failed to rollback story version.");
+    },
   });
 
   if (isLoading) {
@@ -330,14 +353,64 @@ export default function StoryInspectorPage() {
                     } else {
                       await apiClient.post(`/admin/replay/${storyId}/${stage}`);
                     }
-                    alert(`Replay queued: ${stage}`);
-                  } catch { alert("Failed to queue replay."); }
+                    toast.success(`Replay queued: ${stage}`);
+                  } catch { toast.error("Failed to queue replay."); }
                 }}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 {stage === "full" ? "Full Pipeline" : stage.replace("_", " ")}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {tab === "Versions" && (
+        <div className="space-y-4">
+          <div className="glass rounded-2xl p-6 space-y-4">
+            <h3 className="text-sm font-semibold text-slate-200">Historical Version Snapshots</h3>
+            <p className="text-xs text-slate-550">
+              Each time the story is updated via new clusters or stage execution, a snapshot version is preserved.
+              You can atomically roll back to any past version.
+            </p>
+
+            {!versions || versions.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center py-8">No historical snapshots recorded.</p>
+            ) : (
+              <div className="space-y-3">
+                {versions.map((v: any) => (
+                  <div
+                    key={v.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-900/40 rounded-xl border border-slate-800 gap-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-200">Version {v.version_number}</span>
+                        <span className="badge badge-neutral text-[9px] uppercase">{v.pipeline_version}</span>
+                        {story.current_version_id === v.id && (
+                          <span className="badge badge-success text-[9px] uppercase">Active</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1 font-mono">
+                        Created: {v.created_at ? new Date(v.created_at).toLocaleString() : "—"} · Trigger: {v.trigger}
+                      </p>
+                      <p className="text-[10px] text-amber-500 font-mono mt-0.5">
+                        LLM Cost: ${v.llm_cost_usd.toFixed(4)}
+                      </p>
+                    </div>
+                    {story.current_version_id !== v.id && (
+                      <button
+                        onClick={() => rollbackMutation.mutate(v.version_number)}
+                        disabled={rollbackMutation.isPending}
+                        className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-xs font-semibold transition-all disabled:opacity-40"
+                      >
+                        {rollbackMutation.isPending ? "Rolling back..." : `Rollback to V${v.version_number}`}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
