@@ -1360,13 +1360,13 @@ async def trigger_evaluation_run(
 
     python_exe = sys.executable
     script_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../tests/golden/eval_runner.py")
+        os.path.join(os.path.dirname(__file__), "../../../tests/golden/eval_runner.py")
     )
 
     try:
         # Run subprocess under correct python env
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
         process = await asyncio.create_subprocess_exec(
             python_exe, script_path, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
