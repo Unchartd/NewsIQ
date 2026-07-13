@@ -8,7 +8,7 @@ def test_model_router_selection():
     """Verify that model router returns correct models based on complexity and budget state."""
     # 1. Standard selection
     m = model_router.select(stage="event_extraction", complexity="standard")
-    assert m == "gemini-3.1-flash-lite"
+    assert m == "gemini-3.5-flash-lite"
 
     # 2. Complex selection
     m = model_router.select(stage="event_extraction", complexity="complex")
@@ -16,7 +16,7 @@ def test_model_router_selection():
 
     # 3. Budget exceeded selection
     m = model_router.select(stage="event_extraction", budget_exceeded=True)
-    assert m == "gemini-3.1-flash-lite"
+    assert m == "gemini-3.5-flash-lite"
 
     # 4. Skip reflection on budget exceeded
     m = model_router.select(stage="summary_reflection", budget_exceeded=True)
@@ -27,6 +27,7 @@ def test_model_router_selection():
 async def test_cost_budget_manager_tracking():
     """Verify that CostBudgetManager tracks cost in Redis or fallback memory."""
     from unittest.mock import patch
+
     story_id = "test-story-id"
 
     # Check default limit
@@ -34,8 +35,10 @@ async def test_cost_budget_manager_tracking():
     assert limit == 0.015  # high stakes default
 
     from app.services.cache_service import cache_service
+
     with patch.object(cache_service, "_redis", None):
         from app.services.cost_budget import _memory_cost_cache
+
         _memory_cost_cache[story_id] = 0.0
 
         # Add cost

@@ -21,24 +21,24 @@ class ModelRouter:
         # Default fallback table
         default_table = {
             "event_extraction": {
-                "standard": "gemini-3.1-flash-lite",
+                "standard": "gemini-3.5-flash-lite",
                 "complex": "gemini-2.5-flash",
-                "budget_exceeded": "gemini-3.1-flash-lite",
+                "budget_exceeded": "gemini-3.5-flash-lite",
             },
             "entity_linking": {
-                "standard": "gemini-3.1-flash-lite",
+                "standard": "gemini-3.5-flash-lite",
                 "complex": "gemini-2.5-flash",
-                "budget_exceeded": "gemini-3.1-flash-lite",
+                "budget_exceeded": "gemini-3.5-flash-lite",
             },
             "contradiction_detection": {
-                "standard": "gemini-3.1-flash-lite",
+                "standard": "gemini-3.5-flash-lite",
                 "complex": "gemini-2.5-flash",
-                "budget_exceeded": "gemini-3.1-flash-lite",
+                "budget_exceeded": "gemini-3.5-flash-lite",
             },
             "source_comparison": {
-                "standard": "gemini-3.1-flash-lite",
+                "standard": "gemini-3.5-flash-lite",
                 "complex": "gemini-2.5-flash",
-                "budget_exceeded": "gemini-3.1-flash-lite",
+                "budget_exceeded": "gemini-3.5-flash-lite",
             },
             "summary_generation": {
                 "standard": "gemini-2.5-flash",
@@ -46,14 +46,14 @@ class ModelRouter:
                 "budget_exceeded": "gemini-2.5-flash",
             },
             "summary_reflection": {
-                "standard": "gemini-3.1-flash-lite",
+                "standard": "gemini-3.5-flash-lite",
                 "complex": "gemini-2.5-flash",
                 "budget_exceeded": "skip",
             },
             "cluster_verification": {
-                "standard": "gemini-3.1-flash-lite",
+                "standard": "gemini-3.5-flash-lite",
                 "complex": "gemini-2.5-flash",
-                "budget_exceeded": "gemini-3.1-flash-lite",
+                "budget_exceeded": "gemini-3.5-flash-lite",
             },
         }
 

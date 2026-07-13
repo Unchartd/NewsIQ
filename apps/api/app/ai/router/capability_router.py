@@ -7,6 +7,7 @@ from typing import Any
 from app.ai.config import CAPABILITY_ROUTING, ProviderModelRoute, ProviderType
 from app.ai.interfaces import AIProvider, APIKey
 from app.ai.metrics.telemetry import newsiq_ai_gateway_circuit_state
+from app.ai.providers.bedrock import BedrockProvider
 from app.ai.providers.gemini import GeminiProvider
 from app.ai.providers.mock import MockProvider
 from app.ai.providers.nvidia import NvidiaProvider
@@ -78,6 +79,7 @@ class CapabilityRouter:
             "nvidia": NvidiaProvider(),
             "openrouter": OpenRouterProvider(),
             "mock": MockProvider(),
+            "bedrock": BedrockProvider(),
         }
 
         # Initialize health trackers
@@ -86,6 +88,7 @@ class CapabilityRouter:
             "nvidia": ProviderHealthTracker("nvidia"),
             "openrouter": ProviderHealthTracker("openrouter"),
             "mock": ProviderHealthTracker("mock"),
+            "bedrock": ProviderHealthTracker("bedrock"),
         }
 
         self.pools: dict[str, list[APIKey]] = {}
@@ -128,6 +131,18 @@ class CapabilityRouter:
                 key="mock-key", provider="mock", requests_per_minute=1000, requests_per_day=100000
             )
         ]
+
+        # 5. AWS Bedrock
+        bedrock_keys = []
+        bedrock_env = settings.AWS_BEDROCK_API_KEY or ""
+        if bedrock_env:
+            for k in [k.strip() for k in bedrock_env.split(",") if k.strip()]:
+                bedrock_keys.append(
+                    APIKey(
+                        key=k, provider="bedrock", requests_per_minute=200, requests_per_day=100000
+                    )
+                )
+        self.pools["bedrock"] = bedrock_keys
 
     def _select_key(self, provider: str) -> APIKey | None:
         """Rotate keys and select a non-cooldown healthy key from the pool."""
