@@ -412,6 +412,8 @@ class IngestionService:
                         idempotency_key = f"{settings.DISCOVERY_PROVIDER}:{query_hash}:{date_bucket}"
                         
                         try:
+                            if not session.in_transaction():
+                                await session.begin()
                             new_task = DiscoveryTask(
                                 article_id=art_obj.id,
                                 query=normalized_query,
@@ -436,7 +438,8 @@ class IngestionService:
                             # Unique violation or race condition; skip duplicate task creation safely
                             logger.info("DiscoveryTask for query '%s' already exists (Idempotency key hit): %s", 
                                         normalized_query, task_exc)
-                            await session.rollback()
+                            if session.in_transaction():
+                                await session.rollback()
             except Exception as e:
                 await session.rollback()
                 logger.error("Failed to save ingested articles for '%s': %s", source_name, e)
