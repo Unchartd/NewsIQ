@@ -392,7 +392,14 @@ class AIGateway:
                         capability,
                         err,
                     )
-                    capability_router.health_trackers[provider_name].report_failure(str(err))
+                    # Rate limit errors are transient quota limits; do not trip the circuit breaker for them globally
+                    if not isinstance(err, RateLimitError):
+                        capability_router.health_trackers[provider_name].report_failure(str(err))
+                    else:
+                        logger.info(
+                            "Gateway: RateLimitError encountered for %s. Skipping circuit breaker health degradation.",
+                            provider_name,
+                        )
                     last_error = err
 
                     # Record prompt metrics on failure

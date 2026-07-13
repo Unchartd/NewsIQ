@@ -202,7 +202,22 @@ class CapabilityRouter:
             chain.append((self.clients[provider], key, cfg))
 
         if not chain:
-            # Fallback to mock in desperation or raise
+            logger.warning(
+                "No healthy providers available for capability '%s'. Bypassing circuit breakers as a desperation fallback.",
+                capability,
+            )
+            for level in levels:
+                cfg = route_config[level].copy()
+                provider = cfg["provider"]
+                if capability == "embedding" and provider == "gemini" and settings.EMBEDDING_MODEL:
+                    cfg["model"] = settings.EMBEDDING_MODEL
+
+                key = self._select_key(provider)
+                if not key:
+                    continue
+                chain.append((self.clients[provider], key, cfg))
+
+        if not chain:
             raise RuntimeError(f"No healthy providers available for capability: {capability}")
 
         return chain
@@ -250,6 +265,18 @@ class CapabilityRouter:
                 continue
 
             chain.append((self.clients[provider], key, cfg))
+
+        if not chain:
+            logger.warning(
+                "No healthy providers available for model '%s'. Bypassing circuit breakers as a desperation fallback.",
+                model,
+            )
+            for cfg in routes:
+                provider = cfg["provider"]
+                key = self._select_key(provider)
+                if not key:
+                    continue
+                chain.append((self.clients[provider], key, cfg))
 
         if not chain:
             mock_key = self._select_key("mock")
