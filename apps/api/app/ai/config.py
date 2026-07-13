@@ -28,7 +28,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -44,7 +44,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         {"provider": "gemini", "model": "gemini-2.5-flash", "temperature": 0.1, "timeout": 30.0},
         {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -60,7 +60,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         {"provider": "gemini", "model": "gemini-2.5-pro", "temperature": 0.1, "timeout": 45.0},
         {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 45.0,
         },
@@ -81,7 +81,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -102,7 +102,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -118,7 +118,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         {"provider": "gemini", "model": "gemini-2.5-pro", "temperature": 0.1, "timeout": 45.0},
         {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 45.0,
         },
@@ -149,7 +149,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -169,7 +169,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.3,
             "timeout": 15.0,
         },
@@ -189,7 +189,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -209,7 +209,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -229,7 +229,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 15.0,
         },
@@ -249,7 +249,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.3,
             "timeout": 15.0,
         },
@@ -269,7 +269,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -289,7 +289,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -310,7 +310,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -330,7 +330,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 45.0,
         },
@@ -350,7 +350,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -370,7 +370,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -390,7 +390,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -410,7 +410,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -431,7 +431,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "model": "deepseek.v3.2",
             "temperature": 0.1,
             "timeout": 60.0,
         },
@@ -452,7 +452,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -473,7 +473,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "anthropic.claude-3-haiku-20240307-v1:0",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 15.0,
         },
