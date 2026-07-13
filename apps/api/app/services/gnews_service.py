@@ -293,7 +293,7 @@ class GNewsService:
         today_str = datetime.utcnow().strftime("%Y-%m-%d")
         key = f"discovery:metrics:{today_str}"
         try:
-            await self._redis.hincrby(key, name, amount)
+            await self._redis.hincrby(key, name, amount)  # type: ignore
             await self._redis.expire(key, 7 * 24 * 3600, nx=True)
         except Exception as exc:
             logger.debug("Failed to increment Redis metric '%s': %s", name, exc)
@@ -305,8 +305,8 @@ class GNewsService:
         today_str = datetime.utcnow().strftime("%Y-%m-%d")
         key = f"discovery:metrics:{today_str}"
         try:
-            await self._redis.hincrby(key, f"{name}_sum_ms", latency_ms)
-            await self._redis.hincrby(key, f"{name}_count", 1)
+            await self._redis.hincrby(key, f"{name}_sum_ms", latency_ms)  # type: ignore
+            await self._redis.hincrby(key, f"{name}_count", 1)  # type: ignore
             await self._redis.expire(key, 7 * 24 * 3600, nx=True)
         except Exception as exc:
             logger.debug("Failed to add latency metric for '%s': %s", name, exc)
@@ -336,7 +336,7 @@ class GNewsService:
 
         normalized = IngestionService.normalize_headline(title)
 
-        metadata = {
+        metadata: dict[str, Any] = {
             "searched": False,
             "cache_hit": False,
             "urls_found": 0,
@@ -714,7 +714,7 @@ class GNewsService:
             metrics = {}
             if self._redis:
                 try:
-                    raw = await self._redis.hgetall(f"discovery:metrics:{date_str}")
+                    raw = await self._redis.hgetall(f"discovery:metrics:{date_str}")  # type: ignore
                     metrics = {k: int(v) for k, v in raw.items()}
                 except Exception:
                     pass
@@ -794,7 +794,7 @@ class GNewsService:
         }
 
         # Compile 7-day rolling report
-        rolling_metrics = {}
+        rolling_metrics: dict[str, int] = {}
         for i in range(7):
             d_str = (now - timedelta(days=i)).strftime("%Y-%m-%d")
             m = await get_metrics_for_date(d_str)

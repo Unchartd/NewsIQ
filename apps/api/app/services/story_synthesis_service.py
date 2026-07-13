@@ -287,7 +287,7 @@ class StorySynthesisOrchestrator:
         )
         cache_hit = False
         if cached_res is not None:
-            contras_payload = cached_res
+            contras_payload = cast(list[dict], cached_res)
             cache_hit = True
             logger.info("Stage-level cache HIT for contradictions in story %s", story_id)
         else:
@@ -384,7 +384,7 @@ class StorySynthesisOrchestrator:
         )
         cache_hit = False
         if cached_res is not None:
-            payload = cached_res
+            payload = cast(dict, cached_res)
             cache_hit = True
             logger.info("Stage-level cache HIT for source comparison in story %s", story_id)
         else:

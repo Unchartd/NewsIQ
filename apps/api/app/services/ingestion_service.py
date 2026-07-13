@@ -29,7 +29,7 @@ class IngestionService:
     """Ingestion service to fetch, normalize, and deduplicate news articles."""
 
     def __init__(self) -> None:
-        self.last_discovery_metadata = []
+        self.last_discovery_metadata: list[Any] = []
 
     @staticmethod
     def normalize_headline(title: str | None) -> str:
