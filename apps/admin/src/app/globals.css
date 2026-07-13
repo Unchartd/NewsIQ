@@ -7,9 +7,7 @@
   --color-card-foreground: #f0efe9;
   --color-border: #2e2e2a;
   --color-input: #2e2e2a;
-  --brand-primary: #EF4444;
-  --brand-primary-rgb: 239, 68, 68;
-  --color-primary: var(--brand-primary);
+  --color-primary: #EF4444;
   --color-primary-foreground: #ffffff;
   --color-secondary: #1c1c1a;
   --color-secondary-foreground: #f0efe9;
@@ -76,7 +74,7 @@ body {
 
 /* Glow effects */
 .glow-primary {
-  box-shadow: 0 0 20px rgba(var(--brand-primary-rgb), 0.15);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
 }
 
 .glow-success {
@@ -89,7 +87,7 @@ body {
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(135deg, var(--brand-primary), #fb7185, #f43f5e);
+  background: linear-gradient(135deg, #EF4444, #fb7185, #f43f5e);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -150,7 +148,7 @@ body {
   letter-spacing: 0.03em;
 }
 
-.badge-primary { background: rgba(var(--brand-primary-rgb), 0.15); color: #fb7185; border: 1px solid rgba(var(--brand-primary-rgb), 0.3); }
+.badge-primary { background: rgba(239, 68, 68, 0.15); color: #fb7185; border: 1px solid rgba(239, 68, 68, 0.3); }
 .badge-success { background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
 .badge-warning { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
 .badge-danger  { background: rgba(248, 113, 113, 0.15);  color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }

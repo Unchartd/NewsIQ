@@ -1,5 +1,5 @@
 {
-  "timestamp": 1783704026.1808646,
+  "timestamp": 1783924000.8546004,
   "live_run": false,
   "pass_rate": 100.0,
   "results": [
@@ -10,7 +10,7 @@
       "entity_score": 100.0,
       "total_score": 100.0,
       "passed": true,
-      "duration_seconds": 9.386001110076904
+      "duration_seconds": 96.93919372558594
     },
     {
       "scenario": "disaster_01",
@@ -19,7 +19,7 @@
       "entity_score": 0.0,
       "total_score": 50.0,
       "passed": true,
-      "duration_seconds": 9.507144689559937
+      "duration_seconds": 101.1075599193573
     },
     {
       "scenario": "politics_01",
@@ -28,7 +28,7 @@
       "entity_score": 50.0,
       "total_score": 83.33333333333333,
       "passed": true,
-      "duration_seconds": 1.810530185699463
+      "duration_seconds": 99.89509987831116
     }
   ]
 }

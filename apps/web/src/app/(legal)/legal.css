@@ -44,8 +44,8 @@
   color: #F0EFE9;
 }
 .dbtn.on {
-  background: var(--brand-primary-dark);
-  border-color: var(--brand-primary-dark);
+  background: #C41E3A;
+  border-color: #C41E3A;
   color: #fff;
 }
 
@@ -100,7 +100,7 @@
 }
 .toc-item.active {
   color: var(--primary);
-  background: rgba(var(--brand-primary-dark-rgb), 0.06);
+  background: rgba(196, 30, 58, 0.06);
   border-left-color: var(--primary);
   font-weight: 600;
 }
@@ -288,7 +288,7 @@
   content: '';
   flex: 1;
   height: 1px;
-  background: rgba(var(--brand-primary-dark-rgb), 0.2);
+  background: rgba(196, 30, 58, 0.2);
 }
 .sec-title {
   font-family: var(--fd);
@@ -362,8 +362,8 @@
   border: 1px solid rgba(22, 163, 74, 0.18);
 }
 .callout-red {
-  background: rgba(var(--brand-primary-dark-rgb), 0.05);
-  border: 1px solid rgba(var(--brand-primary-dark-rgb), 0.18);
+  background: rgba(196, 30, 58, 0.05);
+  border: 1px solid rgba(196, 30, 58, 0.18);
 }
 .callout-icon {
   flex-shrink: 0;
@@ -499,7 +499,7 @@
 
 /* Summary banner */
 .summary-banner {
-  background: linear-gradient(135deg, rgba(var(--brand-primary-dark-rgb), 0.06), rgba(26, 86, 219, 0.04));
+  background: linear-gradient(135deg, rgba(196, 30, 58, 0.06), rgba(26, 86, 219, 0.04));
   border: 1px solid var(--border);
   border-radius: var(--r16);
   padding: 24px 28px;
@@ -605,7 +605,7 @@
   text-transform: uppercase;
   padding: 3px 10px;
   border-radius: 99px;
-  background: rgba(var(--brand-primary-dark-rgb), 0.09);
+  background: rgba(196, 30, 58, 0.09);
   color: var(--primary);
   flex-shrink: 0;
 }
@@ -667,7 +667,7 @@
 .legal-search-input:focus {
   outline: none;
   border-color: var(--primary) !important;
-  box-shadow: 0 0 0 2px rgba(var(--brand-primary-dark-rgb), 0.15);
+  box-shadow: 0 0 0 2px rgba(196, 30, 58, 0.15);
 }
 .toc-anchor-link {
   transition: color 0.15s, padding-left 0.15s;
@@ -707,7 +707,7 @@
     position: relative;
   }
   .mobile-toc-toggle:hover {
-    background: rgba(var(--brand-primary-dark-rgb), 0.9);
+    background: rgba(196, 30, 58, 0.9);
   }
   .toc-col.mobile-open {
     display: block !important;
