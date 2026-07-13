@@ -285,11 +285,12 @@ async def entity_debugger(
 
 @router.get("/clusters", response_model=ClusterDebuggerResponse)
 async def cluster_debugger(
+    limit: int = 50,
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Get article grouping details for active clusters (admin only)."""
-    return await admin_service.get_cluster_debugger_data(db)
+    return await admin_service.get_cluster_debugger_data(db, limit=limit)
 
 
 @router.get("/timeline/{story_id}", response_model=TimelineDebuggerResponse)

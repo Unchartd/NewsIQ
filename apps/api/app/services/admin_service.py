@@ -322,12 +322,12 @@ class AdminService:
 
         return EntityDebuggerResponse(entities=entities)
 
-    async def get_cluster_debugger_data(self, db: AsyncSession) -> ClusterDebuggerResponse:
+    async def get_cluster_debugger_data(self, db: AsyncSession, limit: int = 50) -> ClusterDebuggerResponse:
         """Fetch article grouping details for active clusters."""
         from app.models.models import ArticleEvent
         from app.services.clustering_service import clustering_service
 
-        # Retrieve latest 20 stories with articles and sources
+        # Retrieve latest stories with articles and sources
         result = await db.execute(
             select(Story)
             .options(
@@ -335,8 +335,8 @@ class AdminService:
                 .selectinload(StoryArticle.article)
                 .selectinload(Article.source)
             )
-            .order_by(Story.created_at.desc())
-            .limit(20)
+            .order_by(Story.first_seen_at.desc())
+            .limit(limit)
         )
         stories = result.scalars().all()
 
