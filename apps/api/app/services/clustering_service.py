@@ -1201,8 +1201,8 @@ class ClusteringService:
         finally:
             try:
                 await session.rollback()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to rollback session in finally block: %s", e)
             try:
                 await session.execute(
                     text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})")

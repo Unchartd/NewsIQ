@@ -95,7 +95,6 @@ class IngestionService:
             return -1.0, {"reason": "skipped_topic_opinion", "score": -1.0}
 
         # 2. Freshness Check (Normalized: 0.0 to 1.0, linear decay over 24 hours)
-        normalized_freshness = 0.25
         if pub_date:
             from datetime import datetime
 
@@ -120,7 +119,6 @@ class IngestionService:
         from app.services.ner_service_v2 import ner_service_v2
 
         entities = ner_service_v2.extract_entities_sync(title)
-        entity_count = len(entities)
 
         # Proper-noun heuristics count to augment spaCy extraction and ensure test stability
         words = title.strip().split()
