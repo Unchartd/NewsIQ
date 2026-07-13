@@ -7,8 +7,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
 import feedparser
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class GNewsClient:
     ) -> list[dict[str, Any]]:
         """Fetch top headline articles from Google News RSS for a category and country."""
         country_upper = country.upper()
-        
+
         # Build the RSS URL based on category
         topic = MAP_CATEGORY_TO_TOPIC.get(category, "WORLD")
         if category == "general":
@@ -76,22 +76,24 @@ class GNewsClient:
 
         parsed_feed = feedparser.parse(feed_data)
         entries = parsed_feed.entries[:max_articles]
-        
+
         normalized = []
         for entry in entries:
             title = getattr(entry, "title", "Untitled")
             link = getattr(entry, "link", "")
             description = getattr(entry, "summary", "")
-            
+
             # Parse published date
             published_at = datetime.utcnow()
             parsed_date = getattr(entry, "published_parsed", None)
             if parsed_date:
                 try:
-                    published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(tzinfo=None)
+                    published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(
+                        tzinfo=None
+                    )
                 except Exception:
                     pass
-            
+
             # Extract source information
             source_name = None
             source_url = None
@@ -99,27 +101,29 @@ class GNewsClient:
             if source_obj:
                 source_name = getattr(source_obj, "title", None)
                 source_url = getattr(source_obj, "url", None)
-            
+
             # Fallback source name parsing from title (e.g. "Headline - Source Name")
             if not source_name and " - " in title:
                 parts = title.rsplit(" - ", 1)
                 title = parts[0]
                 source_name = parts[1]
 
-            normalized.append({
-                "title": title.strip(),
-                "description": description.strip(),
-                "content": description.strip(),  # Fallback to description, crawler will get full text
-                "url": link,
-                "image_url": None,
-                "published_at": published_at,
-                "author": None,
-                "language": "en",
-                "category_slug": GNEWS_CATEGORY_MAP.get(category, "world"),
-                "country_code": country_upper,
-                "gnews_source_name": source_name.strip() if source_name else None,
-                "gnews_source_url": source_url,
-            })
+            normalized.append(
+                {
+                    "title": title.strip(),
+                    "description": description.strip(),
+                    "content": description.strip(),  # Fallback to description, crawler will get full text
+                    "url": link,
+                    "image_url": None,
+                    "published_at": published_at,
+                    "author": None,
+                    "language": "en",
+                    "category_slug": GNEWS_CATEGORY_MAP.get(category, "world"),
+                    "country_code": country_upper,
+                    "gnews_source_name": source_name.strip() if source_name else None,
+                    "gnews_source_url": source_url,
+                }
+            )
 
         logger.info(
             "Google News RSS: fetched %d articles for category=%s country=%s",
@@ -137,8 +141,9 @@ class GNewsClient:
     ) -> list[dict[str, Any]]:
         """Search Google News RSS for articles matching a query string."""
         import urllib.parse
+
         encoded_query = urllib.parse.quote_plus(query)
-        
+
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
         logger.info("Searching Google News RSS: %s", url)
         try:
@@ -152,47 +157,51 @@ class GNewsClient:
 
         parsed_feed = feedparser.parse(feed_data)
         entries = parsed_feed.entries[:max_articles]
-        
+
         normalized = []
         for entry in entries:
             title = getattr(entry, "title", "Untitled")
             link = getattr(entry, "link", "")
             description = getattr(entry, "summary", "")
-            
+
             published_at = datetime.utcnow()
             parsed_date = getattr(entry, "published_parsed", None)
             if parsed_date:
                 try:
-                    published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(tzinfo=None)
+                    published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(
+                        tzinfo=None
+                    )
                 except Exception:
                     pass
-            
+
             source_name = None
             source_url = None
             source_obj = getattr(entry, "source", None)
             if source_obj:
                 source_name = getattr(source_obj, "title", None)
                 source_url = getattr(source_obj, "url", None)
-            
+
             if not source_name and " - " in title:
                 parts = title.rsplit(" - ", 1)
                 title = parts[0]
                 source_name = parts[1]
 
-            normalized.append({
-                "title": title.strip(),
-                "description": description.strip(),
-                "content": description.strip(),
-                "url": link,
-                "image_url": None,
-                "published_at": published_at,
-                "author": None,
-                "language": "en",
-                "category_slug": "world",
-                "country_code": "US",
-                "gnews_source_name": source_name.strip() if source_name else None,
-                "gnews_source_url": source_url,
-            })
+            normalized.append(
+                {
+                    "title": title.strip(),
+                    "description": description.strip(),
+                    "content": description.strip(),
+                    "url": link,
+                    "image_url": None,
+                    "published_at": published_at,
+                    "author": None,
+                    "language": "en",
+                    "category_slug": "world",
+                    "country_code": "US",
+                    "gnews_source_name": source_name.strip() if source_name else None,
+                    "gnews_source_url": source_url,
+                }
+            )
 
         return normalized
 

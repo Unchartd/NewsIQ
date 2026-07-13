@@ -330,7 +330,9 @@ class AdminService:
 
         return EntityDebuggerResponse(entities=entities)
 
-    async def get_cluster_debugger_data(self, db: AsyncSession, limit: int = 50) -> ClusterDebuggerResponse:
+    async def get_cluster_debugger_data(
+        self, db: AsyncSession, limit: int = 50
+    ) -> ClusterDebuggerResponse:
         """Fetch article grouping details for active clusters."""
         from app.models.models import ArticleEvent
         from app.services.clustering_service import clustering_service

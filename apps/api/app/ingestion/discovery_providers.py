@@ -1,9 +1,11 @@
 import abc
 import logging
 from typing import Any
+
 from app.ingestion.gnews_client import gnews_client
 
 logger = logging.getLogger(__name__)
+
 
 class DiscoveryProvider(abc.ABC):
     """Abstract Base Class (Interface) for News Discovery Providers."""
@@ -11,7 +13,7 @@ class DiscoveryProvider(abc.ABC):
     @abc.abstractmethod
     async def search(self, query: str, max_results: int) -> list[dict[str, Any]]:
         """Search similar news articles using this provider.
-        
+
         Returns:
             list[dict[str, Any]]: A list of normalized article dictionaries:
                 - title (str)
@@ -41,7 +43,7 @@ def get_discovery_provider(name: str) -> DiscoveryProvider:
     name_clean = name.lower().strip()
     if name_clean == "google_rss":
         return GoogleRSSDiscoveryProvider()
-    
+
     # Default fallback
     logger.warning("Unknown discovery provider '%s'. Falling back to google_rss.", name)
     return GoogleRSSDiscoveryProvider()

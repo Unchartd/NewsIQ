@@ -24,7 +24,6 @@ import dataclasses
 import hashlib
 import logging
 import string
-from collections import deque
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,39 +35,44 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-VALID_LIFECYCLE_STATES = frozenset({
-    "draft", "testing", "replay", "approved", "production", "deprecated", "archived"
-})
+VALID_LIFECYCLE_STATES = frozenset(
+    {"draft", "testing", "replay", "approved", "production", "deprecated", "archived"}
+)
 
 # Deterministic pipeline stages that can appear in prompt_dependencies
 # without requiring a YAML prompt file.
-DETERMINISTIC_STAGES = frozenset({
-    "knowledge_graph",
-    "timeline",
-    "publisher",
-    "synthesis_orchestrator",
-    "feedback_agent",
-    "embedding",
-    "deduplication",
-    "crawling",
-})
+DETERMINISTIC_STAGES = frozenset(
+    {
+        "knowledge_graph",
+        "timeline",
+        "publisher",
+        "synthesis_orchestrator",
+        "feedback_agent",
+        "embedding",
+        "deduplication",
+        "crawling",
+    }
+)
 
 # Production prompts that have verified runtime callers in services.
 # Update this set when a new ai_gateway.generate(stage=...) call is added.
-KNOWN_PROMPT_CALLERS: frozenset[str] = frozenset({
-    "event_extraction",
-    "entity_extraction",
-    "entity_linking",
-    "cluster_verification",
-    "contradiction_detection",
-    "source_comparison",
-    "summary_generation",
-    "summary_refinement",
-    "summary_reflection",
-})
+KNOWN_PROMPT_CALLERS: frozenset[str] = frozenset(
+    {
+        "event_extraction",
+        "entity_extraction",
+        "entity_linking",
+        "cluster_verification",
+        "contradiction_detection",
+        "source_comparison",
+        "summary_generation",
+        "summary_refinement",
+        "summary_reflection",
+    }
+)
 
 
 # ── Compiler ───────────────────────────────────────────────────────────────────
+
 
 class PromptCompiler:
     """
@@ -173,6 +177,7 @@ class PromptCompiler:
             return []
         try:
             import importlib
+
             from pydantic import BaseModel
 
             module = importlib.import_module("app.models.llm_responses")
@@ -183,9 +188,13 @@ class PromptCompiler:
                     f"Available classes: {[c for c in dir(module) if not c.startswith('_')]}"
                 ]
             if not (isinstance(cls, type) and issubclass(cls, BaseModel)):
-                return [f"response_model '{m.response_model}' must be a Pydantic BaseModel subclass."]
+                return [
+                    f"response_model '{m.response_model}' must be a Pydantic BaseModel subclass."
+                ]
         except ImportError as exc:
-            return [f"Could not import app.models.llm_responses for response_model validation: {exc}"]
+            return [
+                f"Could not import app.models.llm_responses for response_model validation: {exc}"
+            ]
         return []
 
     def _validate_model_routing(self, m: PromptManifest) -> list[str]:

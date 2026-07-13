@@ -60,8 +60,8 @@ class ContradictionService:
 
         Pipeline: cache check → Agno Agent → LLM Gateway fallback → heuristic fallback.
         """
-        from app.services.pipeline_cache import pipeline_cache
         from app.ai.prompts.repository import prompt_repository
+        from app.services.pipeline_cache import pipeline_cache
 
         # ── Cache check ───────────────────────────────────────────────────────
         prompt_tmpl = prompt_repository.get("contradiction_detection")

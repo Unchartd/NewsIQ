@@ -1204,7 +1204,9 @@ class ClusteringService:
             except Exception:
                 pass
             try:
-                await session.execute(text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})"))
+                await session.execute(
+                    text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})")
+                )
             except Exception as e:
                 logger.warning("Failed to release pg_advisory_unlock in finally block: %s", e)
 

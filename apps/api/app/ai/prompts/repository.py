@@ -89,8 +89,7 @@ class PromptRepository:
             return self._by_uri[uri]
         except KeyError:
             raise PromptRepositoryError(
-                f"No prompt registered for URI '{uri}'. "
-                f"Available URIs: {sorted(self._by_uri)}"
+                f"No prompt registered for URI '{uri}'. Available URIs: {sorted(self._by_uri)}"
             ) from None
 
     def resolve(self, stage: str, lifecycle: str = "production") -> PromptManifest:
@@ -212,7 +211,13 @@ class PromptRepository:
             if not manifest.signature:
                 issues.append(f"[{stage}] Missing signature — manifest was not compiled.")
             if manifest.lifecycle_state not in (
-                "draft", "testing", "replay", "approved", "production", "deprecated", "archived"
+                "draft",
+                "testing",
+                "replay",
+                "approved",
+                "production",
+                "deprecated",
+                "archived",
             ):
                 issues.append(f"[{stage}] Invalid lifecycle_state: {manifest.lifecycle_state!r}")
         return issues
@@ -227,28 +232,30 @@ class PromptRepository:
         """
         result = []
         for m in sorted(self._by_stage.values(), key=lambda m: m.stage):
-            result.append({
-                "prompt_uri": m.prompt_uri,
-                "stage": m.stage,
-                "version": m.version,
-                "schema_version": m.schema_version,
-                "lifecycle_state": m.lifecycle_state,
-                "preferred_model": m.routing.model,
-                "fallback_models": list(m.routing.fallback_models),
-                "cacheable": m.cacheable,
-                "cache_ttl_seconds": m.cache_ttl_seconds,
-                "prompt_dependencies": list(m.prompt_dependencies),
-                "replay_policy": m.replay_policy,
-                "owner": m.owner,
-                "team": m.team,
-                "last_reviewed": m.last_reviewed,
-                "documentation": m.documentation,
-                "signature": m.signature[:16] + "...",  # Truncated for display
-                "parent_uri": m.parent_uri,
-                "deprecated_at": m.deprecated_at,
-                "deprecated_reason": m.deprecated_reason,
-                "superseded_by": list(m.superseded_by) if m.superseded_by else None,
-            })
+            result.append(
+                {
+                    "prompt_uri": m.prompt_uri,
+                    "stage": m.stage,
+                    "version": m.version,
+                    "schema_version": m.schema_version,
+                    "lifecycle_state": m.lifecycle_state,
+                    "preferred_model": m.routing.model,
+                    "fallback_models": list(m.routing.fallback_models),
+                    "cacheable": m.cacheable,
+                    "cache_ttl_seconds": m.cache_ttl_seconds,
+                    "prompt_dependencies": list(m.prompt_dependencies),
+                    "replay_policy": m.replay_policy,
+                    "owner": m.owner,
+                    "team": m.team,
+                    "last_reviewed": m.last_reviewed,
+                    "documentation": m.documentation,
+                    "signature": m.signature[:16] + "...",  # Truncated for display
+                    "parent_uri": m.parent_uri,
+                    "deprecated_at": m.deprecated_at,
+                    "deprecated_reason": m.deprecated_reason,
+                    "superseded_by": list(m.superseded_by) if m.superseded_by else None,
+                }
+            )
         return result
 
     def export_graph(self) -> dict[str, Any]:
@@ -267,15 +274,17 @@ class PromptRepository:
         edges = []
 
         for stage, m in self._by_stage.items():
-            nodes.append({
-                "id": stage,
-                "label": stage.replace("_", " ").title(),
-                "prompt_uri": m.prompt_uri,
-                "lifecycle": m.lifecycle_state,
-                "model": m.routing.model,
-                "cacheable": m.cacheable,
-                "is_production": m.is_production(),
-            })
+            nodes.append(
+                {
+                    "id": stage,
+                    "label": stage.replace("_", " ").title(),
+                    "prompt_uri": m.prompt_uri,
+                    "lifecycle": m.lifecycle_state,
+                    "model": m.routing.model,
+                    "cacheable": m.cacheable,
+                    "is_production": m.is_production(),
+                }
+            )
             for dep in m.prompt_dependencies:
                 edges.append({"source": dep, "target": stage, "type": "dependency"})
 
@@ -283,7 +292,7 @@ class PromptRepository:
 
     # ── Hot Swap (Replay / Admin) ──────────────────────────────────────────────
 
-    def replace(self, new_manifests: dict[str, PromptManifest]) -> "PromptRepository":
+    def replace(self, new_manifests: dict[str, PromptManifest]) -> PromptRepository:
         """
         Create a NEW repository from a different set of manifests.
 
@@ -344,7 +353,8 @@ class PromptRepository:
             logger.error(
                 "Topological sort incomplete — possible cycle not caught by compiler. "
                 "Processed %d of %d stages.",
-                len(order), len(manifests)
+                len(order),
+                len(manifests),
             )
 
         return order

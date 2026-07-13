@@ -12,7 +12,6 @@ YAML schema is fully documented in manifest.py.
 from __future__ import annotations
 
 import logging
-import os
 import string
 from pathlib import Path
 from typing import Any
@@ -74,7 +73,9 @@ class PromptLoader:
                     )
                 else:
                     manifests[manifest.stage] = manifest
-                    logger.debug("Loaded prompt manifest: %s from %s", manifest.prompt_uri, path.name)
+                    logger.debug(
+                        "Loaded prompt manifest: %s from %s", manifest.prompt_uri, path.name
+                    )
             except (KeyError, TypeError, ValueError, yaml.YAMLError) as exc:
                 errors.append(f"{path.name}: {exc}")
 
@@ -84,7 +85,9 @@ class PromptLoader:
                 + "\n".join(f"  • {e}" for e in errors)
             )
 
-        logger.info("PromptLoader: loaded %d prompt manifests from %s", len(manifests), self.prompts_dir)
+        logger.info(
+            "PromptLoader: loaded %d prompt manifests from %s", len(manifests), self.prompts_dir
+        )
         return manifests
 
     def _parse(self, path: Path) -> PromptManifest:
@@ -118,7 +121,9 @@ class PromptLoader:
         # Cache
         cache_data = data.get("cache", {})
         cacheable = bool(cache_data.get("cacheable", False))
-        cache_ttl = int(cache_data["cache_ttl_seconds"]) if cache_data.get("cache_ttl_seconds") else None
+        cache_ttl = (
+            int(cache_data["cache_ttl_seconds"]) if cache_data.get("cache_ttl_seconds") else None
+        )
         cache_inputs = tuple(cache_data.get("cache_inputs", []))
 
         # Dependencies

@@ -184,12 +184,15 @@ class AIGateway:
         if resolved_schema is None and manifest.response_model:
             try:
                 import importlib
+
                 module = importlib.import_module("app.models.llm_responses")
                 resolved_schema = getattr(module, manifest.response_model, None)
             except Exception as schema_exc:
                 logger.warning(
                     "Could not auto-resolve response_model '%s' for stage '%s': %s",
-                    manifest.response_model, stage, schema_exc
+                    manifest.response_model,
+                    stage,
+                    schema_exc,
                 )
 
         s_id = story_id or story_id_ctx.get("")
@@ -258,7 +261,11 @@ class AIGateway:
 
                         logger.info(
                             "Gateway [stage=%s] provider=%s model=%s (attempt %d/%d)",
-                            stage, provider_name, model_name, attempt + 1, max_attempts,
+                            stage,
+                            provider_name,
+                            model_name,
+                            attempt + 1,
+                            max_attempts,
                         )
 
                         async with track_llm_call(
@@ -326,8 +333,10 @@ class AIGateway:
                             logger.debug("Prompt metrics failed (stage=%s): %s", stage, prom_exc)
 
                         newsiq_ai_gateway_calls_total.labels(
-                            provider=provider_name, model=model_name,
-                            capability=stage, status="success",
+                            provider=provider_name,
+                            model=model_name,
+                            capability=stage,
+                            status="success",
                         ).inc()
                         newsiq_ai_gateway_cost_usd.labels(
                             provider=provider_name, model=model_name, capability=stage
@@ -358,21 +367,33 @@ class AIGateway:
                     except ValidationError as ve:
                         last_error = ve
                         newsiq_ai_gateway_retries_total.labels(
-                            provider=provider_name, model=model_name,
-                            capability=stage, reason="validation_failure",
+                            provider=provider_name,
+                            model=model_name,
+                            capability=stage,
+                            reason="validation_failure",
                         ).inc()
                         if attempt == max_attempts - 1:
                             break
                         await asyncio.sleep(backoff)
                         backoff *= 2.0
 
-                    except (RateLimitError, TimeoutError, ProviderUnavailableError, AuthenticationError) as err:
+                    except (
+                        RateLimitError,
+                        TimeoutError,
+                        ProviderUnavailableError,
+                        AuthenticationError,
+                    ) as err:
                         logger.warning(
                             "Gateway [stage=%s] provider=%s model=%s failed: %s",
-                            stage, provider_name, model_name, err,
+                            stage,
+                            provider_name,
+                            model_name,
+                            err,
                         )
                         if not isinstance(err, RateLimitError):
-                            capability_router.health_trackers[provider_name].report_failure(str(err))
+                            capability_router.health_trackers[provider_name].report_failure(
+                                str(err)
+                            )
                         try:
                             newsiq_prompt_executions_total.labels(
                                 stage=stage, version=manifest.version, status="failed"
@@ -380,24 +401,26 @@ class AIGateway:
                         except Exception:
                             pass
                         newsiq_ai_gateway_calls_total.labels(
-                            provider=provider_name, model=model_name,
-                            capability=stage, status="error",
+                            provider=provider_name,
+                            model=model_name,
+                            capability=stage,
+                            status="error",
                         ).inc()
                         if isinstance(err, TimeoutError):
                             newsiq_ai_gateway_timeouts_total.labels(
                                 provider=provider_name, model=model_name, capability=stage
                             ).inc()
                         newsiq_ai_gateway_retries_total.labels(
-                            provider=provider_name, model=model_name,
-                            capability=stage, reason=err.__class__.__name__,
+                            provider=provider_name,
+                            model=model_name,
+                            capability=stage,
+                            reason=err.__class__.__name__,
                         ).inc()
                         last_error = err
                         await asyncio.sleep(backoff)
                         backoff *= 2.0
 
-        raise AIGatewayError(
-            f"All providers failed for stage='{stage}'. Last error: {last_error}"
-        )
+        raise AIGatewayError(f"All providers failed for stage='{stage}'. Last error: {last_error}")
 
     async def generate(
         self,
@@ -420,7 +443,8 @@ class AIGateway:
             "DEPRECATION: ai_gateway.generate(capability='%s') is deprecated. "
             "Migrate to ai_gateway.generate_stage(stage='%s', prompt_variables={...}). "
             "This method will be removed in a future release.",
-            capability, capability,
+            capability,
+            capability,
         )
 
         # 1. Load prompt template
@@ -849,7 +873,9 @@ class AIGateway:
             "DEPRECATION: ai_gateway.execute_request(model='%s', stage='%s') is deprecated. "
             "If this stage has a PromptManifest, migrate to generate_stage(stage='%s'). "
             "grep for 'execute_request' to find remaining callers.",
-            model, stage, stage,
+            model,
+            stage,
+            stage,
         )
 
         # 1. Resolve fallback chain for this model name

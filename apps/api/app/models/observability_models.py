@@ -417,7 +417,9 @@ class PromptVersionModel(Base):
     prompt_uri: Mapped[str | None] = mapped_column(String(255), nullable=True)
     schema_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     preferred_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    lifecycle_state: Mapped[str | None] = mapped_column(String(50), nullable=True, default="production")
+    lifecycle_state: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default="production"
+    )
     parent_uri: Mapped[str | None] = mapped_column(String(255), nullable=True)
     deprecated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     deprecated_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

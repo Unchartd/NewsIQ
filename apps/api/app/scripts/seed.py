@@ -301,9 +301,10 @@ async def seed():
                     print(f"  ⏭️  Source already exists: {src_data['name']}")
 
         # Seed prompt templates dynamically from YAML manifests (v5 platform)
-        from app.ai.prompts.loader import PromptLoader
-        from app.ai.prompts.compiler import PromptCompiler
         import sqlalchemy as sa
+
+        from app.ai.prompts.compiler import PromptCompiler
+        from app.ai.prompts.loader import PromptLoader
 
         loader = PromptLoader()
         compiler = PromptCompiler()
@@ -332,7 +333,9 @@ async def seed():
 
                 # Get max version for this stage currently in DB
                 max_ver_result = await session.execute(
-                    select(sa.func.max(PromptVersionModel.version)).where(PromptVersionModel.stage == manifest.stage)
+                    select(sa.func.max(PromptVersionModel.version)).where(
+                        PromptVersionModel.stage == manifest.stage
+                    )
                 )
                 max_ver = max_ver_result.scalar() or 0
                 new_version = max_ver + 1
@@ -350,11 +353,13 @@ async def seed():
                     prompt_uri=manifest.prompt_uri,
                     schema_version=manifest.schema_version,
                     preferred_model=manifest.routing.preferred_model if manifest.routing else None,
-                    lifecycle_state=manifest.lifecycle.state if manifest.lifecycle else "production",
+                    lifecycle_state=manifest.lifecycle.state
+                    if manifest.lifecycle
+                    else "production",
                     parent_uri=manifest.lineage.parent_uri if manifest.lineage else None,
                     deprecated_at=None,
                     deprecated_reason=None,
-                    superseded_by=None
+                    superseded_by=None,
                 )
                 session.add(prompt_version)
                 print(f"  ✅ Prompt Template (New Version): {manifest.stage} (v{new_version})")
@@ -362,8 +367,12 @@ async def seed():
                 # Update governance metadata for existing matching prompt
                 existing.prompt_uri = manifest.prompt_uri
                 existing.schema_version = manifest.schema_version
-                existing.preferred_model = manifest.routing.preferred_model if manifest.routing else None
-                existing.lifecycle_state = manifest.lifecycle.state if manifest.lifecycle else "production"
+                existing.preferred_model = (
+                    manifest.routing.preferred_model if manifest.routing else None
+                )
+                existing.lifecycle_state = (
+                    manifest.lifecycle.state if manifest.lifecycle else "production"
+                )
                 existing.parent_uri = manifest.lineage.parent_uri if manifest.lineage else None
                 session.add(existing)
                 print(f"  ⏭️  Prompt Template already exists (metadata updated): {manifest.stage}")
@@ -380,7 +389,7 @@ async def seed():
                 old_p.deprecated_reason = "Superseded by summary_generation in v5 platform"
                 old_p.superseded_by = "newsiq://prompt/summary_generation"
                 session.add(old_p)
-                print(f"  ⚠️ Deprecated old prompt stage 'story_analysis'")
+                print("  ⚠️ Deprecated old prompt stage 'story_analysis'")
 
         await session.commit()
     print("\n🎉 Seeding complete!")

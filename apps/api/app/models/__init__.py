@@ -9,7 +9,11 @@ from app.models.models import (
     Bookmark,
     CanonicalEntity,
     Category,
+    CrawlTask,
+    CrawlTaskState,
     DigestSubscription,
+    DiscoveryTask,
+    DiscoveryTaskState,
     Notification,
     OAuthAccount,
     SearchHistory,
@@ -32,10 +36,6 @@ from app.models.models import (
     UserEvent,
     UserLocation,
     UserPreference,
-    DiscoveryTask,
-    DiscoveryTaskState,
-    CrawlTask,
-    CrawlTaskState,
 )
 from app.models.observability_models import (
     CostRecordModel,

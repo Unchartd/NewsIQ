@@ -228,17 +228,17 @@ def _initialize_prompt_repository() -> ServiceStatus:
 
     t0 = time.perf_counter()
     try:
-        from app.ai.prompts.loader import PromptLoader
-        from app.ai.prompts.compiler import PromptCompiler
         from app.ai.prompts import repository as repo_module
+        from app.ai.prompts.compiler import PromptCompiler
+        from app.ai.prompts.loader import PromptLoader
         from app.ai.prompts.repository import PromptRepository
 
         loader = PromptLoader()
         raw = loader.load_all()
 
         compiler = PromptCompiler()
-        compiled = compiler.compile_all(raw)     # Raises RuntimeError on validation errors
-        compiler._warn_unused(compiled)           # Warns on production prompts with no callers
+        compiled = compiler.compile_all(raw)  # Raises RuntimeError on validation errors
+        compiler._warn_unused(compiled)  # Warns on production prompts with no callers
 
         repo_module.prompt_repository = PromptRepository(compiled)
 

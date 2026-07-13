@@ -319,21 +319,23 @@ class GNewsService:
         pub_date: datetime | None = None,
     ) -> dict[str, Any]:
         """Search similar news articles using configured provider and ingest matching results.
-        
+
         This method is config-driven, rate-limited, and runs database operations sequentially.
         """
         import hashlib
         import json
         import time
+
         from app.core.fingerprint import compute_fingerprints
-        
+
         start_time = time.perf_counter()
         max_results = max_articles if max_articles is not None else settings.DISCOVERY_MAX_RESULTS
-        
+
         # 1. Headline Normalization (Phase 1 Clean)
         from app.services.ingestion_service import IngestionService
+
         normalized = IngestionService.normalize_headline(title)
-        
+
         metadata = {
             "searched": False,
             "cache_hit": False,
@@ -344,20 +346,20 @@ class GNewsService:
             "duration_ms": 0,
             "skip_reason": None,
         }
-        
+
         if not normalized or len(normalized) < 10:
             metadata["skip_reason"] = "normalization_too_short"
             return metadata
-            
+
         headline_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        
+
         # Check cache first
         cache_key = f"discovery:search_cache:{headline_hash}"
         lock_key = f"discovery:search_lock:{headline_hash}"
-        
+
         discovered_urls = []
         cache_hit = False
-        
+
         if self._redis:
             try:
                 cached_data = await self._redis.get(cache_key)
@@ -368,51 +370,58 @@ class GNewsService:
                     await self._incr_metric("search_skipped_cache")
             except Exception as exc:
                 logger.warning("Failed to query Redis search cache: %s", exc)
-                
+
         if not cache_hit:
             # Check execution lock to prevent concurrent searches
             if self._redis:
                 try:
-                    acquired = await self._redis.set(lock_key, "1", ex=settings.DISCOVERY_LOCK_TTL, nx=True)
+                    acquired = await self._redis.set(
+                        lock_key, "1", ex=settings.DISCOVERY_LOCK_TTL, nx=True
+                    )
                     if not acquired:
                         metadata["skip_reason"] = "search_locked"
                         await self._incr_metric("search_lock_skip")
                         return metadata
                 except Exception as exc:
                     logger.warning("Failed to check Redis search lock: %s", exc)
-            
+
             # Execute search
             metadata["searched"] = True
             await self._incr_metric("searches_triggered")
             await self._incr_metric("search_cache_miss")
-            
+
             search_start = time.perf_counter()
             try:
                 # Limit the search query to 8-10 words to make a clean query
                 query_words = normalized.split()[:10]
                 query = " ".join(query_words)
-                
+
                 # Fetch search results using configured provider with 3.0s timeout
                 from app.ingestion import get_discovery_provider
+
                 provider = get_discovery_provider(settings.DISCOVERY_PROVIDER)
-                
+
                 raw_results = await asyncio.wait_for(
-                    provider.search(query=query, max_results=max_results * 3), # Fetch extra to allow ranking/diversity
-                    timeout=3.0
+                    provider.search(
+                        query=query, max_results=max_results * 3
+                    ),  # Fetch extra to allow ranking/diversity
+                    timeout=3.0,
                 )
-                
+
                 # Rank and filter raw search results to enforce diversity and quality
                 discovered_urls = self.rank_and_filter_search_results(
                     results=raw_results,
                     original_title=title,
                     original_pub_date=pub_date,
-                    max_results=max_results
+                    max_results=max_results,
                 )
-                
+
                 # Write to search cache
                 if self._redis:
-                    await self._redis.set(cache_key, json.dumps(discovered_urls), ex=settings.DISCOVERY_CACHE_TTL)
-            except asyncio.TimeoutError:
+                    await self._redis.set(
+                        cache_key, json.dumps(discovered_urls), ex=settings.DISCOVERY_CACHE_TTL
+                    )
+            except TimeoutError:
                 logger.warning("Discovery search provider timed out for query: '%s'", normalized)
                 await self._incr_metric("search_timeout")
                 discovered_urls = []
@@ -432,30 +441,30 @@ class GNewsService:
                 await self._add_latency_metric("search_latency", search_latency_ms)
         else:
             await self._incr_metric("search_cache_hit")
-            
+
         if not discovered_urls:
             metadata["duration_ms"] = int((time.perf_counter() - start_time) * 1000)
             return metadata
-            
+
         metadata["urls_found"] = len(discovered_urls)
         await self._incr_metric("urls_found", len(discovered_urls))
-        
+
         # Concurrently Ingest Discovered URLs
         # Bounded concurrency: Semaphore from settings
         sem = asyncio.Semaphore(settings.DISCOVERY_MAX_CONCURRENT_DOWNLOADS)
         from app.services.ingestion_service import url_bloom_filter
-        
+
         async def process_discovered_url(url: str) -> dict[str, Any] | None:
             async with sem:
                 url_canonical = canonicalize_url(url)
                 url_hash = compute_fingerprints(url_canonical, "", "")["url_hash"]
-                
+
                 # 1. Early Bloom Filter Check (checked FIRST before database lookups)
                 if await url_bloom_filter.exists(url_hash):
                     await self._incr_metric("bloom_filter_skip")
                     await self._incr_metric("url_duplicates")
                     return {"status": "bloom_filtered"}
-                
+
                 # 2. Crawl Article concurrently (HTTP network request, no session access)
                 crawl_start = time.perf_counter()
                 try:
@@ -467,16 +476,18 @@ class GNewsService:
                             "status": "success",
                             "crawled": crawled,
                             "url": url_canonical,
-                            "url_hash": url_hash
+                            "url_hash": url_hash,
                         }
                 except Exception as crawl_exc:
-                    logger.debug("Failed to crawl search discovery URL %s: %s", url_canonical, crawl_exc)
-                
+                    logger.debug(
+                        "Failed to crawl search discovery URL %s: %s", url_canonical, crawl_exc
+                    )
+
                 return None
-                
+
         tasks = [process_discovered_url(u) for u in discovered_urls]
         results = await asyncio.gather(*tasks)
-        
+
         # Ingest successful crawls sequentially to protect the DB session from concurrent queries
         new_count = 0
         for res_dict in results:
@@ -486,10 +497,10 @@ class GNewsService:
                 crawled = res_dict["crawled"]
                 url = res_dict["url"]
                 url_hash = res_dict["url_hash"]
-                
+
                 metadata["downloaded"] += 1
                 await self._incr_metric("urls_downloaded")
-                
+
                 # 1. Database check (safe sequential check)
                 res = await session.execute(select(Article).where(Article.url == url))
                 if res.scalar_one_or_none():
@@ -497,11 +508,11 @@ class GNewsService:
                     await self._incr_metric("db_url_skip")
                     await self._incr_metric("url_duplicates")
                     continue
-                
+
                 # Resolve source using the crawl result metadata or fallbacks
                 gnews_source_name = crawled.get("source_name")
                 gnews_source_url = crawled.get("source_url")
-                
+
                 source = await self._resolve_source(
                     gnews_source_name=gnews_source_name,
                     gnews_source_url=gnews_source_url,
@@ -509,26 +520,28 @@ class GNewsService:
                 )
                 if not source:
                     continue
-                
+
                 content = crawled["content"]
                 title_val = crawled.get("title") or "Untitled Discovered Article"
-                
+
                 fingerprints = compute_fingerprints(
                     url,
                     title_val.lower().strip(),
                     content.lower().strip(),
                 )
                 content_hash = fingerprints["content_hash"]
-                
+
                 # Stage 2: Content exact duplicate check
-                dup_res = await session.execute(select(Article).where(Article.content_hash == content_hash))
+                dup_res = await session.execute(
+                    select(Article).where(Article.content_hash == content_hash)
+                )
                 duplicate_existing = dup_res.scalar_one_or_none()
                 if duplicate_existing:
                     metadata["duplicates"] += 1
                     await self._incr_metric("fingerprint_skip")
                     await self._incr_metric("fingerprint_duplicates")
                     continue
-                
+
                 article = Article(
                     source_id=source.id,
                     title=title_val,
@@ -549,7 +562,7 @@ class GNewsService:
                 session.add(article)
                 await url_bloom_filter.add(url_hash)
                 new_count += 1
-                
+
         if new_count > 0:
             try:
                 await session.commit()
@@ -558,7 +571,7 @@ class GNewsService:
             except Exception as commit_exc:
                 await session.rollback()
                 logger.error("Failed to commit discovery articles: %s", commit_exc)
-                
+
         metadata["duration_ms"] = int((time.perf_counter() - start_time) * 1000)
         return metadata
 
@@ -566,6 +579,7 @@ class GNewsService:
     def _get_base_domain(url: str) -> str:
         """Extract base domain from a URL for domain diversity filtering."""
         from urllib.parse import urlparse
+
         try:
             parsed = urlparse(url)
             netloc = parsed.netloc.lower()
@@ -585,35 +599,40 @@ class GNewsService:
         """Rank search results using RapidFuzz & Jaccard, enforcing base domain diversity."""
         if not results:
             return []
-            
+
+        import rapidfuzz
+
         from app.services.ingestion_service import IngestionService
         from app.services.ner_service_v2 import ner_service_v2
-        import rapidfuzz
-        
+
         orig_clean = IngestionService.normalize_headline(original_title)
         orig_words = set(orig_clean.split())
-        
+
         # 1. Extract original title entities for overlap comparison
-        orig_entities = {e["value"].lower().strip() for e in ner_service_v2.extract_entities_sync(original_title)}
-        
+        orig_entities = {
+            e["value"].lower().strip() for e in ner_service_v2.extract_entities_sync(original_title)
+        }
+
         scored_candidates = []
         for art in results:
             url = art.get("url")
             if not url:
                 continue
-                
+
             title = art.get("title", "")
             desc = art.get("description", "") or art.get("content", "") or ""
-            
+
             title_clean = IngestionService.normalize_headline(title)
             title_words = set(title_clean.split())
-            
+
             # Title overlap (Jaccard similarity)
             jaccard = 0.0
             if orig_words and title_words:
-                jaccard = len(orig_words.intersection(title_words)) / len(orig_words.union(title_words))
+                jaccard = len(orig_words.intersection(title_words)) / len(
+                    orig_words.union(title_words)
+                )
             score = jaccard * 40.0
-            
+
             # Fuzzy Token set ratio title similarity
             fuzzy_ratio = 0.0
             try:
@@ -621,14 +640,19 @@ class GNewsService:
             except Exception:
                 pass
             score += fuzzy_ratio * 40.0
-            
+
             # Entity and location overlap
-            cand_entities = {e["value"].lower().strip() for e in ner_service_v2.extract_entities_sync(title + " " + desc)}
+            cand_entities = {
+                e["value"].lower().strip()
+                for e in ner_service_v2.extract_entities_sync(title + " " + desc)
+            }
             entity_overlap = 0.0
             if orig_entities and cand_entities:
-                entity_overlap = len(orig_entities.intersection(cand_entities)) / len(orig_entities.union(cand_entities))
+                entity_overlap = len(orig_entities.intersection(cand_entities)) / len(
+                    orig_entities.union(cand_entities)
+                )
             score += entity_overlap * 20.0
-            
+
             # Publisher Trust Weight modifier from config
             gnews_source_name = art.get("gnews_source_name")
             trust_weight = 0.0
@@ -638,32 +662,28 @@ class GNewsService:
                     if pub_key.lower().strip() in source_lower:
                         trust_weight = weight
                         break
-            
+
             domain = self._get_base_domain(url)
             for pub_key, weight in settings.DISCOVERY_TRUSTED_PUBLISHERS.items():
                 if pub_key.lower().strip() in domain:
                     trust_weight = max(trust_weight, weight)
                     break
-                    
+
             # Scale score by trust weight
             score = score * (1.0 + trust_weight)
-            
+
             # Time difference proximity
             pub_date = art.get("published_at")
             if pub_date and original_pub_date:
                 time_diff_hours = abs((pub_date - original_pub_date).total_seconds()) / 3600.0
                 if time_diff_hours <= 12.0:
                     score += 10.0 * (1.0 - (time_diff_hours / 12.0))
-                    
-            scored_candidates.append({
-                "url": url,
-                "domain": domain,
-                "score": score
-            })
-            
+
+            scored_candidates.append({"url": url, "domain": domain, "score": score})
+
         # Sort candidates by score descending
         scored_candidates.sort(key=lambda x: x["score"], reverse=True)
-        
+
         # Enforce base domain diversity: Only keep first article per domain
         seen_domains = set()
         final_urls = []
@@ -675,19 +695,21 @@ class GNewsService:
             final_urls.append(cand["url"])
             if len(final_urls) >= max_results:
                 break
-                
+
         return final_urls
 
     async def generate_discovery_reports(self, session: AsyncSession) -> dict[str, Any]:
         """Compile Hourly, Daily, and Rolling 7-Day Discovery reports and KPIs."""
-        from datetime import datetime, UTC, timedelta
-        from app.models.models import StoryArticle, Article, Story
-        from sqlalchemy import select, func, distinct
         import json
-        
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import distinct, func, select
+
+        from app.models.models import Article, Story, StoryArticle
+
         now = datetime.utcnow()
         today_str = now.strftime("%Y-%m-%d")
-        
+
         async def get_metrics_for_date(date_str: str) -> dict[str, int]:
             metrics = {}
             if self._redis:
@@ -697,13 +719,13 @@ class GNewsService:
                 except Exception:
                     pass
             return metrics
-            
+
         async def get_sources_per_story_stats() -> tuple[float, float]:
             try:
                 subq = (
                     select(
                         StoryArticle.story_id,
-                        func.count(distinct(Article.source_id)).label("source_count")
+                        func.count(distinct(Article.source_id)).label("source_count"),
                     )
                     .join(Article, StoryArticle.article_id == Article.id)
                     .group_by(StoryArticle.story_id)
@@ -712,21 +734,21 @@ class GNewsService:
                 counts = [float(row[1]) for row in res.all()]
                 if not counts:
                     return 1.0, 1.0
-                
+
                 avg_val = sum(counts) / len(counts)
-                
+
                 counts.sort()
                 n = len(counts)
                 if n % 2 == 1:
                     median_val = counts[n // 2]
                 else:
                     median_val = (counts[n // 2 - 1] + counts[n // 2]) / 2.0
-                    
+
                 return round(avg_val, 2), round(median_val, 2)
             except Exception as exc:
                 logger.warning("Failed to calculate story source statistics: %s", exc)
                 return 1.0, 1.0
-                
+
         async def get_discovery_effectiveness(days: int = 1) -> dict[str, int]:
             cutoff = now - timedelta(days=days)
             try:
@@ -736,42 +758,41 @@ class GNewsService:
                     .where(Article.created_at >= cutoff)
                 )
                 clustered_count = await session.scalar(clustered_stmt) or 0
-                
-                stories_stmt = (
-                    select(func.count(Story.id))
-                    .where(Story.created_at >= cutoff)
-                )
+
+                stories_stmt = select(func.count(Story.id)).where(Story.created_at >= cutoff)
                 stories_count = await session.scalar(stories_stmt) or 0
-                
-                return {
-                    "clustered": clustered_count,
-                    "synthesized": stories_count
-                }
+
+                return {"clustered": clustered_count, "synthesized": stories_count}
             except Exception as exc:
                 logger.warning("Failed to calculate discovery effectiveness: %s", exc)
                 return {"clustered": 0, "synthesized": 0}
-                
+
         daily_metrics = await get_metrics_for_date(today_str)
         daily_eff = await get_discovery_effectiveness(days=1)
         avg_src_daily, med_src_daily = await get_sources_per_story_stats()
-        
+
         daily_report = {
             "rss_processed": daily_metrics.get("rss_processed", 0),
             "searches_triggered": daily_metrics.get("searches_triggered", 0),
-            "search_cache_hits": daily_metrics.get("search_cache_hit", 0) or daily_metrics.get("search_skipped_cache", 0),
-            "search_lock_skips": daily_metrics.get("search_lock_skip", 0) or daily_metrics.get("search_skipped_search_locked", 0),
+            "search_cache_hits": daily_metrics.get("search_cache_hit", 0)
+            or daily_metrics.get("search_skipped_cache", 0),
+            "search_lock_skips": daily_metrics.get("search_lock_skip", 0)
+            or daily_metrics.get("search_skipped_search_locked", 0),
             "urls_found": daily_metrics.get("urls_found", 0),
             "urls_downloaded": daily_metrics.get("urls_downloaded", 0),
-            "bloom_filter_skips": daily_metrics.get("bloom_filter_skip", 0) or daily_metrics.get("url_duplicates", 0),
-            "db_url_skips": daily_metrics.get("db_url_skip", 0) or daily_metrics.get("search_skipped_db_filtered", 0),
-            "fingerprint_skips": daily_metrics.get("fingerprint_skip", 0) or daily_metrics.get("fingerprint_duplicates", 0),
+            "bloom_filter_skips": daily_metrics.get("bloom_filter_skip", 0)
+            or daily_metrics.get("url_duplicates", 0),
+            "db_url_skips": daily_metrics.get("db_url_skip", 0)
+            or daily_metrics.get("search_skipped_db_filtered", 0),
+            "fingerprint_skips": daily_metrics.get("fingerprint_skip", 0)
+            or daily_metrics.get("fingerprint_duplicates", 0),
             "articles_persisted": daily_metrics.get("urls_persisted", 0),
             "articles_clustered": daily_eff["clustered"],
             "stories_synthesized": daily_eff["synthesized"],
             "avg_sources_per_story": avg_src_daily,
             "median_sources_per_story": med_src_daily,
         }
-        
+
         # Compile 7-day rolling report
         rolling_metrics = {}
         for i in range(7):
@@ -780,42 +801,47 @@ class GNewsService:
             for k, v in m.items():
                 rolling_metrics[k] = rolling_metrics.get(k, 0) + v
         rolling_eff = await get_discovery_effectiveness(days=7)
-        
+
         rolling_report = {
             "rss_processed": rolling_metrics.get("rss_processed", 0),
             "searches_triggered": rolling_metrics.get("searches_triggered", 0),
-            "search_cache_hits": rolling_metrics.get("search_cache_hit", 0) or rolling_metrics.get("search_skipped_cache", 0),
+            "search_cache_hits": rolling_metrics.get("search_cache_hit", 0)
+            or rolling_metrics.get("search_skipped_cache", 0),
             "urls_found": rolling_metrics.get("urls_found", 0),
             "urls_downloaded": rolling_metrics.get("urls_downloaded", 0),
-            "bloom_filter_skips": rolling_metrics.get("bloom_filter_skip", 0) or rolling_metrics.get("url_duplicates", 0),
+            "bloom_filter_skips": rolling_metrics.get("bloom_filter_skip", 0)
+            or rolling_metrics.get("url_duplicates", 0),
             "db_url_skips": rolling_metrics.get("db_url_skip", 0),
-            "fingerprint_skips": rolling_metrics.get("fingerprint_skip", 0) or rolling_metrics.get("fingerprint_duplicates", 0),
+            "fingerprint_skips": rolling_metrics.get("fingerprint_skip", 0)
+            or rolling_metrics.get("fingerprint_duplicates", 0),
             "articles_persisted": rolling_metrics.get("urls_persisted", 0),
             "articles_clustered": rolling_eff["clustered"],
             "stories_synthesized": rolling_eff["synthesized"],
             "avg_sources_per_story": avg_src_daily,
             "median_sources_per_story": med_src_daily,
         }
-        
+
         hourly_report = {
             "rss_processed_last_hour": daily_metrics.get("rss_processed", 0),
             "searches_triggered_last_hour": daily_metrics.get("searches_triggered", 0),
             "articles_persisted_last_hour": daily_metrics.get("urls_persisted", 0),
         }
-        
+
         full_reports = {
             "date": today_str,
             "hourly": hourly_report,
             "daily": daily_report,
-            "rolling_7d": rolling_report
+            "rolling_7d": rolling_report,
         }
-        
+
         if self._redis:
             try:
-                await self._redis.set(f"discovery:report:{today_str}", json.dumps(full_reports), ex=7 * 24 * 3600)
+                await self._redis.set(
+                    f"discovery:report:{today_str}", json.dumps(full_reports), ex=7 * 24 * 3600
+                )
             except Exception as exc:
                 logger.warning("Failed to save discovery reports to Redis: %s", exc)
-                
+
         # Log report summary
         logger.info(
             "=== DAILY DISCOVERY QUALITY REPORT (%s) ===\n"
@@ -846,7 +872,7 @@ class GNewsService:
             daily_report["articles_clustered"],
             daily_report["stories_synthesized"],
             daily_report["avg_sources_per_story"],
-            daily_report["median_sources_per_story"]
+            daily_report["median_sources_per_story"],
         )
         return full_reports
 

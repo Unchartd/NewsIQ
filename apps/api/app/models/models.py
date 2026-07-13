@@ -771,22 +771,26 @@ class DiscoveryTask(Base):
     provider: Mapped[str] = mapped_column(String(50))
     priority: Mapped[int] = mapped_column(Integer, default=50, index=True)
     priority_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(30), default=DiscoveryTaskState.PENDING, index=True
-    )
+    status: Mapped[str] = mapped_column(String(30), default=DiscoveryTaskState.PENDING, index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
-    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True, index=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True, index=True
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     task_version: Mapped[int] = mapped_column(Integer, default=2)
     idempotency_key: Mapped[str] = mapped_column(String(255), unique=True)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
-    search_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
-    search_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    search_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    search_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
-    
+
     metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
@@ -813,29 +817,31 @@ class CrawlTask(Base):
     )
     url: Mapped[str] = mapped_column(Text)
     url_hash: Mapped[str] = mapped_column(String(64), index=True)
-    status: Mapped[str] = mapped_column(
-        String(30), default=CrawlTaskState.PENDING, index=True
-    )
+    status: Mapped[str] = mapped_column(String(30), default=CrawlTaskState.PENDING, index=True)
     outcome: Mapped[str | None] = mapped_column(String(50), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
-    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True, index=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True, index=True
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     task_version: Mapped[int] = mapped_column(Integer, default=2)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
-    crawl_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    crawl_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
 
     article_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("articles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Relationships
     discovery_task: Mapped["DiscoveryTask"] = relationship(back_populates="crawl_tasks")
     persisted_article: Mapped["Article | None"] = relationship(foreign_keys=[article_id])
 
-    __table_args__ = (
-        Index("idx_crawl_tasks_status_outcome", "status", "outcome"),
-    )
-
+    __table_args__ = (Index("idx_crawl_tasks_status_outcome", "status", "outcome"),)

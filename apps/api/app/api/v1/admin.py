@@ -544,7 +544,9 @@ async def get_stage_run_details(
         "stage": stage_run.stage,
         "status": stage_run.status,
         "started_at": f"{stage_run.started_at.isoformat()}Z" if stage_run.started_at else None,
-        "completed_at": f"{stage_run.completed_at.isoformat()}Z" if stage_run.completed_at else None,
+        "completed_at": f"{stage_run.completed_at.isoformat()}Z"
+        if stage_run.completed_at
+        else None,
         "latency_ms": stage_run.latency_ms,
         "retry_count": stage_run.retry_count,
         "error": stage_run.error,

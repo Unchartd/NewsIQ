@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.feedback_agent import evaluate_story_quality
 from app.core.config import settings
+from app.core.trace import PipelineStage
 from app.models.models import (
     Article,
     ArticleEvent,
@@ -25,9 +26,7 @@ from app.models.models import (
     SynthesisArtifact,
 )
 from app.models.observability_models import PipelineTraceModel
-from app.core.trace import PipelineStage
-
-from app.services.ai_service import AIService, StorySummaryResponse
+from app.services.ai_service import AIService
 from app.services.cache_service import cache_service
 from app.services.contradiction_service import contradiction_service
 from app.services.knowledge_graph import build_story_knowledge_graph
@@ -271,7 +270,11 @@ class StorySynthesisOrchestrator:
         from app.ai.prompts.repository import prompt_repository
 
         prompt_tmpl = prompt_repository.get("contradiction_detection")
-        model = prompt_repository.model_config("contradiction_detection").model if prompt_tmpl else "gemini-2.5-flash-lite"
+        model = (
+            prompt_repository.model_config("contradiction_detection").model
+            if prompt_tmpl
+            else "gemini-2.5-flash-lite"
+        )
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
         # Check Cache
@@ -364,7 +367,11 @@ class StorySynthesisOrchestrator:
         from app.ai.prompts.repository import prompt_repository
 
         prompt_tmpl = prompt_repository.get("source_comparison")
-        model = prompt_repository.model_config("source_comparison").model if prompt_tmpl else "gemini-2.5-flash-lite"
+        model = (
+            prompt_repository.model_config("source_comparison").model
+            if prompt_tmpl
+            else "gemini-2.5-flash-lite"
+        )
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
         # Check Cache
@@ -513,7 +520,11 @@ class StorySynthesisOrchestrator:
         from app.ai.prompts.repository import prompt_repository
 
         prompt_tmpl = prompt_repository.get("summary_generation")
-        model = prompt_repository.model_config("summary_generation").model if prompt_tmpl else "gemini-2.5-pro"
+        model = (
+            prompt_repository.model_config("summary_generation").model
+            if prompt_tmpl
+            else "gemini-2.5-pro"
+        )
         prompt_version = prompt_tmpl.version if prompt_tmpl else "1.0.0"
 
         # Adapt prompt if we are doing targeted section refinement

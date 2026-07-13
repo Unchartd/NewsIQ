@@ -512,25 +512,9 @@ class NERServiceV2:
         if not text or not text.strip():
             return []
 
-        prompt = self._build_ner_prompt(text)
         from app.core.trace import story_id_ctx
-        from app.services.cost_budget import cost_budget_manager
-        from app.services.model_router import model_router
 
         story_id = story_id_ctx.get("")
-        budget_exceeded = False
-        if story_id:
-            budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
-
-        complexity = "standard"
-        if len(text) > 10000:
-            complexity = "complex"
-
-        model = model_router.select(
-            stage="entity_extraction", complexity=complexity, budget_exceeded=budget_exceeded
-        )
-
-        from app.core.config import settings
 
         try:
             response: Any

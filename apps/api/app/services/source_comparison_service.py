@@ -75,8 +75,8 @@ class SourceComparisonService:
 
         Pipeline: cache check → LLM call → cache store.
         """
-        from app.services.pipeline_cache import pipeline_cache
         from app.ai.prompts.repository import prompt_repository
+        from app.services.pipeline_cache import pipeline_cache
 
         # ── Cache check ───────────────────────────────────────────────────────
         prompt_tmpl = prompt_repository.get("source_comparison")

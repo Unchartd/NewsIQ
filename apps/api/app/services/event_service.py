@@ -317,9 +317,9 @@ class EventService:
                 "Cannot extract events from empty article (both title and content are missing)."
             )
 
+        from app.ai.prompts.repository import prompt_repository
         from app.services.context_extractor import context_extractor
         from app.services.pipeline_cache import pipeline_cache
-        from app.ai.prompts.repository import prompt_repository
 
         # ── Prompt repository (system/user split for provider prefix caching) ───
         prompt_tmpl = prompt_repository.get("event_extraction")
