@@ -35,7 +35,6 @@ const NAV_ITEMS = [
   { href: "/admin/quality", label: "Quality Evaluation", icon: Shield },
   { href: "/admin/failures", label: "Failure Center", icon: AlertOctagon },
   { href: "/admin/failure-analytics", label: "Failure Analytics", icon: Activity },
-  { href: "/admin/review", label: "Review Queue", icon: UserCheck },
 ];
 
 function SSEStatusDot({ status }: { status: string }) {

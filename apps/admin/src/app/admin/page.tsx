@@ -14,8 +14,23 @@ import {
   Clock,
   Zap,
   ArrowUpRight,
+  Database,
+  ShieldAlert,
+  Server,
 } from "lucide-react";
 import Link from "next/link";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as ChartTooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 interface PipelineStatus {
   active_runs: number;
@@ -85,7 +100,7 @@ function RecentEventRow({ event }: { event: { stage: string; status: string; run
     <div className="flex items-center gap-3 py-2.5 border-b border-border last:border-0">
       <span className={`badge ${cfg.cls}`}>{cfg.label}</span>
       <span className="text-xs text-slate-300 font-mono flex-1 truncate">{event.stage}</span>
-      <span className="text-[10px] text-slate-650 font-mono truncate max-w-[120px]">
+      <span className="text-[10px] text-slate-655 font-mono truncate max-w-[120px]">
         {event.run_id?.slice(0, 8)}…
       </span>
       {event.duration_ms && (
@@ -178,6 +193,15 @@ export default function DashboardHome() {
     },
   });
 
+  const { data: metrics } = useQuery<any>({
+    queryKey: ["pipeline-dashboard-metrics"],
+    queryFn: async () => {
+      const res = await apiClient.get("/admin/pipeline/dashboard-metrics");
+      return res.data;
+    },
+    refetchInterval: 30000,
+  });
+
   const failureRate =
     pipelineStatus && pipelineStatus.completed_today + pipelineStatus.failed_today > 0
       ? (
@@ -186,6 +210,11 @@ export default function DashboardHome() {
           100
         ).toFixed(1)
       : "0.0";
+
+  const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
+  const lifecycleData: Array<{ name: string; value: number }> = metrics?.lifecycle_distribution
+    ? Object.entries(metrics.lifecycle_distribution).map(([name, value]) => ({ name, value: value as number }))
+    : [];
 
   return (
     <div className="space-y-8">
@@ -275,7 +304,39 @@ export default function DashboardHome() {
         />
       </div>
 
-      {/* Bottom row */}
+      {/* Discovery & Queue Status */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Discovery Queue"
+          value={metrics?.queue_size ?? "—"}
+          sub="Articles pending clustering"
+          icon={Database}
+          color="bg-indigo-500/15 text-indigo-400"
+        />
+        <StatCard
+          label="Crawl Backlog"
+          value={metrics?.discovery_backlog ?? "—"}
+          sub="URLs pending download"
+          icon={Server}
+          color="bg-cyan-500/15 text-cyan-400"
+        />
+        <StatCard
+          label="Active Reflections"
+          value={metrics?.reflection_requests_count ?? "—"}
+          sub="Stories in synthesis loop"
+          icon={Activity}
+          color="bg-purple-500/15 text-purple-400"
+        />
+        <StatCard
+          label="Cache Hit Rate"
+          value={metrics ? `${(metrics.cache_hit_rate * 100).toFixed(1)}%` : "—"}
+          sub="Savings from bypass"
+          icon={Zap}
+          color="bg-emerald-500/15 text-emerald-400"
+        />
+      </div>
+
+      {/* Live pipeline events & Cost breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent SSE events */}
         <div className="glass rounded-2xl p-5">
@@ -366,6 +427,111 @@ export default function DashboardHome() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* RSS Throughput & Lifecycle charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* RSS Throughput */}
+        <div className="glass rounded-2xl p-5">
+          <h2 className="text-sm font-semibold text-slate-200 mb-4">RSS Ingestion Throughput (Last 24 Hours)</h2>
+          <div className="h-[250px] w-full">
+            {!metrics?.rss_throughput || metrics.rss_throughput.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
+                No ingestion data available
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={metrics.rss_throughput}>
+                  <defs>
+                    <linearGradient id="colorRss" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis
+                    dataKey="hour"
+                    stroke="#64748b"
+                    tickFormatter={(val) => new Date(val).getHours() + ":00"}
+                    fontSize={10}
+                  />
+                  <YAxis stroke="#64748b" fontSize={10} />
+                  <ChartTooltip
+                    contentStyle={{ backgroundColor: "#0f172a", borderColor: "#1e293b" }}
+                    labelStyle={{ color: "#94a3b8" }}
+                  />
+                  <Area type="monotone" dataKey="count" stroke="#3b82f6" fillOpacity={1} fill="url(#colorRss)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Lifecycle Distribution */}
+        <div className="glass rounded-2xl p-5 flex flex-col justify-between">
+          <h2 className="text-sm font-semibold text-slate-200 mb-4">Story Lifecycle Distribution</h2>
+          <div className="h-[180px] flex items-center justify-center">
+            {lifecycleData.length === 0 ? (
+              <p className="text-slate-500 text-xs italic">No story lifecycle distribution data</p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={lifecycleData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={70}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {lifecycleData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <ChartTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <div className="grid grid-cols-5 gap-1 mt-4 text-center">
+            {lifecycleData.map((item, i) => (
+              <div key={item.name} className="space-y-1">
+                <div className="text-[10px] font-medium uppercase text-slate-500 truncate">{item.name}</div>
+                <div className="text-xs font-bold text-slate-200" style={{ color: COLORS[i % COLORS.length] }}>
+                  {item.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* System Alerts */}
+      <div className="glass rounded-2xl p-5">
+        <h2 className="text-sm font-semibold text-slate-200 mb-4">Recent System Alerts</h2>
+        {!metrics?.alerts || metrics.alerts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 space-y-2">
+            <ShieldAlert className="w-8 h-8 text-emerald-500" />
+            <p className="text-xs text-slate-400">All systems green. No active warnings or alarms.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {metrics.alerts.slice(0, 5).map((alert: any, idx: number) => (
+              <div
+                key={idx}
+                className={`flex items-start gap-3 p-3 rounded-xl border ${
+                  alert.severity === "critical"
+                    ? "bg-red-500/10 border-red-500/20 text-red-400"
+                    : "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="text-xs leading-relaxed">{alert.message}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
