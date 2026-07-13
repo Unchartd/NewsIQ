@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     AWS_BEDROCK_BASE_URL: str = "https://bedrock-mantle.us-east-1.api.aws/v1"
     AWS_BEDROCK_API_KEY: str = ""
     EMBEDDING_MODEL: str = "gemini-embedding-2"
-    SUMMARIZATION_MODEL: str = "gemini-3.5-flash-lite"
+    SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────
     PIPELINE_VERSION: str = "1.0.0"

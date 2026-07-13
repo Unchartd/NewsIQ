@@ -19,10 +19,10 @@ class CapabilityRoute(TypedDict):
 # Model fallback chains (configuration-driven instead of hardcoded)
 # Scoped strictly to Gemini, AWS Bedrock, NVIDIA NIM, and OpenRouter.
 MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
-    "gemini-3.5-flash-lite": [
+    "gemini-3.1-flash-lite": [
         {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -96,7 +96,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
     "deepseek-ai/deepseek-v4-flash": [
         {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -143,7 +143,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "summary": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -163,7 +163,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "headline": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.3,
             "timeout": 15.0,
         },
@@ -183,7 +183,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "event_extraction": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -203,7 +203,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "entity_extraction": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -223,7 +223,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "topic_classification": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 15.0,
         },
@@ -243,7 +243,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "keyword_generation": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.3,
             "timeout": 15.0,
         },
@@ -263,7 +263,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "story_clustering": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -283,7 +283,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "cluster_verification": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -404,7 +404,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "summary_reflection": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -446,7 +446,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "contradiction_detection": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -467,7 +467,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "entity_linking": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 15.0,
         },
