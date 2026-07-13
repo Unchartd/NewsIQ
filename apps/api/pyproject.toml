@@ -65,6 +65,7 @@ dependencies = [
     "structlog>=24.0.0",
     "langfuse>=2.0.0,<3.0.0",
     "prometheus-client>=0.21.0",
+    "rapidfuzz>=3.0.0",
 ]
 
 [project.optional-dependencies]

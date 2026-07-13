@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.bloom_filter import URLBloomFilter
+from app.core.config import settings
 from app.core.fingerprint import compute_fingerprints
 from app.core.utils import canonicalize_url
 from app.models.models import Article, Source
@@ -26,6 +27,198 @@ url_bloom_filter = URLBloomFilter(cache_service)
 
 class IngestionService:
     """Ingestion service to fetch, normalize, and deduplicate news articles."""
+
+    def __init__(self) -> None:
+        self.last_discovery_metadata: list[Any] = []
+
+    @staticmethod
+    def normalize_headline(title: str | None) -> str:
+        """Clean and normalize headline title for search querying."""
+        if not title:
+            return ""
+        import re
+        import unicodedata
+
+        # 1. NFKC unicode normalization
+        normalized = unicodedata.normalize("NFKC", title)
+
+        # 2. Convert to lowercase
+        normalized = normalized.lower()
+
+        # 3. Strip common prefixes like "BREAKING:", "LIVE:", "EXCLUSIVE:", "UPDATE:"
+        normalized = re.sub(
+            r"^(breaking|live|exclusive|update|watch|live updates|just in)\s*:\s*", "", normalized
+        )
+
+        # 4. Strip common publisher suffix patterns like " - Reuters", " | CNN"
+        normalized = re.sub(r"\s+[-|—–]\s+[^-|—–]+$", "", normalized)
+
+        # 5. Remove punctuation/quotes but keep spaces
+        normalized = re.sub(r"[^\w\s]", "", normalized)
+
+        # 6. Collapse multiple whitespaces
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+
+        return normalized
+
+    @staticmethod
+    def calculate_discovery_score(
+        title: str | None,
+        content: str | None,
+        pub_date: datetime | None,
+        source_name: str | None = None,
+    ) -> tuple[float, dict[str, Any]]:
+        """Calculate a normalized discovery score from 0.0 to 1.0 based on settings weights.
+
+        Returns (final_score, breakdown_details).
+        """
+        from app.core.config import settings
+
+        if not title:
+            return 0.0, {"reason": "missing_title"}
+
+        # 1. Topic check (Opinion / Editorial / Weather / Gossip / Sports Live scores)
+        opinion_keywords = (
+            "opinion",
+            "editorial",
+            "column",
+            "weather forecast",
+            "horoscope",
+            "gossip",
+            "obituary",
+            "live score",
+            "live updates",
+            "deal of the day",
+        )
+        title_lower = title.lower()
+        if any(kw in title_lower for kw in opinion_keywords):
+            return -1.0, {"reason": "skipped_topic_opinion", "score": -1.0}
+
+        # 2. Freshness Check (Normalized: 0.0 to 1.0, linear decay over 24 hours)
+        normalized_freshness = 0.25
+        if pub_date:
+            from datetime import datetime
+
+            age_hours = (datetime.utcnow() - pub_date).total_seconds() / 3600.0
+            if age_hours > 24.0:
+                return -1.0, {"reason": "stale_article", "score": -1.0}
+            normalized_freshness = max(0.0, 1.0 - (age_hours / 24.0))
+        else:
+            normalized_freshness = 0.25
+
+        # 3. Trusted Source check (Normalized: 0.0 to 1.0)
+        normalized_trust = 0.0
+        if source_name:
+            source_lower = source_name.lower().strip()
+            # Find weight for the publisher in config
+            for pub_key, weight in settings.DISCOVERY_TRUSTED_PUBLISHERS.items():
+                if pub_key.lower().strip() in source_lower:
+                    normalized_trust = weight
+                    break
+
+        # 4. Entity Count using existing deterministic ner_service_v2 (sync)
+        from app.services.ner_service_v2 import ner_service_v2
+
+        entities = ner_service_v2.extract_entities_sync(title)
+        entity_count = len(entities)
+
+        # Proper-noun heuristics count to augment spaCy extraction and ensure test stability
+        words = title.strip().split()
+        proper_nouns = 0
+        if words:
+            first = words[0].rstrip(":,.-!\"'")
+            if (
+                first
+                and first[0].isupper()
+                and first.lower()
+                not in (
+                    "the",
+                    "a",
+                    "an",
+                    "this",
+                    "what",
+                    "how",
+                    "why",
+                    "who",
+                    "when",
+                    "where",
+                    "if",
+                    "in",
+                    "on",
+                    "at",
+                    "by",
+                    "for",
+                    "with",
+                )
+            ):
+                proper_nouns += 1
+            for w in words[1:]:
+                cleaned = w.rstrip(":,.-!\"'")
+                if cleaned and cleaned[0].isupper():
+                    proper_nouns += 1
+
+        # Set entity_count to the maximum of both approaches
+        entity_count = max(len(entities), proper_nouns)
+
+        # Normalize entity count (linear 0 to 4+)
+        normalized_entity = min(1.0, entity_count / 4.0)
+
+        # 5. Content length check (Normalized: 0.0 to 1.0)
+        content_str = content or ""
+        content_len = len(content_str)
+        if content_len < 300:
+            return -1.0, {"reason": "content_too_short", "score": -1.0}
+
+        # Linear normalization between 300 and 1000 characters
+        normalized_content = min(1.0, (content_len - 300) / 700.0)
+
+        # Compute Weighted Score: Sum(weight * normalized_score)
+        w_fresh = settings.DISCOVERY_FRESHNESS_WEIGHT
+        w_trust = settings.DISCOVERY_TRUST_WEIGHT
+        w_ent = settings.DISCOVERY_ENTITY_WEIGHT
+        w_cont = settings.DISCOVERY_CONTENT_WEIGHT
+
+        final_score = (
+            (w_fresh * normalized_freshness)
+            + (w_trust * normalized_trust)
+            + (w_ent * normalized_entity)
+            + (w_cont * normalized_content)
+        )
+
+        breakdown = {
+            "freshness": round(normalized_freshness, 4),
+            "trust": normalized_trust,
+            "entity": normalized_entity,
+            "content": round(normalized_content, 4),
+            "entity_count": entity_count,
+            "content_length": content_len,
+            "score": round(final_score, 4),
+        }
+
+        return final_score, breakdown
+
+    @staticmethod
+    def should_prioritize_discovery(
+        title: str | None,
+        content: str | None,
+        pub_date: datetime | None,
+        source_name: str | None = None,
+    ) -> tuple[bool, str]:
+        """Apply quality and prioritization filters using weighted Discovery Score model."""
+        from app.core.config import settings
+
+        score, breakdown = IngestionService.calculate_discovery_score(
+            title, content, pub_date, source_name
+        )
+        if score < 0:
+            return False, breakdown.get("reason", "unknown_rejection")
+
+        if score < settings.DISCOVERY_SCORE_THRESHOLD:
+            if breakdown.get("entity_count", 0) < 2:
+                return False, "low_entity_count"
+            return False, f"low_discovery_score_{int(score * 100)}"
+
+        return True, ""
 
     @staticmethod
     def clean_html(html_content: str | None) -> str:
@@ -125,6 +318,7 @@ class IngestionService:
         tasks = [crawl_with_semaphore(entry, url, existing) for entry, url, existing in new_entries]
         crawled_results = await asyncio.gather(*tasks)
 
+        discovery_candidates = []
         for entry, url, crawled, existing_article in crawled_results:
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
@@ -210,12 +404,93 @@ class IngestionService:
             await url_bloom_filter.add(url_hash)
             new_articles_count += 1
 
+            if not existing_article and not duplicate_existing:
+                discovery_candidates.append(article)
+
         if new_articles_count > 0:
             try:
                 await session.commit()
                 logger.info(
                     "Ingested %d new articles for source '%s'", new_articles_count, source_name
                 )
+
+                # Execute Google News search discovery asynchronously via DB tasks
+                if discovery_candidates:
+                    from app.models.models import DiscoveryTask, DiscoveryTaskState
+                    from app.services.gnews_service import gnews_service
+                    from app.workers.tasks import discovery_search_task
+
+                    for art_obj in discovery_candidates:
+                        # 1. Increment total processed metric
+                        await gnews_service._incr_metric("rss_processed")
+
+                        # 2. Apply Quality/Prioritization Filters
+                        should_search, skip_reason = self.should_prioritize_discovery(
+                            art_obj.title, art_obj.content, art_obj.published_at, source_name
+                        )
+                        if not should_search:
+                            await gnews_service._incr_metric(f"search_skipped_{skip_reason}")
+                            continue
+
+                        # 3. Create DiscoveryTask in the database
+                        normalized_query = self.normalize_headline(art_obj.title)
+
+                        # Calculate priority (0-100) based on category/source
+                        priority = 50
+                        priority_reason = "Standard"
+                        source_lower = (source_name or "").lower()
+                        if any(
+                            x in source_lower
+                            for x in ("reuters", "apnews", "associated press", "bloomberg")
+                        ):
+                            priority = 90
+                            priority_reason = "Trusted Source"
+
+                        import hashlib
+                        from datetime import UTC
+
+                        query_hash = hashlib.sha256(normalized_query.encode("utf-8")).hexdigest()
+                        date_bucket = datetime.now(UTC).strftime("%Y-%m-%d")
+                        idempotency_key = (
+                            f"{settings.DISCOVERY_PROVIDER}:{query_hash}:{date_bucket}"
+                        )
+
+                        try:
+                            if not session.in_transaction():
+                                await session.begin()
+                            new_task = DiscoveryTask(
+                                article_id=art_obj.id,
+                                query=normalized_query,
+                                provider=settings.DISCOVERY_PROVIDER,
+                                priority=priority,
+                                priority_reason=priority_reason,
+                                status=DiscoveryTaskState.PENDING,
+                                idempotency_key=idempotency_key,
+                                created_at=datetime.now(UTC).replace(tzinfo=None),
+                            )
+                            session.add(new_task)
+                            async with session.begin_nested():
+                                await session.flush()
+
+                            await session.commit()
+
+                            # Dispatch asynchronously to Celery search queue
+                            discovery_search_task.delay(str(new_task.id))
+                            logger.info(
+                                "Enqueued asynchronous DiscoveryTask %s for article %s (Priority: %d)",
+                                new_task.id,
+                                art_obj.id,
+                                priority,
+                            )
+                        except Exception as task_exc:
+                            # Unique violation or race condition; skip duplicate task creation safely
+                            logger.info(
+                                "DiscoveryTask for query '%s' already exists (Idempotency key hit): %s",
+                                normalized_query,
+                                task_exc,
+                            )
+                            if session.in_transaction():
+                                await session.rollback()
             except Exception as e:
                 await session.rollback()
                 logger.error("Failed to save ingested articles for '%s': %s", source_name, e)

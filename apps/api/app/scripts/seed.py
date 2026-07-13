@@ -30,191 +30,7 @@ CATEGORIES = [
     {"slug": "world", "name": "World", "icon": "globe"},
 ]
 
-PROMPT_TEMPLATES = [
-    {
-        "stage": "event_extraction",
-        "system_prompt": None,
-        "user_prompt_template": (
-            "You are a structured event extraction engine for news articles.\n"
-            "Extract the PRIMARY EVENT described in the article.\n\n"
-            "CRITICAL RULES:\n"
-            "1. event_time is WHEN THE EVENT HAPPENED, NOT when the article was published.\n"
-            "   The article was published at: {published_at}. Do NOT use this as event_time.\n"
-            "   If the article says 'yesterday', 'last week', 'on Monday', compute the actual date.\n"
-            "   If the event time cannot be determined from the text, set event_time to null.\n"
-            "2. actors = WHO performed the action (people, governments, companies, organizations)\n"
-            "3. targets = WHO/WHAT was affected (victims, objects, countries affected)\n"
-            "4. objects = KEY THINGS involved (weapons, documents, bills, products)\n"
-            "5. location = WHERE it happened (be specific: city + country if available)\n"
-            "6. numbers = any KEY NUMBERS mentioned (casualties, amounts, counts, percentages)\n"
-            "7. confidence = how confident you are in this extraction (0.0-1.0)\n\n"
-            "event_type must be one of: ATTACK, DETENTION, ELECTION, PROTEST, AGREEMENT, "
-            "MERGER, ACQUISITION, POLICY, SANCTIONS, NATURAL_DISASTER, WEATHER, SPORTS, DEATH, "
-            "LEGAL, HEALTH, DIPLOMACY, MILITARY_OPERATION, LAYOFF, PRODUCT_LAUNCH, "
-            "INVESTMENT, ACCIDENT, SCANDAL, LEGISLATION, VIOLENCE, IPO, EARNINGS, BANKRUPTCY, "
-            "SPACE, AI_TECH, DISCOVERY\n"
-            "If none fit, use the closest match or a descriptive type.\n\n"
-            "--- ARTICLE ---\n"
-            "Title: {title}\n"
-            "Content: {content}\n"
-            "--- END ---\n\n"
-            "Respond with ONLY a valid JSON object matching this schema:\n"
-            "{\n"
-            '  "primary_event": {\n'
-            '    "event_type": "<canonical type>",\n'
-            '    "actors": ["<actor1>", "<actor2>"],\n'
-            '    "targets": ["<target1>"],\n'
-            '    "objects": ["<object1>"],\n'
-            '    "location": "<city, country>",\n'
-            '    "event_time": "<ISO 8601 or null>",\n'
-            '    "numbers": {"<key>": <value>},\n'
-            '    "confidence": 0.85\n'
-            "  },\n"
-            '  "secondary_events": []\n'
-            "}"
-        ),
-        "description": "Per-article structured event extraction",
-    },
-    {
-        "stage": "entity_extraction",
-        "system_prompt": None,
-        "user_prompt_template": (
-            "Extract ALL named entities from the following news text.\n"
-            "For EACH entity, provide:\n"
-            "- value: the entity text as it appears\n"
-            "- type: entity type from this list:\n"
-            "  PERSON, ORG, COMPANY, COUNTRY, CITY, STATE, PLACE, LOCATION, EVENT, AGREEMENT, "
-            "LAW, PRODUCT, TECHNOLOGY, POLITICAL_PARTY, WEAPON, SHIP, AIRCRAFT, DATE, TIME, "
-            "MONEY, PERCENTAGE, CRYPTO, SPORTS_TEAM, DISEASE, GOVERNMENT_BODY, MILITARY_UNIT\n"
-            "- canonical_name: the standardized/full name (e.g., 'Rahul Gandhi' for 'Mr Gandhi')\n"
-            "- confidence: 0.0-1.0\n\n"
-            "CRITICAL RULES:\n"
-            "1. 'MoU' or 'Memorandum of Understanding' → type: AGREEMENT\n"
-            "2. Indian states like 'Andhra Pradesh', 'Tamil Nadu' → type: STATE\n"
-            "3. US states like 'California', 'Texas' → type: STATE\n"
-            "4. Universities and colleges → type: ORG\n"
-            "5. Political parties → type: POLITICAL_PARTY\n"
-            "6. Countries → type: COUNTRY\n"
-            "7. Cities → type: CITY\n"
-            "8. Companies/corporations → type: COMPANY\n"
-            "9. Government bodies (Supreme Court, Parliament, Congress) → type: GOVERNMENT_BODY\n"
-            "10. Do NOT classify organizations, places, or agreements as PERSON.\n\n"
-            "--- TEXT ---\n{text}\n--- END ---\n\n"
-            "Respond with ONLY valid JSON:\n"
-            '{"entities": [{"value": "...", "type": "...", "canonical_name": "...", "confidence": 0.9}]}'
-        ),
-        "description": "High-accuracy named entity extraction",
-    },
-    {
-        "stage": "entity_linking",
-        "system_prompt": None,
-        "user_prompt_template": (
-            "You are an entity resolution assistant.\n"
-            "Given the entity name '{name}' of type '{entity_type}', "
-            "determine its canonical name and generate a specific Wikidata search query.\n\n"
-            "Context from articles:\n"
-            "{context}\n\n"
-            "Identify what/who this entity is in the context. E.g., if it's 'Gandhi' and the context is Indian politics, "
-            "canonical name is 'Rahul Gandhi' and query is 'Rahul Gandhi politician'.\n"
-            "If the entity is already clear (e.g. 'United States'), "
-            "canonical name is 'United States' and query is 'United States'.\n\n"
-            "Respond in JSON matching this schema:\n"
-            '{"canonical_name": "...", "wikidata_search_query": "...", "description": "..."}'
-        ),
-        "description": "Entity disambiguation and Wikidata link generation",
-    },
-    {
-        "stage": "contradiction_detection",
-        "system_prompt": None,
-        "user_prompt_template": (
-            "You are a factual contradiction validator for a news intelligence platform.\n"
-            "Compare these two conflicting reports of the same '{fact_type}' detail:\n"
-            "1. Source: {source1_name} reports: {val1}\n"
-            "2. Source: {source2_name} reports: {val2}\n\n"
-            "Context from the articles:\n{context}\n\n"
-            "Determine if this is a true factual contradiction (e.g. Source A says Russia did it, "
-            "Source B says Ukraine did it; or 15 dead vs 50 dead).\n"
-            "Note: Wording differences, translation variations, or subset relationships (e.g. "
-            "'15 police officers' vs '15 people' or '15 dead' vs 'at least 10 dead') are NOT contradictions.\n\n"
-            "Respond in JSON matching this schema:\n"
-            '{"is_contradiction": true/false, "description": "...", "confidence": 0.0-1.0}'
-        ),
-        "description": "Validator to confirm heuristics-flagged contradictions",
-    },
-    {
-        "stage": "source_comparison",
-        "system_prompt": None,
-        "user_prompt_template": (
-            "You are a professional news intelligence analyst.\n"
-            "Analyze the coverage of the publisher '{src_name}' for a story.\n\n"
-            "Here are the differences and coverages detected by our heuristic engines:\n"
-            "1. Unique facts reported only by {src_name}: {unique_summary}\n"
-            "2. Facts reported by others but omitted by {src_name}: {missing_summary}\n"
-            "3. Factual contradictions involving {src_name}: {contradictions_summary}\n\n"
-            "Context from the story's articles:\n{context}\n\n"
-            "Based on the heuristics and the articles' context, synthesize a clean analysis.\n"
-            "For 'focus_area', write a concise, professional sentence (max 100 chars, e.g. "
-            "'Detailed legal proceedings and arrest details.') summarizing their coverage angle.\n"
-            "For 'unique_information', 'missing_information', and 'contradictions', provide "
-            "a concise, readable description. If none, return empty string.\n\n"
-            "Respond in JSON matching this schema:\n"
-            '{"focus_area": "...", "unique_information": "...", "missing_information": "...", "contradictions": "..."}'
-        ),
-        "description": "Analyze unique/missing info and stance differences per publisher",
-    },
-    {
-        "stage": "story_analysis",
-        "system_prompt": None,
-        "user_prompt_template": (
-            "You are an objective, expert news intelligence analyst.\n"
-            "Analyze the following articles about a single news event. "
-            "Your output must be completely neutral, free of editorializing, clickbait, or political bias.\n\n"
-            "{articles_text}\n"
-            "Synthesize this information into a single cohesive story.\n"
-            "For the 'category' field, choose exactly one slug from: politics, world, business, "
-            "technology, sports, entertainment, lifestyle, travel, education, health, science, weather.\n"
-            "For timeline dates, use ISO 8601 format (YYYY-MM-DD) whenever possible.\n\n"
-            "Respond with ONLY a valid JSON object matching this exact schema (no markdown, no code blocks):\n"
-            "{\n"
-            '  "headline": "<neutral headline>",\n'
-            '  "one_line_summary": "<1-sentence summary>",\n'
-            '  "short_summary": "<1-paragraph 3-4 sentence summary>",\n'
-            '  "detailed_summary": "<multi-paragraph detailed summary>",\n'
-            '  "key_facts": ["fact1", "fact2", "fact3"],\n'
-            '  "category": "<category>",\n'
-            '  "timeline": [{"date": "YYYY-MM-DD", "description": "<event>"}],\n'
-            '  "differences": [{"source_name": "<source>", "unique_information": "<text>", "missing_information": "<text>", "contradictions": "<text>"}]\n'
-            "}"
-        ),
-        "description": "Cohesive multi-source story synthesis and categorization",
-    },
-    {
-        "stage": "summary_generation",
-        "system_prompt": None,
-        "user_prompt_template": (
-            "You are an objective, expert news intelligence analyst.\n"
-            "Generate a highly objective, neutral story summary using ONLY the structured event knowledge graph, "
-            "timeline, source comparison, and contradictions below.\n"
-            "Do NOT invent or extrapolate facts not present in this structured knowledge.\n\n"
-            "--- KNOWLEDGE GRAPH ---\n{kg_str}\n\n"
-            "--- TIMELINE OF EVENTS ---\n{timeline_str}\n\n"
-            "--- SOURCE COVERAGE & DIFFERENCES ---\n{source_comp_str}\n\n"
-            "--- DETECTED CONTRADICTIONS ---\n{contras_str}\n\n"
-            "For the 'category' field, choose exactly one slug from: politics, world, business, "
-            "technology, sports, entertainment, lifestyle, travel, education, health, science, weather.\n\n"
-            "Respond with ONLY a valid JSON object matching this exact schema (no markdown, no code blocks):\n"
-            "{\n"
-            '  "headline": "<neutral headline>",\n'
-            '  "one_line_summary": "<1-sentence summary>",\n'
-            '  "short_summary": "<1-paragraph summary>",\n'
-            '  "detailed_summary": "<multi-paragraph detailed summary>",\n'
-            '  "key_facts": ["fact1", "fact2", "fact3"],\n'
-            '  "category": "<category>"\n'
-            "}"
-        ),
-        "description": "Neutral story summary generation from KG & analysis metrics",
-    },
-]
+# PROMPT_TEMPLATES are now loaded dynamically from YAML manifests via PromptLoader.
 
 SOURCES = [
     {
@@ -484,11 +300,21 @@ async def seed():
                 else:
                     print(f"  ⏭️  Source already exists: {src_data['name']}")
 
-        # Seed prompt templates
-        for p_data in PROMPT_TEMPLATES:
-            sys_p = p_data["system_prompt"] or ""
-            user_p = p_data["user_prompt_template"] or ""
-            combined = f"stage:{p_data['stage']}\nsys:{sys_p}\nuser:{user_p}"
+        # Seed prompt templates dynamically from YAML manifests (v5 platform)
+        import sqlalchemy as sa
+
+        from app.ai.prompts.compiler import PromptCompiler
+        from app.ai.prompts.loader import PromptLoader
+
+        loader = PromptLoader()
+        compiler = PromptCompiler()
+        raw_manifests = loader.load_all()
+        compiled_manifests = compiler.compile_all(raw_manifests)
+
+        for manifest in compiled_manifests:
+            sys_p = manifest.system or ""
+            user_p = manifest.template or ""
+            combined = f"stage:{manifest.stage}\nsys:{sys_p}\nuser:{user_p}"
             prompt_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
             result = await session.execute(
@@ -501,25 +327,69 @@ async def seed():
 
                 await session.execute(
                     update(PromptVersionModel)
-                    .where(PromptVersionModel.stage == p_data["stage"])
+                    .where(PromptVersionModel.stage == manifest.stage)
                     .values(is_active=False)
                 )
+
+                # Get max version for this stage currently in DB
+                max_ver_result = await session.execute(
+                    select(sa.func.max(PromptVersionModel.version)).where(
+                        PromptVersionModel.stage == manifest.stage
+                    )
+                )
+                max_ver = max_ver_result.scalar() or 0
+                new_version = max_ver + 1
 
                 prompt_version = PromptVersionModel(
                     id=uuid.uuid4(),
                     prompt_hash=prompt_hash,
-                    stage=p_data["stage"],
-                    system_prompt=p_data["system_prompt"],
-                    user_prompt_template=p_data["user_prompt_template"],
-                    version=1,
-                    description=p_data["description"],
+                    stage=manifest.stage,
+                    system_prompt=manifest.system,
+                    user_prompt_template=manifest.template,
+                    version=new_version,
+                    description=f"{manifest.stage} prompt template v{manifest.version}",
                     is_active=True,
                     created_at=datetime.utcnow(),
+                    prompt_uri=manifest.prompt_uri,
+                    schema_version=manifest.schema_version,
+                    preferred_model=manifest.routing.preferred_model if manifest.routing else None,
+                    lifecycle_state=manifest.lifecycle.state
+                    if manifest.lifecycle
+                    else "production",
+                    parent_uri=manifest.lineage.parent_uri if manifest.lineage else None,
+                    deprecated_at=None,
+                    deprecated_reason=None,
+                    superseded_by=None,
                 )
                 session.add(prompt_version)
-                print(f"  ✅ Prompt Template: {p_data['stage']}")
+                print(f"  ✅ Prompt Template (New Version): {manifest.stage} (v{new_version})")
             else:
-                print(f"  ⏭️  Prompt Template already exists: {p_data['stage']}")
+                # Update governance metadata for existing matching prompt
+                existing.prompt_uri = manifest.prompt_uri
+                existing.schema_version = manifest.schema_version
+                existing.preferred_model = (
+                    manifest.routing.preferred_model if manifest.routing else None
+                )
+                existing.lifecycle_state = (
+                    manifest.lifecycle.state if manifest.lifecycle else "production"
+                )
+                existing.parent_uri = manifest.lineage.parent_uri if manifest.lineage else None
+                session.add(existing)
+                print(f"  ⏭️  Prompt Template already exists (metadata updated): {manifest.stage}")
+
+        # Check for old story_analysis prompt and deprecate it safely
+        story_analysis_result = await session.execute(
+            select(PromptVersionModel).where(PromptVersionModel.stage == "story_analysis")
+        )
+        old_analysis_prompts = story_analysis_result.scalars().all()
+        for old_p in old_analysis_prompts:
+            if old_p.is_active or old_p.deprecated_reason is None:
+                old_p.is_active = False
+                old_p.deprecated_at = datetime.utcnow()
+                old_p.deprecated_reason = "Superseded by summary_generation in v5 platform"
+                old_p.superseded_by = "newsiq://prompt/summary_generation"
+                session.add(old_p)
+                print("  ⚠️ Deprecated old prompt stage 'story_analysis'")
 
         await session.commit()
     print("\n🎉 Seeding complete!")

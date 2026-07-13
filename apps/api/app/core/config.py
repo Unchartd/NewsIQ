@@ -128,6 +128,40 @@ class Settings(BaseSettings):
     NEWSAPI_KEY: str = ""
     GNEWS_API_KEY: str = ""
 
+    # ── News Discovery Pipeline Configuration ────────────────────────────────
+    DISCOVERY_PROVIDER: str = "google_rss"
+    DISCOVERY_MAX_RESULTS: int = 7
+    DISCOVERY_CACHE_TTL: int = 6 * 3600  # 6 hours in seconds
+    DISCOVERY_LOCK_TTL: int = 10 * 60  # 10 minutes in seconds
+    DISCOVERY_MAX_CONCURRENT_DOWNLOADS: int = 5
+    DISCOVERY_SCORE_THRESHOLD: float = 0.50
+    DISCOVERY_DAILY_SEARCH_BUDGET: int = 1000
+    DISCOVERY_DAILY_DOWNLOAD_BUDGET: int = 5000
+    DISCOVERY_MAX_RETRIES: int = 3
+
+    # Discovery Candidate Scoring Weights
+    DISCOVERY_FRESHNESS_WEIGHT: float = 0.20
+    DISCOVERY_TRUST_WEIGHT: float = 0.30
+    DISCOVERY_ENTITY_WEIGHT: float = 0.30
+    DISCOVERY_CONTENT_WEIGHT: float = 0.20
+
+    # Trusted Publishers and their weights
+    DISCOVERY_TRUSTED_PUBLISHERS: dict[str, float] = {
+        "reuters": 1.0,
+        "apnews": 1.0,
+        "associated press": 1.0,
+        "bbc": 0.95,
+        "guardian": 0.9,
+        "cnn": 0.9,
+        "bloomberg": 0.95,
+        "nytimes": 0.9,
+        "new york times": 0.9,
+        "washington post": 0.9,
+        "independent": 0.8,
+        "techcrunch": 0.8,
+        "the verge": 0.8,
+    }
+
     # ── SMTP ─────────────────────────────────────────────────────────────────
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 1025

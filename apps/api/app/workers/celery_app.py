@@ -70,6 +70,10 @@ _conf: dict = {
         "app.tasks.cleanup_sessions",
         "app.workers.digest_tasks",
     ],
+    "task_routes": {
+        "app.workers.tasks.discovery_search_task": {"queue": "discovery_search"},
+        "app.workers.tasks.discovery_crawl_task": {"queue": "discovery_crawl"},
+    },
 }
 
 # Attach TLS config if broker uses rediss://
@@ -130,6 +134,16 @@ celery_app.conf.beat_schedule = {
     "aggregate-pipeline-metrics-every-minute": {
         "task": "app.workers.tasks.aggregate_pipeline_metrics_task",
         "schedule": crontab(minute="*"),
+    },
+    # Poll discovery retries every minute
+    "poll-discovery-retries-every-minute": {
+        "task": "app.workers.tasks.poll_discovery_retries_task",
+        "schedule": crontab(minute="*"),
+    },
+    # Cleanup discovery tasks daily
+    "cleanup-discovery-tasks-daily": {
+        "task": "app.workers.tasks.cleanup_discovery_tasks_task",
+        "schedule": crontab(hour="1", minute="0"),
     },
 }
 

@@ -1,0 +1,74 @@
+stage: "summary_refinement"
+prompt_uri: "newsiq://prompt/summary_refinement"
+version: "v1.0.0"
+schema_version: "v1"
+response_version: "v1"
+response_model: "StorySummaryResponse"
+
+system: |
+  You are an expert news editor. Update and correct an existing story summary based on
+  structured feedback corrections. Preserve all unaffected sections.
+  Ground every correction in the knowledge graph. Never invent facts.
+
+template: |
+  Existing Summary:
+  {existing_summary}
+
+  Feedback Corrections:
+  {corrections}
+
+  Knowledge Graph Ground Truth:
+  {knowledge_graph}
+
+  Respond with ONLY valid JSON matching this schema:
+  {{
+    "headline": "<neutral headline>",
+    "one_line_summary": "<1-sentence summary>",
+    "short_summary": "<1-paragraph summary>",
+    "detailed_summary": "<multi-paragraph detailed summary>",
+    "key_facts": ["fact1", "fact2"],
+    "category": "<slug>"
+  }}
+
+routing:
+  preferred_model: "gemini-2.5-pro"
+  fallback_models:
+    - "deepseek.v3.2"
+    - "deepseek-ai/deepseek-v4-pro"
+  temperature: 0.1
+  max_tokens: 4096
+  timeout_seconds: 45.0
+
+cache:
+  cacheable: false
+  cache_ttl_seconds: null
+  cache_inputs: []
+
+dependencies:
+  prompt_dependencies:
+    - summary_generation
+    - knowledge_graph
+
+lifecycle:
+  state: "production"
+  replay_policy: "no-replay"
+
+lineage:
+  parent_uri: "newsiq://prompt/summary_generation"
+  derived_from: "v2.0.0"
+  created_at: "2026-07-14"
+  deprecated_at: null
+  deprecated_reason: null
+  superseded_by: null
+
+ownership:
+  owner: "synthesis"
+  team: "ai"
+  created_by: "system"
+  last_reviewed: "2026-07-14"
+  documentation: null
+
+compatibility:
+  min_pipeline_version: ">=1.4"
+  min_schema_version: ">=1"
+  min_gateway_version: ">=2"

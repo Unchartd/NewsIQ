@@ -512,49 +512,20 @@ class NERServiceV2:
         if not text or not text.strip():
             return []
 
-        prompt = self._build_ner_prompt(text)
         from app.core.trace import story_id_ctx
-        from app.services.cost_budget import cost_budget_manager
-        from app.services.model_router import model_router
 
         story_id = story_id_ctx.get("")
-        budget_exceeded = False
-        if story_id:
-            budget_exceeded = await cost_budget_manager.is_budget_exceeded(story_id)
-
-        complexity = "standard"
-        if len(text) > 10000:
-            complexity = "complex"
-
-        model = model_router.select(
-            stage="entity_extraction", complexity=complexity, budget_exceeded=budget_exceeded
-        )
-
-        from app.core.config import settings
 
         try:
             response: Any
-            if settings.USE_NEW_GATEWAY:
-                from app.ai.gateway import ai_gateway
+            from app.ai.gateway import ai_gateway
 
-                response = await ai_gateway.generate(
-                    capability="entity_extraction",
-                    prompt_variables={"text": text},
-                    schema=EntityExtractionResponse,
-                    temperature=0.1,
-                    story_id=story_id,
-                )
-            else:
-                from app.llm_gateway.request_manager import llm_gateway
-
-                response = await llm_gateway.execute_request(
-                    model=model,
-                    stage="entity_extraction",
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format=EntityExtractionResponse,
-                    temperature=0.1,
-                    story_id=story_id,
-                )
+            response = await ai_gateway.generate_stage(
+                stage="entity_extraction",
+                prompt_variables={"text": text},
+                schema=EntityExtractionResponse,
+                story_id=story_id,
+            )
 
             entities_raw = []
             if response.parsed:

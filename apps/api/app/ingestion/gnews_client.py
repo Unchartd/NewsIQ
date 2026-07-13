@@ -1,26 +1,16 @@
-"""GNews API HTTP client.
-
-GNews docs: https://gnews.io/docs/v4
-Rate limits (free tier): 100 requests/day, 10 articles/request, 3-day history.
-
-This client:
-  - Handles authentication, request construction, and response parsing
-  - Normalizes GNews article dicts to our internal Article schema format
-  - Guards against duplicate fetches via Redis TTL lock
-  - Respects rate limits with configurable per-category intervals
+"""Google News RSS feed client.
+This client fetches Google News RSS feeds and normalizes articles to our internal format.
 """
 
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
+import feedparser
 import httpx
 
-from app.core.config import settings
-
 logger = logging.getLogger(__name__)
-
-GNEWS_BASE_URL = "https://gnews.io/api/v4"
 
 # Map GNews category names → our canonical category slugs
 GNEWS_CATEGORY_MAP: dict[str, str] = {
@@ -35,23 +25,27 @@ GNEWS_CATEGORY_MAP: dict[str, str] = {
     "health": "health",
 }
 
-# Categories to fetch on each scheduled run.
-# Free tier: 100 req/day, 48 runs/day (every 30 min) → 2 categories per run.
-# These two categories provide the broadest coverage.
-DEFAULT_CATEGORIES = ["general", "technology"]
+MAP_CATEGORY_TO_TOPIC = {
+    "general": "WORLD",
+    "world": "WORLD",
+    "nation": "NATION",
+    "business": "BUSINESS",
+    "technology": "TECHNOLOGY",
+    "entertainment": "ENTERTAINMENT",
+    "sports": "SPORTS",
+    "science": "SCIENCE",
+    "health": "HEALTH",
+}
 
-# Countries to fetch headlines for
+DEFAULT_CATEGORIES = ["general", "technology"]
 DEFAULT_COUNTRIES = ["us", "in"]
 
 
 class GNewsClient:
-    """Lightweight async HTTP client for the GNews API v4."""
+    """Async client that fetches and parses the free Google News RSS feed."""
 
     def __init__(self) -> None:
-        self.api_key = settings.GNEWS_API_KEY
-        self.enabled = bool(self.api_key)
-        if not self.enabled:
-            logger.warning("GNEWS_API_KEY not set — GNews ingestion disabled.")
+        self.enabled = True  # Free RSS feed is always enabled
 
     async def fetch_top_headlines(
         self,
@@ -60,66 +54,79 @@ class GNewsClient:
         language: str = "en",
         max_articles: int = 10,
     ) -> list[dict[str, Any]]:
-        """Fetch top headline articles from GNews for a given category and country.
+        """Fetch top headline articles from Google News RSS for a category and country."""
+        country_upper = country.upper()
 
-        Args:
-            category:     GNews category (general, technology, business, etc.)
-            country:      ISO 3166-1 alpha-2 country code (us, in, gb, etc.)
-            language:     BCP 47 language code (en, hi, fr, etc.)
-            max_articles: Number of articles to retrieve (max 10 on free tier)
+        # Build the RSS URL based on category
+        topic = MAP_CATEGORY_TO_TOPIC.get(category, "WORLD")
+        if category == "general":
+            url = f"https://news.google.com/rss?hl=en-{country_upper}&gl={country_upper}&ceid={country_upper}:en"
+        else:
+            url = f"https://news.google.com/rss/headlines/section/topic/{topic}?hl=en-{country_upper}&gl={country_upper}&ceid={country_upper}:en"
 
-        Returns:
-            List of normalized article dicts ready for IngestionService.
-        """
-        if not self.enabled:
-            return []
-
-        params: dict[str, Any] = {
-            "category": category,
-            "country": country,
-            "lang": language,
-            "max": min(max_articles, 10),  # Free tier cap
-            "apikey": self.api_key,
-        }
-
-        url = f"{GNEWS_BASE_URL}/top-headlines"
-
+        logger.info("Fetching Google News RSS from: %s", url)
         try:
             async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-                response = await client.get(url, params=params)
-
-                if response.status_code == 429:
-                    logger.warning("GNews rate limit hit (429). Will retry on next scheduled run.")
-                    return []
-
-                if response.status_code == 403:
-                    logger.error(
-                        "GNews API key invalid or quota exceeded (403). "
-                        "Check GNEWS_API_KEY and plan limits."
-                    )
-                    return []
-
+                response = await client.get(url)
                 response.raise_for_status()
-                data = response.json()
-
-        except httpx.TimeoutException:
-            logger.error("GNews request timed out for category=%s country=%s", category, country)
-            return []
-        except httpx.HTTPStatusError as exc:
-            logger.error("GNews HTTP error %d for %s: %s", exc.response.status_code, url, exc)
-            return []
+                feed_data = response.text
         except Exception as exc:
-            logger.error("GNews request failed: %s", exc)
+            logger.error("Failed to fetch Google News RSS for %s/%s: %s", category, country, exc)
             return []
 
-        articles = data.get("articles", [])
-        if not articles:
-            logger.info("GNews returned 0 articles for category=%s country=%s", category, country)
-            return []
+        parsed_feed = feedparser.parse(feed_data)
+        entries = parsed_feed.entries[:max_articles]
 
-        normalized = [self._normalize_article(art, category, country) for art in articles]
+        normalized = []
+        for entry in entries:
+            title = getattr(entry, "title", "Untitled")
+            link = getattr(entry, "link", "")
+            description = getattr(entry, "summary", "")
+
+            # Parse published date
+            published_at = datetime.utcnow()
+            parsed_date = getattr(entry, "published_parsed", None)
+            if parsed_date:
+                try:
+                    published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(
+                        tzinfo=None
+                    )
+                except Exception:
+                    pass
+
+            # Extract source information
+            source_name = None
+            source_url = None
+            source_obj = getattr(entry, "source", None)
+            if source_obj:
+                source_name = getattr(source_obj, "title", None)
+                source_url = getattr(source_obj, "url", None)
+
+            # Fallback source name parsing from title (e.g. "Headline - Source Name")
+            if not source_name and " - " in title:
+                parts = title.rsplit(" - ", 1)
+                title = parts[0]
+                source_name = parts[1]
+
+            normalized.append(
+                {
+                    "title": title.strip(),
+                    "description": description.strip(),
+                    "content": description.strip(),  # Fallback to description, crawler will get full text
+                    "url": link,
+                    "image_url": None,
+                    "published_at": published_at,
+                    "author": None,
+                    "language": "en",
+                    "category_slug": GNEWS_CATEGORY_MAP.get(category, "world"),
+                    "country_code": country_upper,
+                    "gnews_source_name": source_name.strip() if source_name else None,
+                    "gnews_source_url": source_url,
+                }
+            )
+
         logger.info(
-            "GNews: fetched %d articles for category=%s country=%s",
+            "Google News RSS: fetched %d articles for category=%s country=%s",
             len(normalized),
             category,
             country,
@@ -132,72 +139,71 @@ class GNewsClient:
         language: str = "en",
         max_articles: int = 10,
     ) -> list[dict[str, Any]]:
-        """Search GNews for articles matching a query string.
+        """Search Google News RSS for articles matching a query string."""
+        import urllib.parse
 
-        Useful for tracking a specific story over time (Phase 2 feature).
-        """
-        if not self.enabled:
-            return []
+        encoded_query = urllib.parse.quote_plus(query)
 
-        params: dict[str, Any] = {
-            "q": query,
-            "lang": language,
-            "max": min(max_articles, 10),
-            "apikey": self.api_key,
-        }
-
+        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+        logger.info("Searching Google News RSS: %s", url)
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.get(f"{GNEWS_BASE_URL}/search", params=params)
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                response = await client.get(url)
                 response.raise_for_status()
-                data = response.json()
+                feed_data = response.text
         except Exception as exc:
-            logger.error("GNews search failed for query '%s': %s", query, exc)
+            logger.error("Google News RSS search failed for query '%s': %s", query, exc)
             return []
 
-        return [self._normalize_article(a, "general", "us") for a in data.get("articles", [])]
+        parsed_feed = feedparser.parse(feed_data)
+        entries = parsed_feed.entries[:max_articles]
 
-    # ── Private helpers ───────────────────────────────────────────────────────
+        normalized = []
+        for entry in entries:
+            title = getattr(entry, "title", "Untitled")
+            link = getattr(entry, "link", "")
+            description = getattr(entry, "summary", "")
 
-    @staticmethod
-    def _parse_gnews_date(date_str: str | None) -> datetime:
-        """Parse GNews ISO 8601 publishedAt string to timezone-naive UTC datetime."""
-        if not date_str:
-            return datetime.now(UTC).replace(tzinfo=None)
-        try:
-            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-            return dt.astimezone(UTC).replace(tzinfo=None)
-        except (ValueError, TypeError):
-            logger.debug("Could not parse GNews date: %s", date_str)
-            return datetime.now(UTC).replace(tzinfo=None)
+            published_at = datetime.utcnow()
+            parsed_date = getattr(entry, "published_parsed", None)
+            if parsed_date:
+                try:
+                    published_at = datetime.fromtimestamp(time.mktime(parsed_date), tz=UTC).replace(
+                        tzinfo=None
+                    )
+                except Exception:
+                    pass
 
-    def _normalize_article(
-        self,
-        raw: dict[str, Any],
-        category: str,
-        country: str,
-    ) -> dict[str, Any]:
-        """Convert a raw GNews article dict to our normalized internal format.
+            source_name = None
+            source_url = None
+            source_obj = getattr(entry, "source", None)
+            if source_obj:
+                source_name = getattr(source_obj, "title", None)
+                source_url = getattr(source_obj, "url", None)
 
-        Returns a dict compatible with IngestionService's Article creation logic.
-        """
-        source_info = raw.get("source") or {}
-        return {
-            "title": (raw.get("title") or "").strip() or "Untitled",
-            "description": (raw.get("description") or "").strip(),
-            # GNews content is truncated to ~1234 chars; use description as fallback body
-            "content": (raw.get("content") or raw.get("description") or "").strip(),
-            "url": raw.get("url") or "",
-            "image_url": raw.get("image") or None,
-            "published_at": self._parse_gnews_date(raw.get("publishedAt")),
-            "author": None,  # GNews does not expose author info
-            "language": "en",
-            "category_slug": GNEWS_CATEGORY_MAP.get(category, "world"),
-            "country_code": country.upper(),
-            # Source metadata from GNews — may differ from our Source.name
-            "gnews_source_name": (source_info.get("name") or "").strip() or None,
-            "gnews_source_url": source_info.get("url") or None,
-        }
+            if not source_name and " - " in title:
+                parts = title.rsplit(" - ", 1)
+                title = parts[0]
+                source_name = parts[1]
+
+            normalized.append(
+                {
+                    "title": title.strip(),
+                    "description": description.strip(),
+                    "content": description.strip(),
+                    "url": link,
+                    "image_url": None,
+                    "published_at": published_at,
+                    "author": None,
+                    "language": "en",
+                    "category_slug": "world",
+                    "country_code": "US",
+                    "gnews_source_name": source_name.strip() if source_name else None,
+                    "gnews_source_url": source_url,
+                }
+            )
+
+        return normalized
 
 
 gnews_client = GNewsClient()

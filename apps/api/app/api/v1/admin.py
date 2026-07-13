@@ -285,11 +285,12 @@ async def entity_debugger(
 
 @router.get("/clusters", response_model=ClusterDebuggerResponse)
 async def cluster_debugger(
+    limit: int = 50,
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Get article grouping details for active clusters (admin only)."""
-    return await admin_service.get_cluster_debugger_data(db)
+    return await admin_service.get_cluster_debugger_data(db, limit=limit)
 
 
 @router.get("/timeline/{story_id}", response_model=TimelineDebuggerResponse)
@@ -484,8 +485,8 @@ async def list_pipeline_runs(
             "trigger": r.trigger,
             "pipeline_type": r.pipeline_type,
             "status": r.status,
-            "started_at": r.started_at.isoformat() if r.started_at else None,
-            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "started_at": f"{r.started_at.isoformat()}Z" if r.started_at else None,
+            "completed_at": f"{r.completed_at.isoformat()}Z" if r.completed_at else None,
             "total_latency_ms": r.total_latency_ms,
             "error": r.error,
             "summary": _build_run_summary(stages_by_run[r.id]),
@@ -542,8 +543,10 @@ async def get_stage_run_details(
         "trace_id": str(stage_run.trace_id),
         "stage": stage_run.stage,
         "status": stage_run.status,
-        "started_at": stage_run.started_at.isoformat() if stage_run.started_at else None,
-        "completed_at": stage_run.completed_at.isoformat() if stage_run.completed_at else None,
+        "started_at": f"{stage_run.started_at.isoformat()}Z" if stage_run.started_at else None,
+        "completed_at": f"{stage_run.completed_at.isoformat()}Z"
+        if stage_run.completed_at
+        else None,
         "latency_ms": stage_run.latency_ms,
         "retry_count": stage_run.retry_count,
         "error": stage_run.error,
@@ -715,8 +718,8 @@ async def get_article_trace(
             "id": str(s.id),
             "stage": s.stage,
             "status": s.status,
-            "started_at": s.started_at.isoformat() if s.started_at else None,
-            "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+            "started_at": f"{s.started_at.isoformat()}Z" if s.started_at else None,
+            "completed_at": f"{s.completed_at.isoformat()}Z" if s.completed_at else None,
             "latency_ms": s.latency_ms,
             "error": s.error,
             "metadata": s.metadata_payload or {},
@@ -1359,13 +1362,13 @@ async def trigger_evaluation_run(
 
     python_exe = sys.executable
     script_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../tests/golden/eval_runner.py")
+        os.path.join(os.path.dirname(__file__), "../../../tests/golden/eval_runner.py")
     )
 
     try:
         # Run subprocess under correct python env
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
         process = await asyncio.create_subprocess_exec(
             python_exe, script_path, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE

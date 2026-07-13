@@ -95,6 +95,14 @@ class PromptVersionSchema(BaseModel):
     version: int
     is_active: bool
     created_at: datetime
+    prompt_uri: str | None = None
+    schema_version: str | None = None
+    preferred_model: str | None = None
+    lifecycle_state: str | None = None
+    parent_uri: str | None = None
+    deprecated_at: datetime | None = None
+    deprecated_reason: str | None = None
+    superseded_by: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

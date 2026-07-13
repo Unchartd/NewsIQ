@@ -101,6 +101,10 @@ async def run_startup_validation() -> StartupReport:
     langfuse_status = await _check_langfuse()
     report.services.append(langfuse_status)
 
+    # ── 9. Prompt Platform — PromptRepository (critical) ──────────────────────
+    prompt_status = _initialize_prompt_repository()
+    report.services.append(prompt_status)
+
     # ── Print report ──────────────────────────────────────────────────────────
     report.log()
 
@@ -211,3 +215,58 @@ async def _check_langfuse() -> ServiceStatus:
         )
     except Exception as e:
         return ServiceStatus(name="Langfuse", status="degraded", detail=str(e)[:80], critical=False)
+
+
+def _initialize_prompt_repository() -> ServiceStatus:
+    """
+    Build the PromptRepository from YAML manifests and install it as the singleton.
+
+    Critical=True: If any prompt manifest is invalid, service startup is aborted.
+    This enforces fail-fast semantics — misconfigured prompts never reach production.
+    """
+    import time
+
+    t0 = time.perf_counter()
+    try:
+        from app.ai.prompts import repository as repo_module
+        from app.ai.prompts.compiler import PromptCompiler
+        from app.ai.prompts.loader import PromptLoader
+        from app.ai.prompts.repository import PromptRepository
+
+        loader = PromptLoader()
+        raw = loader.load_all()
+
+        compiler = PromptCompiler()
+        compiled = compiler.compile_all(raw)  # Raises RuntimeError on validation errors
+        compiler._warn_unused(compiled)  # Warns on production prompts with no callers
+
+        repo_module.prompt_repository = PromptRepository(compiled)
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        prod_count = len(repo_module.prompt_repository.production())
+
+        return ServiceStatus(
+            name="PromptRepository",
+            status="ok",
+            latency_ms=round(elapsed, 1),
+            detail=f"{len(compiled)} prompts loaded, {prod_count} production",
+            critical=True,
+        )
+
+    except RuntimeError as exc:
+        # Compiler or loader raised a hard error (invalid YAML, cycle, missing model)
+        logger.critical("PromptRepository initialization failed:\n%s", exc)
+        return ServiceStatus(
+            name="PromptRepository",
+            status="error",
+            detail=str(exc)[:200],
+            critical=True,
+        )
+    except Exception as exc:
+        logger.exception("Unexpected error initializing PromptRepository")
+        return ServiceStatus(
+            name="PromptRepository",
+            status="error",
+            detail=f"Unexpected: {str(exc)[:150]}",
+            critical=True,
+        )

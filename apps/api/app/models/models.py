@@ -737,3 +737,111 @@ class StoryReview(Base):
     source_diversity_score: Mapped[int] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class DiscoveryTaskState(enum.StrEnum):
+    PENDING = "pending"
+    SEARCHING = "searching"
+    URLS_FOUND = "urls_found"
+    CRAWLING = "crawling"
+    COMPLETE = "complete"
+    SEARCH_FAILED = "search_failed"
+    CRAWL_FAILED = "crawl_failed"
+    EXPIRED = "expired"
+
+
+class CrawlTaskState(enum.StrEnum):
+    PENDING = "pending"
+    CRAWLING = "crawling"
+    SUCCESS = "success"
+    FAILED = "failed"
+    RETRYING = "retrying"
+
+
+class DiscoveryTask(Base):
+    __tablename__ = "discovery_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("articles.id", ondelete="CASCADE"), index=True
+    )
+    query: Mapped[str] = mapped_column(Text)
+    provider: Mapped[str] = mapped_column(String(50))
+    priority: Mapped[int] = mapped_column(Integer, default=50, index=True)
+    priority_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default=DiscoveryTaskState.PENDING, index=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True, index=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_version: Mapped[int] = mapped_column(Integer, default=2)
+    idempotency_key: Mapped[str] = mapped_column(String(255), unique=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    search_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    search_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+
+    metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Relationships
+    article: Mapped["Article"] = relationship(foreign_keys=[article_id])
+    crawl_tasks: Mapped[list["CrawlTask"]] = relationship(
+        back_populates="discovery_task", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("idx_discovery_tasks_status", "status"),
+        Index("idx_discovery_tasks_created", "created_at"),
+        Index("idx_discovery_tasks_priority", "priority", "created_at"),
+    )
+
+
+class CrawlTask(Base):
+    __tablename__ = "crawl_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    discovery_task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("discovery_tasks.id", ondelete="CASCADE"), index=True
+    )
+    url: Mapped[str] = mapped_column(Text)
+    url_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(30), default=CrawlTaskState.PENDING, index=True)
+    outcome: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True, index=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_version: Mapped[int] = mapped_column(Integer, default=2)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+    crawl_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("articles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Relationships
+    discovery_task: Mapped["DiscoveryTask"] = relationship(back_populates="crawl_tasks")
+    persisted_article: Mapped["Article | None"] = relationship(foreign_keys=[article_id])
+
+    __table_args__ = (Index("idx_crawl_tasks_status_outcome", "status", "outcome"),)

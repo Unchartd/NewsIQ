@@ -75,13 +75,13 @@ class SourceComparisonService:
 
         Pipeline: cache check → LLM call → cache store.
         """
+        from app.ai.prompts.repository import prompt_repository
         from app.services.pipeline_cache import pipeline_cache
-        from app.services.prompt_registry import prompt_registry
 
         # ── Cache check ───────────────────────────────────────────────────────
-        prompt_tmpl = prompt_registry.get("source_comparison")
+        prompt_tmpl = prompt_repository.get("source_comparison")
         prompt_version = prompt_tmpl.version
-        model = prompt_tmpl.model
+        model = prompt_repository.model_config("source_comparison").model
 
         content_hash = pipeline_cache.composite_hash(
             src_name,
@@ -118,11 +118,10 @@ class SourceComparisonService:
                 "context": context[:3000],
             }
 
-            response = await ai_gateway.generate(
-                capability="source_comparison",
+            response = await ai_gateway.generate_stage(
+                stage="source_comparison",
                 prompt_variables=prompt_variables,
                 schema=SourceComparisonResolution,
-                temperature=0.1,
             )
 
             if response.parsed:

@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -411,6 +412,18 @@ class PromptVersionModel(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+
+    # Prompt Platform v5 Columns
+    prompt_uri: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    schema_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    preferred_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lifecycle_state: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default="production"
+    )
+    parent_uri: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    deprecated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deprecated_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    superseded_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (Index("idx_prompt_versions_stage", "stage"),)
 

@@ -90,6 +90,11 @@ class PipelineStage(StrEnum):
     INDEXING = "indexing"
     CACHE_INVALIDATION = "cache_invalidation"
 
+    # Orchestration and Lifecycle Stages
+    SYNTHESIS_ORCHESTRATOR = "synthesis_orchestrator"
+    PUBLISHER = "publisher"
+    FEEDBACK_AGENT = "feedback_agent"
+
 
 # ── Trace Context Snapshot ────────────────────────────────────────────────────
 

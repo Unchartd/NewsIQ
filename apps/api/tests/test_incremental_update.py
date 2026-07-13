@@ -51,9 +51,27 @@ async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, moc
     async def mock_set_raw(key, val, ttl=None):
         stored_hashes[key] = val
 
+    async def mock_get_stage_result(stage, content_hash, *args, **kwargs):
+        key = f"stage:{stage}:{content_hash}"
+        return stored_hashes.get(key)
+    async def mock_set_stage_result(stage, content_hash, result_data, *args, **kwargs):
+        key = f"stage:{stage}:{content_hash}"
+        stored_hashes[key] = result_data
+
+    async def mock_pipeline_get(stage, model, prompt_version, content_hash, *args, **kwargs):
+        key = f"pipeline:{stage}:{content_hash}"
+        return stored_hashes.get(key)
+    async def mock_pipeline_set(stage, model, prompt_version, content_hash, result_data, *args, **kwargs):
+        key = f"pipeline:{stage}:{content_hash}"
+        stored_hashes[key] = result_data
+
     with (
         patch.object(cache_service, "get_raw", mock_get_raw),
         patch.object(cache_service, "set_raw", mock_set_raw),
+        patch.object(pipeline_cache, "get_stage_result", mock_get_stage_result),
+        patch.object(pipeline_cache, "set_stage_result", mock_set_stage_result),
+        patch.object(pipeline_cache, "get", mock_pipeline_get),
+        patch.object(pipeline_cache, "set", mock_pipeline_set),
         patch.object(contradiction_service, "detect_and_save_contradictions", mock_detect),
         patch.object(source_comparison_service, "compare_sources_and_save", mock_compare),
         patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
@@ -64,7 +82,8 @@ async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, moc
         assert mock_compare.call_count == 1
 
         # Check that simulated cache has the guard key
-        assert len(stored_hashes) == 1
+        guard_key = f"story_synthesis_hash:{story.id}"
+        assert guard_key in stored_hashes
 
         # Reset counts
         mock_detect.reset_mock()
@@ -77,6 +96,7 @@ async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, moc
 
         # 3. Modify headline to None: Guard is bypassed (must regenerate)
         story.headline = None
+        stored_hashes.clear()
         await clustering_service.generate_story_content(story, [art], mock_db_session)
         assert mock_detect.call_count == 1
         assert mock_compare.call_count == 1

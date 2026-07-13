@@ -12,7 +12,10 @@ from app.services.event_taxonomy import (
 
 @pytest.fixture(autouse=True)
 def disable_cache():
-    with patch("app.services.pipeline_cache.pipeline_cache.get", new_callable=AsyncMock) as mock_get:
+    with (
+        patch("app.services.pipeline_cache.pipeline_cache.get", new_callable=AsyncMock) as mock_get,
+        patch("app.services.pipeline_cache.pipeline_cache.set", new_callable=AsyncMock) as mock_set,
+    ):
         mock_get.return_value = None
         yield
 
@@ -88,7 +91,7 @@ async def test_detect_event_time_conflict():
 
 
 @pytest.mark.asyncio
-@patch("app.ai.gateway.ai_gateway.generate")
+@patch("app.ai.gateway.ai_gateway.generate_stage")
 async def test_extract_events_gateway_parsed_success(mock_generate):
     """Verify that event extraction succeeds using LLM Gateway returning parsed response."""
     expected_response = ArticleEventResponse(
@@ -121,7 +124,7 @@ async def test_extract_events_gateway_parsed_success(mock_generate):
 
 
 @pytest.mark.asyncio
-@patch("app.ai.gateway.ai_gateway.generate")
+@patch("app.ai.gateway.ai_gateway.generate_stage")
 async def test_extract_events_gateway_json_string_success(mock_generate):
     """Verify that event extraction succeeds using LLM Gateway returning raw JSON string."""
     mock_response = GatewayResponse(
@@ -142,7 +145,7 @@ async def test_extract_events_gateway_json_string_success(mock_generate):
 
 
 @pytest.mark.asyncio
-@patch("app.ai.gateway.ai_gateway.generate")
+@patch("app.ai.gateway.ai_gateway.generate_stage")
 async def test_extract_events_gateway_failure_propagates_exception(mock_generate):
     """Verify that event extraction raises the exception when gateway fails."""
     mock_generate.side_effect = Exception("Gateway Timeout")

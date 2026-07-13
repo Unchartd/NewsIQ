@@ -317,14 +317,14 @@ class EventService:
                 "Cannot extract events from empty article (both title and content are missing)."
             )
 
+        from app.ai.prompts.repository import prompt_repository
         from app.services.context_extractor import context_extractor
         from app.services.pipeline_cache import pipeline_cache
-        from app.services.prompt_registry import prompt_registry
 
-        # ── Prompt registry (system/user split for provider prefix caching) ───
-        prompt_tmpl = prompt_registry.get("event_extraction")
+        # ── Prompt repository (system/user split for provider prefix caching) ───
+        prompt_tmpl = prompt_repository.get("event_extraction")
         prompt_version = prompt_tmpl.version
-        model = prompt_tmpl.model
+        model = prompt_repository.model_config("event_extraction").model
 
         # Extract optimized paragraph-aware context
         optimized_content = context_extractor.extract(content, max_chars=6000)
@@ -356,11 +356,10 @@ class EventService:
             "content": optimized_content,
         }
 
-        response = await ai_gateway.generate(
-            capability="event_extraction",
+        response = await ai_gateway.generate_stage(
+            stage="event_extraction",
             prompt_variables=prompt_variables,
             schema=ArticleEventResponse,
-            temperature=0.1,
         )
 
         if response.parsed:

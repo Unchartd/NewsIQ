@@ -118,11 +118,10 @@ class AIService:
         }
 
         logger.info("Summarizing story from KG via central AI Gateway.")
-        response = await ai_gateway.generate(
-            capability="summary_generation",
+        response = await ai_gateway.generate_stage(
+            stage="summary_generation",
             prompt_variables=prompt_variables,
             schema=StorySummaryResponse,
-            temperature=0.1,
             story_id=story_id,
         )
 

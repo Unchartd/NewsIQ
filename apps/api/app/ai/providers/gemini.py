@@ -200,13 +200,13 @@ class GeminiProvider(AIProvider):
         try:
             model_name = model or "text-embedding-004"
             client = google_genai.Client(api_key=api_key.key)
-            config = {"task_type": "RETRIEVAL_DOCUMENT"}
+            config: dict[str, Any] = {"task_type": "RETRIEVAL_DOCUMENT"}
             if "embedding-2" in model_name:
                 config["output_dimensionality"] = 768
             response = await client.aio.models.embed_content(
                 model=model_name,
                 contents=text,
-                config=config,
+                config=config,  # type: ignore
             )
             if response.embeddings:
                 raw_val = response.embeddings[0].values
