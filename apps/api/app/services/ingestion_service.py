@@ -257,7 +257,7 @@ class IngestionService:
         # Since we filter out existing URLs before crawling, we do not need to pass them
         # to _persist_articles, preventing their full contents in the DB from being
         # overwritten by short feed summaries/snippets.
-        entries_to_crawl = [
+        entries_to_crawl: list[tuple[Any, str, Article | None]] = [
             (url_to_entry[url], url, None)
             for url in feed_urls
             if url not in existing_articles  # new URL — must crawl

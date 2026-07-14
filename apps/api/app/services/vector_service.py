@@ -32,7 +32,7 @@ class VectorService:
     def __init__(self) -> None:
         self._clients: dict[int, AsyncQdrantClient] = {}
         self._collection_ready = False
-        self._mock_client = None
+        self._mock_client: AsyncQdrantClient | None = None
 
     @property
     def client(self) -> AsyncQdrantClient:
