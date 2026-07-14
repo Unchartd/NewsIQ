@@ -584,7 +584,7 @@ export default function PipelinePage() {
           </button>
           <button
             id="pipeline-trigger-btn"
-            onClick={() => triggerMutation.mutate()}
+            onClick={() => triggerMutation.mutate({})}
             disabled={triggerMutation.isPending}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary/95 text-white text-xs font-semibold transition-all shadow-lg shadow-primary/20 disabled:opacity-40"
           >
