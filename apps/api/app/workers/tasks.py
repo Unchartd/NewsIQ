@@ -1493,10 +1493,12 @@ def cleanup_discovery_tasks_task() -> dict[str, int]:
 
             # 2. Failed tasks
             stmt_failed = delete(DiscoveryTask).where(
-                DiscoveryTask.status.in_([
-                    DiscoveryTaskState.SEARCH_FAILED,
-                    DiscoveryTaskState.CRAWL_FAILED,
-                ]),
+                DiscoveryTask.status.in_(
+                    [
+                        DiscoveryTaskState.SEARCH_FAILED,
+                        DiscoveryTaskState.CRAWL_FAILED,
+                    ]
+                ),
                 DiscoveryTask.created_at <= boundary_failed,
             )
             res_failed = await session.execute(stmt_failed)

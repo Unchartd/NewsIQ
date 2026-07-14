@@ -399,8 +399,22 @@ class IngestionService:
             url_hash = fingerprints["url_hash"]
             content_hash = fingerprints["content_hash"]
 
-            per_entry.append((entry, url, crawled, existing_article, url_hash, content_hash,
-                               title, description, content, author, published_at, image_url))
+            per_entry.append(
+                (
+                    entry,
+                    url,
+                    crawled,
+                    existing_article,
+                    url_hash,
+                    content_hash,
+                    title,
+                    description,
+                    content,
+                    author,
+                    published_at,
+                    image_url,
+                )
+            )
 
         # ---------- pass 2: PERF-02 — batch content_hash lookup (single IN query) ----------
         # Collect hashes for genuinely new URLs only (existing_article is None)
@@ -420,8 +434,20 @@ class IngestionService:
 
         # ---------- pass 3: persist ----------
         for row in per_entry:
-            entry, url, crawled, existing_article, url_hash, content_hash, \
-                title, description, content, author, published_at, image_url = row
+            (
+                entry,
+                url,
+                crawled,
+                existing_article,
+                url_hash,
+                content_hash,
+                title,
+                description,
+                content,
+                author,
+                published_at,
+                image_url,
+            ) = row
 
             if existing_article:
                 if existing_article.content_hash != content_hash:
