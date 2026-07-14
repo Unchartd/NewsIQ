@@ -146,6 +146,7 @@ class Settings(BaseSettings):
     TAVILY_BATCH_TIMEOUT_SECONDS: int = 2
     EXTRACTION_RESULT_TTL_SECONDS: int = 600
     EXTRACTION_PROVIDER_TIMEOUT: int = 30
+    CRAWLER_MAX_CONCURRENT_REQUESTS: int = 5
 
     # Discovery Candidate Scoring Weights
     DISCOVERY_FRESHNESS_WEIGHT: float = 0.20

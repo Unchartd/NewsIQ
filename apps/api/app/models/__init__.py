@@ -14,6 +14,7 @@ from app.models.models import (
     DigestSubscription,
     DiscoveryTask,
     DiscoveryTaskState,
+    DomainExtractionPolicy,
     Notification,
     OAuthAccount,
     SearchHistory,
@@ -90,6 +91,7 @@ __all__ = [
     "DiscoveryTaskState",
     "CrawlTask",
     "CrawlTaskState",
+    "DomainExtractionPolicy",
     # Observability models
     "PipelineRunModel",
     "PipelineTraceModel",

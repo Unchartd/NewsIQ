@@ -845,3 +845,20 @@ class CrawlTask(Base):
     persisted_article: Mapped["Article | None"] = relationship(foreign_keys=[article_id])
 
     __table_args__ = (Index("idx_crawl_tasks_status_outcome", "status", "outcome"),)
+
+
+class DomainExtractionPolicy(Base):
+    __tablename__ = "domain_extraction_policies"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+    domain: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    local_success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    tavily_success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    firecrawl_success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    average_latency: Mapped[float] = mapped_column(Float, default=0.0)
+    average_content_length: Mapped[float] = mapped_column(Float, default=0.0)
+    last_success_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)

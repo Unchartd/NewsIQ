@@ -77,3 +77,13 @@ To prevent this in the Story Synthesis pipeline:
 > 2. All required data must be eagerly loaded (e.g. using `selectinload` or explicit queries) or mapped into immutable Data Transfer Objects (DTOs) before entering the pipeline.
 > 3. Downstream services must operate strictly on pure Python dataclasses (`ArticleContext`, `EventContext`, `EntityContext`, `SourceContext`, `StoryContext`) defined in [synthesis_context.py](file:///apps/api/app/schemas/synthesis_context.py).
 
+---
+
+## 6. Extraction Pipeline & Typed Contracts
+
+NewsIQ uses a multi-provider extraction pipeline to retrieve full article content. This layer is decoupled and hardened using strongly typed contracts:
+
+- **Unified Contracts (`app/services/extraction/types.py`)**: All extraction providers (`LocalCrawlerProvider`, `TavilyExtractProvider`, `FirecrawlProvider`) must return a unified, structured `ExtractionResult` dataclass wrapping `ExtractionFailure` (an enum of possible errors) and `ExtractionDiagnostics` telemetry.
+- **Local Crawler Isolation**: All local parsing (using `newspaper4k`, `trafilatura`, `readability-lxml`, and custom BS4 cleaners) resides within `LocalCrawlerProvider`. `CrawlerService` acts as a thin compatibility shim.
+- **Domain Metrics & Policy (`DomainExtractionPolicy`)**: The platform dynamically tracks and persists domain-level success rates and latency telemetry using Exponential Moving Averages (EMA) to guide future intelligent routing strategies.
+

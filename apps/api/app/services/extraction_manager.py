@@ -1,16 +1,20 @@
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
 import logging
 import time
-from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from app.core.config import settings
 from app.services.cache_service import cache_service
-from app.services.extraction_provider import (
+from app.services.extraction.types import (
+    ExtractionFailure,
     ExtractionResult,
-    FailureType,
+)
+from app.services.extraction_provider import (
     FirecrawlProvider,
     LocalCrawlerProvider,
     TavilyExtractProvider,
@@ -27,23 +31,33 @@ class ExtractionManager:
 
     async def crawl_article(self, url: str) -> dict[str, Any]:
         """Orchestrate article extraction across local, Tavily, and Firecrawl providers."""
-        import time
-
         from app.core.metrics import (
             newsiq_crawler_attempts_total,
+            newsiq_crawler_failure_reason_total,
+            newsiq_crawler_fallback_count_v2,
             newsiq_crawler_fallback_rate,
             newsiq_crawler_local_success_rate,
             newsiq_crawler_provider_attempts_total,
+            newsiq_crawler_provider_attempts_total_v2,
             newsiq_crawler_provider_cost_total,
+            newsiq_crawler_provider_cost_total_v2,
             newsiq_crawler_provider_failure_total,
+            newsiq_crawler_provider_failure_total_v2,
             newsiq_crawler_provider_latency_seconds,
+            newsiq_crawler_provider_latency_seconds_v2,
             newsiq_crawler_provider_success_total,
+            newsiq_crawler_provider_success_total_v2,
         )
         from app.core.utils import canonicalize_url
 
         newsiq_crawler_attempts_total.inc()
 
         c_url = canonicalize_url(url)
+        parsed_url = urlparse(c_url)
+        domain = parsed_url.netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+
         url_hash = hashlib.sha256(c_url.encode("utf-8")).hexdigest()
         idempotency_key = f"extraction:idempotency:{url_hash}"
 
@@ -55,14 +69,7 @@ class ExtractionManager:
                 if cached_json:
                     logger.info("Idempotency cache hit for URL: %s", url)
                     cached_data = json.loads(cached_json)
-                    # Convert published_at back to datetime if exists
-                    if cached_data.get("published_at"):
-                        cached_data["published_at"] = datetime.fromisoformat(
-                            cached_data["published_at"].replace("Z", "+00:00")
-                        ).replace(tzinfo=None)
-
-                    # Return compatible format for downstream services
-                    res = ExtractionResult(**cached_data)
+                    res = ExtractionResult.from_dict(cached_data)
                     return self._to_legacy_dict(res)
             except Exception as e:
                 logger.warning("Failed to check idempotency cache: %s", e)
@@ -70,24 +77,45 @@ class ExtractionManager:
         # 2. Attempt 1: Local Crawler
         logger.info("Attempting local extraction for: %s", url)
         newsiq_crawler_provider_attempts_total.labels(provider="local").inc()
+        newsiq_crawler_provider_attempts_total_v2.labels(provider="local", domain=domain).inc()
         local_start = time.perf_counter()
 
         local_res = await self.local_provider.extract(c_url, f"local_{url_hash}")
         local_latency = time.perf_counter() - local_start
         newsiq_crawler_provider_latency_seconds.labels(provider="local").observe(local_latency)
+        newsiq_crawler_provider_latency_seconds_v2.labels(provider="local", domain=domain).observe(
+            local_latency
+        )
+
+        # Persist metrics in DomainExtractionPolicy table
+        content_len = len(local_res.content) if local_res.content else 0
+        await self._update_domain_policy(
+            domain=domain,
+            provider="local",
+            success=local_res.success,
+            latency_ms=local_res.diagnostics.latency_ms,
+            content_length=content_len,
+        )
 
         if local_res.success:
             logger.info("Local extraction succeeded for: %s", url)
             newsiq_crawler_provider_success_total.labels(provider="local").inc()
+            newsiq_crawler_provider_success_total_v2.labels(provider="local", domain=domain).inc()
             newsiq_crawler_local_success_rate.inc()
             await self._set_idempotency_cache(idempotency_key, local_res)
             return self._to_legacy_dict(local_res)
 
-        logger.warning("Local extraction failed for %s. Reason: %s", url, local_res.error_reason)
+        logger.warning("Local extraction failed for %s. Reason: %s", url, local_res.failure)
         newsiq_crawler_provider_failure_total.labels(provider="local").inc()
+        newsiq_crawler_provider_failure_total_v2.labels(
+            provider="local", failure_reason=local_res.failure.value, domain=domain
+        ).inc()
+        newsiq_crawler_failure_reason_total.labels(
+            provider="local", failure_reason=local_res.failure.value, domain=domain
+        ).inc()
 
         # Failure Classification: Stop immediately on 404 / Gone
-        if local_res.error_reason == FailureType.FAILED_404:
+        if local_res.failure == ExtractionFailure.HTTP_404:
             logger.warning(
                 "Permanent failure (404/Gone) detected for %s. Stopping extraction.", url
             )
@@ -95,28 +123,51 @@ class ExtractionManager:
 
         # 3. Attempt 2: Tavily Extract (with Redis distributed batching)
         newsiq_crawler_fallback_rate.inc()
+        newsiq_crawler_fallback_count_v2.labels(domain=domain).inc()
         logger.info("Routing %s to Tavily Extract batch queue", url)
         newsiq_crawler_provider_attempts_total.labels(provider="tavily").inc()
+        newsiq_crawler_provider_attempts_total_v2.labels(provider="tavily", domain=domain).inc()
         tavily_start = time.perf_counter()
 
         tavily_res = await self.extract_via_tavily_batch(c_url, f"tavily_{url_hash}")
         tavily_latency = time.perf_counter() - tavily_start
         newsiq_crawler_provider_latency_seconds.labels(provider="tavily").observe(tavily_latency)
+        newsiq_crawler_provider_latency_seconds_v2.labels(provider="tavily", domain=domain).observe(
+            tavily_latency
+        )
+
+        tavily_content_len = len(tavily_res.content) if tavily_res.content else 0
+        await self._update_domain_policy(
+            domain=domain,
+            provider="tavily",
+            success=tavily_res.success,
+            latency_ms=tavily_res.diagnostics.latency_ms,
+            content_length=tavily_content_len,
+        )
 
         if tavily_res.success:
             logger.info("Tavily extraction succeeded for: %s", url)
             newsiq_crawler_provider_success_total.labels(provider="tavily").inc()
+            newsiq_crawler_provider_success_total_v2.labels(provider="tavily", domain=domain).inc()
             # 1 credit per 5 URLs = 0.2 credits per URL. Let's record cost (1 credit = $0.01 estimation)
             newsiq_crawler_provider_cost_total.labels(provider="tavily").inc(0.2)
+            newsiq_crawler_provider_cost_total_v2.labels(provider="tavily", domain=domain).inc(0.2)
             await self._set_idempotency_cache(idempotency_key, tavily_res)
             return self._to_legacy_dict(tavily_res)
 
-        logger.warning("Tavily extraction failed for %s. Reason: %s", url, tavily_res.error_reason)
+        logger.warning("Tavily extraction failed for %s. Reason: %s", url, tavily_res.failure)
         newsiq_crawler_provider_failure_total.labels(provider="tavily").inc()
+        newsiq_crawler_provider_failure_total_v2.labels(
+            provider="tavily", failure_reason=tavily_res.failure.value, domain=domain
+        ).inc()
+        newsiq_crawler_failure_reason_total.labels(
+            provider="tavily", failure_reason=tavily_res.failure.value, domain=domain
+        ).inc()
 
         # 4. Attempt 3: Firecrawl Scrape (final synchronous fallback)
         logger.info("Routing %s to Firecrawl Scrape", url)
         newsiq_crawler_provider_attempts_total.labels(provider="firecrawl").inc()
+        newsiq_crawler_provider_attempts_total_v2.labels(provider="firecrawl", domain=domain).inc()
         firecrawl_start = time.perf_counter()
 
         firecrawl_res = await self.firecrawl_provider.extract(c_url, f"firecrawl_{url_hash}")
@@ -124,17 +175,41 @@ class ExtractionManager:
         newsiq_crawler_provider_latency_seconds.labels(provider="firecrawl").observe(
             firecrawl_latency
         )
+        newsiq_crawler_provider_latency_seconds_v2.labels(
+            provider="firecrawl", domain=domain
+        ).observe(firecrawl_latency)
+
+        firecrawl_content_len = len(firecrawl_res.content) if firecrawl_res.content else 0
+        await self._update_domain_policy(
+            domain=domain,
+            provider="firecrawl",
+            success=firecrawl_res.success,
+            latency_ms=firecrawl_res.diagnostics.latency_ms,
+            content_length=firecrawl_content_len,
+        )
 
         if firecrawl_res.success:
             logger.info("Firecrawl extraction succeeded for: %s", url)
             newsiq_crawler_provider_success_total.labels(provider="firecrawl").inc()
+            newsiq_crawler_provider_success_total_v2.labels(
+                provider="firecrawl", domain=domain
+            ).inc()
             # Firecrawl cost is 1 credit per scrape
             newsiq_crawler_provider_cost_total.labels(provider="firecrawl").inc(1.0)
+            newsiq_crawler_provider_cost_total_v2.labels(provider="firecrawl", domain=domain).inc(
+                1.0
+            )
             await self._set_idempotency_cache(idempotency_key, firecrawl_res)
             return self._to_legacy_dict(firecrawl_res)
 
         logger.error("All extraction providers failed for URL: %s", url)
         newsiq_crawler_provider_failure_total.labels(provider="firecrawl").inc()
+        newsiq_crawler_provider_failure_total_v2.labels(
+            provider="firecrawl", failure_reason=firecrawl_res.failure.value, domain=domain
+        ).inc()
+        newsiq_crawler_failure_reason_total.labels(
+            provider="firecrawl", failure_reason=firecrawl_res.failure.value, domain=domain
+        ).inc()
         return self._to_legacy_dict(firecrawl_res)
 
     async def extract_via_tavily_batch(self, url: str, execution_id: str) -> ExtractionResult:
@@ -205,18 +280,22 @@ class ExtractionManager:
                         newsiq_crawler_tavily_batch_requests_total.inc()
                         newsiq_crawler_tavily_urls_processed_total.inc(len(batch_urls))
 
+                        url_to_exec_id = {p["url"]: p["execution_id"] for p in batch_payloads}
+
                         results = await self.tavily_provider.extract_batch(
                             batch_urls, batch_exec_ids
                         )
 
                         # Store results in Redis and update status
                         for res in results:
-                            res_key = f"extraction:result:{res.execution_id}"
-                            st_key = f"extraction:tavily_status:{res.execution_id}"
-                            await redis_client.set(res_key, res.model_dump_json(), ex=600)
-                            await redis_client.set(
-                                st_key, "success" if res.success else "failed", ex=600
-                            )
+                            exec_id = url_to_exec_id.get(res.url)
+                            if exec_id:
+                                res_key = f"extraction:result:{exec_id}"
+                                st_key = f"extraction:tavily_status:{exec_id}"
+                                await redis_client.set(res_key, json.dumps(res.to_dict()), ex=600)
+                                await redis_client.set(
+                                    st_key, "success" if res.success else "failed", ex=600
+                                )
                 finally:
                     # Release the leader lock
                     await redis_client.delete(leader_key)
@@ -233,7 +312,7 @@ class ExtractionManager:
                         # Clean up result and status keys immediately
                         await redis_client.delete(status_key)
                         await redis_client.delete(result_key)
-                        return ExtractionResult.model_validate_json(raw_res)
+                        return ExtractionResult.from_dict(json.loads(raw_res))
                 await asyncio.sleep(0.2)
 
             # If polling times out: clean up keys and do self-extraction fallback
@@ -257,46 +336,127 @@ class ExtractionManager:
         if redis_client:
             try:
                 ttl = settings.EXTRACTION_RESULT_TTL_SECONDS or 600
-                await redis_client.set(key, result.model_dump_json(), ex=ttl)
+                await redis_client.set(key, json.dumps(result.to_dict()), ex=ttl)
             except Exception as e:
                 logger.warning("Failed to set idempotency cache: %s", e)
 
+    async def _update_domain_policy(
+        self,
+        domain: str,
+        provider: str,
+        success: bool,
+        latency_ms: float,
+        content_length: int,
+    ) -> None:
+        """Asynchronously updates or inserts the DomainExtractionPolicy table for metrics tracking."""
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.models.models import DomainExtractionPolicy
+
+        async with async_session_factory() as session:
+            try:
+                stmt = select(DomainExtractionPolicy).where(DomainExtractionPolicy.domain == domain)
+                res = await session.execute(stmt)
+                policy = res.scalar_one_or_none()
+
+                # Exponential Moving Average factor (alpha = 0.1)
+                alpha = 0.1
+
+                if not policy:
+                    policy = DomainExtractionPolicy(
+                        domain=domain,
+                        local_success_rate=1.0 if (provider == "local" and success) else 0.0,
+                        tavily_success_rate=1.0 if (provider == "tavily" and success) else 0.0,
+                        firecrawl_success_rate=1.0
+                        if (provider == "firecrawl" and success)
+                        else 0.0,
+                        average_latency=latency_ms,
+                        average_content_length=float(content_length),
+                        last_success_provider=provider if success else None,
+                        confidence_score=1.0 if success else 0.0,
+                    )
+                    session.add(policy)
+                else:
+                    if provider == "local":
+                        policy.local_success_rate = (
+                            policy.local_success_rate * (1.0 - alpha)
+                            + (1.0 if success else 0.0) * alpha
+                        )
+                    elif provider == "tavily":
+                        policy.tavily_success_rate = (
+                            policy.tavily_success_rate * (1.0 - alpha)
+                            + (1.0 if success else 0.0) * alpha
+                        )
+                    elif provider == "firecrawl":
+                        policy.firecrawl_success_rate = (
+                            policy.firecrawl_success_rate * (1.0 - alpha)
+                            + (1.0 if success else 0.0) * alpha
+                        )
+
+                    policy.average_latency = (
+                        policy.average_latency * (1.0 - alpha) + latency_ms * alpha
+                    )
+                    if success:
+                        policy.average_content_length = (
+                            policy.average_content_length * (1.0 - alpha)
+                            + float(content_length) * alpha
+                        )
+                        policy.last_success_provider = provider
+
+                    policy.confidence_score = (
+                        policy.local_success_rate * 0.5
+                        + policy.tavily_success_rate * 0.3
+                        + policy.firecrawl_success_rate * 0.2
+                    )
+
+                await session.commit()
+            except Exception as e:
+                logger.warning(
+                    "Failed to update DomainExtractionPolicy for domain %s: %s", domain, e
+                )
+
     def _to_legacy_dict(self, result: ExtractionResult) -> dict[str, Any]:
-        """Convert ExtractionResult model to the dictionary format expected by crawler callers."""
+        """Convert ExtractionResult dataclass to the dictionary format expected by crawler callers."""
         failure_reason = None
         if not result.success:
-            if result.error_reason == FailureType.FAILED_404:
+            if result.failure == ExtractionFailure.HTTP_404:
                 failure_reason = "HTTP_ERROR"
-            elif result.error_reason == FailureType.FAILED_403:
+            elif result.failure == ExtractionFailure.HTTP_403:
                 failure_reason = "HTTP_ERROR"
-            elif result.error_reason == FailureType.FAILED_CLOUDFLARE:
+            elif result.failure == ExtractionFailure.BOT_BLOCKED:
                 failure_reason = "BOT_BLOCKED"
-            elif result.error_reason == FailureType.FAILED_TIMEOUT:
+            elif result.failure == ExtractionFailure.TIMEOUT:
                 failure_reason = "TIMEOUT"
-            elif result.error_reason == FailureType.FAILED_EMPTY:
+            elif result.failure == ExtractionFailure.EMPTY_HTML:
                 failure_reason = "EXTRACTION_FAILED"
             else:
                 failure_reason = "EXTRACTION_FAILED"
 
         diagnostics = {
-            "fetch_method": result.provider,
-            "status_code": result.error_code,
+            "fetch_method": result.diagnostics.fetch_method or result.diagnostics.provider,
+            "status_code": result.diagnostics.status_code,
             "failure_reason": failure_reason,
-            "duration_ms": result.latency_ms,
+            "duration_ms": result.diagnostics.latency_ms,
+            "attempts": result.diagnostics.attempts,
+            "bot_detected": result.diagnostics.bot_detected,
+            "notes": result.diagnostics.notes,
         }
-        if result.diagnostics:
-            diagnostics.update(result.diagnostics)
-            if not result.success and failure_reason:
-                diagnostics["failure_reason"] = failure_reason
+
+        extractor = result.provider
+        for note in result.diagnostics.notes:
+            if note.startswith("extractor: "):
+                extractor = note[len("extractor: "):]
+                break
 
         return {
             "success": result.success,
             "title": result.title,
             "content": result.content,
-            "author": result.authors,
-            "image_url": None,  # Kept for backward compatibility
+            "author": result.author,
+            "image_url": result.image_url,
             "published_at": result.published_at,
-            "extractor": result.extractor or result.provider,
+            "extractor": extractor,
             "diagnostics": diagnostics,
         }
 
