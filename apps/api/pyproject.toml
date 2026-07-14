@@ -67,6 +67,7 @@ dependencies = [
     "prometheus-client>=0.21.0",
     "rapidfuzz>=3.0.0",
     "googlenewsdecoder>=0.1.7",
+    "curl-cffi>=0.7.0",
 ]
 
 [project.optional-dependencies]
