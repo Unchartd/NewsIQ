@@ -1,11 +1,11 @@
 import logging
 import math
+from typing import Any
 
 from agno.agent import Agent
 from pydantic import BaseModel, Field
 
 from app.agents.base_agent import get_default_model, run_agent_with_observability
-from app.models.models import Article
 from app.schemas.synthesis_context import ArticleContext, EventContext, StoryContext
 from app.services.vector_service import vector_service
 
@@ -50,7 +50,7 @@ feedback_llm_agent = Agent(
 )
 
 
-def calculate_hhi(articles: list[Article]) -> float:
+def calculate_hhi(articles: list[Any]) -> float:
     """Calculate the Herfindahl-Hirschman Index (HHI) for source representation.
 
     A higher HHI indicates single-source dominance (max 1.0).
@@ -66,7 +66,7 @@ def calculate_hhi(articles: list[Article]) -> float:
     return hhi
 
 
-async def check_clustering_similarity(articles: list[Article]) -> float:
+async def check_clustering_similarity(articles: list[Any]) -> float:
     """Calculate the minimum pairwise cosine similarity of articles in the cluster."""
     if len(articles) <= 1:
         return 1.0

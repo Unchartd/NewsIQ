@@ -9,8 +9,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.schemas.synthesis_context import ArticleContext, EntityContext, EventContext, SourceContext
-
 logger = logging.getLogger(__name__)
 
 
@@ -70,10 +68,10 @@ class StoryKnowledgeGraph:
 
 
 def build_story_knowledge_graph(
-    articles: list[ArticleContext],
-    article_events: list[EventContext],
-    story_entities: list[EntityContext],
-    sources: list[SourceContext],
+    articles: list[Any],
+    article_events: list[Any],
+    story_entities: list[Any],
+    sources: list[Any],
 ) -> StoryKnowledgeGraph:
     """Build a Knowledge Graph from a story cluster's articles, events, and entities.
 
