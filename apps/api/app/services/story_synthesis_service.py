@@ -1087,8 +1087,8 @@ class StorySynthesisOrchestrator:
                 story_version_id=story_version.id,
             )
         else:
-            # Mark story review status as failed or pending review
-            story.story_status = "failed"
+            # Mark story review status as pending to allow automatic retries
+            story.story_status = "pending"
             logger.info(
                 "Story %s was not published. Status: %s. Action: %s.",
                 story_id,
