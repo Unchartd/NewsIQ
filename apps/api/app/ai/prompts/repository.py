@@ -369,7 +369,30 @@ class PromptRepository:
 
 
 # ── Singleton ──────────────────────────────────────────────────────────────────
-# Initialized by the startup hook in app/main.py.
+# Initialized by the startup hook in app/main.py or dynamically on first access.
 # Import this in services: from app.ai.prompts.repository import prompt_repository
 
-prompt_repository: PromptRepository | None = None
+prompt_repository: PromptRepository
+_prompt_repository: PromptRepository | None = None
+
+
+def _lazy_initialize() -> PromptRepository:
+    logger.info("Initializing PromptRepository lazily...")
+    from app.ai.prompts.compiler import PromptCompiler
+    from app.ai.prompts.loader import PromptLoader
+
+    loader = PromptLoader()
+    raw = loader.load_all()
+
+    compiler = PromptCompiler()
+    compiled = compiler.compile_all(raw)
+    return PromptRepository(compiled)
+
+
+def __getattr__(name: str) -> Any:
+    if name == "prompt_repository":
+        global _prompt_repository
+        if _prompt_repository is None:
+            _prompt_repository = _lazy_initialize()
+        return _prompt_repository
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
