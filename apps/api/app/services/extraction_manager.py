@@ -165,7 +165,7 @@ class ExtractionManager:
             payload = json.dumps(
                 {"url": url, "execution_id": execution_id, "timestamp": time.time()}
             )
-            await redis_client.rpush(buffer_key, payload)
+            await redis_client.rpush(buffer_key, payload)  # type: ignore[misc]
 
             # Try to acquire the leader lock (5 seconds lock TTL)
             leader_key = "extraction:tavily_leader"
@@ -180,7 +180,7 @@ class ExtractionManager:
                     batch_size = settings.TAVILY_BATCH_SIZE or 5
 
                     while time.time() - start_wait < batch_timeout:
-                        length = await redis_client.llen(buffer_key)
+                        length = await redis_client.llen(buffer_key)  # type: ignore[misc]
                         if length >= batch_size:
                             break
                         await asyncio.sleep(0.1)
@@ -188,7 +188,7 @@ class ExtractionManager:
                     # Pop up to batch_size URLs
                     batch_payloads = []
                     for _ in range(batch_size):
-                        p = await redis_client.lpop(buffer_key)
+                        p = await redis_client.lpop(buffer_key)  # type: ignore[misc]
                         if p:
                             batch_payloads.append(json.loads(p))
                         else:
