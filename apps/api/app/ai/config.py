@@ -1,5 +1,7 @@
 from typing import Any, Literal, TypedDict
 
+from app.core.config import settings
+
 ProviderType = Literal["nvidia", "gemini", "openrouter", "mock", "bedrock"]
 
 
@@ -307,7 +309,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "embedding": {
         "primary": {
             "provider": "gemini",
-            "model": "text-embedding-004",
+            "model": settings.EMBEDDING_MODEL,
             "temperature": 0.0,
             "timeout": 15.0,
         },

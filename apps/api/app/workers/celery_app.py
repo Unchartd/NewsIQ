@@ -90,10 +90,10 @@ celery_app.conf.update(_conf)
 
 # ── Periodic Tasks (Celery Beat Schedule) ────────────────────────────────────
 celery_app.conf.beat_schedule = {
-    # RSS ingestion — runs every 5 minutes across all active sources
-    "ingest-rss-news-every-5-minutes": {
+    # RSS ingestion — runs every 15 minutes across all active sources
+    "ingest-rss-news-every-15-minutes": {
         "task": "app.workers.tasks.ingest_news_task",
-        "schedule": crontab(minute="*/5"),
+        "schedule": crontab(minute="*/15"),
     },
     # GNews API ingestion — runs every 30 minutes (rate-limit guard handles sub-interval skips)
     "ingest-gnews-every-30-minutes": {

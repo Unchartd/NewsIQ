@@ -186,6 +186,36 @@ async def health_observability():
     )
 
 
+@router.get("/health/qdrant")
+async def health_qdrant():
+    """Check Qdrant vector database connectivity."""
+    t0 = time.monotonic()
+    try:
+        from app.services.vector_service import vector_service
+
+        collections = await vector_service.client.get_collections()
+        latency_ms = (time.monotonic() - t0) * 1000
+        return JSONResponse(
+            status_code=200,
+            content={
+                "service": "qdrant",
+                "status": "ok",
+                "latency_ms": round(latency_ms, 2),
+                "collections_count": len(collections.collections),
+            },
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "service": "qdrant",
+                "status": "error",
+                "error": str(e),
+                "latency_ms": round((time.monotonic() - t0) * 1000, 2),
+            },
+        )
+
+
 @router.get("/ready")
 async def readiness():
     """Readiness probe — verifies all critical services (DB + Redis) are reachable.

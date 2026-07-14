@@ -263,6 +263,10 @@ jobs:
               sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://redis:6379/0|g' .env.production
               sed -i 's|^CELERY_BROKER_URL=.*|CELERY_BROKER_URL=redis://redis:6379/1|g' .env.production
               sed -i 's|^CELERY_RESULT_BACKEND=.*|CELERY_RESULT_BACKEND=redis://redis:6379/2|g' .env.production
+
+              # Always enforce gemini-embedding-001 for EMBEDDING_MODEL to prevent quota failures
+              echo "INFO: Enforcing gemini-embedding-001 for EMBEDDING_MODEL..."
+              sed -i 's|^EMBEDDING_MODEL=.*|EMBEDDING_MODEL=gemini-embedding-001|g' .env.production
             else
               echo "FATAL: .env.production not found in $(pwd)!"
               exit 1
