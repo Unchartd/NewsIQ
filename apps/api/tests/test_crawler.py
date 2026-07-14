@@ -102,7 +102,9 @@ async def test_crawl_article_fallback_chain():
         return_value=(sample_html, {"fetch_method": "test"}),
     ):
         # 1. Newspaper fails (returns None), Trafilatura succeeds
-        with patch("app.services.crawler_service.crawler_service._extract_newspaper", return_value=None):
+        with patch(
+            "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
+        ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
             assert result["success"] is True
@@ -110,8 +112,13 @@ async def test_crawl_article_fallback_chain():
 
         # 2. Both Newspaper and Trafilatura fail, Readability succeeds
         with (
-            patch("app.services.crawler_service.crawler_service._extract_newspaper", return_value=None),
-            patch("app.services.crawler_service.crawler_service._extract_trafilatura", return_value=None),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
+            ),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_trafilatura",
+                return_value=None,
+            ),
         ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
@@ -120,9 +127,17 @@ async def test_crawl_article_fallback_chain():
 
         # 3. All primary fail, custom-bs4 succeeds
         with (
-            patch("app.services.crawler_service.crawler_service._extract_newspaper", return_value=None),
-            patch("app.services.crawler_service.crawler_service._extract_trafilatura", return_value=None),
-            patch("app.services.crawler_service.crawler_service._extract_readability", return_value=None),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
+            ),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_trafilatura",
+                return_value=None,
+            ),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_readability",
+                return_value=None,
+            ),
         ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
@@ -131,10 +146,21 @@ async def test_crawl_article_fallback_chain():
 
         # 4. All fail completely (including custom-bs4 length check)
         with (
-            patch("app.services.crawler_service.crawler_service._extract_newspaper", return_value=None),
-            patch("app.services.crawler_service.crawler_service._extract_trafilatura", return_value=None),
-            patch("app.services.crawler_service.crawler_service._extract_readability", return_value=None),
-            patch("app.services.crawler_service.crawler_service._extract_custom_cleaner", return_value=None),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
+            ),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_trafilatura",
+                return_value=None,
+            ),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_readability",
+                return_value=None,
+            ),
+            patch(
+                "app.services.crawler_service.crawler_service._extract_custom_cleaner",
+                return_value=None,
+            ),
         ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
