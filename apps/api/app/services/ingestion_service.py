@@ -13,6 +13,7 @@ import feedparser
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.bloom_filter import URLBloomFilter
@@ -252,12 +253,29 @@ class IngestionService:
 
         existing_articles = await self._batch_existing_articles(feed_urls, session)
 
-        new_entries = [(url_to_entry[url], url, existing_articles.get(url)) for url in feed_urls]
+        # PERF-01: Only crawl URLs that are genuinely new.
+        # URLs already in the DB with unchanged content are handled inside _persist_articles
+        # via the `existing_article` argument — they skip HTTP entirely.
+        # We still pass existing_article through so content-change updates work correctly.
+        entries_to_crawl = [
+            (url_to_entry[url], url, existing_articles.get(url))
+            for url in feed_urls
+            if url not in existing_articles  # new URL — must crawl
+        ]
+        # Unchanged existing articles are forwarded directly with crawled=None so
+        # _persist_articles can evaluate their content hash and decide to skip/update.
+        entries_unchanged = [
+            (url_to_entry[url], url, None, existing_articles[url])
+            for url in feed_urls
+            if url in existing_articles
+        ]
 
-        crawled_results = await self._crawl_articles(new_entries)
+        crawled_results = await self._crawl_articles(entries_to_crawl)
+        # Merge: newly crawled + pre-existing (uncrawled) entries
+        all_results = list(crawled_results) + entries_unchanged
 
         new_articles_count, discovery_candidates = await self._persist_articles(
-            crawled_results, source, session
+            all_results, source, session
         )
 
         if discovery_candidates:
@@ -335,6 +353,9 @@ class IngestionService:
         new_articles_count = 0
         discovery_candidates = []
 
+        # ---------- pass 1: compute all fingerprints to enable batch dedup ----------
+        # This avoids the N+1 pattern of one SELECT per article for content_hash.
+        per_entry: list[tuple[Any, str, dict | None, Article | None, str, str]] = []
         for entry, url, crawled, existing_article in crawled_results:
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
@@ -378,6 +399,30 @@ class IngestionService:
             url_hash = fingerprints["url_hash"]
             content_hash = fingerprints["content_hash"]
 
+            per_entry.append((entry, url, crawled, existing_article, url_hash, content_hash,
+                               title, description, content, author, published_at, image_url))
+
+        # ---------- pass 2: PERF-02 — batch content_hash lookup (single IN query) ----------
+        # Collect hashes for genuinely new URLs only (existing_article is None)
+        new_content_hashes = [
+            row[5]  # content_hash is at index 5
+            for row in per_entry
+            if row[3] is None  # existing_article is at index 3; None means new URL
+        ]
+        duplicate_map: dict[str, Article] = {}
+        if new_content_hashes:
+            dup_stmt = select(Article).where(Article.content_hash.in_(new_content_hashes))
+            dup_res = await session.execute(dup_stmt)
+            for dup_art in dup_res.scalars().all():
+                # Keep first match per hash (there may be multiple duplicates)
+                if dup_art.content_hash not in duplicate_map:
+                    duplicate_map[dup_art.content_hash] = dup_art
+
+        # ---------- pass 3: persist ----------
+        for row in per_entry:
+            entry, url, crawled, existing_article, url_hash, content_hash, \
+                title, description, content, author, published_at, image_url = row
+
             if existing_article:
                 if existing_article.content_hash != content_hash:
                     logger.info("Content changed for existing URL %s. Updating article.", url)
@@ -390,9 +435,7 @@ class IngestionService:
                     new_articles_count += 1
                 continue
 
-            stmt = select(Article).where(Article.content_hash == content_hash)
-            res = await session.execute(stmt)
-            duplicate_existing = res.scalar_one_or_none()
+            duplicate_existing = duplicate_map.get(content_hash)
 
             article = Article(
                 source_id=source_id,
@@ -485,9 +528,20 @@ class IngestionService:
                     art_obj.id,
                     priority,
                 )
-            except Exception as task_exc:
+            except IntegrityError as task_exc:
+                # BUG-05: IntegrityError is the expected idempotency path (unique constraint on
+                # idempotency_key). Log at INFO. All other exceptions are unexpected and must
+                # surface at ERROR level so they appear in alerting.
                 logger.info(
-                    "DiscoveryTask for query '%s' already exists (Idempotency key hit): %s",
+                    "DiscoveryTask for query '%s' already exists (idempotency key hit): %s",
+                    normalized_query,
+                    task_exc,
+                )
+                if session.in_transaction():
+                    await session.rollback()
+            except Exception as task_exc:
+                logger.error(
+                    "Unexpected error dispatching DiscoveryTask for query '%s': %s",
                     normalized_query,
                     task_exc,
                 )

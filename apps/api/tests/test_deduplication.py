@@ -27,6 +27,45 @@ def test_compute_fingerprints():
     assert fp1["content_hash"] == fp2["content_hash"]
 
 
+def test_compute_fingerprints_none_body():
+    """BUG-03 regression: None body/title must not produce the string 'None' in the hash.
+
+    Before the fix, compute_fingerprints(url, title, None) would embed the literal
+    string 'None' in the hash payload, causing:
+    - Different hashes for the same content when None vs "" is passed.
+    - Potential false-match collisions when titles match but content failed to extract.
+    """
+    url = "https://example.com/article"
+
+    # None body should hash identically to empty string body
+    fp_none = compute_fingerprints(url, "some title", None)
+    fp_empty = compute_fingerprints(url, "some title", "")
+    assert fp_none["content_hash"] == fp_empty["content_hash"], (
+        "None body must hash the same as empty string body"
+    )
+
+    # None title should hash identically to empty string title
+    fp_none_title = compute_fingerprints(url, None, "some body")
+    fp_empty_title = compute_fingerprints(url, "", "some body")
+    assert fp_none_title["content_hash"] == fp_empty_title["content_hash"], (
+        "None title must hash the same as empty string title"
+    )
+
+    # Both None
+    fp_both_none = compute_fingerprints(url, None, None)
+    fp_both_empty = compute_fingerprints(url, "", "")
+    assert fp_both_none["content_hash"] == fp_both_empty["content_hash"]
+
+    # The hash must NOT contain the string "None" — verify by hashing known good value
+    import hashlib
+    bad_payload = "some title\n\nNone"
+    bad_hash = hashlib.sha256(bad_payload.encode("utf-8")).hexdigest()
+    assert fp_none["content_hash"] != bad_hash, (
+        "content_hash must not be derived from the string 'None'"
+    )
+
+
+
 @pytest.mark.asyncio
 async def test_bloom_filter_redisbloom():
     cache_service = MagicMock()

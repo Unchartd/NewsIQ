@@ -369,3 +369,196 @@ def test_rank_and_filter_search_results():
     # https://reuters.com/article2 should be skipped due to domain duplication (same as article1)
     assert "https://reuters.com/article2" not in filtered_urls
     assert "https://unknownblog.com/post" in filtered_urls
+
+
+@pytest.mark.asyncio
+async def test_existing_articles_not_crawled(mock_db_session):
+    """PERF-01 regression: URLs that already exist in the DB must NOT be passed to the crawler.
+
+    Previously, all feed URLs (including known ones) were forwarded to _crawl_articles,
+    wasting HTTP requests for articles that already exist and haven't changed.
+    After the fix, only genuinely new URLs are crawled.
+    """
+    source = Source(
+        id=MagicMock(),
+        name="Test News",
+        slug="test-news",
+        rss_url="http://example.com/rss",
+        active=True,
+    )
+
+    existing_url = "http://example.com/existing-article"
+    new_url = "http://example.com/new-article"
+
+    # DB batch query returns one existing article
+    existing_article = MagicMock()
+    existing_article.content_hash = "existing_hash"
+    existing_article.url = existing_url
+    existing_article.version = 1
+
+    # simulate _batch_existing_articles → first execute returns list; second execute returns
+    # the content-hash dedup results (empty — no duplicates)
+    results_batch = MagicMock()
+    results_batch.scalars.return_value.all.return_value = [existing_article]
+
+    results_dedup = MagicMock()
+    results_dedup.scalars.return_value.all.return_value = []
+
+    mock_db_session.execute.side_effect = [results_batch, results_dedup]
+
+    mock_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+        <channel>
+            <title>Test News Channel</title>
+            <link>http://example.com</link>
+            <item>
+                <title>Existing Article</title>
+                <link>{existing_url}</link>
+                <description>Existing</description>
+                <pubDate>Fri, 12 Jun 2026 10:00:00 GMT</pubDate>
+            </item>
+            <item>
+                <title>Brand New Article</title>
+                <link>{new_url}</link>
+                <description>Brand new content that is long enough</description>
+                <pubDate>Fri, 12 Jun 2026 10:00:00 GMT</pubDate>
+            </item>
+        </channel>
+    </rss>
+    """
+
+    class MockResponse:
+        def __init__(self, text, status_code=200):
+            self.text = text
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            pass
+
+    crawled_new = {
+        "content": "Brand new full content that is definitely long enough to pass all checks.",
+        "title": "Brand New Article",
+        "author": None,
+        "image_url": None,
+        "success": True,
+    }
+
+    crawl_calls = []
+
+    async def mock_crawl(url):
+        crawl_calls.append(url)
+        return crawled_new
+
+    with (
+        patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
+        patch(
+            "app.services.ingestion_service.compute_fingerprints",
+            side_effect=lambda url, t, b: {"url_hash": f"hash_{url}", "content_hash": f"chash_{url}"},
+        ),
+        patch(
+            "app.services.ingestion_service.url_bloom_filter.add",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "app.services.crawler_service.crawler_service.crawl_article",
+            side_effect=mock_crawl,
+        ),
+    ):
+        await ingestion_service.ingest_rss_source(source, mock_db_session)
+
+    # CRITICAL: the existing URL must NOT have been crawled — only the new URL
+    assert existing_url not in crawl_calls, (
+        f"Existing article was crawled unnecessarily: {crawl_calls}"
+    )
+    assert new_url in crawl_calls, "New article was not crawled"
+    assert len(crawl_calls) == 1, f"Expected exactly 1 crawl, got {len(crawl_calls)}: {crawl_calls}"
+
+
+@pytest.mark.asyncio
+async def test_content_hash_batch_dedup(mock_db_session):
+    """PERF-02 regression: content_hash deduplication must use a single batched IN query.
+
+    Previously, _persist_articles issued one SELECT per article to check content_hash.
+    After the fix, all content hashes are checked in a single SELECT ... WHERE IN (...).
+    """
+    source = Source(
+        id=MagicMock(),
+        name="Test News",
+        slug="test-news",
+        rss_url="http://example.com/rss",
+        active=True,
+    )
+
+    mock_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+        <channel>
+            <title>Test News</title>
+            <link>http://example.com</link>
+            <item>
+                <title>Article One</title>
+                <link>http://example.com/art1</link>
+                <description>Content one</description>
+                <pubDate>Fri, 12 Jun 2026 10:00:00 GMT</pubDate>
+            </item>
+            <item>
+                <title>Article Two</title>
+                <link>http://example.com/art2</link>
+                <description>Content two</description>
+                <pubDate>Fri, 12 Jun 2026 10:00:00 GMT</pubDate>
+            </item>
+        </channel>
+    </rss>
+    """
+
+    class MockResponse:
+        def __init__(self, text, status_code=200):
+            self.text = text
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            pass
+
+    # First execute → _batch_existing_articles (no existing articles)
+    result_existing = MagicMock()
+    result_existing.scalars.return_value.all.return_value = []
+
+    # Second execute → batch content_hash IN query (no duplicates)
+    result_dedup = MagicMock()
+    result_dedup.scalars.return_value.all.return_value = []
+
+    mock_db_session.execute.side_effect = [result_existing, result_dedup]
+
+    crawled_content = {
+        "content": "Full crawled content that is definitely long enough for tests.",
+        "title": "Article",
+        "author": None,
+        "image_url": None,
+        "success": True,
+    }
+
+    with (
+        patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
+        patch(
+            "app.services.ingestion_service.compute_fingerprints",
+            side_effect=lambda url, t, b: {"url_hash": f"h_{url}", "content_hash": f"ch_{url}"},
+        ),
+        patch(
+            "app.services.ingestion_service.url_bloom_filter.add",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "app.services.crawler_service.crawler_service.crawl_article",
+            AsyncMock(return_value=crawled_content),
+        ),
+    ):
+        await ingestion_service.ingest_rss_source(source, mock_db_session)
+
+    # With PERF-02, there should be exactly 2 DB execute calls:
+    #   1. _batch_existing_articles  (SELECT WHERE url IN ...)
+    #   2. batch content_hash dedup  (SELECT WHERE content_hash IN ...)
+    # NOT 2 + N individual per-article queries.
+    assert mock_db_session.execute.call_count == 2, (
+        f"Expected 2 DB queries (batch existing + batch dedup), "
+        f"got {mock_db_session.execute.call_count}"
+    )
+
