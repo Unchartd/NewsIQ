@@ -32,9 +32,12 @@ class VectorService:
     def __init__(self) -> None:
         self._clients: dict[int, AsyncQdrantClient] = {}
         self._collection_ready = False
+        self._mock_client = None
 
     @property
     def client(self) -> AsyncQdrantClient:
+        if self._mock_client is not None:
+            return self._mock_client
         try:
             loop = asyncio.get_running_loop()
             loop_id = id(loop)
@@ -48,6 +51,14 @@ class VectorService:
                 timeout=30,
             )
         return self._clients[loop_id]
+
+    @client.setter
+    def client(self, value: AsyncQdrantClient) -> None:
+        self._mock_client = value
+
+    @client.deleter
+    def client(self) -> None:
+        self._mock_client = None
 
     # ── Collection management ─────────────────────────────────────────────────
 

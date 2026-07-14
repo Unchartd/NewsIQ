@@ -314,6 +314,24 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                         vectors = await embedding_service.get_embeddings(texts_to_embed)
                     except Exception as e:
                         logger.error("Failed to generate batch embeddings: %s", e)
+                        for article in pending_articles:
+                            article.embedding_status = "pending"
+                        await session.commit()
+
+                        try:
+                            from app.core.failure_recorder import record_pipeline_failure
+
+                            await record_pipeline_failure(
+                                stage="embedding",
+                                exception=e,
+                                input_payload={"batch_size": len(pending_articles)},
+                            )
+                        except Exception as rec_err:
+                            logger.error(
+                                "Failed to record pipeline failure for embedding batch: %s",
+                                rec_err,
+                            )
+                        raise e
 
                     # 4. Upsert to Qdrant and update status in-memory.
                     # Single commit at the end instead of one per article (B12 fix).
@@ -1529,5 +1547,22 @@ def cleanup_discovery_tasks_task() -> dict[str, int]:
                 "deleted_expired": count_expired,
                 "total_deleted": total_deleted,
             }
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.discovery_grouping_task")
+def discovery_grouping_task() -> None:
+    """Run Discovery Queue Grouping and Promotion."""
+    logger.info("Celery task: Running discovery grouping and promotion.")
+
+    async def _run():
+        from app.services.pipeline_coordinator import discovery_manager
+
+        async with async_session_factory() as session:
+            # 1. Group pending items to READY state
+            await discovery_manager.check_triggers_and_group(session, force=True)
+            # 2. Promote READY clusters to CLUSTER_CREATED and create Story models
+            await discovery_manager.promote_clusters(session)
 
     return run_async(_run())

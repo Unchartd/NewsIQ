@@ -47,7 +47,14 @@ async def test_ready_check(client: AsyncClient):
 @patch("app.api.v1.auth.AuthService.request_password_reset", new_callable=AsyncMock)
 async def test_forgot_password_stub(mock_request_reset, client: AsyncClient):
     """Test the forgot password endpoint returns success."""
-    response = await client.post("/api/v1/auth/forgot-password", json={"email": "test@example.com"})
-    assert response.status_code == 200
-    assert "reset link" in response.json()["message"]
-    mock_request_reset.assert_called_once_with("test@example.com")
+    from app.core.database import get_db
+
+    mock_db = AsyncMock()
+    app.dependency_overrides[get_db] = lambda: mock_db
+    try:
+        response = await client.post("/api/v1/auth/forgot-password", json={"email": "test@example.com"})
+        assert response.status_code == 200
+        assert "reset link" in response.json()["message"]
+        mock_request_reset.assert_called_once_with("test@example.com")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
