@@ -235,3 +235,77 @@ newsiq_crawler_persisted_total = Counter(
     "newsiq_crawler_persisted_total",
     "Total number of crawled articles successfully persisted to the database.",
 )
+
+# ── Multi-Provider Extraction Metrics ────────────────────────────────────────
+
+newsiq_crawler_attempts_total = Counter(
+    "newsiq_crawler_attempts_total",
+    "Total number of crawl orchestration attempts.",
+)
+
+newsiq_crawler_provider_attempts_total = Counter(
+    "newsiq_crawler_provider_attempts_total",
+    "Total number of attempts per extraction provider.",
+    ["provider"],  # e.g., local, tavily, firecrawl
+)
+
+newsiq_crawler_provider_success_total = Counter(
+    "newsiq_crawler_provider_success_total",
+    "Total number of successful extractions per provider.",
+    ["provider"],
+)
+
+newsiq_crawler_provider_failure_total = Counter(
+    "newsiq_crawler_provider_failure_total",
+    "Total number of failed extractions per provider.",
+    ["provider"],
+)
+
+newsiq_crawler_provider_latency_seconds = Histogram(
+    "newsiq_crawler_provider_latency_seconds",
+    "Latency of extraction per provider in seconds.",
+    ["provider"],
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, float("inf")),
+)
+
+newsiq_crawler_tavily_batch_requests_total = Counter(
+    "newsiq_crawler_tavily_batch_requests_total",
+    "Total number of batched API requests made to Tavily.",
+)
+
+newsiq_crawler_tavily_urls_processed_total = Counter(
+    "newsiq_crawler_tavily_urls_processed_total",
+    "Total number of URLs processed inside Tavily Extract batches.",
+)
+
+newsiq_crawler_firecrawl_requests_total = Counter(
+    "newsiq_crawler_firecrawl_requests_total",
+    "Total number of scrape requests made to Firecrawl.",
+)
+
+newsiq_crawler_local_success_rate = Counter(
+    "newsiq_crawler_local_success_rate",
+    "Total number of crawl tasks resolved entirely by the local crawler.",
+)
+
+newsiq_crawler_fallback_rate = Counter(
+    "newsiq_crawler_fallback_rate",
+    "Total number of times crawls had to fallback to external APIs.",
+)
+
+newsiq_crawler_batch_wait_time_seconds = Histogram(
+    "newsiq_crawler_batch_wait_time_seconds",
+    "Time spent by workers waiting in the Tavily batch polling loop.",
+    buckets=(0.1, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, float("inf")),
+)
+
+newsiq_crawler_redis_batch_flush_total = Counter(
+    "newsiq_crawler_redis_batch_flush_total",
+    "Total number of times a Redis queue batch flush was triggered by a leader.",
+)
+
+newsiq_crawler_provider_cost_total = Counter(
+    "newsiq_crawler_provider_cost_total",
+    "Estimated dollar cost incurred by extraction provider API calls.",
+    ["provider"],
+)
