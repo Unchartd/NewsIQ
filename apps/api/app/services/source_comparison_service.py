@@ -31,7 +31,6 @@ from app.models.models import (
     StoryDifference,
     StorySourceCoverage,
 )
-from app.schemas.synthesis_context import ArticleContext, EventContext, SourceContext
 
 logger = logging.getLogger(__name__)
 
@@ -182,10 +181,10 @@ class SourceComparisonService:
         self,
         story_id: Any,
         session: AsyncSession,
-        articles: list[ArticleContext] = None,
-        article_events: list[EventContext] = None,
+        articles: list[Any] = None,
+        article_events: list[Any] = None,
         article_source_map: dict[uuid.UUID, str] = None,
-        sources_list: list[SourceContext] = None,
+        sources_list: list[Any] = None,
         precomputed_contradictions: list[StoryContradiction] = None,
     ) -> tuple[list[StorySourceCoverage], list[StoryDifference]]:
         """Compare sources in a story cluster, generate coverage/difference data, and save to DB."""
@@ -238,7 +237,7 @@ class SourceComparisonService:
             article_events = list(evt_res.scalars().all())
 
         # 3. Group events by source ID
-        events_by_source: dict[uuid.UUID, list[ArticleEvent]] = {}
+        events_by_source: dict[uuid.UUID, list[Any]] = {}
         source_by_id: dict[uuid.UUID, Source] = {}
         for art, src in rows:
             source_by_id[src.id] = src
@@ -284,20 +283,20 @@ class SourceComparisonService:
             src_numbers = set()
             src_event_types = set()
 
-            for evt in src_evts:
-                if evt.actors:
-                    src_actors.update(evt.actors)
-                if evt.targets:
-                    src_targets.update(evt.targets)
-                if evt.location:
-                    src_locations.add(evt.location)
-                if evt.numbers:
-                    for k, v in evt.numbers.items():
+            for event in src_evts:
+                if event.actors:
+                    src_actors.update(event.actors)
+                if event.targets:
+                    src_targets.update(event.targets)
+                if event.location:
+                    src_locations.add(event.location)
+                if event.numbers:
+                    for k, v in event.numbers.items():
                         src_numbers.add(f"{k}: {v}")
-                if evt.event_type_canonical:
-                    src_event_types.add(evt.event_type_canonical)
-                elif evt.event_type:
-                    src_event_types.add(evt.event_type)
+                if event.event_type_canonical:
+                    src_event_types.add(event.event_type_canonical)
+                elif event.event_type:
+                    src_event_types.add(event.event_type)
 
             # Gather attributes for other sources
             other_actors = set()
@@ -308,15 +307,15 @@ class SourceComparisonService:
             for other_id, other_evts in events_by_source.items():
                 if other_id == src_id:
                     continue
-                for evt in other_evts:
-                    if evt.actors:
-                        other_actors.update(evt.actors)
-                    if evt.targets:
-                        other_targets.update(evt.targets)
-                    if evt.location:
-                        other_locations.add(evt.location)
-                    if evt.numbers:
-                        for k, v in evt.numbers.items():
+                for other_evt in other_evts:
+                    if other_evt.actors:
+                        other_actors.update(other_evt.actors)
+                    if other_evt.targets:
+                        other_targets.update(other_evt.targets)
+                    if other_evt.location:
+                        other_locations.add(other_evt.location)
+                    if other_evt.numbers:
+                        for k, v in other_evt.numbers.items():
                             other_numbers.add(f"{k}: {v}")
 
             # Compute set differences
