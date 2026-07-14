@@ -291,7 +291,7 @@ services:
     container_name: newsiq-celery-worker
     restart: unless-stopped
     profiles: [dev]
-    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2 -Q celery,discovery_search,discovery_crawl
     volumes: *api-volumes
     environment:
       <<: *api-env
@@ -420,7 +420,7 @@ services:
       - 1.1.1.1
     restart: unless-stopped
     profiles: [prod]
-    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=4
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=4 -Q celery,discovery_search,discovery_crawl
     volumes:
       - prometheus_multiproc:/tmp/prometheus_multiproc
       - local_storage:/app/data/storage

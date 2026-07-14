@@ -1042,11 +1042,15 @@ def discovery_search_task(
                 )
 
                 task.search_completed_at = datetime.now(UTC).replace(tzinfo=None)
+                from app.core.metrics import newsiq_discovery_searches_succeeded
+                newsiq_discovery_searches_succeeded.inc()
 
             except Exception as e:
                 logger.error(
                     "Discovery search provider failed for task %s: %s", discovery_task_id_str, e
                 )
+                from app.core.metrics import newsiq_discovery_searches_failed
+                newsiq_discovery_searches_failed.inc()
                 task.retry_count += 1
                 if task.retry_count < settings.DISCOVERY_MAX_RETRIES:
                     task.status = DiscoveryTaskState.PENDING
@@ -1075,11 +1079,28 @@ def discovery_search_task(
             task.status = DiscoveryTaskState.CRAWLING
             task.completed_at = None
 
+            # Resolve Google News redirect URLs to canonical publisher URLs concurrently
+            try:
+                resolve_tasks = [provider.resolve_url(url) for url in discovered_urls]
+                resolved_urls = await asyncio.gather(*resolve_tasks)
+                
+                # Increment Prometheus metrics for decoded URLs
+                from app.core.metrics import newsiq_discovery_urls_decoded, newsiq_discovery_urls_decode_failed
+                for orig_url, res_url in zip(discovered_urls, resolved_urls):
+                    if "news.google.com" in orig_url:
+                        if orig_url != res_url:
+                            newsiq_discovery_urls_decoded.inc()
+                        else:
+                            newsiq_discovery_urls_decode_failed.inc()
+            except Exception as resolve_exc:
+                logger.warning("Failed to resolve discovery URLs concurrently: %s", resolve_exc)
+                resolved_urls = discovered_urls
+
             from app.core.fingerprint import compute_fingerprints
 
             created_crawl_task_ids = []
 
-            for url in discovered_urls:
+            for url in resolved_urls:
                 url_canonical = (
                     gnews_service.canonicalize_url(url)
                     if hasattr(gnews_service, "canonicalize_url")
@@ -1201,6 +1222,9 @@ def discovery_crawl_task(
                 crawled = await crawler_service.crawl_article(crawl_task.url)
                 if not crawled or not crawled.get("content"):
                     raise ValueError("Crawl returned empty content")
+                
+                from app.core.metrics import newsiq_discovery_crawls_succeeded
+                newsiq_discovery_crawls_succeeded.inc()
             except Exception as e:
                 logger.warning(
                     "Failed to crawl URL %s for CrawlTask %s: %s",
@@ -1208,6 +1232,10 @@ def discovery_crawl_task(
                     crawl_task_id_str,
                     e,
                 )
+                from app.core.metrics import newsiq_discovery_crawls_failed
+                err_clean = type(e).__name__
+                newsiq_discovery_crawls_failed.labels(reason=err_clean).inc()
+                
                 crawl_task.retry_count += 1
                 if crawl_task.retry_count < settings.DISCOVERY_MAX_RETRIES:
                     crawl_task.status = CrawlTaskState.RETRYING

@@ -12,18 +12,15 @@ class DiscoveryProvider(abc.ABC):
 
     @abc.abstractmethod
     async def search(self, query: str, max_results: int) -> list[dict[str, Any]]:
-        """Search similar news articles using this provider.
-
-        Returns:
-            list[dict[str, Any]]: A list of normalized article dictionaries:
-                - title (str)
-                - url (str)
-                - description (str)
-                - published_at (datetime)
-                - gnews_source_name (str | None)
-                - gnews_source_url (str | None)
-        """
+        """Search similar news articles using this provider."""
         pass
+
+    async def resolve_url(self, url: str) -> str:
+        """Resolve a provider-specific redirect/masked URL to its direct canonical publisher URL.
+
+        Default implementation returns the URL unchanged.
+        """
+        return url
 
 
 class GoogleRSSDiscoveryProvider(DiscoveryProvider):
@@ -36,6 +33,23 @@ class GoogleRSSDiscoveryProvider(DiscoveryProvider):
         except Exception as exc:
             logger.error("GoogleRSSDiscoveryProvider: Search failed for query '%s': %s", query, exc)
             return []
+
+    async def resolve_url(self, url: str) -> str:
+        if "news.google.com" not in url:
+            return url
+        try:
+            from googlenewsdecoder import new_decoderv1
+            import asyncio
+            # Execute base decoder in a thread because it does blocking network/parsing calls
+            decoded = await asyncio.to_thread(new_decoderv1, url, interval=1)
+            if decoded.get("status") and decoded.get("decoded_url"):
+                resolved = decoded["decoded_url"]
+                logger.info("GoogleRSSDiscoveryProvider: Decoded Google News redirect URL from %s to %s", url, resolved)
+                return resolved
+            logger.warning("GoogleRSSDiscoveryProvider: Failed to decode URL %s: %s", url, decoded.get("message"))
+        except Exception as exc:
+            logger.warning("GoogleRSSDiscoveryProvider: Error decoding URL %s: %s", url, exc)
+        return url
 
 
 def get_discovery_provider(name: str) -> DiscoveryProvider:
