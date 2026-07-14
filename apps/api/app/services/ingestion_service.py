@@ -355,7 +355,22 @@ class IngestionService:
 
         # ---------- pass 1: compute all fingerprints to enable batch dedup ----------
         # This avoids the N+1 pattern of one SELECT per article for content_hash.
-        per_entry: list[tuple[Any, str, dict | None, Article | None, str, str]] = []
+        _PerEntryRow = tuple[
+            Any,  # entry (feedparser entry object)
+            str,  # url
+            dict[str, Any] | None,  # crawled result
+            Article | None,  # existing_article
+            str,  # url_hash
+            str,  # content_hash
+            Any,  # title (str)
+            str,  # description
+            Any,  # content (str)
+            Any,  # author (str | None)
+            datetime,  # published_at
+            Any,  # image_url (str | None)
+        ]
+        per_entry: list[_PerEntryRow] = []
+
         for entry, url, crawled, existing_article in crawled_results:
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
@@ -429,7 +444,7 @@ class IngestionService:
             dup_res = await session.execute(dup_stmt)
             for dup_art in dup_res.scalars().all():
                 # Keep first match per hash (there may be multiple duplicates)
-                if dup_art.content_hash not in duplicate_map:
+                if dup_art.content_hash is not None and dup_art.content_hash not in duplicate_map:
                     duplicate_map[dup_art.content_hash] = dup_art
 
         # ---------- pass 3: persist ----------
