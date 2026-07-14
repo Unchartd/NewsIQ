@@ -453,7 +453,10 @@ async def test_existing_articles_not_crawled(mock_db_session):
         patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
         patch(
             "app.services.ingestion_service.compute_fingerprints",
-            side_effect=lambda url, t, b: {"url_hash": f"hash_{url}", "content_hash": f"chash_{url}"},
+            side_effect=lambda url, t, b: {
+                "url_hash": f"hash_{url}",
+                "content_hash": f"chash_{url}",
+            },
         ),
         patch(
             "app.services.ingestion_service.url_bloom_filter.add",
@@ -562,3 +565,66 @@ async def test_content_hash_batch_dedup(mock_db_session):
         f"got {mock_db_session.execute.call_count}"
     )
 
+
+@pytest.mark.asyncio
+async def test_existing_articles_not_overwritten(mock_db_session):
+    """Verify that existing articles in the DB are not updated/overwritten with feed summaries."""
+    source = Source(
+        id=MagicMock(),
+        name="Test News",
+        slug="test-news",
+        rss_url="http://example.com/rss",
+        active=True,
+    )
+
+    existing_url = "http://example.com/existing-article"
+
+    # DB batch query returns one existing article
+    existing_article = MagicMock()
+    existing_article.content_hash = "existing_full_body_hash"
+    existing_article.url = existing_url
+    existing_article.version = 1
+
+    # Simulate _batch_existing_articles
+    results_batch = MagicMock()
+    results_batch.scalars.return_value.all.return_value = [existing_article]
+
+    mock_db_session.execute.return_value = results_batch
+
+    mock_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+        <channel>
+            <title>Test News Channel</title>
+            <link>http://example.com</link>
+            <item>
+                <title>Existing Article</title>
+                <link>{existing_url}</link>
+                <description>Existing Summary</description>
+                <pubDate>Fri, 12 Jun 2026 10:00:00 GMT</pubDate>
+            </item>
+        </channel>
+    </rss>
+    """
+
+    class MockResponse:
+        def __init__(self, text, status_code=200):
+            self.text = text
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            pass
+
+    with (
+        patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
+        patch("app.services.crawler_service.crawler_service.crawl_article") as mock_crawl,
+    ):
+        await ingestion_service.ingest_rss_source(source, mock_db_session)
+
+        # Verify no crawl was attempted
+        mock_crawl.assert_not_called()
+
+    # Verify session.add was never called for existing_article (meaning no update)
+    # and version was not incremented
+    assert existing_article.version == 1
+    for call in mock_db_session.add.call_args_list:
+        assert call[0][0] != existing_article

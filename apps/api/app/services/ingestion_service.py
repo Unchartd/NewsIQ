@@ -254,28 +254,19 @@ class IngestionService:
         existing_articles = await self._batch_existing_articles(feed_urls, session)
 
         # PERF-01: Only crawl URLs that are genuinely new.
-        # URLs already in the DB with unchanged content are handled inside _persist_articles
-        # via the `existing_article` argument — they skip HTTP entirely.
-        # We still pass existing_article through so content-change updates work correctly.
+        # Since we filter out existing URLs before crawling, we do not need to pass them
+        # to _persist_articles, preventing their full contents in the DB from being
+        # overwritten by short feed summaries/snippets.
         entries_to_crawl = [
-            (url_to_entry[url], url, existing_articles.get(url))
+            (url_to_entry[url], url, None)
             for url in feed_urls
             if url not in existing_articles  # new URL — must crawl
         ]
-        # Unchanged existing articles are forwarded directly with crawled=None so
-        # _persist_articles can evaluate their content hash and decide to skip/update.
-        entries_unchanged = [
-            (url_to_entry[url], url, None, existing_articles[url])
-            for url in feed_urls
-            if url in existing_articles
-        ]
 
         crawled_results = await self._crawl_articles(entries_to_crawl)
-        # Merge: newly crawled + pre-existing (uncrawled) entries
-        all_results = list(crawled_results) + entries_unchanged
 
         new_articles_count, discovery_candidates = await self._persist_articles(
-            all_results, source, session
+            crawled_results, source, session
         )
 
         if discovery_candidates:
