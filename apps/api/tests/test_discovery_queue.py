@@ -54,6 +54,7 @@ def test_discovery_search_task_success():
 
     mock_provider = AsyncMock()
     mock_provider.search.return_value = ["https://reuters.com/news1", "https://bbc.com/news2"]
+    mock_provider.resolve_url = AsyncMock(side_effect=lambda url: url)
 
     mock_rank = MagicMock(return_value=["https://reuters.com/news1", "https://bbc.com/news2"])
 
@@ -184,9 +185,9 @@ def test_discovery_crawl_task_sets_url_hash_on_article():
     # No URL duplicate, no content duplicate → returns None both times
     mock_scalar = MagicMock()
     mock_scalar.scalar_one_or_none.side_effect = [
-        mock_crawl_task,   # CrawlTask lookup
-        None,              # URL dup check
-        None,              # Content hash dup check
+        mock_crawl_task,  # CrawlTask lookup
+        None,  # URL dup check
+        None,  # Content hash dup check
     ]
     mock_db_session.execute.return_value = mock_scalar
 
@@ -217,7 +218,7 @@ def test_discovery_crawl_task_sets_url_hash_on_article():
 
     with (
         patch("app.workers.tasks.async_session_factory", return_value=mock_session_ctx),
-        patch("app.workers.tasks.url_bloom_filter", mock_bloom),
+        patch("app.services.ingestion_service.url_bloom_filter", mock_bloom),
         patch(
             "app.services.crawler_service.crawler_service.crawl_article",
             AsyncMock(return_value=crawled_data),

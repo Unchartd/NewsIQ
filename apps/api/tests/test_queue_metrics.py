@@ -38,14 +38,21 @@ async def test_collect_queue_metrics(mock_db_session):
 
         # 4. Verify Redis and Celery inspectors were called
         mock_redis_from_url.assert_called_once()
-        mock_redis.llen.assert_called_once_with("celery")
+        assert mock_redis.llen.call_count == 3
+        mock_redis.llen.assert_any_call("celery")
+        mock_redis.llen.assert_any_call("discovery_search")
+        mock_redis.llen.assert_any_call("discovery_crawl")
         mock_celery_inspect.stats.assert_called_once()
         mock_celery_inspect.active.assert_called_once()
 
         # 5. Verify Prometheus Gauge update
-        # 5 waiting + 2 active = 7 total depth
-        mock_gauge.labels.assert_called_once_with(queue_name="celery")
-        mock_gauge.labels.return_value.set.assert_called_once_with(7)
+        assert mock_gauge.labels.call_count == 3
+        mock_gauge.labels.assert_any_call(queue_name="celery")
+        mock_gauge.labels.assert_any_call(queue_name="discovery_search")
+        mock_gauge.labels.assert_any_call(queue_name="discovery_crawl")
+        # For "celery", set(5 waiting + 2 active) = 7
+        mock_gauge.labels.return_value.set.assert_any_call(7)
+        mock_gauge.labels.return_value.set.assert_any_call(5)
 
         # 6. Verify database persistence
         mock_db_session.add.assert_called_once()
@@ -54,6 +61,6 @@ async def test_collect_queue_metrics(mock_db_session):
         # Retrieve the inserted record
         metrics_record = mock_db_session.add.call_args[0][0]
         assert metrics_record.queue_name == "celery"
-        assert metrics_record.waiting_jobs == 5
+        assert metrics_record.waiting_jobs == 15  # 5 + 5 + 5
         assert metrics_record.active_jobs == 2
         assert metrics_record.worker_count == 1

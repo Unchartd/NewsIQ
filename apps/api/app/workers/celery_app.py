@@ -105,6 +105,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.cluster_news_task",
         "schedule": crontab(minute="*/10"),
     },
+    # Discovery grouping — runs every 10 minutes to promote pending articles to READY
+    "discovery-grouping-every-10-minutes": {
+        "task": "app.workers.tasks.discovery_grouping_task",
+        "schedule": crontab(minute="*/10"),
+    },
     # Event extraction — runs every 10 minutes to extract structured events from articles
     "extract-events-every-10-minutes": {
         "task": "app.workers.tasks.extract_events_task",

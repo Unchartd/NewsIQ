@@ -150,14 +150,27 @@ def build_story_knowledge_graph(
 
         # Link raw values/aliases to this node_id for easy lookup when building edges
         entity_id_map[sent.entity_value.lower()] = node_id
-        if sent.canonical_name:
-            entity_id_map[sent.canonical_name.lower()] = node_id
-            for alias in sent.aliases or []:
+        # Duck-typing to support both EntityContext and StoryEntity/CanonicalEntity models
+        c_name = getattr(sent, "canonical_name", None)
+        w_id = getattr(sent, "wikidata_id", None)
+        ent_aliases = getattr(sent, "aliases", None)
+        desc = getattr(sent, "description", None)
+
+        if not c_name and getattr(sent, "canonical_entity", None):
+            c_name = getattr(sent.canonical_entity, "canonical_name", None)
+            w_id = getattr(sent.canonical_entity, "wikidata_id", None)
+            ent_aliases = getattr(sent.canonical_entity, "aliases", None)
+            meta = getattr(sent.canonical_entity, "metadata_payload", None)
+            if isinstance(meta, dict):
+                desc = meta.get("description")
+
+        if c_name:
+            entity_id_map[c_name.lower()] = node_id
+            for alias in ent_aliases or []:
                 entity_id_map[alias.lower()] = node_id
 
-            label = sent.canonical_name
-            wikidata_id = sent.wikidata_id
-            desc = sent.description
+            label = c_name
+            wikidata_id = w_id
         else:
             label = sent.entity_value
             wikidata_id = None

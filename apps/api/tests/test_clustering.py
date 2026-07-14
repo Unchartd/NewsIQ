@@ -14,9 +14,9 @@ from app.services.clustering_service import clustering_service
 @pytest.mark.asyncio
 @patch("app.services.ai_service.ai_service.summarize_story_from_kg")
 @patch("app.services.ner_service_v2.ner_service_v2.extract_entities")
-@patch("app.services.vector_service.vector_service.client")
+@patch("app.services.vector_service.AsyncQdrantClient")
 async def test_run_batch_clustering(
-    mock_qdrant_client, mock_extract_entities, mock_summarize_story, mock_db_session
+    mock_qdrant_client_class, mock_extract_entities, mock_summarize_story, mock_db_session
 ):
     """Verify that batch clustering groups articles, creates stories, and runs AI/NER synthesis."""
     # 1. Setup mock unclustered articles
@@ -91,7 +91,10 @@ async def test_run_batch_clustering(
     # Mock Qdrant retrieve returning vectors for our two articles
     mock_point_1 = MagicMock(id=str(article_id_1), vector=[0.1] * EMBEDDING_DIM)
     mock_point_2 = MagicMock(id=str(article_id_2), vector=[0.11] * EMBEDDING_DIM)
+    mock_qdrant_client = mock_qdrant_client_class.return_value
     mock_qdrant_client.retrieve = AsyncMock(return_value=[mock_point_1, mock_point_2])
+    # Mock collection_exists to return True
+    mock_qdrant_client.collection_exists = AsyncMock(return_value=True)
 
     # Mock HDBSCAN return labels
     # We patch the HDBSCAN fit_predict method to group them into cluster label 0
@@ -117,9 +120,21 @@ async def test_run_batch_clustering(
         ]
 
         # Call batch clustering
-        # We patch get_or_create_category to bypass category DB creation
-        with patch.object(
-            clustering_service, "get_or_create_category", AsyncMock(return_value=uuid.uuid4())
+        # We patch get_or_create_category to bypass category DB creation and mock LLM-dependent services
+        from app.services.entity_linker import entity_linker
+        from app.services.story_synthesis_service import story_synthesis_orchestrator
+
+        with (
+            patch.object(
+                clustering_service, "get_or_create_category", AsyncMock(return_value=uuid.uuid4())
+            ),
+            patch.object(
+                entity_linker, "link_entity", AsyncMock(return_value=MagicMock(id=uuid.uuid4()))
+            ),
+            patch.object(
+                story_synthesis_orchestrator, "synthesize_story", AsyncMock()
+            ),
+            patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
         ):
             stories_created = await clustering_service.run_batch_clustering(mock_db_session)
 

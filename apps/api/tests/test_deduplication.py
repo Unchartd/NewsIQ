@@ -58,12 +58,12 @@ def test_compute_fingerprints_none_body():
 
     # The hash must NOT contain the string "None" — verify by hashing known good value
     import hashlib
+
     bad_payload = "some title\n\nNone"
     bad_hash = hashlib.sha256(bad_payload.encode("utf-8")).hexdigest()
     assert fp_none["content_hash"] != bad_hash, (
         "content_hash must not be derived from the string 'None'"
     )
-
 
 
 @pytest.mark.asyncio

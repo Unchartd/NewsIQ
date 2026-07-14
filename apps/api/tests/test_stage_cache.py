@@ -73,6 +73,17 @@ async def test_stage_level_caching_flow(mock_extract_entities, mock_summarize_kg
         patch.object(contradiction_service, "detect_and_save_contradictions", mock_detect),
         patch.object(source_comparison_service, "compare_sources_and_save", mock_compare),
         patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
+        patch(
+            "app.services.story_synthesis_service.evaluate_story_quality",
+            AsyncMock(
+                return_value=MagicMock(
+                    action="publish",
+                    score=1.0,
+                    explanation="Passed mock",
+                    hallucination_detected=False,
+                )
+            ),
+        ),
     ):
         # Clear Redis keys first to ensure clean state
         article_inputs = [f"{art.id}:{art.title or ''}:{art.description or ''}"]

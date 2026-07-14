@@ -1460,56 +1460,51 @@ class ClusteringService:
             newsiq_discovery_clusters_total.inc()
 
             story_id = uuid.uuid4()
-            now = _now()
-            story = Story(
-                id=story_id,
-                story_status="pending",
-                first_seen_at=min(
-                    (a.published_at for a in art_list if a.published_at), default=now
-                ),
-                trend_score=1.0,
-                created_at=now,
-                updated_at=now,
-                canonical_event_id=event_identity_service.generate_temporary_id(),
-            )
-            session.add(story)
-
-            # Initialize metrics
-            metrics = StoryMetric(story_id=story_id, views=0, bookmarks=0, shares=0, clicks=0)
-            session.add(metrics)
-
-            # Link articles and update DiscoveryQueue state
-            for art in art_list:
-                link = StoryArticle(story_id=story_id, article_id=art.id)
-                session.add(link)
-                if art.id in dq_items:
-                    dq_items[art.id].state = DiscoveryState.CLUSTER_CREATED
-
-            await session.commit()
-
-            # Populate story summaries, timeline, differences, and category
-            # Only run synthesis if the cluster meets the minimum quality threshold.
-            if len(art_list) < _MIN_SYNTHESIS_ARTICLES:
-                logger.info(
-                    "Cluster for story %s has only %d article(s) — deferring synthesis "
-                    "until more articles join via incremental merge.",
-                    story_id,
-                    len(art_list),
-                )
-                stories_created += 1
-                continue
-
             try:
-                await self.generate_story_content(story, art_list, session)
-                await self.compute_trending_score(story, session)
+                async with session.begin_nested():
+                    now = _now()
+                    story = Story(
+                        id=story_id,
+                        story_status="pending",
+                        first_seen_at=min(
+                            (a.published_at for a in art_list if a.published_at), default=now
+                        ),
+                        trend_score=1.0,
+                        created_at=now,
+                        updated_at=now,
+                        canonical_event_id=event_identity_service.generate_temporary_id(),
+                    )
+                    session.add(story)
+
+                    # Initialize metrics
+                    metrics = StoryMetric(
+                        story_id=story_id, views=0, bookmarks=0, shares=0, clicks=0
+                    )
+                    session.add(metrics)
+
+                    # Link articles and update DiscoveryQueue state
+                    for art in art_list:
+                        link = StoryArticle(story_id=story_id, article_id=art.id)
+                        session.add(link)
+                        if art.id in dq_items:
+                            dq_items[art.id].state = DiscoveryState.CLUSTER_CREATED
+
+                    # Populate story summaries, timeline, differences, and category
+                    # Only run synthesis if the cluster meets the minimum quality threshold.
+                    if len(art_list) < _MIN_SYNTHESIS_ARTICLES:
+                        logger.info(
+                            "Cluster for story %s has only %d article(s) — deferring synthesis "
+                            "until more articles join via incremental merge.",
+                            story_id,
+                            len(art_list),
+                        )
+                    else:
+                        await self.generate_story_content(story, art_list, session)
+                        await self.compute_trending_score(story, session)
+
                 stories_created += 1
             except Exception as e:
-                logger.error("Failed to generate content for story cluster %s: %s", story_id, e)
-                try:
-                    await session.rollback()
-                except Exception as rollback_err:
-                    logger.error("Failed to rollback session: %s", rollback_err)
-
+                logger.error("Failed to process story cluster %s: %s", story_id, e)
                 try:
                     from app.core.failure_recorder import record_pipeline_failure
 
@@ -1524,6 +1519,7 @@ class ClusteringService:
                         "Failed to record pipeline failure for story %s: %s", story_id, rec_err
                     )
 
+        await session.commit()
         return stories_created
 
     async def compute_trending_score(self, story: Story, session: AsyncSession) -> float:

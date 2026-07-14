@@ -135,6 +135,17 @@ async def test_golden_stories_evaluation(mock_db_session):
                     AsyncMock(return_value=([], [])),
                 ),
                 patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
+                patch(
+                    "app.services.story_synthesis_service.evaluate_story_quality",
+                    AsyncMock(
+                        return_value=MagicMock(
+                            action="publish",
+                            score=1.0,
+                            explanation="Passed mock",
+                            hallucination_detected=False,
+                        )
+                    ),
+                ),
             ):
                 await clustering_service.generate_story_content(story, articles, mock_db_session)
                 duration = time.time() - start_time
