@@ -191,3 +191,47 @@ newsiq_discovery_crawls_failed = Counter(
     "Total number of failed discovery crawls.",
     ["reason"],
 )
+
+# ── Crawler Hardening Metrics (Phase 2A) ──────────────────────────────────────
+
+newsiq_crawler_http_success_total = Counter(
+    "newsiq_crawler_http_success_total",
+    "Total number of successful HTTP crawler fetches.",
+)
+
+newsiq_crawler_http_failure_total = Counter(
+    "newsiq_crawler_http_failure_total",
+    "Total number of failed HTTP crawler fetches.",
+    ["reason"],  # status code or exception class name
+)
+
+newsiq_crawler_bot_block_total = Counter(
+    "newsiq_crawler_bot_block_total",
+    "Total number of times a crawl was blocked by anti-bot protections.",
+)
+
+newsiq_crawler_timeout_total = Counter(
+    "newsiq_crawler_timeout_total",
+    "Total number of times a crawl timed out.",
+)
+
+newsiq_crawler_empty_html_total = Counter(
+    "newsiq_crawler_empty_html_total",
+    "Total number of times a crawl returned empty HTML.",
+)
+
+newsiq_crawler_extraction_success_total = Counter(
+    "newsiq_crawler_extraction_success_total",
+    "Total number of successful text extractions.",
+    ["extractor"],  # e.g., newspaper, trafilatura, readability, custom-bs4
+)
+
+newsiq_crawler_extraction_failure_total = Counter(
+    "newsiq_crawler_extraction_failure_total",
+    "Total number of failed text extractions.",
+)
+
+newsiq_crawler_persisted_total = Counter(
+    "newsiq_crawler_persisted_total",
+    "Total number of crawled articles successfully persisted to the database.",
+)

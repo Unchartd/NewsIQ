@@ -97,11 +97,12 @@ async def test_crawl_article_fallback_chain():
     url = "https://example.com/fallback-test"
     sample_html = "<html><body><p>Substantial text that is not captured by newspaper but will be captured by secondary fallback, let's write at least 150 characters here to make it pass the length requirements.</p></body></html>"
 
-    with patch.object(crawler_service, "fetch_html", return_value=sample_html):
+    with patch.object(crawler_service, "fetch_html", return_value=(sample_html, {"fetch_method": "test"})):
         # 1. Newspaper fails (returns None), Trafilatura succeeds
         with patch.object(crawler_service, "_extract_newspaper", return_value=None):
             result = await crawler_service.crawl_article(url)
             assert result is not None
+            assert result["success"] is True
             assert result["extractor"] == "trafilatura"
 
         # 2. Both Newspaper and Trafilatura fail, Readability succeeds
@@ -111,6 +112,7 @@ async def test_crawl_article_fallback_chain():
         ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
+            assert result["success"] is True
             assert result["extractor"] == "readability-lxml"
 
         # 3. All primary fail, custom-bs4 succeeds
@@ -121,6 +123,7 @@ async def test_crawl_article_fallback_chain():
         ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
+            assert result["success"] is True
             assert result["extractor"] == "custom-bs4"
 
         # 4. All fail completely (including custom-bs4 length check)
@@ -131,4 +134,33 @@ async def test_crawl_article_fallback_chain():
             patch.object(crawler_service, "_extract_custom_cleaner", return_value=None),
         ):
             result = await crawler_service.crawl_article(url)
-            assert result is None
+            assert result is not None
+            assert result["success"] is False
+            assert result["diagnostics"]["failure_reason"] == "EXTRACTION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_crawl_article_stealth_fallback():
+    """Verify that when standard httpx fails, the crawler successfully falls back to curl-cffi."""
+    import httpx
+    url = "https://example.com/stealth-test"
+    sample_html = "<html><body><p>Stealth fallback content to extract, let's write at least 150 characters here so that the minimum length check passes successfully and newspaper4k parses it.</p></body></html>"
+
+    class MockCurlResponse:
+        def __init__(self, text, status_code=200):
+            self.text = text
+            self.status_code = status_code
+        def raise_for_status(self):
+            pass
+
+    # We patch httpx.AsyncClient.get to raise a TimeoutException
+    # We patch curl_cffi AsyncSession.get to return MockCurlResponse
+    with (
+        patch("httpx.AsyncClient.get", side_effect=httpx.TimeoutException("Mocked timeout")),
+        patch("curl_cffi.requests.AsyncSession.get", return_value=MockCurlResponse(sample_html)),
+    ):
+        result = await crawler_service.crawl_article(url)
+        assert result["success"] is True
+        assert result["diagnostics"]["fetch_method"] == "curl_cffi_chrome"
+        assert result["diagnostics"]["failure_reason"] is None
+        assert "Stealth fallback content" in result["content"]

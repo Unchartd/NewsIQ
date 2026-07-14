@@ -1218,13 +1218,20 @@ def discovery_crawl_task(
                 logger.warning("Failed to increment download budget counter: %s", e)
 
             # 5. Execute HTTP crawl
+            crawled = None
             try:
                 crawled = await crawler_service.crawl_article(crawl_task.url)
-                if not crawled or not crawled.get("content"):
-                    raise ValueError("Crawl returned empty content")
+                if not crawled or not crawled.get("success") or not crawled.get("content"):
+                    diagnostics = crawled.get("diagnostics") if crawled else {}
+                    failure_reason = diagnostics.get("failure_reason") or "EMPTY_CONTENT"
+                    raise ValueError(f"Crawl failed: {failure_reason}")
                 
-                from app.core.metrics import newsiq_discovery_crawls_succeeded
+                from app.core.metrics import (
+                    newsiq_discovery_crawls_succeeded,
+                    newsiq_crawler_persisted_total,
+                )
                 newsiq_discovery_crawls_succeeded.inc()
+                newsiq_crawler_persisted_total.inc()
             except Exception as e:
                 logger.warning(
                     "Failed to crawl URL %s for CrawlTask %s: %s",
@@ -1232,9 +1239,12 @@ def discovery_crawl_task(
                     crawl_task_id_str,
                     e,
                 )
+                
+                diagnostics = crawled.get("diagnostics") if (crawled and isinstance(crawled, dict)) else {}
+                failure_reason = diagnostics.get("failure_reason") or "FAILED"
+                
                 from app.core.metrics import newsiq_discovery_crawls_failed
-                err_clean = type(e).__name__
-                newsiq_discovery_crawls_failed.labels(reason=err_clean).inc()
+                newsiq_discovery_crawls_failed.labels(reason=failure_reason).inc()
                 
                 crawl_task.retry_count += 1
                 if crawl_task.retry_count < settings.DISCOVERY_MAX_RETRIES:
@@ -1243,11 +1253,11 @@ def discovery_crawl_task(
                         minutes=2**crawl_task.retry_count
                     )
                     crawl_task.outcome = "RETRYING"
-                    crawl_task.last_error = f"Crawl failed: {str(e)}"
+                    crawl_task.last_error = f"Crawl failed: {failure_reason} (method: {diagnostics.get('fetch_method')}, code: {diagnostics.get('status_code')})"
                 else:
                     crawl_task.status = CrawlTaskState.FAILED
-                    crawl_task.outcome = "FAILED"
-                    crawl_task.last_error = f"Crawl failed (max retries exceeded): {str(e)}"
+                    crawl_task.outcome = failure_reason
+                    crawl_task.last_error = f"Crawl failed (max retries exceeded): {failure_reason} (method: {diagnostics.get('fetch_method')}, code: {diagnostics.get('status_code')})"
                 await session.commit()
                 await _check_discovery_task_completion(crawl_task.discovery_task_id, session)
                 await session.commit()
