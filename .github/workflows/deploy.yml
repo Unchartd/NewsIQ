@@ -322,6 +322,12 @@ jobs:
             echo "=== Restarting services ==="
             NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" docker compose --env-file .env.production --profile prod up -d --no-build
 
+            sleep 5
+            echo "=== Container Status ==="
+            docker compose --env-file .env.production --profile prod ps
+            echo "=== Celery Worker Logs ==="
+            docker compose --env-file .env.production --profile prod logs celery-worker --no-color --tail=100
+
             # Wait for Meilisearch to be healthy
             echo "=== Waiting for Meilisearch (http://localhost:7700/health) ==="
             for i in $(seq 1 24); do
