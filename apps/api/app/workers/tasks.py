@@ -1017,9 +1017,17 @@ def discovery_search_task(
             )
             await session.flush()
 
-            # Increment search count in Redis
+            # BUG-04: Use atomic INCR instead of non-atomic SET to prevent concurrent
+            # workers from losing increments (read-modify-write race condition).
             try:
-                await cache_service.set(budget_key, str(current_searches + 1), ttl=36 * 3600)
+                redis_client = cache_service._redis
+                if redis_client:
+                    new_count = await redis_client.incr(budget_key)
+                    if new_count == 1:
+                        # Key was just created; set expiry (36h covers the rest of today + buffer)
+                        await redis_client.expire(budget_key, 36 * 3600)
+                else:
+                    await cache_service.set(budget_key, str(current_searches + 1), ttl=36 * 3600)
             except Exception as e:
                 logger.warning("Failed to increment search budget counter: %s", e)
 
@@ -1224,9 +1232,16 @@ def discovery_crawl_task(
             crawl_task.crawl_started_at = datetime.now(UTC).replace(tzinfo=None)
             await session.flush()
 
-            # Increment downloads count in Redis
+            # BUG-04: Use atomic INCR instead of non-atomic SET to prevent concurrent
+            # workers from losing increments (read-modify-write race condition).
             try:
-                await cache_service.set(budget_key, str(current_downloads + 1), ttl=36 * 3600)
+                redis_client = cache_service._redis
+                if redis_client:
+                    new_dl_count = await redis_client.incr(budget_key)
+                    if new_dl_count == 1:
+                        await redis_client.expire(budget_key, 36 * 3600)
+                else:
+                    await cache_service.set(budget_key, str(current_downloads + 1), ttl=36 * 3600)
             except Exception as e:
                 logger.warning("Failed to increment download budget counter: %s", e)
 
@@ -1295,8 +1310,16 @@ def discovery_crawl_task(
                 return
 
             title = crawled.get("title") or "Untitled Discovered Article"
-            content = crawled.get("content")
-            fingerprints = compute_fingerprints(crawl_task.url, title, content)
+            content = crawled.get("content") or ""
+
+            # BUG-02: normalize inputs to match the RSS path so cross-path content_hash
+            # values are identical — prevents the same article being stored twice when
+            # it arrives via both RSS and discovery.
+            fingerprints = compute_fingerprints(
+                crawl_task.url,
+                title.lower().strip(),
+                content.lower().strip(),
+            )
             content_hash = fingerprints["content_hash"]
 
             dup_content_stmt = select(Article).where(Article.content_hash == content_hash)
@@ -1332,14 +1355,18 @@ def discovery_crawl_task(
                 source_id=source.id if source else None,
                 title=title,
                 description=crawled.get("description") or title,
-                content=content,
+                content=content or None,
                 url=crawl_task.url,
                 author=crawled.get("author"),
                 language="en",
                 image_url=crawled.get("image_url"),
                 published_at=crawled.get("published_at") or datetime.now(UTC).replace(tzinfo=None),
                 crawled_at=datetime.now(UTC).replace(tzinfo=None),
+                # BUG-01: url_hash must be set so bloom_filter.rebuild() includes
+                # discovered articles (it queries WHERE url_hash IS NOT NULL).
+                url_hash=crawl_task.url_hash,
                 content_hash=content_hash,
+                fingerprint_version=1,
                 embedding_status="pending",
                 created_at=datetime.now(UTC).replace(tzinfo=None),
             )
@@ -1405,7 +1432,9 @@ def poll_discovery_retries_task() -> dict[str, int]:
             tasks = res.scalars().all()
             for t in tasks:
                 t.queued_at = now
-                discovery_search_task.delay(str(t.id))
+                # BUG-06: Retried tasks lose run_id/trace_id — pass None explicitly to make
+                # the absence of trace context intentional and visible in call signatures.
+                discovery_search_task.delay(str(t.id), run_id=None, trace_id=None)
                 counts["search_retries"] += 1
 
             # 2. Poll CrawlTasks that are due for retry
@@ -1450,16 +1479,26 @@ def cleanup_discovery_tasks_task() -> dict[str, int]:
         boundary_expired = now - timedelta(days=7)
 
         async with async_session_factory() as session:
+            # BUG-07: Use DiscoveryTaskState enum members (not raw strings) for typo-safety
+            # and resilience to future enum refactors.
+            from app.models.models import DiscoveryTaskState
+
             # 1. Complete tasks
             stmt_complete = delete(DiscoveryTask).where(
-                DiscoveryTask.status == "complete", DiscoveryTask.created_at <= boundary_complete
+                DiscoveryTask.status == DiscoveryTaskState.COMPLETE,
+                DiscoveryTask.created_at <= boundary_complete,
             )
             res_complete = await session.execute(stmt_complete)
             count_complete = getattr(res_complete, "rowcount", 0) or 0
 
             # 2. Failed tasks
             stmt_failed = delete(DiscoveryTask).where(
-                DiscoveryTask.status.in_(["search_failed", "crawl_failed"]),
+                DiscoveryTask.status.in_(
+                    [
+                        DiscoveryTaskState.SEARCH_FAILED,
+                        DiscoveryTaskState.CRAWL_FAILED,
+                    ]
+                ),
                 DiscoveryTask.created_at <= boundary_failed,
             )
             res_failed = await session.execute(stmt_failed)
@@ -1467,7 +1506,8 @@ def cleanup_discovery_tasks_task() -> dict[str, int]:
 
             # 3. Expired tasks
             stmt_expired = delete(DiscoveryTask).where(
-                DiscoveryTask.status == "expired", DiscoveryTask.created_at <= boundary_expired
+                DiscoveryTask.status == DiscoveryTaskState.EXPIRED,
+                DiscoveryTask.created_at <= boundary_expired,
             )
             res_expired = await session.execute(stmt_expired)
             count_expired = getattr(res_expired, "rowcount", 0) or 0
