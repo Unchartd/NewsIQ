@@ -213,6 +213,60 @@ async def resume_pipeline(
     return {"message": "Pipeline resumed successfully", "paused": False}
 
 
+@router.post("/pipeline/trigger")
+async def trigger_pipeline(
+    force: bool = False,
+    _admin: User = Depends(require_admin),
+):
+    """Manually trigger a full pipeline cycle (ingestion + clustering).
+
+    Args:
+        force: If True, bypasses the pipeline_paused flag and triggers even
+               when the pipeline is suspended. Defaults to False.
+
+    Returns dict with queued task IDs and whether the pipeline was paused.
+    """
+    from app.services.cache_service import cache_service
+    from app.workers.tasks import cluster_news_task, ingest_news_task
+
+    paused = bool(await cache_service.get("pipeline_paused"))
+
+    if paused and not force:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Pipeline is currently paused. Use force=true to trigger anyway.",
+                "paused": True,
+            },
+        )
+
+    if force and paused:
+        # Temporarily clear the pause flag so the enqueued tasks pass the
+        # is_pipeline_paused() guard, then immediately re-set it so that
+        # Celery Beat scheduled tasks remain blocked.
+        pause_ttl = await cache_service._redis.ttl("pipeline_paused") if cache_service._redis else -1
+        await cache_service.delete("pipeline_paused")
+        ingest_task = ingest_news_task.delay()
+        cluster_task = cluster_news_task.delay()
+        # Re-set the pause flag with remaining TTL (or 1 year for manual pauses)
+        restore_ttl = pause_ttl if pause_ttl > 0 else 86400 * 365
+        await cache_service.set("pipeline_paused", True, ttl=restore_ttl)
+    else:
+        ingest_task = ingest_news_task.delay()
+        cluster_task = cluster_news_task.delay()
+
+    return {
+        "message": "Pipeline triggered successfully.",
+        "paused": paused,
+        "forced": force and paused,
+        "tasks": {
+            "ingest": str(ingest_task.id),
+            "cluster": str(cluster_task.id),
+        },
+    }
+
+
+
 @router.get("/pipeline/status", response_model=PipelineStatusResponse)
 async def pipeline_status(
     run_id: uuid.UUID | None = None,

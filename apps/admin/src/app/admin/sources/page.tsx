@@ -45,9 +45,18 @@ export default function SourcesPage() {
   });
 
   const triggerMutation = useMutation({
-    mutationFn: async () => { await apiClient.post("/sources/trigger-ingestion"); },
-    onSuccess: () => toast.success("Ingestion pipeline queued!"),
-    onError: () => toast.error("Failed to trigger ingestion."),
+    mutationFn: async () => {
+      const res = await apiClient.post("/admin/pipeline/trigger");
+      return res.data;
+    },
+    onSuccess: () => toast.success("Pipeline triggered — ingest + cluster queued!"),
+    onError: (err: any) => {
+      if (err.response?.status === 409) {
+        toast.warning("Pipeline is paused. Resume it first or use Force Trigger on the Pipeline page.");
+      } else {
+        toast.error("Failed to trigger pipeline.");
+      }
+    },
   });
 
   return (

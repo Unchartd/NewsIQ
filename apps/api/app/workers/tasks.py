@@ -61,7 +61,7 @@ async def _pause_pipeline_for_quota_cooldown(stage: str) -> None:
     try:
         from app.services.cache_service import cache_service
 
-        await cache_service.set("pipeline_paused", "True", ttl=_QUOTA_COOLDOWN_SECONDS)
+        await cache_service.set("pipeline_paused", True, ttl=_QUOTA_COOLDOWN_SECONDS)
         logger.warning(
             "Pipeline auto-paused for %d seconds due to quota exhaustion at stage '%s'. "
             "Will auto-resume after TTL expires.",

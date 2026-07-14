@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import { useSSE } from "@/lib/useSSE";
 import { useState, useEffect, useRef } from "react";
@@ -383,34 +383,59 @@ export default function PipelinePage() {
     refetchInterval: 10000, // refresh every 10s
   });
 
+  const queryClient = useQueryClient();
+
   const togglePauseMutation = useMutation({
     mutationFn: async () => {
       const isPaused = !!pausedData?.paused;
       const endpoint = isPaused ? "/admin/pipeline/resume" : "/admin/pipeline/pause";
+      // Optimistic update — flip the state immediately before the server responds
+      queryClient.setQueryData(["pipeline-paused"], { paused: !isPaused });
       const res = await apiClient.post(endpoint);
       return res.data;
     },
     onSuccess: (resData) => {
       toast.success(resData.message);
+      // Confirm with server state after optimistic update
       refetchPaused();
     },
     onError: () => {
+      // Revert optimistic update on failure
+      refetchPaused();
       toast.error("Failed to update pipeline status.");
     },
   });
 
   const triggerMutation = useMutation({
-    mutationFn: async () => {
-      await apiClient.post("/sources/trigger-ingestion");
+    mutationFn: async ({ force = false }: { force?: boolean } = {}) => {
+      const res = await apiClient.post(
+        `/admin/pipeline/trigger${force ? "?force=true" : ""}`
+      );
+      return res.data;
     },
-    onSuccess: () => {
-      toast.success("Ingestion pipeline triggered!");
+    onSuccess: (resData) => {
+      if (resData.forced) {
+        toast.success("Pipeline force-triggered while paused — ingest + cluster queued.");
+      } else {
+        toast.success("Pipeline triggered — ingest + cluster tasks queued!");
+      }
       setTimeout(() => {
         refetch();
         refetchHistory();
-      }, 1000);
+      }, 1500);
     },
-    onError: () => toast.error("Failed to trigger ingestion."),
+    onError: (err: any) => {
+      const detail = err.response?.data?.detail;
+      if (err.response?.status === 409 && detail?.paused) {
+        // Pipeline is paused — offer a force-trigger
+        toast.warning(
+          "Pipeline is paused. Click \"Force Trigger\" in the warning banner to override.",
+          { duration: 6000 }
+        );
+      } else {
+        toast.error("Failed to trigger pipeline.");
+      }
+    },
   });
 
   const replayStageMutation = useMutation({
@@ -560,7 +585,7 @@ export default function PipelinePage() {
           <button
             id="pipeline-trigger-btn"
             onClick={() => triggerMutation.mutate()}
-            disabled={triggerMutation.isPending || !!selectedRunId}
+            disabled={triggerMutation.isPending}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary/95 text-white text-xs font-semibold transition-all shadow-lg shadow-primary/20 disabled:opacity-40"
           >
             {triggerMutation.isPending ? (
@@ -568,17 +593,31 @@ export default function PipelinePage() {
             ) : (
               <Play className="w-3.5 h-3.5" />
             )}
-            Trigger Ingestion
+            Run Pipeline
           </button>
         </div>
       </div>
 
       {pausedData?.paused && (
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-          <div>
-            <span className="font-semibold text-white">Pipeline suspended:</span> Background ingestion, embedding, event extraction, and clustering tasks are currently paused.
+        <div className="flex items-center justify-between gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-semibold text-white">Pipeline suspended:</span> Background ingestion, embedding, event extraction, and clustering tasks are currently paused.
+            </div>
           </div>
+          <button
+            onClick={() => triggerMutation.mutate({ force: true })}
+            disabled={triggerMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-all shrink-0 disabled:opacity-40"
+          >
+            {triggerMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Play className="w-3 h-3" />
+            )}
+            Force Trigger
+          </button>
         </div>
       )}
 
