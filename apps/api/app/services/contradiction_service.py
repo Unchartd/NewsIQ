@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.models.models import Article, ArticleEvent, StoryArticle, StoryContradiction, Source
+from app.models.models import Article, ArticleEvent, Source, StoryArticle, StoryContradiction
 from app.schemas.synthesis_context import ArticleContext, EventContext
 
 logger = logging.getLogger(__name__)
@@ -416,10 +416,14 @@ class ContradictionService:
             return []
 
         # Build source name lookup map explicitly to avoid lazy loading
-        source_ids = list({art.source_id for art in [new_article] + existing_articles if art.source_id})
+        source_ids = list(
+            {art.source_id for art in [new_article] + existing_articles if art.source_id}
+        )
         source_name_by_id = {}
         if source_ids:
-            src_res = await session.execute(select(Source.id, Source.name).where(Source.id.in_(source_ids)))
+            src_res = await session.execute(
+                select(Source.id, Source.name).where(Source.id.in_(source_ids))
+            )
             source_name_by_id = {sid: name for sid, name in src_res.all()}
 
         # Build context

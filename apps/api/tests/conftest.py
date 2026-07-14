@@ -53,6 +53,7 @@ def mock_trace_persistence():
 def initialize_test_prompt_repository():
     """Ensure PromptRepository is initialized for all tests."""
     from app.ai.prompts import repository as repo_module
+
     if repo_module.prompt_repository is None:
         from app.ai.prompts.compiler import PromptCompiler
         from app.ai.prompts.loader import PromptLoader
@@ -63,4 +64,3 @@ def initialize_test_prompt_repository():
         compiler = PromptCompiler()
         compiled = compiler.compile_all(raw)
         repo_module.prompt_repository = PromptRepository(compiled)
-

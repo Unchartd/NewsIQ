@@ -125,7 +125,9 @@ async def test_generate_story_content_end_to_end_synthesis(
         elif "story" in stmt_str:
             res.scalar_one_or_none.return_value = story
         elif "category" in stmt_str or "categories" in stmt_str:
-            res.scalar_one_or_none.return_value = Category(id=uuid.uuid4(), slug="science", name="Science")
+            res.scalar_one_or_none.return_value = Category(
+                id=uuid.uuid4(), slug="science", name="Science"
+            )
         return res
 
     mock_db_session.execute.side_effect = mock_execute

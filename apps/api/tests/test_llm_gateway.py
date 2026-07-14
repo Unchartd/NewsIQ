@@ -149,6 +149,7 @@ def test_cost_tracker():
 @patch("app.llm_gateway.request_manager.track_llm_call")
 async def test_request_manager_fallback_execution(mock_track_call):
     from app.core.config import settings
+
     with patch.object(settings, "USE_NEW_GATEWAY", False):
         # Mock database trace context manager
         mock_trace = MagicMock()
@@ -173,7 +174,10 @@ async def test_request_manager_fallback_execution(mock_track_call):
         # Mock the providers to fail for Gemini, and succeed for Groq/OpenAI fallback
         gemini_client = AsyncMock()
         gemini_client.execute.return_value = GatewayResponse(
-            content="", provider="google", model="gemini-2.5-flash-lite", error="429 Resource Exhausted"
+            content="",
+            provider="google",
+            model="gemini-2.5-flash-lite",
+            error="429 Resource Exhausted",
         )
 
         groq_client = AsyncMock()

@@ -1,7 +1,8 @@
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
-import uuid
 from typing import Any
+
 
 @dataclass(frozen=True)
 class SourceContext:
@@ -9,6 +10,7 @@ class SourceContext:
     name: str
     website_url: str | None
     country_code: str | None
+
 
 @dataclass(frozen=True)
 class ArticleContext:
@@ -19,6 +21,7 @@ class ArticleContext:
     content: str | None
     url: str | None
     published_at: datetime | None
+
 
 @dataclass(frozen=True)
 class EventContext:
@@ -36,6 +39,7 @@ class EventContext:
     event_fingerprint: str | None
     created_at: datetime | None
 
+
 @dataclass(frozen=True)
 class EntityContext:
     id: uuid.UUID
@@ -47,6 +51,7 @@ class EntityContext:
     wikidata_id: str | None
     aliases: list[str] | None
     description: str | None
+
 
 @dataclass(frozen=True)
 class StoryContext:

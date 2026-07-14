@@ -1043,6 +1043,7 @@ def discovery_search_task(
 
                 task.search_completed_at = datetime.now(UTC).replace(tzinfo=None)
                 from app.core.metrics import newsiq_discovery_searches_succeeded
+
                 newsiq_discovery_searches_succeeded.inc()
 
             except Exception as e:
@@ -1050,6 +1051,7 @@ def discovery_search_task(
                     "Discovery search provider failed for task %s: %s", discovery_task_id_str, e
                 )
                 from app.core.metrics import newsiq_discovery_searches_failed
+
                 newsiq_discovery_searches_failed.inc()
                 task.retry_count += 1
                 if task.retry_count < settings.DISCOVERY_MAX_RETRIES:
@@ -1083,9 +1085,13 @@ def discovery_search_task(
             try:
                 resolve_tasks = [provider.resolve_url(url) for url in discovered_urls]
                 resolved_urls = await asyncio.gather(*resolve_tasks)
-                
+
                 # Increment Prometheus metrics for decoded URLs
-                from app.core.metrics import newsiq_discovery_urls_decoded, newsiq_discovery_urls_decode_failed
+                from app.core.metrics import (
+                    newsiq_discovery_urls_decode_failed,
+                    newsiq_discovery_urls_decoded,
+                )
+
                 for orig_url, res_url in zip(discovered_urls, resolved_urls):
                     if "news.google.com" in orig_url:
                         if orig_url != res_url:
@@ -1225,11 +1231,12 @@ def discovery_crawl_task(
                     diagnostics = crawled.get("diagnostics") if crawled else {}
                     failure_reason = diagnostics.get("failure_reason") or "EMPTY_CONTENT"
                     raise ValueError(f"Crawl failed: {failure_reason}")
-                
+
                 from app.core.metrics import (
-                    newsiq_discovery_crawls_succeeded,
                     newsiq_crawler_persisted_total,
+                    newsiq_discovery_crawls_succeeded,
                 )
+
                 newsiq_discovery_crawls_succeeded.inc()
                 newsiq_crawler_persisted_total.inc()
             except Exception as e:
@@ -1239,13 +1246,16 @@ def discovery_crawl_task(
                     crawl_task_id_str,
                     e,
                 )
-                
-                diagnostics = crawled.get("diagnostics") if (crawled and isinstance(crawled, dict)) else {}
+
+                diagnostics = (
+                    crawled.get("diagnostics") if (crawled and isinstance(crawled, dict)) else {}
+                )
                 failure_reason = diagnostics.get("failure_reason") or "FAILED"
-                
+
                 from app.core.metrics import newsiq_discovery_crawls_failed
+
                 newsiq_discovery_crawls_failed.labels(reason=failure_reason).inc()
-                
+
                 crawl_task.retry_count += 1
                 if crawl_task.retry_count < settings.DISCOVERY_MAX_RETRIES:
                     crawl_task.status = CrawlTaskState.RETRYING

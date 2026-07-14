@@ -9,8 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.models.models import Article, ArticleEvent, Source, StoryEntity
-from app.schemas.synthesis_context import ArticleContext, EventContext, EntityContext, SourceContext
+from app.schemas.synthesis_context import ArticleContext, EntityContext, EventContext, SourceContext
 
 logger = logging.getLogger(__name__)
 

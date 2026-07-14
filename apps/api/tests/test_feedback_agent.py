@@ -52,7 +52,9 @@ async def test_check_clustering_similarity():
         str(art2_id): [1.0, 0.0, 0.0],
     }
 
-    with patch("app.services.vector_service.vector_service.retrieve_vectors", new_callable=AsyncMock) as mock_retrieve:
+    with patch(
+        "app.services.vector_service.vector_service.retrieve_vectors", new_callable=AsyncMock
+    ) as mock_retrieve:
         mock_retrieve.return_value = mock_vectors
         sim = await check_clustering_similarity(articles)
         assert abs(sim - 1.0) < 0.001
@@ -63,7 +65,9 @@ async def test_check_clustering_similarity():
         str(art2_id): [0.707, 0.707, 0.0],  # 45 deg = 0.707 similarity
     }
 
-    with patch("app.services.vector_service.vector_service.retrieve_vectors", new_callable=AsyncMock) as mock_retrieve:
+    with patch(
+        "app.services.vector_service.vector_service.retrieve_vectors", new_callable=AsyncMock
+    ) as mock_retrieve:
         mock_retrieve.return_value = mock_vectors_partial
         sim = await check_clustering_similarity(articles)
         assert abs(sim - 0.707) < 0.01
@@ -102,7 +106,11 @@ async def test_evaluate_story_quality_programmatic_pass():
     articles = []
     for _ in range(4):
         art = Article(id=uuid.uuid4(), source_id=uuid.uuid4())
-        art.events = [ArticleEvent(id=uuid.uuid4(), article_id=art.id, event_fingerprint="evt-1", event_type="test")]
+        art.events = [
+            ArticleEvent(
+                id=uuid.uuid4(), article_id=art.id, event_fingerprint="evt-1", event_type="test"
+            )
+        ]
         articles.append(art)
 
     kg = {
@@ -117,7 +125,9 @@ async def test_evaluate_story_quality_programmatic_pass():
 
     summary = "Alice travelled to Paris for vacation."
 
-    with patch("app.services.vector_service.vector_service.retrieve_vectors", new_callable=AsyncMock) as mock_retrieve:
+    with patch(
+        "app.services.vector_service.vector_service.retrieve_vectors", new_callable=AsyncMock
+    ) as mock_retrieve:
         mock_retrieve.return_value = mock_vectors
 
         # Test non-high-stakes category (e.g. sports) that should pass programmatically
@@ -129,7 +139,7 @@ async def test_evaluate_story_quality_programmatic_pass():
             timeline=[],
             summary_text=summary,
             category_slug="sports",
-            regeneration_count=0
+            regeneration_count=0,
         )
 
         assert report.action == "publish"

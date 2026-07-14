@@ -15,8 +15,10 @@ class MockArticle:
     def __init__(self, title, published_at, source_tier=5):
         self.title = title
         self.published_at = published_at
+
         class MockSource:
             trust_tier = source_tier
+
         self.source = MockSource()
 
 
@@ -32,7 +34,7 @@ def mock_story_anchor():
         category="technology",
         event_type="product_launch",
         centroid_vector=[0.1, 0.2, 0.3],
-        entity_graph_ids={"ent_1", "ent_2"}
+        entity_graph_ids={"ent_1", "ent_2"},
     )
 
 
@@ -41,7 +43,7 @@ def test_stage_a_validation_pass(mock_story_anchor):
     article = MockArticle(
         title="Apple unveils latest AI processor in California",
         published_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=2),
-        source_tier=1
+        source_tier=1,
     )
 
     decision = event_validation_service.validate_stage_a(article, mock_story_anchor)
@@ -54,7 +56,7 @@ def test_stage_a_validation_fail(mock_story_anchor):
     article = MockArticle(
         title="Local sports team wins championship game",
         published_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=2),
-        source_tier=5
+        source_tier=5,
     )
 
     decision = event_validation_service.validate_stage_a(article, mock_story_anchor)
@@ -68,7 +70,7 @@ def test_stage_a_validation_maybe(mock_story_anchor):
     article = MockArticle(
         title="Some tech company announces new hardware",
         published_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=2),
-        source_tier=2
+        source_tier=2,
     )
 
     # We might need to mock weights to guarantee a MAYBE, or just check the score

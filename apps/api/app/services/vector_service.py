@@ -40,7 +40,7 @@ class VectorService:
             loop_id = id(loop)
         except RuntimeError:
             loop_id = 0
-            
+
         if loop_id not in self._clients:
             self._clients[loop_id] = AsyncQdrantClient(
                 host=settings.QDRANT_HOST,

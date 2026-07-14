@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -16,6 +16,7 @@ def test_generate_temporary_id():
     assert len(tid) > 10
     assert service.metrics["tmp_ids_created"] == 1
 
+
 def test_generate_canonical_id():
     service = EventIdentityService()
     cid = service.generate_canonical_id()
@@ -25,6 +26,7 @@ def test_generate_canonical_id():
     assert service.metrics["canonical_ids_created"] == 1
     # Check it's base32
     assert "=" not in cid
+
 
 def test_generate_display_slug():
     service = EventIdentityService()
@@ -42,6 +44,7 @@ def test_generate_display_slug():
     assert slug3.startswith("event-")
     assert slug3.endswith("-2026")
 
+
 @pytest.mark.asyncio
 async def test_handle_merge_creates_alias():
     service = EventIdentityService()
@@ -58,8 +61,6 @@ async def test_handle_merge_creates_alias():
     await service.handle_merge("tmp_evt_123", "evt_new", "Promoted", session_mock)
     session_mock.add.assert_not_called()
 
-from unittest.mock import patch
-
 
 @pytest.mark.asyncio
 @patch("app.services.story_lifecycle_service.event_identity_service")
@@ -69,6 +70,7 @@ async def test_lifecycle_graduation(mock_publish, mock_identity):
     mock_identity.generate_display_slug.return_value = "test-event-2026"
 
     from app.services.story_lifecycle_service import StoryLifecycleManager
+
     manager = StoryLifecycleManager()
 
     db_mock = AsyncMock()
@@ -79,11 +81,13 @@ async def test_lifecycle_graduation(mock_publish, mock_identity):
         lifecycle_state=StoryLifecycleState.DEVELOPING,
         canonical_event_id="tmp_evt_123",
         headline="Test Event",
-        version=1
+        version=1,
     )
 
     # Transition to Monitoring
-    await manager._execute_transition(db_mock, story, StoryLifecycleState.MONITORING, "Stable enough")
+    await manager._execute_transition(
+        db_mock, story, StoryLifecycleState.MONITORING, "Stable enough"
+    )
 
     # Canonical ID should be assigned
     assert story.lifecycle_state == StoryLifecycleState.MONITORING

@@ -24,7 +24,7 @@ def test_evaluate_emerging_to_developing(rules_engine):
     story = Story(
         lifecycle_state=StoryLifecycleState.EMERGING,
         source_diversity_count=3,
-        articles=[] # relationship cannot be mocked with ints
+        articles=[],  # relationship cannot be mocked with ints
     )
     decision = rules_engine.evaluate(story)
     assert decision.should_transition is True
@@ -38,7 +38,7 @@ def test_evaluate_developing_to_monitoring(rules_engine):
         confidence_score=0.85,
         source_diversity_count=4,
         contradiction_score=0.1,
-        last_significant_update_at=last_update
+        last_significant_update_at=last_update,
     )
     decision = rules_engine.evaluate(story)
     assert decision.should_transition is True
@@ -52,7 +52,7 @@ def test_evaluate_monitoring_to_stable(rules_engine):
         confidence_score=0.96,
         source_diversity_count=6,
         contradiction_score=0.05,
-        last_significant_update_at=last_update
+        last_significant_update_at=last_update,
     )
     decision = rules_engine.evaluate(story)
     assert decision.should_transition is True
@@ -64,7 +64,7 @@ def test_evaluate_stable_to_archived(rules_engine):
     story = Story(
         lifecycle_state=StoryLifecycleState.STABLE,
         last_significant_update_at=last_update,
-        last_discovery_at=last_update
+        last_discovery_at=last_update,
     )
     decision = rules_engine.evaluate(story)
     assert decision.should_transition is True
@@ -77,7 +77,7 @@ async def test_manual_override(lifecycle_manager):
         id="123e4567-e89b-12d3-a456-426614174000",
         lifecycle_state=StoryLifecycleState.DEVELOPING,
         version=1,
-        confidence_score=0.9
+        confidence_score=0.9,
     )
     db_session = AsyncMock()
 

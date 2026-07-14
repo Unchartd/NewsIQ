@@ -11,7 +11,9 @@ from app.services.clustering_service import clustering_service
 @patch("app.services.ai_service.ai_service.summarize_story_from_kg")
 @patch("app.services.ner_service_v2.ner_service_v2.extract_entities")
 @patch("app.core.database.get_db")
-async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, mock_summarize_kg, mock_db_session):
+async def test_incremental_updates_guard(
+    mock_get_db, mock_extract_entities, mock_summarize_kg, mock_db_session
+):
     mock_get_db.return_value = mock_db_session
 
     story = Story(id=uuid.uuid4(), headline="Original Headline")
@@ -46,14 +48,17 @@ async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, moc
     pipeline_cache._is_enabled = MagicMock(return_value=True)
 
     stored_hashes = {}
+
     async def mock_get_raw(key):
         return stored_hashes.get(key)
+
     async def mock_set_raw(key, val, ttl=None):
         stored_hashes[key] = val
 
     async def mock_get_stage_result(stage, content_hash, *args, **kwargs):
         key = f"stage:{stage}:{content_hash}"
         return stored_hashes.get(key)
+
     async def mock_set_stage_result(stage, content_hash, result_data, *args, **kwargs):
         key = f"stage:{stage}:{content_hash}"
         stored_hashes[key] = result_data
@@ -61,7 +66,10 @@ async def test_incremental_updates_guard(mock_get_db, mock_extract_entities, moc
     async def mock_pipeline_get(stage, model, prompt_version, content_hash, *args, **kwargs):
         key = f"pipeline:{stage}:{content_hash}"
         return stored_hashes.get(key)
-    async def mock_pipeline_set(stage, model, prompt_version, content_hash, result_data, *args, **kwargs):
+
+    async def mock_pipeline_set(
+        stage, model, prompt_version, content_hash, result_data, *args, **kwargs
+    ):
         key = f"pipeline:{stage}:{content_hash}"
         stored_hashes[key] = result_data
 

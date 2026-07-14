@@ -69,7 +69,10 @@ class CacheService:
                 client = _make_redis_client(settings.REDIS_URL)
                 self._clients[loop_id] = client
                 if client is None:
-                    logger.warning("CacheService: Redis client not initialized for loop %d. Caching disabled.", loop_id)
+                    logger.warning(
+                        "CacheService: Redis client not initialized for loop %d. Caching disabled.",
+                        loop_id,
+                    )
             return self._clients[loop_id]
         except RuntimeError:
             return None

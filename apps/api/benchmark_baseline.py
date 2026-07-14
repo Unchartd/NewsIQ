@@ -36,7 +36,9 @@ async def run_benchmark():
         story = res.scalar_one_or_none()
 
         if not story:
-            print("ERROR: No stories with articles found in the database. Please seed or run ingestion first.")
+            print(
+                "ERROR: No stories with articles found in the database. Please seed or run ingestion first."
+            )
             sys.exit(1)
 
         print(f"Selected Story ID: {story.id} | Headline: '{story.headline}'")
@@ -45,6 +47,7 @@ async def run_benchmark():
 
         # 2. Reset story cost budget tracker in Redis to ensure clean start
         from app.services.cache_service import cache_service
+
         await cache_service.delete(f"story_cost:{story.id}")
 
         # 3. Regenerate story content and measure latency + cost
@@ -71,7 +74,7 @@ async def run_benchmark():
             "latency_seconds": round(duration, 4),
             "accumulated_cost_usd": accumulated_cost,
             "timestamp": datetime_now_iso(),
-            "environment": "baseline"
+            "environment": "baseline",
         }
 
         print("\n--- BENCHMARK REPORT ---")
@@ -87,6 +90,7 @@ async def run_benchmark():
 
 def datetime_now_iso():
     from datetime import UTC, datetime
+
     return datetime.now(UTC).isoformat()
 
 

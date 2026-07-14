@@ -139,6 +139,14 @@ class Settings(BaseSettings):
     DISCOVERY_DAILY_DOWNLOAD_BUDGET: int = 5000
     DISCOVERY_MAX_RETRIES: int = 3
 
+    # ── Multi-Provider Extraction Configuration ──────────────────────────────
+    TAVILY_API_KEY: str = ""
+    FIRECRAWL_API_KEY: str = ""
+    TAVILY_BATCH_SIZE: int = 5
+    TAVILY_BATCH_TIMEOUT_SECONDS: int = 2
+    EXTRACTION_RESULT_TTL_SECONDS: int = 600
+    EXTRACTION_PROVIDER_TIMEOUT: int = 30
+
     # Discovery Candidate Scoring Weights
     DISCOVERY_FRESHNESS_WEIGHT: float = 0.20
     DISCOVERY_TRUST_WEIGHT: float = 0.30

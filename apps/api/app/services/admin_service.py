@@ -737,6 +737,115 @@ class AdminService:
                 "recent_failures": int(row.failed or 0),
             }
 
+        # 12. Extraction Health
+        def get_metric_val(metric_name: str, label_filters: dict | None = None) -> float:
+            from prometheus_client import REGISTRY
+
+            for collector in REGISTRY.collect():
+                if collector.name == metric_name:
+                    for sample in collector.samples:
+                        if label_filters:
+                            match = True
+                            for k, v in label_filters.items():
+                                if sample.labels.get(k) != v:
+                                    match = False
+                                    break
+                            if match:
+                                return sample.value
+                        else:
+                            return sample.value
+            return 0.0
+
+        local_attempts = get_metric_val(
+            "newsiq_crawler_provider_attempts_total", {"provider": "local"}
+        )
+        local_success = get_metric_val(
+            "newsiq_crawler_provider_success_total", {"provider": "local"}
+        )
+        tavily_attempts = get_metric_val(
+            "newsiq_crawler_provider_attempts_total", {"provider": "tavily"}
+        )
+        tavily_success = get_metric_val(
+            "newsiq_crawler_provider_success_total", {"provider": "tavily"}
+        )
+        firecrawl_attempts = get_metric_val(
+            "newsiq_crawler_provider_attempts_total", {"provider": "firecrawl"}
+        )
+        firecrawl_success = get_metric_val(
+            "newsiq_crawler_provider_success_total", {"provider": "firecrawl"}
+        )
+
+        local_success_rate = (local_success / local_attempts * 100.0) if local_attempts > 0 else 0.0
+        tavily_success_rate = (
+            (tavily_success / tavily_attempts * 100.0) if tavily_attempts > 0 else 0.0
+        )
+        firecrawl_success_rate = (
+            (firecrawl_success / firecrawl_attempts * 100.0) if firecrawl_attempts > 0 else 0.0
+        )
+
+        total_crawls = get_metric_val("newsiq_crawler_attempts_total")
+        fallback_crawls = get_metric_val("newsiq_crawler_fallback_rate_total") or (
+            tavily_attempts + firecrawl_attempts
+        )
+        fallback_pct = (fallback_crawls / total_crawls * 100.0) if total_crawls > 0 else 0.0
+
+        tavily_urls = get_metric_val("newsiq_crawler_tavily_urls_processed_total")
+        tavily_batches = get_metric_val("newsiq_crawler_tavily_batch_requests_total")
+        avg_batch_size = (tavily_urls / tavily_batches) if tavily_batches > 0 else 0.0
+
+        local_sum = get_metric_val(
+            "newsiq_crawler_provider_latency_seconds_sum", {"provider": "local"}
+        )
+        local_count = get_metric_val(
+            "newsiq_crawler_provider_latency_seconds_count", {"provider": "local"}
+        )
+        avg_local_latency = (local_sum / local_count) if local_count > 0 else 0.0
+
+        tavily_sum = get_metric_val(
+            "newsiq_crawler_provider_latency_seconds_sum", {"provider": "tavily"}
+        )
+        tavily_count = get_metric_val(
+            "newsiq_crawler_provider_latency_seconds_count", {"provider": "tavily"}
+        )
+        avg_tavily_latency = (tavily_sum / tavily_count) if tavily_count > 0 else 0.0
+
+        firecrawl_sum = get_metric_val(
+            "newsiq_crawler_provider_latency_seconds_sum", {"provider": "firecrawl"}
+        )
+        firecrawl_count = get_metric_val(
+            "newsiq_crawler_provider_latency_seconds_count", {"provider": "firecrawl"}
+        )
+        avg_firecrawl_latency = (firecrawl_sum / firecrawl_count) if firecrawl_count > 0 else 0.0
+
+        wait_sum = get_metric_val("newsiq_crawler_batch_wait_time_seconds_sum")
+        wait_count = get_metric_val("newsiq_crawler_batch_wait_time_seconds_count")
+        avg_wait_time = (wait_sum / wait_count) if wait_count > 0 else 0.0
+
+        tavily_credits = tavily_urls / 5.0
+        total_credits = tavily_credits + firecrawl_attempts
+
+        local_failures = local_attempts - local_success
+        tavily_failures = tavily_attempts - tavily_success
+        firecrawl_failures = firecrawl_attempts - firecrawl_success
+
+        extraction_health = {
+            "local_success_rate": round(local_success_rate, 2),
+            "tavily_success_rate": round(tavily_success_rate, 2),
+            "firecrawl_success_rate": round(firecrawl_success_rate, 2),
+            "credits_consumed": round(total_credits, 2),
+            "fallback_pct": round(fallback_pct, 2),
+            "avg_local_latency_seconds": round(avg_local_latency, 3),
+            "avg_tavily_latency_seconds": round(avg_tavily_latency, 3),
+            "avg_firecrawl_latency_seconds": round(avg_firecrawl_latency, 3),
+            "avg_batch_size": round(avg_batch_size, 2),
+            "avg_wait_time_seconds": round(avg_wait_time, 3),
+            "failures": {
+                "local": int(local_failures),
+                "tavily": int(tavily_failures),
+                "firecrawl": int(firecrawl_failures),
+            },
+        }
+
         metrics = {
             "rss_throughput": rss_throughput,
             "queue_size": queue_size,
@@ -761,6 +870,7 @@ class AdminService:
             "latencies": latencies,
             "provider_health": provider_health,
             "stage_health": stage_health,
+            "extraction_health": extraction_health,
             "alerts": [],
             "last_updated": now.isoformat(),
         }
