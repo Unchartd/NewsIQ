@@ -10,6 +10,7 @@ the collection is recreated automatically. This is safe because the real article
 data is in PostgreSQL — Qdrant only stores the vectors.
 """
 
+import asyncio
 import logging
 import uuid
 from typing import Any, cast
@@ -29,12 +30,24 @@ class VectorService:
     """Async Qdrant client wrapper with collection lifecycle management."""
 
     def __init__(self) -> None:
-        self.client = AsyncQdrantClient(
-            host=settings.QDRANT_HOST,
-            port=settings.QDRANT_PORT,
-            timeout=30,
-        )
+        self._clients: dict[int, AsyncQdrantClient] = {}
         self._collection_ready = False
+
+    @property
+    def client(self) -> AsyncQdrantClient:
+        try:
+            loop = asyncio.get_running_loop()
+            loop_id = id(loop)
+        except RuntimeError:
+            loop_id = 0
+            
+        if loop_id not in self._clients:
+            self._clients[loop_id] = AsyncQdrantClient(
+                host=settings.QDRANT_HOST,
+                port=settings.QDRANT_PORT,
+                timeout=30,
+            )
+        return self._clients[loop_id]
 
     # ── Collection management ─────────────────────────────────────────────────
 

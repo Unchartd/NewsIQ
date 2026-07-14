@@ -16,6 +16,7 @@ Migration to self-hosted Redis:
   Change REDIS_URL to your Redis host (redis://). No code changes needed.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -57,9 +58,21 @@ class CacheService:
     """Thin async Redis wrapper with JSON serialization and fail-open semantics."""
 
     def __init__(self) -> None:
-        self._redis: aioredis.Redis | None = _make_redis_client(settings.REDIS_URL)
-        if self._redis is None:
-            logger.warning("CacheService: Redis client not initialized. Caching disabled.")
+        self._clients: dict[int, aioredis.Redis | None] = {}
+
+    @property
+    def _redis(self) -> aioredis.Redis | None:
+        try:
+            loop = asyncio.get_running_loop()
+            loop_id = id(loop)
+            if loop_id not in self._clients:
+                client = _make_redis_client(settings.REDIS_URL)
+                self._clients[loop_id] = client
+                if client is None:
+                    logger.warning("CacheService: Redis client not initialized for loop %d. Caching disabled.", loop_id)
+            return self._clients[loop_id]
+        except RuntimeError:
+            return None
 
     async def get(self, key: str) -> Any | None:
         """Return the cached JSON value for a key, or None on miss/error."""
@@ -72,14 +85,24 @@ class CacheService:
             logger.warning("Cache GET failed for %s: %s", key, e)
             return None
 
-    async def set(self, key: str, value: Any, ttl: int) -> None:
-        """Store a JSON-serializable value with a TTL. Silently skips on error."""
+    async def set(
+        self,
+        key: str,
+        value: Any,
+        ttl: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+    ) -> bool:
+        """Store a JSON-serializable value with an optional TTL. nx=True: set if not exist, xx=True: set if exists."""
         if not self._redis:
-            return
+            return False
         try:
-            await self._redis.set(key, json.dumps(value, default=str), ex=ttl)
+            serialized = json.dumps(value, default=str)
+            res = await self._redis.set(key, serialized, ex=ttl, nx=nx, xx=xx)
+            return bool(res)
         except Exception as e:
             logger.warning("Cache SET failed for %s: %s", key, e)
+            return False
 
     async def delete(self, *keys: str) -> None:
         """Delete one or more keys. Silently skips on error."""

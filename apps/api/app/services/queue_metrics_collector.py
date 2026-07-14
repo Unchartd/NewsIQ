@@ -22,13 +22,19 @@ async def collect_queue_metrics() -> None:
 
     Updates the Prometheus gauge and records the snapshot in the Postgres database.
     """
-    # 1. Query Redis directly for waiting jobs
+    # 1. Query Redis directly for waiting jobs across all queues
     try:
         r = aioredis.from_url(settings.CELERY_BROKER_URL)
-        waiting = await r.llen("celery")
+        waiting_celery = await r.llen("celery")
+        waiting_search = await r.llen("discovery_search")
+        waiting_crawl = await r.llen("discovery_crawl")
+        waiting = waiting_celery + waiting_search + waiting_crawl
         await r.aclose()
     except Exception as e:
         logger.warning(f"Failed to query Redis broker: {e}")
+        waiting_celery = 0
+        waiting_search = 0
+        waiting_crawl = 0
         waiting = 0
 
     # 2. Query Celery control inspect in executor (since it blocks on networking)
@@ -50,7 +56,9 @@ async def collect_queue_metrics() -> None:
     worker_count, active_count = await loop.run_in_executor(None, inspect_celery)
 
     # 3. Update Prometheus gauge
-    newsiq_queue_depth.labels(queue_name="celery").set(waiting + active_count)
+    newsiq_queue_depth.labels(queue_name="celery").set(waiting_celery + active_count)
+    newsiq_queue_depth.labels(queue_name="discovery_search").set(waiting_search)
+    newsiq_queue_depth.labels(queue_name="discovery_crawl").set(waiting_crawl)
 
     # 4. Save to database
     try:
@@ -67,7 +75,9 @@ async def collect_queue_metrics() -> None:
             logger.debug(
                 "Queue metrics snapshot persisted.",
                 extra={
-                    "waiting": waiting,
+                    "waiting_celery": waiting_celery,
+                    "waiting_search": waiting_search,
+                    "waiting_crawl": waiting_crawl,
                     "active": active_count,
                     "workers": worker_count,
                 },

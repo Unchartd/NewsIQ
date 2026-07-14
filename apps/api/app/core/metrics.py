@@ -158,3 +158,36 @@ newsiq_llm_fallback_attempts = Counter(
     "Number of fallback attempts before a successful LLM call.",
     ["stage", "final_provider", "final_model"],
 )
+
+# ── Discovery Pipeline Quality Metrics ────────────────────────────────────────
+
+newsiq_discovery_searches_succeeded = Counter(
+    "newsiq_discovery_searches_succeeded_total",
+    "Total number of successful discovery searches.",
+)
+
+newsiq_discovery_searches_failed = Counter(
+    "newsiq_discovery_searches_failed_total",
+    "Total number of failed discovery searches.",
+)
+
+newsiq_discovery_urls_decoded = Counter(
+    "newsiq_discovery_urls_decoded_total",
+    "Total number of successfully decoded Google News redirect URLs.",
+)
+
+newsiq_discovery_urls_decode_failed = Counter(
+    "newsiq_discovery_urls_decode_failed_total",
+    "Total number of Google News redirect URLs that failed to decode.",
+)
+
+newsiq_discovery_crawls_succeeded = Counter(
+    "newsiq_discovery_crawls_succeeded_total",
+    "Total number of successful discovery crawls.",
+)
+
+newsiq_discovery_crawls_failed = Counter(
+    "newsiq_discovery_crawls_failed_total",
+    "Total number of failed discovery crawls.",
+    ["reason"],
+)
