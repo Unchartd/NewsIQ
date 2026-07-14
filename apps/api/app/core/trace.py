@@ -73,6 +73,7 @@ class PipelineStage(StrEnum):
 
     INGESTION_RSS = "ingestion_rss"
     INGESTION_GNEWS = "ingestion_gnews"
+    DISCOVERY_SEARCH = "discovery_search"
     CRAWLING = "crawling"
     DEDUPLICATION = "deduplication"
     EMBEDDING = "embedding"

@@ -1132,7 +1132,14 @@ def discovery_search_task(
             for ct_id in created_crawl_task_ids:
                 discovery_crawl_task.delay(str(ct_id), run_id, trace_id)
 
-    return run_async(_run())
+    async def _wrapped_run():
+        async with PipelineRun(
+            trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
+        ) as run:
+            async with StageSpan(run, stage=PipelineStage.DISCOVERY_SEARCH):
+                await _run()
+
+    return run_async(_wrapped_run())
 
 
 @celery_app.task(name="app.workers.tasks.discovery_crawl_task")
@@ -1365,7 +1372,14 @@ def discovery_crawl_task(
             await _check_discovery_task_completion(crawl_task.discovery_task_id, session)
             await session.commit()
 
-    return run_async(_run())
+    async def _wrapped_run():
+        async with PipelineRun(
+            trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
+        ) as run:
+            async with StageSpan(run, stage=PipelineStage.CRAWLING):
+                await _run()
+
+    return run_async(_wrapped_run())
 
 
 @celery_app.task(name="app.workers.tasks.poll_discovery_retries_task")

@@ -473,7 +473,14 @@ class IngestionService:
                             await session.commit()
 
                             # Dispatch asynchronously to Celery search queue
-                            discovery_search_task.delay(str(new_task.id))
+                            from app.core.trace import active_pipeline_run_ctx
+
+                            active_run = active_pipeline_run_ctx.get(None)
+                            run_id = str(active_run.id) if active_run else None
+                            trace_id = str(active_run.trace_id) if active_run else None
+                            discovery_search_task.delay(
+                                str(new_task.id), run_id=run_id, trace_id=trace_id
+                            )
                             logger.info(
                                 "Enqueued asynchronous DiscoveryTask %s for article %s (Priority: %d)",
                                 new_task.id,
