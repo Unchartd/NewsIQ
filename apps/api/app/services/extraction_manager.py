@@ -446,7 +446,7 @@ class ExtractionManager:
         extractor = result.provider
         for note in result.diagnostics.notes:
             if note.startswith("extractor: "):
-                extractor = note[len("extractor: "):]
+                extractor = note[len("extractor: ") :]
                 break
 
         return {

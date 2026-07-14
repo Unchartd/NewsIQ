@@ -103,9 +103,18 @@ async def test_crawl_article_fallback_chain():
         return_value=(sample_html, {"fetch_method": "test"}),
     ):
         # 1. Newspaper fails (returns None), Trafilatura succeeds
-        with patch(
-            "app.services.extraction_provider.LocalCrawlerProvider._extract_newspaper",
-            return_value=None,
+        with (
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_newspaper",
+                return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_trafilatura",
+                return_value={
+                    "content": "Content extracted from Trafilatura fallback that has plenty of characters to pass constraints.",
+                    "title": "Trafilatura Title",
+                },
+            ),
         ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
@@ -121,6 +130,13 @@ async def test_crawl_article_fallback_chain():
             patch(
                 "app.services.extraction_provider.LocalCrawlerProvider._extract_trafilatura",
                 return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_readability",
+                return_value={
+                    "content": "Content extracted from Readability fallback that has plenty of characters to pass constraints.",
+                    "title": "Readability Title",
+                },
             ),
         ):
             result = await crawler_service.crawl_article(url)
@@ -141,6 +157,13 @@ async def test_crawl_article_fallback_chain():
             patch(
                 "app.services.extraction_provider.LocalCrawlerProvider._extract_readability",
                 return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_custom_cleaner",
+                return_value={
+                    "content": "Content extracted from Custom BS4 fallback that has plenty of characters to pass constraints.",
+                    "title": "Custom Title",
+                },
             ),
         ):
             result = await crawler_service.crawl_article(url)
