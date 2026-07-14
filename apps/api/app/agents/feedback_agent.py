@@ -5,7 +5,8 @@ from agno.agent import Agent
 from pydantic import BaseModel, Field
 
 from app.agents.base_agent import get_default_model, run_agent_with_observability
-from app.models.models import Article, Story
+from app.models.models import Article, Story, ArticleEvent
+from app.schemas.synthesis_context import StoryContext, ArticleContext, EventContext
 from app.services.vector_service import vector_service
 
 logger = logging.getLogger(__name__)
@@ -117,13 +118,14 @@ def check_missing_entities(kg: dict, summary_text: str) -> list[str]:
 
 
 async def evaluate_story_quality(
-    story: Story,
-    articles: list[Article],
+    story: StoryContext,
+    articles: list[ArticleContext],
     kg: dict,
     contradictions: list[dict],
     timeline: list[dict],
     summary_text: str,
     category_slug: str,
+    article_events: list[EventContext] = None,
     regeneration_count: int = 0,
 ) -> FeedbackReport:
     """Evaluate story synthesis quality using programmatic and conditional LLM gates."""
@@ -133,16 +135,17 @@ async def evaluate_story_quality(
     min_similarity = await check_clustering_similarity(articles)
     missing_ents = check_missing_entities(kg, summary_text)
 
-    # Calculate unique event IDs to detect multi-event leakage using event fingerprints
-    unique_events = len(
-        {
-            evt.event_fingerprint
-            for art in articles
-            if hasattr(art, "events") and art.events
-            for evt in art.events
-            if getattr(evt, "event_fingerprint", None)
-        }
-    )
+    # Calculate unique event IDs to detect multi-event leakage using pre-loaded article events
+    if article_events:
+        unique_events = len(
+            {
+                evt.event_fingerprint
+                for evt in article_events
+                if getattr(evt, "event_fingerprint", None)
+            }
+        )
+    else:
+        unique_events = 0
 
     # Determine base programmatic score
     prog_score = 1.0

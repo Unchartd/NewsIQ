@@ -62,3 +62,18 @@ For long-running AI pipelines and ingestion operations:
   - `clustering`: Generates embeddings, triggers Qdrant similarity match, and groups articles into stories.
   - `summarization`: Contacts the LLM APIs (Gemini/OpenAI) to draft timelines and difference metrics.
 - All background tasks execute inside separate worker nodes, leaving the main FastAPI REST threads responsive.
+
+---
+
+## 5. Async Safety & Pipeline Boundaries
+
+When working in asynchronous database sessions (`AsyncSession`), accessing un-loaded SQLAlchemy ORM relationships triggers synchronous database queries under the hood. In async contexts, this raises `sqlalchemy.exc.MissingGreenlet` exceptions, which abort transactions and silent-fail operations.
+
+To prevent this in the Story Synthesis pipeline:
+
+> [!IMPORTANT]
+> **Engineering Safety Rule: ORM-Safe Pipeline Boundaries**
+> 1. Pipeline C stages, compilers, agents, publishers, and validators must **never** execute implicit database queries or traverse lazy-loaded ORM relationships.
+> 2. All required data must be eagerly loaded (e.g. using `selectinload` or explicit queries) or mapped into immutable Data Transfer Objects (DTOs) before entering the pipeline.
+> 3. Downstream services must operate strictly on pure Python dataclasses (`ArticleContext`, `EventContext`, `EntityContext`, `SourceContext`, `StoryContext`) defined in [synthesis_context.py](file:///apps/api/app/schemas/synthesis_context.py).
+

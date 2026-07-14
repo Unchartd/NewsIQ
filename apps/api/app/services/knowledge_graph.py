@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from app.models.models import Article, ArticleEvent, Source, StoryEntity
+from app.schemas.synthesis_context import ArticleContext, EventContext, EntityContext, SourceContext
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +71,10 @@ class StoryKnowledgeGraph:
 
 
 def build_story_knowledge_graph(
-    articles: list[Article],
-    article_events: list[ArticleEvent],
-    story_entities: list[StoryEntity],
-    sources: list[Source],
+    articles: list[ArticleContext],
+    article_events: list[EventContext],
+    story_entities: list[EntityContext],
+    sources: list[SourceContext],
 ) -> StoryKnowledgeGraph:
     """Build a Knowledge Graph from a story cluster's articles, events, and entities.
 
@@ -152,18 +153,14 @@ def build_story_knowledge_graph(
 
         # Link raw values/aliases to this node_id for easy lookup when building edges
         entity_id_map[sent.entity_value.lower()] = node_id
-        if sent.canonical_entity:
-            entity_id_map[sent.canonical_entity.canonical_name.lower()] = node_id
-            for alias in sent.canonical_entity.aliases or []:
+        if sent.canonical_name:
+            entity_id_map[sent.canonical_name.lower()] = node_id
+            for alias in sent.aliases or []:
                 entity_id_map[alias.lower()] = node_id
 
-            label = sent.canonical_entity.canonical_name
-            wikidata_id = sent.canonical_entity.wikidata_id
-            desc = (
-                sent.canonical_entity.metadata_payload.get("description")
-                if sent.canonical_entity.metadata_payload
-                else None
-            )
+            label = sent.canonical_name
+            wikidata_id = sent.wikidata_id
+            desc = sent.description
         else:
             label = sent.entity_value
             wikidata_id = None

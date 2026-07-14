@@ -1505,6 +1505,21 @@ class ClusteringService:
                 stories_created += 1
             except Exception as e:
                 logger.error("Failed to generate content for story cluster %s: %s", story_id, e)
+                try:
+                    await session.rollback()
+                except Exception as rollback_err:
+                    logger.error("Failed to rollback session: %s", rollback_err)
+
+                try:
+                    from app.core.failure_recorder import record_pipeline_failure
+                    await record_pipeline_failure(
+                        stage="story_synthesis",
+                        exception=e,
+                        story_id=story_id,
+                        input_payload={"article_count": len(art_list)},
+                    )
+                except Exception as rec_err:
+                    logger.error("Failed to record pipeline failure for story %s: %s", story_id, rec_err)
 
         return stories_created
 

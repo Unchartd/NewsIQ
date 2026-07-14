@@ -3,6 +3,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.models import Story
 from app.services.clustering_service import clustering_service
@@ -44,7 +45,11 @@ class PipelineCoordinator:
             )
 
             # 2. Lifecycle & B3 Graduation (automatic via transition logic)
-            stmt = select(Story).where(Story.id == uuid.UUID(str(merged_story_id)))
+            stmt = (
+                select(Story)
+                .options(selectinload(Story.articles))
+                .where(Story.id == uuid.UUID(str(merged_story_id)))
+            )
             res = await session.execute(stmt)
             story = res.scalar_one_or_none()
             if story:

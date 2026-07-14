@@ -26,6 +26,13 @@ from app.models.models import (
     SynthesisArtifact,
 )
 from app.models.observability_models import PipelineTraceModel
+from app.schemas.synthesis_context import (
+    StoryContext,
+    ArticleContext,
+    EventContext,
+    EntityContext,
+    SourceContext,
+)
 from app.services.ai_service import AIService
 from app.services.cache_service import cache_service
 from app.services.contradiction_service import contradiction_service
@@ -41,11 +48,87 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def map_source_to_context(src: Source) -> SourceContext:
+    return SourceContext(
+        id=src.id,
+        name=src.name,
+        website_url=src.website_url,
+        country_code=src.country_code,
+    )
+
+
+def map_article_to_context(art: Article) -> ArticleContext:
+    return ArticleContext(
+        id=art.id,
+        source_id=art.source_id,
+        title=art.title,
+        description=art.description,
+        content=art.content,
+        url=art.url,
+        published_at=art.published_at,
+    )
+
+
+def map_event_to_context(evt: ArticleEvent) -> EventContext:
+    return EventContext(
+        id=evt.id,
+        article_id=evt.article_id,
+        event_type=evt.event_type,
+        event_type_canonical=evt.event_type_canonical,
+        location=evt.location,
+        event_time=evt.event_time,
+        event_time_raw=evt.event_time_raw,
+        confidence=float(evt.confidence) if evt.confidence is not None else None,
+        numbers=evt.numbers,
+        actors=evt.actors,
+        targets=evt.targets,
+        event_fingerprint=evt.event_fingerprint,
+        created_at=evt.created_at,
+    )
+
+
+def map_entity_to_context(sent: StoryEntity) -> EntityContext:
+    canonical_name = None
+    wikidata_id = None
+    aliases = None
+    description = None
+    if sent.canonical_entity:
+        canonical_name = sent.canonical_entity.canonical_name
+        wikidata_id = sent.canonical_entity.wikidata_id
+        aliases = sent.canonical_entity.aliases
+        if sent.canonical_entity.metadata_payload:
+            description = sent.canonical_entity.metadata_payload.get("description")
+
+    return EntityContext(
+        id=sent.id,
+        story_id=sent.story_id,
+        canonical_entity_id=sent.canonical_entity_id,
+        entity_type=sent.entity_type,
+        entity_value=sent.entity_value,
+        canonical_name=canonical_name,
+        wikidata_id=wikidata_id,
+        aliases=aliases,
+        description=description,
+    )
+
+
+def map_story_to_context(story: Story, category_slug: str) -> StoryContext:
+    return StoryContext(
+        id=story.id,
+        category_id=story.category_id,
+        category_slug=category_slug,
+        headline=story.headline,
+        story_status=story.story_status,
+        first_seen_at=story.first_seen_at,
+        created_at=story.created_at,
+    )
+
+
 class TimelineCompiler:
     """Isolate timeline compilation from DB actions and external LLM/agent flows."""
 
     @staticmethod
-    def compile(article_events: list[ArticleEvent], article_source_map: dict) -> list[dict]:
+    def compile(article_events: list[EventContext], article_source_map: dict) -> list[dict]:
         """Compile structured timeline entries sorted chronologically."""
         timeline_entries = []
         for evt in article_events:
@@ -220,10 +303,10 @@ class StorySynthesisOrchestrator:
         self,
         session: AsyncSession,
         story_id: uuid.UUID,
-        articles: list[Article],
-        article_events: list[ArticleEvent],
-        story_entities: list[StoryEntity],
-        sources_list: list[Source],
+        articles: list[ArticleContext],
+        article_events: list[EventContext],
+        story_entities: list[EntityContext],
+        sources_list: list[SourceContext],
     ) -> tuple[uuid.UUID, dict]:
         """Stage 1: Build/fetch Story Knowledge Graph (deterministic/no LLM)."""
         started_at = _now()
@@ -260,8 +343,8 @@ class StorySynthesisOrchestrator:
         session: AsyncSession,
         story_id: uuid.UUID,
         story_input_hash: str,
-        articles: list[Article],
-        article_events: list[ArticleEvent],
+        articles: list[ArticleContext],
+        article_events: list[EventContext],
         article_source_map: dict,
     ) -> tuple[uuid.UUID, list[dict]]:
         """Stage 2: Hybrid contradiction detection (cached)."""
@@ -356,10 +439,10 @@ class StorySynthesisOrchestrator:
         session: AsyncSession,
         story_id: uuid.UUID,
         story_input_hash: str,
-        articles: list[Article],
-        article_events: list[ArticleEvent],
+        articles: list[ArticleContext],
+        article_events: list[EventContext],
         article_source_map: dict,
-        sources_list: list[Source],
+        sources_list: list[SourceContext],
         precomputed_contradictions: list[dict],
     ) -> tuple[uuid.UUID, dict]:
         """Stage 3: Publisher coverage and angle differences (cached)."""
@@ -467,7 +550,7 @@ class StorySynthesisOrchestrator:
         self,
         session: AsyncSession,
         story_id: uuid.UUID,
-        article_events: list[ArticleEvent],
+        article_events: list[EventContext],
         article_source_map: dict,
     ) -> tuple[uuid.UUID, list[dict]]:
         """Stage 4: Deterministic timeline creation sorted chronologically."""
@@ -807,7 +890,12 @@ class StorySynthesisOrchestrator:
         evt_res = await session.execute(evt_stmt)
         article_events = list(evt_res.scalars().all())
 
-        entity_stmt = select(StoryEntity).where(StoryEntity.story_id == story_id)
+        from sqlalchemy.orm import selectinload
+        entity_stmt = (
+            select(StoryEntity)
+            .options(selectinload(StoryEntity.canonical_entity))
+            .where(StoryEntity.story_id == story_id)
+        )
         ent_res = await session.execute(entity_stmt)
         story_entities = list(ent_res.scalars().all())
 
@@ -826,17 +914,31 @@ class StorySynthesisOrchestrator:
             src = source_by_id.get(art.source_id)
             article_source_map[art.id] = src.name if src else "Unknown Source"
 
-        category_slug = story.category.slug if story.category else "world"
+        # Explicitly fetch Category to avoid lazy-loading category relationship
+        category_slug = "world"
+        if story.category_id:
+            cat_stmt = select(Category).where(Category.id == story.category_id)
+            cat_res = await session.execute(cat_stmt)
+            cat_obj = cat_res.scalar_one_or_none()
+            if cat_obj:
+                category_slug = cat_obj.slug
+
+        # Map ORM models to DTO contexts to prevent downstream implicit lazy queries
+        dto_story = map_story_to_context(story, category_slug)
+        dto_articles = [map_article_to_context(art) for art in articles]
+        dto_events = [map_event_to_context(evt) for evt in article_events]
+        dto_entities = [map_entity_to_context(sent) for sent in story_entities]
+        dto_sources = [map_source_to_context(src) for src in sources_list]
 
         # ── multi-stage execution pipeline ──
         # Stage 1: KG Construction
         kg_artifact_id, kg_dict = await self.run_knowledge_graph_stage(
-            session, story_id, articles, article_events, story_entities, sources_list
+            session, story_id, dto_articles, dto_events, dto_entities, dto_sources
         )
 
         # Stage 2: Contradiction Detection
         contras_artifact_id, contras_payload = await self.run_contradiction_stage(
-            session, story_id, story_input_hash, articles, article_events, article_source_map
+            session, story_id, story_input_hash, dto_articles, dto_events, article_source_map
         )
 
         # Stage 3: Source Comparison
@@ -844,16 +946,16 @@ class StorySynthesisOrchestrator:
             session,
             story_id,
             story_input_hash,
-            articles,
-            article_events,
+            dto_articles,
+            dto_events,
             article_source_map,
-            sources_list,
+            dto_sources,
             contras_payload,
         )
 
         # Stage 4: Timeline
         timeline_artifact_id, timeline_payload = await self.run_timeline_stage(
-            session, story_id, article_events, article_source_map
+            session, story_id, dto_events, article_source_map
         )
 
         # Stage 5: Summary Generation (First Pass)
@@ -873,13 +975,14 @@ class StorySynthesisOrchestrator:
         summary_text = f"Headline: {summary_payload.get('headline')}\nSummaries: {summary_payload.get('one_line_summary')} - {summary_payload.get('short_summary')}\nKey facts: {summary_payload.get('key_facts')}"
 
         feedback_report = await evaluate_story_quality(
-            story=story,
-            articles=articles,
+            story=dto_story,
+            articles=dto_articles,
             kg=kg_dict,
             contradictions=contras_payload,
             timeline=timeline_payload,
             summary_text=summary_text,
             category_slug=category_slug,
+            article_events=dto_events,
             regeneration_count=regeneration_count,
         )
 
@@ -907,13 +1010,14 @@ class StorySynthesisOrchestrator:
             # Re-evaluate
             summary_text = f"Headline: {summary_payload.get('headline')}\nSummaries: {summary_payload.get('one_line_summary')} - {summary_payload.get('short_summary')}\nKey facts: {summary_payload.get('key_facts')}"
             feedback_report = await evaluate_story_quality(
-                story=story,
-                articles=articles,
+                story=dto_story,
+                articles=dto_articles,
                 kg=kg_dict,
                 contradictions=contras_payload,
                 timeline=timeline_payload,
                 summary_text=summary_text,
                 category_slug=category_slug,
+                article_events=dto_events,
                 regeneration_count=regeneration_count,
             )
 

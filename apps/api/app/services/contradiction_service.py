@@ -17,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.models.models import Article, ArticleEvent, StoryArticle, StoryContradiction
+from app.models.models import Article, ArticleEvent, StoryArticle, StoryContradiction, Source
+from app.schemas.synthesis_context import ArticleContext, EventContext
 
 logger = logging.getLogger(__name__)
 
@@ -167,8 +168,8 @@ class ContradictionService:
         self,
         story_id: Any,
         session: AsyncSession,
-        articles: list[Article] = None,
-        article_events: list[ArticleEvent] = None,
+        articles: list[ArticleContext] = None,
+        article_events: list[EventContext] = None,
         article_source_map: dict[uuid.UUID, str] = None,
     ) -> list[StoryContradiction]:
         """Detect contradictions among the articles in a story and save them to the DB.
@@ -414,10 +415,17 @@ class ContradictionService:
         if not existing_rows:
             return []
 
+        # Build source name lookup map explicitly to avoid lazy loading
+        source_ids = list({art.source_id for art in [new_article] + existing_articles if art.source_id})
+        source_name_by_id = {}
+        if source_ids:
+            src_res = await session.execute(select(Source.id, Source.name).where(Source.id.in_(source_ids)))
+            source_name_by_id = {sid: name for sid, name in src_res.all()}
+
         # Build context
         context_parts = []
         for art in [new_article] + existing_articles:
-            src_name = art.source.name if art.source else "Unknown Source"
+            src_name = source_name_by_id.get(art.source_id, "Unknown Source")
             context_parts.append(
                 f"Source: {src_name}\nTitle: {art.title}\nContent: {art.description or ''}\n"
             )
@@ -425,12 +433,12 @@ class ContradictionService:
 
         # Candidates (compare new events against existing ones)
         candidates = []
-        new_src_name = new_article.source.name if new_article.source else "Unknown Source"
+        new_src_name = source_name_by_id.get(new_article.source_id, "Unknown Source")
         new_src_id = str(new_article.source_id)
 
         for new_evt in new_events:
             for ext_art, ext_evt in existing_rows:
-                ext_src_name = ext_art.source.name if ext_art.source else "Unknown Source"
+                ext_src_name = source_name_by_id.get(ext_art.source_id, "Unknown Source")
                 ext_src_id = str(ext_art.source_id)
 
                 if new_src_id == ext_src_id:

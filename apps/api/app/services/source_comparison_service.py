@@ -31,6 +31,7 @@ from app.models.models import (
     StoryDifference,
     StorySourceCoverage,
 )
+from app.schemas.synthesis_context import ArticleContext, EventContext, SourceContext
 
 logger = logging.getLogger(__name__)
 
@@ -181,10 +182,10 @@ class SourceComparisonService:
         self,
         story_id: Any,
         session: AsyncSession,
-        articles: list[Article] = None,
-        article_events: list[ArticleEvent] = None,
+        articles: list[ArticleContext] = None,
+        article_events: list[EventContext] = None,
         article_source_map: dict[uuid.UUID, str] = None,
-        sources_list: list[Source] = None,
+        sources_list: list[SourceContext] = None,
         precomputed_contradictions: list[StoryContradiction] = None,
     ) -> tuple[list[StorySourceCoverage], list[StoryDifference]]:
         """Compare sources in a story cluster, generate coverage/difference data, and save to DB."""
