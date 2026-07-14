@@ -309,3 +309,46 @@ newsiq_crawler_provider_cost_total = Counter(
     "Estimated dollar cost incurred by extraction provider API calls.",
     ["provider"],
 )
+
+newsiq_crawler_provider_attempts_total_v2 = Counter(
+    "newsiq_crawler_provider_attempts_total_v2",
+    "Total number of extraction attempts per provider and domain.",
+    ["provider", "domain"],
+)
+
+newsiq_crawler_provider_success_total_v2 = Counter(
+    "newsiq_crawler_provider_success_total_v2",
+    "Total number of successful extractions per provider and domain.",
+    ["provider", "domain"],
+)
+
+newsiq_crawler_provider_failure_total_v2 = Counter(
+    "newsiq_crawler_provider_failure_total_v2",
+    "Total number of failed extractions by provider, failure reason, and domain.",
+    ["provider", "failure_reason", "domain"],
+)
+
+newsiq_crawler_provider_latency_seconds_v2 = Histogram(
+    "newsiq_crawler_provider_latency_seconds_v2",
+    "Latency of extraction by provider and domain.",
+    ["provider", "domain"],
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, float("inf")),
+)
+
+newsiq_crawler_provider_cost_total_v2 = Counter(
+    "newsiq_crawler_provider_cost_total_v2",
+    "Estimated cost of extraction per provider and domain.",
+    ["provider", "domain"],
+)
+
+newsiq_crawler_fallback_count_v2 = Counter(
+    "newsiq_crawler_fallback_count_v2",
+    "Total fallback count to external providers by domain.",
+    ["domain"],
+)
+
+newsiq_crawler_failure_reason_total = Counter(
+    "newsiq_crawler_failure_reason_total",
+    "Total count of failure reasons by provider and domain.",
+    ["provider", "failure_reason", "domain"],
+)

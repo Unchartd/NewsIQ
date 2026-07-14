@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.services.crawler_service import crawler_service
+from app.services.extraction_provider import LocalCrawlerProvider
 
 
 def test_extract_newspaper():
@@ -22,7 +23,7 @@ def test_extract_newspaper():
     </html>
     """
     url = "https://example.com/test-article"
-    result = crawler_service._extract_newspaper(url, sample_html)
+    result = LocalCrawlerProvider()._extract_newspaper(url, sample_html)
     assert result is not None
     assert result["title"] == "Test Article Title"
     assert "substantial article about python" in result["content"]
@@ -39,7 +40,7 @@ def test_extract_trafilatura():
         </body>
     </html>
     """
-    result = crawler_service._extract_trafilatura(sample_html)
+    result = LocalCrawlerProvider()._extract_trafilatura(sample_html)
     assert result is not None
     assert "specifically designed to test" in result["content"]
     assert result["extractor"] == "trafilatura"
@@ -57,7 +58,7 @@ def test_extract_readability():
         </body>
     </html>
     """
-    result = crawler_service._extract_readability(sample_html)
+    result = LocalCrawlerProvider()._extract_readability(sample_html)
     assert result is not None
     assert "designed to test the readability-lxml" in result["content"]
     assert result["extractor"] == "readability-lxml"
@@ -83,7 +84,7 @@ def test_extract_custom_cleaner():
         </body>
     </html>
     """
-    result = crawler_service._extract_custom_cleaner(sample_html)
+    result = LocalCrawlerProvider()._extract_custom_cleaner(sample_html)
     assert result is not None
     assert "cheap things" not in result["content"]
     assert "Copyright" not in result["content"]
@@ -102,8 +103,18 @@ async def test_crawl_article_fallback_chain():
         return_value=(sample_html, {"fetch_method": "test"}),
     ):
         # 1. Newspaper fails (returns None), Trafilatura succeeds
-        with patch(
-            "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
+        with (
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_newspaper",
+                return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_trafilatura",
+                return_value={
+                    "content": "Content extracted from Trafilatura fallback that has plenty of characters to pass constraints.",
+                    "title": "Trafilatura Title",
+                },
+            ),
         ):
             result = await crawler_service.crawl_article(url)
             assert result is not None
@@ -113,11 +124,19 @@ async def test_crawl_article_fallback_chain():
         # 2. Both Newspaper and Trafilatura fail, Readability succeeds
         with (
             patch(
-                "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_newspaper",
+                return_value=None,
             ),
             patch(
-                "app.services.crawler_service.crawler_service._extract_trafilatura",
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_trafilatura",
                 return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_readability",
+                return_value={
+                    "content": "Content extracted from Readability fallback that has plenty of characters to pass constraints.",
+                    "title": "Readability Title",
+                },
             ),
         ):
             result = await crawler_service.crawl_article(url)
@@ -128,15 +147,23 @@ async def test_crawl_article_fallback_chain():
         # 3. All primary fail, custom-bs4 succeeds
         with (
             patch(
-                "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
-            ),
-            patch(
-                "app.services.crawler_service.crawler_service._extract_trafilatura",
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_newspaper",
                 return_value=None,
             ),
             patch(
-                "app.services.crawler_service.crawler_service._extract_readability",
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_trafilatura",
                 return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_readability",
+                return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_custom_cleaner",
+                return_value={
+                    "content": "Content extracted from Custom BS4 fallback that has plenty of characters to pass constraints.",
+                    "title": "Custom Title",
+                },
             ),
         ):
             result = await crawler_service.crawl_article(url)
@@ -147,18 +174,19 @@ async def test_crawl_article_fallback_chain():
         # 4. All fail completely (including custom-bs4 length check)
         with (
             patch(
-                "app.services.crawler_service.crawler_service._extract_newspaper", return_value=None
-            ),
-            patch(
-                "app.services.crawler_service.crawler_service._extract_trafilatura",
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_newspaper",
                 return_value=None,
             ),
             patch(
-                "app.services.crawler_service.crawler_service._extract_readability",
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_trafilatura",
                 return_value=None,
             ),
             patch(
-                "app.services.crawler_service.crawler_service._extract_custom_cleaner",
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_readability",
+                return_value=None,
+            ),
+            patch(
+                "app.services.extraction_provider.LocalCrawlerProvider._extract_custom_cleaner",
                 return_value=None,
             ),
         ):

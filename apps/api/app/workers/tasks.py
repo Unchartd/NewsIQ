@@ -1340,8 +1340,6 @@ def discovery_crawl_task(
                 published_at=crawled.get("published_at") or datetime.now(UTC).replace(tzinfo=None),
                 crawled_at=datetime.now(UTC).replace(tzinfo=None),
                 content_hash=content_hash,
-                title_hash=fingerprints["title_hash"],
-                simhash_text=fingerprints.get("simhash"),
                 embedding_status="pending",
                 created_at=datetime.now(UTC).replace(tzinfo=None),
             )

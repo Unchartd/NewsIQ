@@ -1,8 +1,11 @@
 """Service for ingesting news articles from RSS feeds and other news APIs."""
 
 import asyncio
+import hashlib
 import logging
+import re
 import time
+import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,8 +39,6 @@ class IngestionService:
         """Clean and normalize headline title for search querying."""
         if not title:
             return ""
-        import re
-        import unicodedata
 
         # 1. NFKC unicode normalization
         normalized = unicodedata.normalize("NFKC", title)
@@ -72,8 +73,6 @@ class IngestionService:
 
         Returns (final_score, breakdown_details).
         """
-        from app.core.config import settings
-
         if not title:
             return 0.0, {"reason": "missing_title"}
 
@@ -96,9 +95,8 @@ class IngestionService:
 
         # 2. Freshness Check (Normalized: 0.0 to 1.0, linear decay over 24 hours)
         if pub_date:
-            from datetime import datetime
-
-            age_hours = (datetime.utcnow() - pub_date).total_seconds() / 3600.0
+            now_dt = datetime.now(UTC).replace(tzinfo=None)
+            age_hours = (now_dt - pub_date).total_seconds() / 3600.0
             if age_hours > 24.0:
                 return -1.0, {"reason": "stale_article", "score": -1.0}
             normalized_freshness = max(0.0, 1.0 - (age_hours / 24.0))
@@ -115,7 +113,7 @@ class IngestionService:
                     normalized_trust = weight
                     break
 
-        # 4. Entity Count using existing deterministic ner_service_v2 (sync)
+        # 4. Entity Count using NerService v2 (sync)
         from app.services.ner_service_v2 import ner_service_v2
 
         entities = ner_service_v2.extract_entities_sync(title)
@@ -155,10 +153,7 @@ class IngestionService:
                 if cleaned and cleaned[0].isupper():
                     proper_nouns += 1
 
-        # Set entity_count to the maximum of both approaches
         entity_count = max(len(entities), proper_nouns)
-
-        # Normalize entity count (linear 0 to 4+)
         normalized_entity = min(1.0, entity_count / 4.0)
 
         # 5. Content length check (Normalized: 0.0 to 1.0)
@@ -167,7 +162,6 @@ class IngestionService:
         if content_len < 300:
             return -1.0, {"reason": "content_too_short", "score": -1.0}
 
-        # Linear normalization between 300 and 1000 characters
         normalized_content = min(1.0, (content_len - 300) / 700.0)
 
         # Compute Weighted Score: Sum(weight * normalized_score)
@@ -203,8 +197,6 @@ class IngestionService:
         source_name: str | None = None,
     ) -> tuple[bool, str]:
         """Apply quality and prioritization filters using weighted Discovery Score model."""
-        from app.core.config import settings
-
         score, breakdown = IngestionService.calculate_discovery_score(
             title, content, pub_date, source_name
         )
@@ -240,34 +232,54 @@ class IngestionService:
                     return datetime.fromtimestamp(time.mktime(parsed), tz=UTC).replace(tzinfo=None)
                 except Exception:
                     pass
-        return datetime.utcnow()
+        return datetime.now(UTC).replace(tzinfo=None)
 
     async def ingest_rss_source(self, source: Source, session: AsyncSession) -> int:
         """Ingest articles from a source's RSS feed."""
-        source_name = source.name
-        source_id = source.id
-
         if not source.rss_url:
             logger.info(
-                "Source '%s' does not have an RSS URL; skipping RSS ingestion.", source_name
+                "Source '%s' does not have an RSS URL; skipping RSS ingestion.", source.name
             )
             return 0
 
-        logger.info("Starting ingestion for source: %s (%s)", source_name, source.rss_url)
-        try:
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                response = await client.get(source.rss_url)
-                response.raise_for_status()
-                feed_data = response.text
-        except Exception as e:
-            logger.error("Failed to fetch RSS feed for '%s': %s", source_name, e)
+        feed_data = await self._fetch_feed(source.rss_url, source.name)
+        if not feed_data:
             return 0
 
-        # Parse the RSS feed using feedparser (which parses the text directly)
-        parsed_feed = feedparser.parse(feed_data)
-        new_articles_count = 0
+        feed_urls, url_to_entry = self._prepare_entries(feed_data)
+        if not feed_urls:
+            return 0
 
-        # Collect all URLs in the feed
+        existing_articles = await self._batch_existing_articles(feed_urls, session)
+
+        new_entries = [(url_to_entry[url], url, existing_articles.get(url)) for url in feed_urls]
+
+        crawled_results = await self._crawl_articles(new_entries)
+
+        new_articles_count, discovery_candidates = await self._persist_articles(
+            crawled_results, source, session
+        )
+
+        if discovery_candidates:
+            await self._dispatch_discovery(discovery_candidates, source.name, session)
+
+        return new_articles_count
+
+    async def _fetch_feed(self, rss_url: str, source_name: str) -> str | None:
+        """Fetch raw RSS feed content."""
+        logger.info("Starting ingestion for source: %s (%s)", source_name, rss_url)
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                response = await client.get(rss_url)
+                response.raise_for_status()
+                return response.text
+        except Exception as e:
+            logger.error("Failed to fetch RSS feed for '%s': %s", source_name, e)
+            return None
+
+    def _prepare_entries(self, feed_data: str) -> tuple[list[str], dict[str, Any]]:
+        """Parse RSS feed data and return canonicalized URLs and mapping to entries."""
+        parsed_feed = feedparser.parse(feed_data)
         feed_urls = []
         url_to_entry = {}
         for entry in parsed_feed.entries:
@@ -277,34 +289,30 @@ class IngestionService:
             url = canonicalize_url(raw_url)
             feed_urls.append(url)
             url_to_entry[url] = entry
+        return feed_urls, url_to_entry
 
-        # Batch query database to find existing articles by URL
+    async def _batch_existing_articles(
+        self, feed_urls: list[str], session: AsyncSession
+    ) -> dict[str, Article]:
+        """Query DB in a batch to find existing articles by URL."""
         existing_articles = {}
         if feed_urls:
             stmt = select(Article).where(Article.url.in_(feed_urls))
             res = await session.execute(stmt)
             for art in res.scalars().all():
                 existing_articles[art.url] = art
+        return existing_articles
 
-        new_entries = []
-        for url in feed_urls:
-            entry = url_to_entry[url]
-            existing_article = existing_articles.get(url)
-            if existing_article:
-                new_entries.append((entry, url, existing_article))
-            else:
-                new_entries.append((entry, url, None))
-
-        if not new_entries:
-            logger.info("No new articles found for '%s'", source_name)
-            return 0
-
-        # Crawl concurrently with a semaphore
-        sem = asyncio.Semaphore(5)
+    async def _crawl_articles(
+        self, new_entries: list[tuple[Any, str, Article | None]]
+    ) -> list[tuple[Any, str, dict[str, Any] | None, Article | None]]:
+        """Crawl the list of new articles concurrently using settings.CRAWLER_MAX_CONCURRENT_REQUESTS."""
+        max_concurrent = settings.CRAWLER_MAX_CONCURRENT_REQUESTS or 5
+        sem = asyncio.Semaphore(max_concurrent)
 
         async def crawl_with_semaphore(
-            e: Any, u: str, existing: Any
-        ) -> tuple[Any, str, dict[str, Any] | None, Any]:
+            e: Any, u: str, existing: Article | None
+        ) -> tuple[Any, str, dict[str, Any] | None, Article | None]:
             async with sem:
                 try:
                     crawled = await crawler_service.crawl_article(u)
@@ -314,9 +322,19 @@ class IngestionService:
                     return e, u, None, existing
 
         tasks = [crawl_with_semaphore(entry, url, existing) for entry, url, existing in new_entries]
-        crawled_results = await asyncio.gather(*tasks)
+        return await asyncio.gather(*tasks)
 
+    async def _persist_articles(
+        self,
+        crawled_results: list[tuple[Any, str, dict[str, Any] | None, Article | None]],
+        source: Source,
+        session: AsyncSession,
+    ) -> tuple[int, list[Article]]:
+        """Parse, check duplicate contents, and save/update articles to the database."""
+        source_id = source.id
+        new_articles_count = 0
         discovery_candidates = []
+
         for entry, url, crawled, existing_article in crawled_results:
             title = getattr(entry, "title", "Untitled Article")
             description = self.clean_html(getattr(entry, "summary", ""))
@@ -329,7 +347,6 @@ class IngestionService:
             author = getattr(entry, "author", None)
             published_at = self.parse_pub_date(entry)
 
-            # Extract image if available in enclosures or media:content
             image_url = None
             if hasattr(entry, "enclosures"):
                 for enc in entry.enclosures:
@@ -342,7 +359,6 @@ class IngestionService:
                         image_url = media.get("url")
                         break
 
-            # Integrate crawled data
             if crawled and crawled.get("content"):
                 content = crawled["content"]
                 if crawled.get("author") and not author:
@@ -354,7 +370,6 @@ class IngestionService:
             else:
                 content = fallback_content
 
-            # Compute fingerprints
             fingerprints = compute_fingerprints(
                 url,
                 title.lower().strip() if title else "",
@@ -375,7 +390,6 @@ class IngestionService:
                     new_articles_count += 1
                 continue
 
-            # Stage 2: Content exact duplicate check
             stmt = select(Article).where(Article.content_hash == content_hash)
             res = await session.execute(stmt)
             duplicate_existing = res.scalar_one_or_none()
@@ -390,9 +404,9 @@ class IngestionService:
                 language="en",
                 image_url=image_url,
                 published_at=published_at,
-                crawled_at=datetime.utcnow(),
+                crawled_at=datetime.now(UTC).replace(tzinfo=None),
                 embedding_status="pending",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC).replace(tzinfo=None),
                 url_hash=url_hash,
                 content_hash=content_hash,
                 fingerprint_version=1,
@@ -402,108 +416,83 @@ class IngestionService:
             await url_bloom_filter.add(url_hash)
             new_articles_count += 1
 
-            if not existing_article and not duplicate_existing:
+            if not duplicate_existing:
                 discovery_candidates.append(article)
 
-        if new_articles_count > 0:
+        return new_articles_count, discovery_candidates
+
+    async def _dispatch_discovery(
+        self, discovery_candidates: list[Article], source_name: str, session: AsyncSession
+    ) -> None:
+        """Create DiscoveryTask records and dispatch asynchronously to the Celery search queue."""
+        from app.models.models import DiscoveryTask, DiscoveryTaskState
+        from app.services.gnews_service import gnews_service
+        from app.workers.tasks import discovery_search_task
+
+        for art_obj in discovery_candidates:
+            await gnews_service._incr_metric("rss_processed")
+
+            should_search, skip_reason = self.should_prioritize_discovery(
+                art_obj.title, art_obj.content, art_obj.published_at, source_name
+            )
+            if not should_search:
+                await gnews_service._incr_metric(f"search_skipped_{skip_reason}")
+                continue
+
+            normalized_query = self.normalize_headline(art_obj.title)
+
+            priority = 50
+            priority_reason = "Standard"
+            source_lower = (source_name or "").lower()
+            if any(
+                x in source_lower for x in ("reuters", "apnews", "associated press", "bloomberg")
+            ):
+                priority = 90
+                priority_reason = "Trusted Source"
+
+            query_hash = hashlib.sha256(normalized_query.encode("utf-8")).hexdigest()
+            date_bucket = datetime.now(UTC).strftime("%Y-%m-%d")
+            idempotency_key = f"{settings.DISCOVERY_PROVIDER}:{query_hash}:{date_bucket}"
+
             try:
-                await session.commit()
-                logger.info(
-                    "Ingested %d new articles for source '%s'", new_articles_count, source_name
+                if not session.in_transaction():
+                    await session.begin()
+                new_task = DiscoveryTask(
+                    article_id=art_obj.id,
+                    query=normalized_query,
+                    provider=settings.DISCOVERY_PROVIDER,
+                    priority=priority,
+                    priority_reason=priority_reason,
+                    status=DiscoveryTaskState.PENDING,
+                    idempotency_key=idempotency_key,
+                    created_at=datetime.now(UTC).replace(tzinfo=None),
                 )
+                session.add(new_task)
+                async with session.begin_nested():
+                    await session.flush()
 
-                # Execute Google News search discovery asynchronously via DB tasks
-                if discovery_candidates:
-                    from app.models.models import DiscoveryTask, DiscoveryTaskState
-                    from app.services.gnews_service import gnews_service
-                    from app.workers.tasks import discovery_search_task
+                await session.commit()
 
-                    for art_obj in discovery_candidates:
-                        # 1. Increment total processed metric
-                        await gnews_service._incr_metric("rss_processed")
+                from app.core.trace import active_pipeline_run_ctx
 
-                        # 2. Apply Quality/Prioritization Filters
-                        should_search, skip_reason = self.should_prioritize_discovery(
-                            art_obj.title, art_obj.content, art_obj.published_at, source_name
-                        )
-                        if not should_search:
-                            await gnews_service._incr_metric(f"search_skipped_{skip_reason}")
-                            continue
-
-                        # 3. Create DiscoveryTask in the database
-                        normalized_query = self.normalize_headline(art_obj.title)
-
-                        # Calculate priority (0-100) based on category/source
-                        priority = 50
-                        priority_reason = "Standard"
-                        source_lower = (source_name or "").lower()
-                        if any(
-                            x in source_lower
-                            for x in ("reuters", "apnews", "associated press", "bloomberg")
-                        ):
-                            priority = 90
-                            priority_reason = "Trusted Source"
-
-                        import hashlib
-                        from datetime import UTC
-
-                        query_hash = hashlib.sha256(normalized_query.encode("utf-8")).hexdigest()
-                        date_bucket = datetime.now(UTC).strftime("%Y-%m-%d")
-                        idempotency_key = (
-                            f"{settings.DISCOVERY_PROVIDER}:{query_hash}:{date_bucket}"
-                        )
-
-                        try:
-                            if not session.in_transaction():
-                                await session.begin()
-                            new_task = DiscoveryTask(
-                                article_id=art_obj.id,
-                                query=normalized_query,
-                                provider=settings.DISCOVERY_PROVIDER,
-                                priority=priority,
-                                priority_reason=priority_reason,
-                                status=DiscoveryTaskState.PENDING,
-                                idempotency_key=idempotency_key,
-                                created_at=datetime.now(UTC).replace(tzinfo=None),
-                            )
-                            session.add(new_task)
-                            async with session.begin_nested():
-                                await session.flush()
-
-                            await session.commit()
-
-                            # Dispatch asynchronously to Celery search queue
-                            from app.core.trace import active_pipeline_run_ctx
-
-                            active_run = active_pipeline_run_ctx.get(None)
-                            run_id = str(active_run.id) if active_run else None
-                            trace_id = str(active_run.trace_id) if active_run else None
-                            discovery_search_task.delay(
-                                str(new_task.id), run_id=run_id, trace_id=trace_id
-                            )
-                            logger.info(
-                                "Enqueued asynchronous DiscoveryTask %s for article %s (Priority: %d)",
-                                new_task.id,
-                                art_obj.id,
-                                priority,
-                            )
-                        except Exception as task_exc:
-                            # Unique violation or race condition; skip duplicate task creation safely
-                            logger.info(
-                                "DiscoveryTask for query '%s' already exists (Idempotency key hit): %s",
-                                normalized_query,
-                                task_exc,
-                            )
-                            if session.in_transaction():
-                                await session.rollback()
-            except Exception as e:
-                await session.rollback()
-                logger.error("Failed to save ingested articles for '%s': %s", source_name, e)
-                return 0
-        else:
-            logger.info("No new articles found for '%s'", source_name)
-
-        return new_articles_count
+                active_run = active_pipeline_run_ctx.get(None)
+                run_id = str(active_run.id) if active_run else None
+                trace_id = str(active_run.trace_id) if active_run else None
+                discovery_search_task.delay(str(new_task.id), run_id=run_id, trace_id=trace_id)
+                logger.info(
+                    "Enqueued asynchronous DiscoveryTask %s for article %s (Priority: %d)",
+                    new_task.id,
+                    art_obj.id,
+                    priority,
+                )
+            except Exception as task_exc:
+                logger.info(
+                    "DiscoveryTask for query '%s' already exists (Idempotency key hit): %s",
+                    normalized_query,
+                    task_exc,
+                )
+                if session.in_transaction():
+                    await session.rollback()
 
     async def ingest_all_active_sources(self, session: AsyncSession) -> dict[str, int]:
         """Ingest articles from all active news sources sequentially to prevent concurrent database session usage."""
