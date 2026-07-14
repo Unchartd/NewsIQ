@@ -26,6 +26,7 @@ def test_compute_fingerprints():
     assert fp1["url_hash"] != fp2["url_hash"]
     assert fp1["content_hash"] == fp2["content_hash"]
 
+
 @pytest.mark.asyncio
 async def test_bloom_filter_redisbloom():
     cache_service = MagicMock()
@@ -44,6 +45,7 @@ async def test_bloom_filter_redisbloom():
     exists = await bf.exists("hash2")
     assert exists is False
     cache_service._redis.execute_command.assert_called_with("BF.EXISTS", bf.KEY_BLOOM, "hash2")
+
 
 @pytest.mark.asyncio
 async def test_bloom_filter_fallback():
@@ -69,6 +71,7 @@ async def test_bloom_filter_fallback():
     exists = await bf.exists("hash1")
     assert exists is True
     cache_service._redis.sismember.assert_called_with(bf.KEY_SET, "hash1")
+
 
 @pytest.mark.asyncio
 async def test_bloom_filter_rebuild():

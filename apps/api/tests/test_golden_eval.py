@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import time
@@ -31,6 +32,7 @@ def load_golden_stories():
                 stories.append(json.load(f))
     return stories
 
+
 @pytest.mark.asyncio
 async def test_golden_stories_evaluation(mock_db_session):
     """Run dynamic quality evaluation across all stories in tests/golden/stories."""
@@ -47,7 +49,9 @@ async def test_golden_stories_evaluation(mock_db_session):
 
         # ── 1. Reconstruct database objects ──
         cat_id = uuid.uuid4()
-        mock_category = Category(id=cat_id, name=story_data["category"].capitalize(), slug=story_data["category"])
+        mock_category = Category(
+            id=cat_id, name=story_data["category"].capitalize(), slug=story_data["category"]
+        )
 
         src_id = uuid.uuid4()
         mock_source = Source(id=src_id, name="TestPublisher")
@@ -60,8 +64,11 @@ async def test_golden_stories_evaluation(mock_db_session):
                 title=a_data["title"],
                 description=a_data["description"],
                 content=a_data["content"],
-                published_at=datetime.datetime.strptime(a_data["published_at"], "%Y-%m-%dT%H:%M:%SZ")
-                if "published_at" in a_data else datetime.datetime.utcnow()
+                published_at=datetime.datetime.strptime(
+                    a_data["published_at"], "%Y-%m-%dT%H:%M:%SZ"
+                )
+                if "published_at" in a_data
+                else datetime.datetime.utcnow(),
             )
             art.source = mock_source
             articles.append(art)
@@ -96,22 +103,38 @@ async def test_golden_stories_evaluation(mock_db_session):
         else:
             # Simulate high-quality response based on expected outputs in golden story
             mock_summary_res = StorySummaryResponse(
-                headline="Acme Corp to Acquire Widget Ltd in Mega $12 Billion Deal" if story_data["category"] == "business"
-                         else "Prime Minister Announces Corporate Tax Reform Bill" if story_data["category"] == "politics"
-                         else "Severe 7.2 Magnitude Earthquake Strikes Florida Big Bend",
+                headline="Acme Corp to Acquire Widget Ltd in Mega $12 Billion Deal"
+                if story_data["category"] == "business"
+                else "Prime Minister Announces Corporate Tax Reform Bill"
+                if story_data["category"] == "politics"
+                else "Severe 7.2 Magnitude Earthquake Strikes Florida Big Bend",
                 one_line_summary=f"Objective summary for {name}.",
                 short_summary=f"Short paragraph summary for {name}.",
                 detailed_summary=f"Detailed context and summary paragraphs for {name}.",
                 key_facts=[f"Fact {i}: expected detail is present." for i in range(3)],
-                category=expected["category"]
+                category=expected["category"],
             )
 
             with (
-                patch("app.services.ai_service.ai_service.summarize_story_from_kg", AsyncMock(return_value=mock_summary_res)),
-                patch("app.services.ner_service_v2.ner_service_v2.extract_entities", AsyncMock(return_value=[])),
-                patch.object(contradiction_service, "detect_and_save_contradictions", AsyncMock(return_value=[])),
-                patch.object(source_comparison_service, "compare_sources_and_save", AsyncMock(return_value=([], []))),
-                patch.object(clustering_service, "_index_and_invalidate", AsyncMock())
+                patch(
+                    "app.services.ai_service.ai_service.summarize_story_from_kg",
+                    AsyncMock(return_value=mock_summary_res),
+                ),
+                patch(
+                    "app.services.ner_service_v2.ner_service_v2.extract_entities",
+                    AsyncMock(return_value=[]),
+                ),
+                patch.object(
+                    contradiction_service,
+                    "detect_and_save_contradictions",
+                    AsyncMock(return_value=[]),
+                ),
+                patch.object(
+                    source_comparison_service,
+                    "compare_sources_and_save",
+                    AsyncMock(return_value=([], [])),
+                ),
+                patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
             ):
                 await clustering_service.generate_story_content(story, articles, mock_db_session)
                 duration = time.time() - start_time
@@ -127,26 +150,36 @@ async def test_golden_stories_evaluation(mock_db_session):
 
         # Headline Keyword Recall
         matched_hl = [kw for kw in expected["headline_keywords"] if kw.lower() in headline.lower()]
-        hl_score = (len(matched_hl) / len(expected["headline_keywords"])) * 100.0 if expected["headline_keywords"] else 100.0
+        hl_score = (
+            (len(matched_hl) / len(expected["headline_keywords"])) * 100.0
+            if expected["headline_keywords"]
+            else 100.0
+        )
 
         # Entity Recall (check if expected entities exist in headline or summary text)
         full_text = (headline + " " + one_line + " " + " ".join(facts)).lower()
         matched_ent = [ent for ent in expected["entities"] if ent["value"].lower() in full_text]
-        ent_score = (len(matched_ent) / len(expected["entities"])) * 100.0 if expected["entities"] else 100.0
+        ent_score = (
+            (len(matched_ent) / len(expected["entities"])) * 100.0
+            if expected["entities"]
+            else 100.0
+        )
 
         # Overall Story Quality Score
         total_score = (cat_score + hl_score + ent_score) / 3.0
         is_passed = total_score >= 50.0  # Quality threshold
 
-        results.append({
-            "scenario": name,
-            "category_score": cat_score,
-            "headline_score": hl_score,
-            "entity_score": ent_score,
-            "total_score": total_score,
-            "passed": is_passed,
-            "duration_seconds": duration,
-        })
+        results.append(
+            {
+                "scenario": name,
+                "category_score": cat_score,
+                "headline_score": hl_score,
+                "entity_score": ent_score,
+                "total_score": total_score,
+                "passed": is_passed,
+                "duration_seconds": duration,
+            }
+        )
 
     # ── 4. Print Summary Report ──
     print("\n=== Golden Quality Evaluation Summary ===")
@@ -166,16 +199,16 @@ async def test_golden_stories_evaluation(mock_db_session):
     print("=========================================")
 
     # Write evaluation report to json for regression logging
-    report_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../evaluation_report.json"))
+    report_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../evaluation_report.json")
+    )
     report = {
         "timestamp": time.time(),
         "live_run": is_live,
         "pass_rate": pass_rate,
-        "results": results
+        "results": results,
     }
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
 
     assert pass_rate >= 50.0, f"Quality gate failed: pass rate is {pass_rate:.1f}%"
-
-import datetime

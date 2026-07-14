@@ -1,22 +1,22 @@
-import pytest
 import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.models.models import Article, ArticleEvent, StoryEntity, Story, Category, Source
-from app.services.story_synthesis_service import (
-    map_article_to_context,
-    map_event_to_context,
-    map_entity_to_context,
-    map_story_to_context,
-    story_synthesis_orchestrator,
-)
+import pytest
+
+from app.models.models import Article, ArticleEvent, Category, Source, Story, StoryEntity
 from app.schemas.synthesis_context import (
     ArticleContext,
-    EventContext,
     EntityContext,
+    EventContext,
     StoryContext,
-    SourceContext,
+)
+from app.services.story_synthesis_service import (
+    map_article_to_context,
+    map_entity_to_context,
+    map_event_to_context,
+    map_story_to_context,
+    story_synthesis_orchestrator,
 )
 
 
@@ -109,7 +109,9 @@ async def test_synthesis_flow_orm_safety_mocked(mock_db_session):
     story = Story(id=story_id, category_id=category.id, story_status="pending")
     article = Article(id=uuid.uuid4(), source_id=source.id, title="Test title")
     article_event = ArticleEvent(id=uuid.uuid4(), article_id=article.id, event_fingerprint="ep1")
-    story_entity = StoryEntity(id=uuid.uuid4(), story_id=story_id, entity_type="person", entity_value="Jane")
+    story_entity = StoryEntity(
+        id=uuid.uuid4(), story_id=story_id, entity_type="person", entity_value="Jane"
+    )
 
     # Setup database mocks
     async def mock_execute_side_effect(stmt, *args, **kwargs):
@@ -139,34 +141,43 @@ async def test_synthesis_flow_orm_safety_mocked(mock_db_session):
 
     # Mock AI/Agent calls
     from app.services.ai_service import StorySummaryResponse
+
     mock_summary = StorySummaryResponse(
         headline="Title",
         one_line_summary="One line",
         short_summary="Short",
         detailed_summary="Detailed",
         key_facts=["Fact"],
-        category="world"
+        category="world",
     )
 
     from app.agents.feedback_agent import FeedbackReport
+
     mock_feedback = FeedbackReport(
-        action="publish",
-        score=0.9,
-        explanation="OK",
-        hallucination_detected=False
+        action="publish", score=0.9, explanation="OK", hallucination_detected=False
     )
 
     with (
-        patch("app.services.ai_service.AIService.summarize_story_from_kg", AsyncMock(return_value=mock_summary)),
-        patch("app.agents.feedback_agent.evaluate_story_quality", AsyncMock(return_value=mock_feedback)),
-        patch("app.services.vector_service.vector_service.retrieve_vectors", AsyncMock(return_value={})),
-        patch("app.services.story_synthesis_service.story_synthesis_orchestrator.record_trace", AsyncMock())
+        patch(
+            "app.services.ai_service.AIService.summarize_story_from_kg",
+            AsyncMock(return_value=mock_summary),
+        ),
+        patch(
+            "app.agents.feedback_agent.evaluate_story_quality",
+            AsyncMock(return_value=mock_feedback),
+        ),
+        patch(
+            "app.services.vector_service.vector_service.retrieve_vectors",
+            AsyncMock(return_value={}),
+        ),
+        patch(
+            "app.services.story_synthesis_service.story_synthesis_orchestrator.record_trace",
+            AsyncMock(),
+        ),
     ):
         # Trigger synthesis
         await story_synthesis_orchestrator.synthesize_story(
-            session=mock_db_session,
-            story_id=story_id,
-            trigger="manual_regenerate"
+            session=mock_db_session, story_id=story_id, trigger="manual_regenerate"
         )
 
     # Verify that add was called for StoryVersion and SynthesisArtifacts

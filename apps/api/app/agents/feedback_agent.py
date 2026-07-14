@@ -5,8 +5,8 @@ from agno.agent import Agent
 from pydantic import BaseModel, Field
 
 from app.agents.base_agent import get_default_model, run_agent_with_observability
-from app.models.models import Article, Story, ArticleEvent
-from app.schemas.synthesis_context import StoryContext, ArticleContext, EventContext
+from app.models.models import Article
+from app.schemas.synthesis_context import ArticleContext, EventContext, StoryContext
 from app.services.vector_service import vector_service
 
 logger = logging.getLogger(__name__)

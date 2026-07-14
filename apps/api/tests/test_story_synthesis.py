@@ -48,8 +48,12 @@ async def test_story_synthesis_orchestrator_flow(mock_db_session):
     )
 
     # Mock articles
-    article1 = Article(id=uuid.uuid4(), source_id=source.id, title="A", description="A", content="A")
-    article2 = Article(id=uuid.uuid4(), source_id=source.id, title="B", description="B", content="B")
+    article1 = Article(
+        id=uuid.uuid4(), source_id=source.id, title="A", description="A", content="A"
+    )
+    article2 = Article(
+        id=uuid.uuid4(), source_id=source.id, title="B", description="B", content="B"
+    )
 
     async def mock_execute_side_effect(stmt, params=None, *args, **kwargs):
         stmt_str = str(stmt).lower()
@@ -76,34 +80,43 @@ async def test_story_synthesis_orchestrator_flow(mock_db_session):
 
     # Mock AI Service & Feedback QA
     from app.services.ai_service import StorySummaryResponse
+
     mock_summary = StorySummaryResponse(
         headline="AI and ML Growth",
         one_line_summary="AI is growing fast.",
         short_summary="A short summary.",
         detailed_summary="A detailed summary of AI growth.",
         key_facts=["AI is fast", "ML is growing"],
-        category="world"
+        category="world",
     )
 
     from app.agents.feedback_agent import FeedbackReport
+
     mock_feedback = FeedbackReport(
-        action="publish",
-        score=0.95,
-        explanation="Approved.",
-        hallucination_detected=False
+        action="publish", score=0.95, explanation="Approved.", hallucination_detected=False
     )
 
     with (
-        patch("app.services.ai_service.AIService.summarize_story_from_kg", AsyncMock(return_value=mock_summary)),
-        patch("app.agents.feedback_agent.evaluate_story_quality", AsyncMock(return_value=mock_feedback)),
-        patch("app.services.vector_service.vector_service.retrieve_vectors", AsyncMock(return_value={})),
-        patch("app.services.story_synthesis_service.story_synthesis_orchestrator.record_trace", AsyncMock())
+        patch(
+            "app.services.ai_service.AIService.summarize_story_from_kg",
+            AsyncMock(return_value=mock_summary),
+        ),
+        patch(
+            "app.agents.feedback_agent.evaluate_story_quality",
+            AsyncMock(return_value=mock_feedback),
+        ),
+        patch(
+            "app.services.vector_service.vector_service.retrieve_vectors",
+            AsyncMock(return_value={}),
+        ),
+        patch(
+            "app.services.story_synthesis_service.story_synthesis_orchestrator.record_trace",
+            AsyncMock(),
+        ),
     ):
         # Run orchestrator
         await story_synthesis_orchestrator.synthesize_story(
-            session=mock_db_session,
-            story_id=story_id,
-            trigger="manual_regenerate"
+            session=mock_db_session, story_id=story_id, trigger="manual_regenerate"
         )
 
     # Assert session methods are called to persist the version and artifacts
@@ -127,21 +140,45 @@ def test_admin_rollback_endpoint():
         source_comparison_artifact_id=uuid.uuid4(),
         contradiction_artifact_id=uuid.uuid4(),
         pipeline_version="1.0.0",
-        trigger="manual_regenerate"
+        trigger="manual_regenerate",
     )
 
     mock_artifacts = [
-        SynthesisArtifact(id=uuid.uuid4(), story_id=story_id, artifact_type="summary", payload={
-            "headline": "Version 1 Headline",
-            "one_line_summary": "One line 1",
-            "short_summary": "Short 1",
-            "detailed_summary": "Detailed 1",
-            "key_facts": ["Fact 1"],
-            "category": "world"
-        }, content_hash="hash1"),
-        SynthesisArtifact(id=uuid.uuid4(), story_id=story_id, artifact_type="timeline", payload=[], content_hash="hash2"),
-        SynthesisArtifact(id=uuid.uuid4(), story_id=story_id, artifact_type="contradictions", payload=[], content_hash="hash3"),
-        SynthesisArtifact(id=uuid.uuid4(), story_id=story_id, artifact_type="source_comparison", payload={}, content_hash="hash4"),
+        SynthesisArtifact(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            artifact_type="summary",
+            payload={
+                "headline": "Version 1 Headline",
+                "one_line_summary": "One line 1",
+                "short_summary": "Short 1",
+                "detailed_summary": "Detailed 1",
+                "key_facts": ["Fact 1"],
+                "category": "world",
+            },
+            content_hash="hash1",
+        ),
+        SynthesisArtifact(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            artifact_type="timeline",
+            payload=[],
+            content_hash="hash2",
+        ),
+        SynthesisArtifact(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            artifact_type="contradictions",
+            payload=[],
+            content_hash="hash3",
+        ),
+        SynthesisArtifact(
+            id=uuid.uuid4(),
+            story_id=story_id,
+            artifact_type="source_comparison",
+            payload={},
+            content_hash="hash4",
+        ),
     ]
 
     mock_story = Story(id=story_id, headline="Current Headline", story_status="active")
@@ -181,7 +218,7 @@ def test_admin_rollback_endpoint():
         patch("sqlalchemy.ext.asyncio.AsyncSession.execute", mock_execute),
         patch("sqlalchemy.ext.asyncio.AsyncSession.commit", AsyncMock()),
         patch("sqlalchemy.ext.asyncio.AsyncSession.flush", AsyncMock()),
-        patch("app.services.cache_service.cache_service.invalidate_story", AsyncMock())
+        patch("app.services.cache_service.cache_service.invalidate_story", AsyncMock()),
     ):
         response = client.post(f"/api/v1/admin/pipeline/story/{story_id}/rollback/{version_number}")
         assert response.status_code == 200

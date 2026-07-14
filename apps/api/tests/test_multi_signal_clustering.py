@@ -135,12 +135,13 @@ async def test_add_article_gated_merge(mock_search_similar, mock_qdrant_client, 
     )
 
     from app.models.models import StoryEntity
+
     story = Story(
         id=story_id,
         headline="Fire reported in Chicago",
         first_seen_at=datetime.datetime(2026, 6, 20),
         updated_at=datetime.datetime(2026, 6, 20),
-        entities=[StoryEntity(entity_value="Chicago", entity_type="GPE")]
+        entities=[StoryEntity(entity_value="Chicago", entity_type="GPE")],
     )
     story.story_embedding = [0.1] * 128
 
@@ -269,9 +270,16 @@ async def test_batch_clustering_validation_split(
         res.scalar_one.return_value = 0
         res.scalar.return_value = None
         res.scalars.return_value.all.return_value = []
-        if "from articles" in stmt_str or "from article " in stmt_str or "discovery_queue" in stmt_str:
+        if (
+            "from articles" in stmt_str
+            or "from article " in stmt_str
+            or "discovery_queue" in stmt_str
+        ):
             res.scalars.return_value.all.return_value = [art1, art2]
-            res.all.return_value = [(art1, MagicMock(id=uuid.uuid4(), state="ready")), (art2, MagicMock(id=uuid.uuid4(), state="ready"))]
+            res.all.return_value = [
+                (art1, MagicMock(id=uuid.uuid4(), state="ready")),
+                (art2, MagicMock(id=uuid.uuid4(), state="ready")),
+            ]
         elif "from article_events" in stmt_str:
             if any(v == art1_id for v in params.values()):
                 res.scalar_one_or_none.return_value = evt1

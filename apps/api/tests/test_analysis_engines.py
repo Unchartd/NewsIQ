@@ -304,10 +304,7 @@ async def test_generate_story_content_redesigned_timeline():
 
     from app.services.story_synthesis_service import TimelineCompiler
 
-    timeline_events = TimelineCompiler.compile(
-        [evt1, evt2],
-        {art1.id: "BBC", art2.id: "BBC"}
-    )
+    timeline_events = TimelineCompiler.compile([evt1, evt2], {art1.id: "BBC", art2.id: "BBC"})
     assert len(timeline_events) == 2
 
     # Verify chronological sorting (earlier event should be first)

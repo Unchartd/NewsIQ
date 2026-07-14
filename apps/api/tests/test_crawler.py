@@ -97,7 +97,9 @@ async def test_crawl_article_fallback_chain():
     url = "https://example.com/fallback-test"
     sample_html = "<html><body><p>Substantial text that is not captured by newspaper but will be captured by secondary fallback, let's write at least 150 characters here to make it pass the length requirements.</p></body></html>"
 
-    with patch.object(crawler_service, "fetch_html", return_value=(sample_html, {"fetch_method": "test"})):
+    with patch.object(
+        crawler_service, "fetch_html", return_value=(sample_html, {"fetch_method": "test"})
+    ):
         # 1. Newspaper fails (returns None), Trafilatura succeeds
         with patch.object(crawler_service, "_extract_newspaper", return_value=None):
             result = await crawler_service.crawl_article(url)
@@ -143,6 +145,7 @@ async def test_crawl_article_fallback_chain():
 async def test_crawl_article_stealth_fallback():
     """Verify that when standard httpx fails, the crawler successfully falls back to curl-cffi."""
     import httpx
+
     url = "https://example.com/stealth-test"
     sample_html = "<html><body><p>Stealth fallback content to extract, let's write at least 150 characters here so that the minimum length check passes successfully and newspaper4k parses it.</p></body></html>"
 
@@ -150,6 +153,7 @@ async def test_crawl_article_stealth_fallback():
         def __init__(self, text, status_code=200):
             self.text = text
             self.status_code = status_code
+
         def raise_for_status(self):
             pass
 

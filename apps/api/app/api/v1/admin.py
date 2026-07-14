@@ -244,7 +244,9 @@ async def trigger_pipeline(
         # Temporarily clear the pause flag so the enqueued tasks pass the
         # is_pipeline_paused() guard, then immediately re-set it so that
         # Celery Beat scheduled tasks remain blocked.
-        pause_ttl = await cache_service._redis.ttl("pipeline_paused") if cache_service._redis else -1
+        pause_ttl = (
+            await cache_service._redis.ttl("pipeline_paused") if cache_service._redis else -1
+        )
         await cache_service.delete("pipeline_paused")
         ingest_task = ingest_news_task.delay()
         cluster_task = cluster_news_task.delay()
@@ -264,7 +266,6 @@ async def trigger_pipeline(
             "cluster": str(cluster_task.id),
         },
     }
-
 
 
 @router.get("/pipeline/status", response_model=PipelineStatusResponse)

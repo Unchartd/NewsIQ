@@ -27,11 +27,11 @@ from app.models.models import (
 )
 from app.models.observability_models import PipelineTraceModel
 from app.schemas.synthesis_context import (
-    StoryContext,
     ArticleContext,
-    EventContext,
     EntityContext,
+    EventContext,
     SourceContext,
+    StoryContext,
 )
 from app.services.ai_service import AIService
 from app.services.cache_service import cache_service
@@ -891,6 +891,7 @@ class StorySynthesisOrchestrator:
         article_events = list(evt_res.scalars().all())
 
         from sqlalchemy.orm import selectinload
+
         entity_stmt = (
             select(StoryEntity)
             .options(selectinload(StoryEntity.canonical_entity))

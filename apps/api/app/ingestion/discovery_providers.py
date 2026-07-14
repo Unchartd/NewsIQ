@@ -38,15 +38,25 @@ class GoogleRSSDiscoveryProvider(DiscoveryProvider):
         if "news.google.com" not in url:
             return url
         try:
-            from googlenewsdecoder import new_decoderv1
             import asyncio
+
+            from googlenewsdecoder import new_decoderv1
+
             # Execute base decoder in a thread because it does blocking network/parsing calls
             decoded = await asyncio.to_thread(new_decoderv1, url, interval=1)
             if decoded.get("status") and decoded.get("decoded_url"):
                 resolved = decoded["decoded_url"]
-                logger.info("GoogleRSSDiscoveryProvider: Decoded Google News redirect URL from %s to %s", url, resolved)
+                logger.info(
+                    "GoogleRSSDiscoveryProvider: Decoded Google News redirect URL from %s to %s",
+                    url,
+                    resolved,
+                )
                 return resolved
-            logger.warning("GoogleRSSDiscoveryProvider: Failed to decode URL %s: %s", url, decoded.get("message"))
+            logger.warning(
+                "GoogleRSSDiscoveryProvider: Failed to decode URL %s: %s",
+                url,
+                decoded.get("message"),
+            )
         except Exception as exc:
             logger.warning("GoogleRSSDiscoveryProvider: Error decoding URL %s: %s", url, exc)
         return url

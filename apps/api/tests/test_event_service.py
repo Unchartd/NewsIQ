@@ -14,7 +14,7 @@ from app.services.event_taxonomy import (
 def disable_cache():
     with (
         patch("app.services.pipeline_cache.pipeline_cache.get", new_callable=AsyncMock) as mock_get,
-        patch("app.services.pipeline_cache.pipeline_cache.set", new_callable=AsyncMock) as mock_set,
+        patch("app.services.pipeline_cache.pipeline_cache.set", new_callable=AsyncMock),
     ):
         mock_get.return_value = None
         yield

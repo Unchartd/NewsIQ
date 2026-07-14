@@ -1512,6 +1512,7 @@ class ClusteringService:
 
                 try:
                     from app.core.failure_recorder import record_pipeline_failure
+
                     await record_pipeline_failure(
                         stage="story_synthesis",
                         exception=e,
@@ -1519,7 +1520,9 @@ class ClusteringService:
                         input_payload={"article_count": len(art_list)},
                     )
                 except Exception as rec_err:
-                    logger.error("Failed to record pipeline failure for story %s: %s", story_id, rec_err)
+                    logger.error(
+                        "Failed to record pipeline failure for story %s: %s", story_id, rec_err
+                    )
 
         return stories_created
 
