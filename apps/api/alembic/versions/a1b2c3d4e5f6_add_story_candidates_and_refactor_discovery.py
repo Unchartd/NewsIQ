@@ -1,4 +1,4 @@
-﻿"""add_story_candidates_and_refactor_discovery
+"""add_story_candidates_and_refactor_discovery
 
 Revision ID: a1b2c3d4e5f6
 Revises: 1af5d702f838
@@ -23,7 +23,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "a1b2c3d4e5f6"
-down_revision: str | None = "1af5d702f838"
+down_revision: str | None = "62039cc3c6f0"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
