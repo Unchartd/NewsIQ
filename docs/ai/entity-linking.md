@@ -34,8 +34,15 @@ For new entities, the LLM is queried to produce:
 2. Targeted Wikidata search query (e.g., *"Rahul Gandhi politician"* to avoid ambiguity).
 3. Context-based description.
 
-### 3. Wikidata Matching
-We query the Wikidata `wbsearchentities` API to resolve globally unique QIDs (e.g., `Q981309` for Rahul Gandhi). If Wikidata yields a high-confidence match, the entity is linked to that QID.
+### 3. Wikidata Matching & Resiliency
+We query the Wikidata `wbsearchentities` API to resolve globally unique QIDs (e.g., `Q981309` for Rahul Gandhi). 
+
+To ensure high availability and prevent external API outages from breaking background pipelines:
+- **Tenacity Retries**: Queries are wrapped in a 3-attempt exponential backoff retry cycle.
+- **HTTP Status Check**: `response.raise_for_status()` is called on every request to ensure transient 5xx Wikidata Gateway errors trigger retries.
+- **Fallback Callbacks**: If all retry attempts are exhausted, a `retry_error_callback` returns a safe fallback payload (`[]` for multi-search queries, `None` for single lookups) instead of raising `RetryError`. The linking pipeline then cascades gracefully to local name matching or LLM agentic disambiguation.
+
+If Wikidata yields a high-confidence match, the entity is linked to that QID.
 
 ### 4. Cache & Persistence Layer
 Resolved matches are saved in the `canonical_entities` table and cached in Redis with a **7-day TTL** (using the key schema `newsiq:entity_link:{canonical_name_slugified}`).
