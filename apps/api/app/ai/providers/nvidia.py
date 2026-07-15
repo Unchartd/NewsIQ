@@ -153,7 +153,7 @@ class NvidiaProvider(AIProvider):
 
     async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         try:
-            model_name = model or "nvidia/llama-3.2-nv-embedqa-4b-v1"
+            model_name = model or "nvidia/nv-embed-v1"
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
             # For NVIDIA, we use their default/configured embed model, or fallback
             response = await client.embeddings.create(input=[text], model=model_name)

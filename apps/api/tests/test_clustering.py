@@ -131,9 +131,7 @@ async def test_run_batch_clustering(
             patch.object(
                 entity_linker, "link_entity", AsyncMock(return_value=MagicMock(id=uuid.uuid4()))
             ),
-            patch.object(
-                story_synthesis_orchestrator, "synthesize_story", AsyncMock()
-            ),
+            patch.object(story_synthesis_orchestrator, "synthesize_story", AsyncMock()),
             patch.object(clustering_service, "_index_and_invalidate", AsyncMock()),
         ):
             stories_created = await clustering_service.run_batch_clustering(mock_db_session)

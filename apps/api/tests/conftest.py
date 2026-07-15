@@ -1,45 +1,58 @@
 """Pytest configuration and common fixtures."""
+# ruff: noqa: E402, I001
 
 import os
+
 # Disable Langfuse integration for all unit tests to avoid hanging on HTTP timeouts
 os.environ["LANGFUSE_PUBLIC_KEY"] = ""
 os.environ["LANGFUSE_SECRET_KEY"] = ""
 
 # Bypass RateLimitMiddleware for all tests to prevent connecting to Redis
 from app.core.rate_limiter import RateLimitMiddleware
+
+
 async def _mock_rate_limit_dispatch(self, request, call_next):
     return await call_next(request)
+
+
 RateLimitMiddleware.dispatch = _mock_rate_limit_dispatch
 
 # Bypass CacheService._redis globally during tests to disable Redis connection attempts
 from app.services.cache_service import CacheService
+
 CacheService._redis = None
 
 # Mock ExtractionManager._update_domain_policy globally to prevent DB connection attempts
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.extraction_manager import ExtractionManager
+
 ExtractionManager._update_domain_policy = AsyncMock()
 
 # Bypass structured logging Redis publisher globally during tests to prevent connecting to Redis
 import app.core.structured_logging as sl
+
 sl._store_and_publish_log = lambda logger, method_name, event_dict: event_dict
 
 # Bypass PipelineCache._record_metric globally during tests to disable Redis metric publishing
 from app.services.pipeline_cache import PipelineCache
+
 PipelineCache._record_metric = staticmethod(lambda stage, operation: None)
 
 # Bypass Qdrant remote compatibility check during client initialization to prevent hanging/connecting
 from qdrant_client.async_qdrant_remote import AsyncQdrantRemote
 from qdrant_client.qdrant_remote import QdrantRemote
+
 AsyncQdrantRemote._check_compatibility = lambda *args, **kwargs: None
 QdrantRemote._check_compatibility = lambda *args, **kwargs: None
 
 # Bypass Qdrant vector_service retrieve_vectors globally during tests to prevent connecting to Qdrant
 from app.services.vector_service import vector_service
+
 vector_service.retrieve_vectors = AsyncMock(return_value={})
 
 # Bypass gnews_service._redis globally during tests to disable Redis connection attempts
 from app.services.gnews_service import gnews_service
+
 gnews_service._redis = None
 
 import asyncio
