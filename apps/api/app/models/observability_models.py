@@ -565,3 +565,61 @@ class PipelineTraceModel(Base):
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
 
     __table_args__ = (Index("idx_pipeline_traces_story_stage", "story_id", "stage"),)
+
+
+class AIExecutionRecordModel(Base):
+    """Unified execution record for all AI pipeline stages (AIExecutionRecord)."""
+
+    __tablename__ = "ai_execution_records"
+
+    execution_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
+    )
+    trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+
+    stage: Mapped[str] = mapped_column(String(100), index=True)
+    provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    capability: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    prompt_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    cost: Mapped[float] = mapped_column(Float, default=0.0)
+
+    cache_hit: Mapped[bool] = mapped_column(Boolean, default=False)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    fallback_count: Mapped[int] = mapped_column(Integer, default=0)
+    schema_repaired: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    decision: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Phase 6: Hallucination Analytics
+    unsupported_claims_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    missing_citations_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    contradictions_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bias_corrections_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    regeneration_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reflection_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+
+    __table_args__ = (
+        Index("idx_ai_execution_records_story_stage", "story_id", "stage"),
+        Index("idx_ai_execution_records_prompt_version", "prompt_name", "prompt_version"),
+        Index("idx_ai_execution_records_model_provider", "model", "provider"),
+    )

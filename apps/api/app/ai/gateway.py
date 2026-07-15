@@ -142,6 +142,90 @@ class AIGateway:
         output_cost = (output_tokens / 1_000_000) * pricing["output"]
         return round(input_cost + output_cost, 8)
 
+    async def _persist_execution_record(
+        self,
+        execution_id: Any,
+        stage: str,
+        provider: str | None,
+        model: str | None,
+        capability: str | None,
+        prompt_name: str | None,
+        prompt_version: str | None,
+        temperature: float | None,
+        input_tokens: int,
+        output_tokens: int,
+        latency_ms: float,
+        cost: float,
+        cache_hit: bool,
+        retry_count: int,
+        fallback_count: int,
+        schema_repaired: bool,
+        decision: str | None,
+        confidence: float | None,
+        input_hash: str | None,
+        story_id: str | None = None,
+        article_id: str | None = None,
+        unsupported_claims_count: int | None = None,
+        missing_citations_count: int | None = None,
+        contradictions_count: int | None = None,
+        bias_corrections_count: int | None = None,
+        regeneration_count: int | None = None,
+        reflection_confidence: float | None = None,
+    ) -> None:
+        """Create and persist an AIExecutionRecord in the database."""
+        import uuid
+
+        from app.core.database import async_session_factory
+        from app.core.trace import trace_id_ctx
+        from app.models.observability_models import AIExecutionRecordModel
+
+        def _to_uuid(val: Any) -> uuid.UUID | None:
+            if not val:
+                return None
+            if isinstance(val, uuid.UUID):
+                return val
+            try:
+                return uuid.UUID(str(val))
+            except ValueError:
+                return None
+
+        try:
+            async with async_session_factory() as session:
+                record = AIExecutionRecordModel(
+                    execution_id=_to_uuid(execution_id) or uuid.uuid4(),
+                    trace_id=_to_uuid(trace_id_ctx.get(None)),
+                    story_id=_to_uuid(story_id),
+                    article_id=_to_uuid(article_id),
+                    stage=stage,
+                    provider=provider,
+                    model=model,
+                    capability=capability,
+                    prompt_name=prompt_name,
+                    prompt_version=prompt_version,
+                    temperature=temperature,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    latency_ms=latency_ms,
+                    cost=cost,
+                    cache_hit=cache_hit,
+                    retry_count=retry_count,
+                    fallback_count=fallback_count,
+                    schema_repaired=schema_repaired,
+                    decision=decision,
+                    confidence=confidence,
+                    input_hash=input_hash,
+                    unsupported_claims_count=unsupported_claims_count,
+                    missing_citations_count=missing_citations_count,
+                    contradictions_count=contradictions_count,
+                    bias_corrections_count=bias_corrections_count,
+                    regeneration_count=regeneration_count,
+                    reflection_confidence=reflection_confidence,
+                )
+                session.add(record)
+                await session.commit()
+        except Exception as persist_exc:
+            logger.warning("Failed to persist AI execution record to DB: %s", persist_exc)
+
     async def generate_stage(
         self,
         stage: str,
@@ -217,6 +301,73 @@ class AIGateway:
                         parsed = resolved_schema.model_validate(cached_response["parsed"])
                     except Exception as e:
                         logger.warning("Cache deserialization failed for stage '%s': %s", stage, e)
+
+                try:
+                    import hashlib
+
+                    input_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+                    decision = None
+                    confidence = None
+                    if parsed:
+                        if hasattr(parsed, "same_event"):
+                            decision = str(getattr(parsed, "same_event"))
+                        elif hasattr(parsed, "has_hallucinations"):
+                            decision = (
+                                "hallucination_detected"
+                                if getattr(parsed, "has_hallucinations")
+                                else "clean"
+                            )
+                        if hasattr(parsed, "confidence"):
+                            confidence = float(getattr(parsed, "confidence"))
+
+                    unsupported_claims_count = None
+                    missing_citations_count = None
+                    contradictions_count = None
+                    bias_corrections_count = None
+                    reflection_confidence = None
+                    if stage == "summary_reflection" and parsed:
+                        unsupported_claims_count = len(getattr(parsed, "invented_facts", []))
+                        missing_citations_count = len(getattr(parsed, "omitted_critical_facts", []))
+                        contradictions_count = (
+                            1 if getattr(parsed, "contradicts_graph", False) else 0
+                        )
+                        reflection_confidence = (
+                            1.0 if not getattr(parsed, "has_hallucinations", False) else 0.0
+                        )
+
+                    import uuid
+
+                    await self._persist_execution_record(
+                        execution_id=uuid.uuid4(),
+                        stage=stage,
+                        provider=cached_response["provider"],
+                        model=cached_response["model"],
+                        capability=cfg.model,
+                        prompt_name=stage,
+                        prompt_version=manifest.version,
+                        temperature=cfg.temperature,
+                        input_tokens=0,
+                        output_tokens=0,
+                        latency_ms=0.0,
+                        cost=0.0,
+                        cache_hit=True,
+                        retry_count=0,
+                        fallback_count=0,
+                        schema_repaired=False,
+                        decision=decision,
+                        confidence=confidence,
+                        input_hash=input_hash,
+                        story_id=s_id,
+                        article_id=a_id,
+                        unsupported_claims_count=unsupported_claims_count,
+                        missing_citations_count=missing_citations_count,
+                        contradictions_count=contradictions_count,
+                        bias_corrections_count=bias_corrections_count,
+                        reflection_confidence=reflection_confidence,
+                    )
+                except Exception as cache_rec_exc:
+                    logger.warning("Failed to emit cache hit execution record: %s", cache_rec_exc)
+
                 return GatewayResponse(
                     content=cached_response["content"],
                     parsed=parsed,
@@ -247,6 +398,7 @@ class AIGateway:
                 backoff = 1.0
 
                 for attempt in range(max_attempts):
+                    schema_repaired = False
                     try:
                         req = GatewayRequest(
                             model=model_name,
@@ -295,6 +447,7 @@ class AIGateway:
                                     data = json.loads(response.content)
                                     cleaned = clean_json_for_schema(data, resolved_schema)
                                     response.parsed = resolved_schema.model_validate(cleaned)
+                                    schema_repaired = True
                                 except (ValueError, PydanticValidationError) as val_err:
                                     newsiq_ai_gateway_validation_failures_total.labels(
                                         capability=stage, model=model_name
@@ -362,6 +515,78 @@ class AIGateway:
                                 temperature=cfg.temperature,
                             )
 
+                        # Emit execution record for cache miss (Phase 1)
+                        try:
+                            import hashlib
+
+                            input_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+                            decision = None
+                            confidence = None
+                            parsed = response.parsed
+                            if parsed:
+                                if hasattr(parsed, "same_event"):
+                                    decision = str(getattr(parsed, "same_event"))
+                                elif hasattr(parsed, "has_hallucinations"):
+                                    decision = (
+                                        "hallucination_detected"
+                                        if getattr(parsed, "has_hallucinations")
+                                        else "clean"
+                                    )
+                                if hasattr(parsed, "confidence"):
+                                    confidence = float(getattr(parsed, "confidence"))
+
+                            unsupported_claims_count = None
+                            missing_citations_count = None
+                            contradictions_count = None
+                            bias_corrections_count = None
+                            reflection_confidence = None
+                            if stage == "summary_reflection" and parsed:
+                                unsupported_claims_count = len(
+                                    getattr(parsed, "invented_facts", [])
+                                )
+                                missing_citations_count = len(
+                                    getattr(parsed, "omitted_critical_facts", [])
+                                )
+                                contradictions_count = (
+                                    1 if getattr(parsed, "contradicts_graph", False) else 0
+                                )
+                                reflection_confidence = (
+                                    1.0 if not getattr(parsed, "has_hallucinations", False) else 0.0
+                                )
+
+                            import uuid
+
+                            await self._persist_execution_record(
+                                execution_id=uuid.uuid4(),
+                                stage=stage,
+                                provider=provider_name,
+                                model=model_name,
+                                capability=cfg.model,
+                                prompt_name=stage,
+                                prompt_version=manifest.version,
+                                temperature=cfg.temperature,
+                                input_tokens=response.input_tokens,
+                                output_tokens=response.output_tokens,
+                                latency_ms=response.latency_ms,
+                                cost=cost,
+                                cache_hit=False,
+                                retry_count=attempt,
+                                fallback_count=idx,
+                                schema_repaired=schema_repaired,
+                                decision=decision,
+                                confidence=confidence,
+                                input_hash=input_hash,
+                                story_id=s_id,
+                                article_id=a_id,
+                                unsupported_claims_count=unsupported_claims_count,
+                                missing_citations_count=missing_citations_count,
+                                contradictions_count=contradictions_count,
+                                bias_corrections_count=bias_corrections_count,
+                                reflection_confidence=reflection_confidence,
+                            )
+                        except Exception as emit_exc:
+                            logger.warning("Failed to emit AI execution record: %s", emit_exc)
+
                         return response
 
                     except ValidationError as ve:
@@ -425,6 +650,39 @@ class AIGateway:
                         last_error = err
                         await asyncio.sleep(backoff)
                         backoff *= 2.0
+
+        # Emit failed execution record (Phase 1)
+        try:
+            import hashlib
+
+            input_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+            import uuid
+
+            await self._persist_execution_record(
+                execution_id=uuid.uuid4(),
+                stage=stage,
+                provider=None,
+                model=None,
+                capability=cfg.model,
+                prompt_name=stage,
+                prompt_version=manifest.version,
+                temperature=cfg.temperature,
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=0.0,
+                cost=0.0,
+                cache_hit=False,
+                retry_count=max_attempts,
+                fallback_count=len(all_models),
+                schema_repaired=False,
+                decision="failed",
+                confidence=None,
+                input_hash=input_hash,
+                story_id=s_id,
+                article_id=a_id,
+            )
+        except Exception as record_exc:
+            logger.warning("Failed to emit failed execution record: %s", record_exc)
 
         raise AIGatewayError(f"All providers failed for stage='{stage}'. Last error: {last_error}")
 
@@ -490,6 +748,70 @@ class AIGateway:
                 except Exception as e:
                     logger.warning("Cache deserialization failed: %s", e)
 
+            try:
+                import hashlib
+
+                input_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+                decision = None
+                confidence = None
+                if parsed:
+                    if hasattr(parsed, "same_event"):
+                        decision = str(getattr(parsed, "same_event"))
+                    elif hasattr(parsed, "has_hallucinations"):
+                        decision = (
+                            "hallucination_detected"
+                            if getattr(parsed, "has_hallucinations")
+                            else "clean"
+                        )
+                    if hasattr(parsed, "confidence"):
+                        confidence = float(getattr(parsed, "confidence"))
+
+                unsupported_claims_count = None
+                missing_citations_count = None
+                contradictions_count = None
+                bias_corrections_count = None
+                reflection_confidence = None
+                if capability == "summary_reflection" and parsed:
+                    unsupported_claims_count = len(getattr(parsed, "invented_facts", []))
+                    missing_citations_count = len(getattr(parsed, "omitted_critical_facts", []))
+                    contradictions_count = 1 if getattr(parsed, "contradicts_graph", False) else 0
+                    reflection_confidence = (
+                        1.0 if not getattr(parsed, "has_hallucinations", False) else 0.0
+                    )
+
+                import uuid
+
+                await self._persist_execution_record(
+                    execution_id=uuid.uuid4(),
+                    stage=capability,
+                    provider=cached_response["provider"],
+                    model=cached_response["model"],
+                    capability=capability,
+                    prompt_name=capability,
+                    prompt_version=prompt_template.version,
+                    temperature=temp,
+                    input_tokens=0,
+                    output_tokens=0,
+                    latency_ms=0.0,
+                    cost=0.0,
+                    cache_hit=True,
+                    retry_count=0,
+                    fallback_count=0,
+                    schema_repaired=False,
+                    decision=decision,
+                    confidence=confidence,
+                    input_hash=input_hash,
+                    story_id=s_id,
+                    article_id=a_id,
+                    unsupported_claims_count=unsupported_claims_count,
+                    missing_citations_count=missing_citations_count,
+                    contradictions_count=contradictions_count,
+                    bias_corrections_count=bias_corrections_count,
+                    reflection_confidence=reflection_confidence,
+                )
+            except Exception as cache_rec_exc:
+                logger.warning("Failed to emit cache hit execution record: %s", cache_rec_exc)
+
             return GatewayResponse(
                 content=cached_response["content"],
                 parsed=parsed,
@@ -520,6 +842,7 @@ class AIGateway:
             backoff = 1.0
 
             for attempt in range(max_attempts):
+                schema_repaired = False
                 try:
                     req = GatewayRequest(
                         model=model_name,
@@ -572,6 +895,7 @@ class AIGateway:
                                 data = json.loads(response.content)
                                 cleaned_data = clean_json_for_schema(data, schema)
                                 response.parsed = schema.model_validate(cleaned_data)
+                                schema_repaired = True
                             except (ValueError, PydanticValidationError) as val_err:
                                 newsiq_ai_gateway_validation_failures_total.labels(
                                     capability=capability, model=model_name
@@ -659,6 +983,76 @@ class AIGateway:
                         temperature=temp,
                     )
 
+                    # Emit execution record for cache miss (Phase 1)
+                    try:
+                        import hashlib
+
+                        input_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+                        decision = None
+                        confidence = None
+                        parsed = response.parsed
+                        if parsed:
+                            if hasattr(parsed, "same_event"):
+                                decision = str(getattr(parsed, "same_event"))
+                            elif hasattr(parsed, "has_hallucinations"):
+                                decision = (
+                                    "hallucination_detected"
+                                    if getattr(parsed, "has_hallucinations")
+                                    else "clean"
+                                )
+                            if hasattr(parsed, "confidence"):
+                                confidence = float(getattr(parsed, "confidence"))
+
+                        unsupported_claims_count = None
+                        missing_citations_count = None
+                        contradictions_count = None
+                        bias_corrections_count = None
+                        reflection_confidence = None
+                        if capability == "summary_reflection" and parsed:
+                            unsupported_claims_count = len(getattr(parsed, "invented_facts", []))
+                            missing_citations_count = len(
+                                getattr(parsed, "omitted_critical_facts", [])
+                            )
+                            contradictions_count = (
+                                1 if getattr(parsed, "contradicts_graph", False) else 0
+                            )
+                            reflection_confidence = (
+                                1.0 if not getattr(parsed, "has_hallucinations", False) else 0.0
+                            )
+
+                        import uuid
+
+                        await self._persist_execution_record(
+                            execution_id=uuid.uuid4(),
+                            stage=capability,
+                            provider=provider_name,
+                            model=model_name,
+                            capability=capability,
+                            prompt_name=capability,
+                            prompt_version=prompt_template.version,
+                            temperature=temp,
+                            input_tokens=response.input_tokens,
+                            output_tokens=response.output_tokens,
+                            latency_ms=response.latency_ms,
+                            cost=cost,
+                            cache_hit=False,
+                            retry_count=attempt,
+                            fallback_count=idx,
+                            schema_repaired=schema_repaired,
+                            decision=decision,
+                            confidence=confidence,
+                            input_hash=input_hash,
+                            story_id=s_id,
+                            article_id=a_id,
+                            unsupported_claims_count=unsupported_claims_count,
+                            missing_citations_count=missing_citations_count,
+                            contradictions_count=contradictions_count,
+                            bias_corrections_count=bias_corrections_count,
+                            reflection_confidence=reflection_confidence,
+                        )
+                    except Exception as emit_exc:
+                        logger.warning("Failed to emit AI execution record: %s", emit_exc)
+
                     return response
 
                 except ValidationError as ve:
@@ -732,6 +1126,39 @@ class AIGateway:
                     # Wait and backoff
                     await asyncio.sleep(backoff)
                     backoff *= 2.0
+
+        # Emit failed execution record (Phase 1)
+        try:
+            import hashlib
+
+            input_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+            import uuid
+
+            await self._persist_execution_record(
+                execution_id=uuid.uuid4(),
+                stage=capability,
+                provider=None,
+                model=None,
+                capability=capability,
+                prompt_name=capability,
+                prompt_version=prompt_template.version,
+                temperature=temp,
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=0.0,
+                cost=0.0,
+                cache_hit=False,
+                retry_count=max_attempts,
+                fallback_count=len(chain),
+                schema_repaired=False,
+                decision="failed",
+                confidence=None,
+                input_hash=input_hash,
+                story_id=s_id,
+                article_id=a_id,
+            )
+        except Exception as record_exc:
+            logger.warning("Failed to emit failed execution record: %s", record_exc)
 
         raise AIGatewayError(f"All AI Gateway providers in chain failed. Last error: {last_error}")
 

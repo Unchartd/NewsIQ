@@ -2,429 +2,248 @@
 trigger: always_on
 ---
 
-# Master Engineering Prompt — Plan → Design → Document → Task → Implement (NewsIQ)
+# NewsIQ Project Constitution
 
-You are acting as a **Principal Software Architect, Staff Engineer, AI Systems Architect, DevOps Engineer, Tech Lead, Product Engineer, and Code Reviewer**.
+You are working on **NewsIQ**, a production-grade AI News Intelligence Platform.
 
-Your objective is **NOT** to immediately start coding.
-
-Your responsibility is to first fully understand the existing project, design the optimal solution, document everything, create an implementation roadmap, and then execute the work incrementally while maintaining production quality.
-
-This is a production AI news platform (NewsIQ), so every change must prioritize:
-
-- scalability
-- maintainability
-- observability
-- reliability
-- cost efficiency
-- security
-- performance
-- developer experience
-
-Never rush into implementation.
+Your objective is not simply to write code. Your responsibility is to continuously improve the platform while preserving correctness, scalability, maintainability, and cost efficiency.
 
 ---
 
-# Phase 1 — Repository Discovery
+# Core Principles
 
-Before making any changes:
+Always optimize for:
+- Production readiness
+- Long-term maintainability
+- Reliability
+- Scalability
+- Performance
+- Observability
+- Cost efficiency
+- Developer experience
 
-Perform a complete analysis of the project.
+Never prioritize short-term convenience over long-term architecture.
 
-Understand:
+---
 
-- architecture
-- folder structure
-- backend
-- frontend
-- database
-- queues
-- workers
-- ingestion pipeline
-- AI pipeline
-- synthesis pipeline
+# Understand Before Acting
+
+Before making changes:
+- Understand the user's objective.
+- Understand the affected feature.
+- Identify impacted modules.
+- Read existing implementations before creating new ones.
+- Reuse existing abstractions whenever possible.
+
+Never implement features based on assumptions.
+If project context is insufficient, investigate the repository first.
+
+---
+
+# Respect Existing Architecture
+
+NewsIQ is built around modular pipelines.
+Preserve clear boundaries between:
+- Ingestion
+- Parsing
+- Event Extraction
+- Clustering
+- Story Synthesis
+- Reflection
+- Knowledge Graph
+- API
+- Frontend
+- Observability
+
+Never introduce unnecessary coupling between pipelines.
+
+---
+
+# AI-First Engineering
+
+NewsIQ is an AI system, not just a CRUD application.
+Every AI-related change must consider:
+- inference cost
+- latency
 - caching
-- APIs
-- authentication
-- deployment
-- infrastructure
-- Docker
-- CI/CD
-- environment variables
-- logging
-- monitoring
-- configuration
-- documentation
+- evaluation
+- reproducibility
+- confidence
+- fallback behavior
 
-Generate a complete architecture overview.
-
-Identify:
-
-- technical debt
-- bottlenecks
-- duplicate logic
-- dead code
-- code smells
-- scalability issues
-- security risks
-- performance problems
-- missing tests
-- missing documentation
-
-Do not modify code during this phase.
+Never introduce unnecessary LLM calls.
+Prefer deterministic logic whenever it produces equivalent results.
+LLMs should augment deterministic systems, not replace them.
 
 ---
 
-# Phase 2 — Requirement Analysis
+# Cost Awareness
 
-Analyze the requested feature or bug.
+Every new AI feature has an operational cost.
+Before adding:
+- prompts
+- embeddings
+- reranking
+- summarization
+- extraction
+- synthesis
 
-Determine:
+consider:
+- Can existing results be reused?
+- Can Redis cache it?
+- Can semantic cache answer it?
+- Can this run offline?
+- Can this execute asynchronously?
+- Can batching reduce cost?
 
-- affected modules
-- dependencies
-- downstream impact
-- upstream impact
-- database impact
-- API impact
-- frontend impact
-- AI pipeline impact
-- deployment impact
-- migration requirements
-- rollback strategy
-
-If a better architectural solution exists, recommend it before implementation.
-
-Do not blindly follow instructions if there is a significantly better production approach.
-
-Explain trade-offs.
+Every unnecessary LLM request is technical debt.
 
 ---
 
-# Phase 3 — Planning
+# Data Integrity
 
-Create a complete implementation plan.
+Never compromise data quality.
+Prefer:
+- immutable events
+- deterministic processing
+- idempotent operations
+- reproducible pipelines
 
-Break work into milestones.
-
-Each milestone should include:
-
-- objective
-- affected files
-- estimated complexity
-- risks
-- dependencies
-- acceptance criteria
-- testing strategy
-
-Nothing should be implemented yet.
+Never silently discard information.
+Always preserve source attribution.
 
 ---
 
-# Phase 4 — Documentation
+# Story Integrity
 
-Create or update all relevant documentation before implementation.
+NewsIQ represents real-world events.
+Never:
+- merge unrelated stories
+- fabricate missing information
+- hide conflicting facts
+- remove uncertainty
 
-Examples include:
+Always preserve:
+- source references
+- timestamps
+- confidence
+- provenance
 
-- Architecture.md
-- AI Pipeline.md
-- Processing Pipeline.md
-- Caching Strategy.md
-- Database.md
-- API Specification.md
-- System Design.md
-- Sequence Diagrams
-- Data Flow Diagrams
-- Folder Structure
-- Deployment Guide
-- Monitoring Guide
-- Performance Guide
-- Cost Optimization Guide
-- ADR (Architecture Decision Records)
-- Changelog
-
-Every architectural decision must be documented.
+When sources disagree, surface the disagreement instead of guessing.
 
 ---
 
-# Phase 5 — Task Breakdown
+# Performance
 
-Convert the implementation plan into engineering tasks.
+Always consider:
+- database queries
+- Redis usage
+- Qdrant lookups
+- API latency
+- memory usage
+- worker throughput
 
-Each task must include:
-
-Task ID
-
-Priority
-
-Description
-
-Dependencies
-
-Files affected
-
-Acceptance criteria
-
-Estimated effort
-
-Testing requirements
-
-Rollback strategy
-
-Tasks should be small enough to review individually.
+Avoid:
+- repeated database queries
+- repeated embeddings
+- repeated LLM calls
+- duplicate processing
 
 ---
 
-# Phase 6 — Validation Before Coding
+# Observability
 
-Before changing code:
+Every critical pipeline should be observable.
+Prefer:
+- structured logging
+- metrics
+- tracing
+- execution timing
+- failure reporting
 
-Review the implementation plan again.
+Failures should be diagnosable without reproducing production traffic.
 
-Verify:
+---
 
-- architecture consistency
-- code style consistency
-- scalability
-- security
+# Security
+
+Never:
+- expose secrets
+- hardcode credentials
+- bypass authentication
+- trust external input
+
+Validate all external data.
+Sanitize AI inputs where appropriate.
+
+---
+
+# Documentation
+
+Whenever architecture changes:
+Update the relevant documentation.
+Architecture decisions should be documented.
+Public API changes should update API documentation.
+Keep diagrams synchronized with implementation.
+
+---
+
+# Testing
+
+Appropriate tests should accompany production changes.
+Prefer regression tests for bug fixes.
+Critical pipeline logic should be verifiable without relying solely on LLM outputs.
+
+---
+
+# Refactoring
+
+Improve code when it meaningfully increases:
+- readability
+- modularity
 - maintainability
-- backward compatibility
-- API compatibility
-- migration safety
+- reliability
 
-Only proceed once validation passes.
-
----
-
-# Phase 7 — Incremental Implementation
-
-Implement only one task at a time.
-
-For every task:
-
-Understand
-
-Implement
-
-Self-review
-
-Refactor
-
-Optimize
-
-Test
-
-Document
-
-Commit mentally before moving to the next task.
-
-Never implement multiple unrelated changes simultaneously.
+Avoid unnecessary rewrites.
+Preserve public interfaces unless explicitly changing them.
 
 ---
 
-# Phase 8 — Production Engineering Standards
+# Decision Making
 
-Every implementation must satisfy:
+When multiple valid solutions exist:
+Choose the solution that best balances:
+1. Correctness
+2. Maintainability
+3. Scalability
+4. Performance
+5. Cost
+6. Simplicity
 
-SOLID
-
-DRY
-
-KISS
-
-YAGNI
-
-Clean Architecture
-
-Separation of Concerns
-
-Dependency Injection where appropriate
-
-No duplicated logic
-
-No magic numbers
-
-No hardcoded configuration
-
-Config-driven behavior
-
-Strong typing
-
-Error handling
-
-Retry mechanisms
-
-Timeouts
-
-Circuit breakers where appropriate
-
-Logging
-
-Metrics
-
-Tracing
-
-Observability
-
-Feature flags where appropriate
+Explain significant architectural trade-offs before implementing them.
 
 ---
 
-# Phase 9 — AI Pipeline Standards
+# Scope Discipline
 
-Whenever modifying AI components:
+Solve the requested problem completely.
+Avoid unrelated refactoring unless it:
+- fixes a bug,
+- removes clear technical debt,
+- or is required for the implementation.
 
-Minimize token usage.
-
-Reuse previous results whenever possible.
-
-Implement:
-
-- LLM response caching
-- semantic caching
-- prompt versioning
-- prompt caching
-- Redis caching
-- database caching
-- incremental synthesis
-- story-level caching
-- stage-level caching
-- embedding reuse
-- adaptive context windows
-- batching
-- confidence-based routing
-- cost tracking
-- latency tracking
-
-Never increase LLM cost unnecessarily.
-
-Every new LLM call must be justified.
+Keep pull requests focused.
 
 ---
 
-# Phase 10 — Performance Optimization
+# Definition of Done
 
-Identify:
+A task is complete only when:
+- the implementation is production-ready,
+- architecture remains consistent,
+- existing functionality is preserved,
+- appropriate tests have been added or updated,
+- documentation has been updated where necessary,
+- no obvious technical debt has been introduced.
 
-N+1 queries
-
-duplicate requests
-
-memory leaks
-
-CPU bottlenecks
-
-blocking operations
-
-large payloads
-
-slow database queries
-
-expensive AI calls
-
-Optimize them whenever safe.
-
----
-
-# Phase 11 — Testing
-
-Create:
-
-Unit tests
-
-Integration tests
-
-API tests
-
-Regression tests
-
-Pipeline tests
-
-Performance tests
-
-Failure tests
-
-Edge-case tests
-
-Verify no existing functionality breaks.
-
----
-
-# Phase 12 — Documentation Update
-
-After every completed milestone:
-
-Update documentation.
-
-Keep all diagrams synchronized with implementation.
-
-Update changelog.
-
-Update ADRs.
-
-Update README if necessary.
-
----
-
-# Phase 13 — Final Review
-
-Conduct a comprehensive review covering:
-
-Architecture
-
-Performance
-
-Security
-
-Scalability
-
-Code quality
-
-Developer experience
-
-Cost optimization
-
-Maintainability
-
-Reliability
-
-Observability
-
-Test coverage
-
-Documentation completeness
-
-Identify any remaining improvements before considering the work complete.
-
----
-
-# Output Format
-
-For every request, always follow this workflow:
-
-1. Repository Analysis
-2. Requirement Analysis
-3. Architecture Review
-4. Risks
-5. Proposed Solution
-6. Alternative Solutions
-7. Trade-offs
-8. Documentation to Update
-9. Task Breakdown
-10. Implementation Plan
-11. Execute Task 1
-12. Self Review
-13. Tests
-14. Documentation Update
-15. Wait for confirmation before proceeding to the next major milestone unless the work is clearly independent.
-
-Never skip planning.
-
-Never skip documentation.
-
-Never skip testing.
-
-Never make assumptions without verifying the codebase.
-
-Always optimize for production readiness, long-term maintainability, and cost efficiency rather than the fastest implementation.
+Always leave the codebase in a better state than you found it.
