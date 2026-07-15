@@ -228,98 +228,101 @@ class ExtractionManager:
             logger.warning("Redis is unavailable; falling back to non-batched Tavily call.")
             return await self.tavily_provider.extract(url, execution_id)
 
-        try:
-            buffer_key = "extraction:tavily_buffer"
-            status_key = f"extraction:tavily_status:{execution_id}"
-            result_key = f"extraction:result:{execution_id}"
+        payload_str = json.dumps(
+            {"url": url, "execution_id": execution_id, "timestamp": time.time()}
+        )
+        buffer_key = "extraction:tavily_buffer"
+        status_key = f"extraction:tavily_status:{execution_id}"
+        result_key = f"extraction:result:{execution_id}"
+        leader_key = "extraction:tavily_leader"
 
+        try:
             # Record that we are pending
             await redis_client.set(status_key, "pending", ex=600)
 
             # Push payload to Redis list
-            payload = json.dumps(
-                {"url": url, "execution_id": execution_id, "timestamp": time.time()}
-            )
-            await redis_client.rpush(buffer_key, payload)  # type: ignore[misc]
+            await redis_client.rpush(buffer_key, payload_str)  # type: ignore[misc]
 
-            # Try to acquire the leader lock (5 seconds lock TTL)
-            leader_key = "extraction:tavily_leader"
-            is_leader = await redis_client.set(leader_key, "1", ex=5, nx=True)
-
-            if is_leader:
-                logger.info("Acquired Tavily leader lock; orchestrating batch flush.")
-                try:
-                    # Low Traffic Batch Flush: Wait up to TAVILY_BATCH_TIMEOUT_SECONDS
-                    start_wait = time.time()
-                    batch_timeout = settings.TAVILY_BATCH_TIMEOUT_SECONDS or 2
-                    batch_size = settings.TAVILY_BATCH_SIZE or 5
-
-                    while time.time() - start_wait < batch_timeout:
-                        length = await redis_client.llen(buffer_key)  # type: ignore[misc]
-                        if length >= batch_size:
-                            break
-                        await asyncio.sleep(0.1)
-
-                    # Pop up to batch_size URLs
-                    batch_payloads = []
-                    for _ in range(batch_size):
-                        p = await redis_client.lpop(buffer_key)  # type: ignore[misc]
-                        if p:
-                            batch_payloads.append(json.loads(p))
-                        else:
-                            break
-
-                    if batch_payloads:
-                        newsiq_crawler_redis_batch_flush_total.inc()
-                        batch_urls = [p["url"] for p in batch_payloads]
-                        batch_exec_ids = [p["execution_id"] for p in batch_payloads]
-
-                        logger.info(
-                            "Leader executing Tavily batch extraction for %d URLs", len(batch_urls)
-                        )
-                        newsiq_crawler_tavily_batch_requests_total.inc()
-                        newsiq_crawler_tavily_urls_processed_total.inc(len(batch_urls))
-
-                        url_to_exec_id = {p["url"]: p["execution_id"] for p in batch_payloads}
-
-                        results = await self.tavily_provider.extract_batch(
-                            batch_urls, batch_exec_ids
-                        )
-
-                        # Store results in Redis and update status
-                        for res in results:
-                            exec_id = url_to_exec_id.get(res.url)
-                            if exec_id:
-                                res_key = f"extraction:result:{exec_id}"
-                                st_key = f"extraction:tavily_status:{exec_id}"
-                                await redis_client.set(res_key, json.dumps(res.to_dict()), ex=600)
-                                await redis_client.set(
-                                    st_key, "success" if res.success else "failed", ex=600
-                                )
-                finally:
-                    # Release the leader lock
-                    await redis_client.delete(leader_key)
-
-            # Both Leader and Workers poll their result_key
             max_poll_time = (settings.TAVILY_BATCH_TIMEOUT_SECONDS or 2) + 5
             poll_start = time.time()
+
             while time.time() - poll_start < max_poll_time:
+                # Check A: Result ready
                 status = await redis_client.get(status_key)
                 if status in ("success", "failed"):
                     raw_res = await redis_client.get(result_key)
                     if raw_res:
                         newsiq_crawler_batch_wait_time_seconds.observe(time.time() - poll_start)
-                        # Clean up result and status keys immediately
                         await redis_client.delete(status_key)
                         await redis_client.delete(result_key)
                         return ExtractionResult.from_dict(json.loads(raw_res))
+
+                # Check B: Leadership Acquisition (if still pending)
+                # If leader lock is free, try to acquire it
+                is_leader = await redis_client.set(leader_key, "1", ex=5, nx=True)
+                if is_leader:
+                    logger.info("Acquired Tavily leader lock; orchestrating batch flush.")
+                    try:
+                        # Wait up to TAVILY_BATCH_TIMEOUT_SECONDS for others to arrive
+                        start_wait = time.time()
+                        batch_timeout = settings.TAVILY_BATCH_TIMEOUT_SECONDS or 2
+                        batch_size = settings.TAVILY_BATCH_SIZE or 5
+
+                        while time.time() - start_wait < batch_timeout:
+                            length = await redis_client.llen(buffer_key)  # type: ignore[misc]
+                            if length >= batch_size:
+                                break
+                            await asyncio.sleep(0.1)
+
+                        # Pop up to batch_size URLs
+                        batch_payloads = []
+                        for _ in range(batch_size):
+                            p = await redis_client.lpop(buffer_key)  # type: ignore[misc]
+                            if p:
+                                batch_payloads.append(json.loads(p))
+                            else:
+                                break
+
+                        if batch_payloads:
+                            newsiq_crawler_redis_batch_flush_total.inc()
+                            batch_urls = [p["url"] for p in batch_payloads]
+                            batch_exec_ids = [p["execution_id"] for p in batch_payloads]
+
+                            logger.info(
+                                "Leader executing Tavily batch extraction for %d URLs", len(batch_urls)
+                            )
+                            newsiq_crawler_tavily_batch_requests_total.inc()
+                            newsiq_crawler_tavily_urls_processed_total.inc(len(batch_urls))
+
+                            url_to_exec_id = {p["url"]: p["execution_id"] for p in batch_payloads}
+
+                            results = await self.tavily_provider.extract_batch(
+                                batch_urls, batch_exec_ids
+                            )
+
+                            # Store results in Redis and update status
+                            for res in results:
+                                exec_id = url_to_exec_id.get(res.url)
+                                if exec_id:
+                                    res_key = f"extraction:result:{exec_id}"
+                                    st_key = f"extraction:tavily_status:{exec_id}"
+                                    await redis_client.set(res_key, json.dumps(res.to_dict()), ex=600)
+                                    await redis_client.set(
+                                        st_key, "success" if res.success else "failed", ex=600
+                                    )
+                    finally:
+                        # Release the leader lock
+                        await redis_client.delete(leader_key)
+
+                # Check C: Sleep before retry
                 await asyncio.sleep(0.2)
 
-            # If polling times out: clean up keys and do self-extraction fallback
+            # If polling times out: clean up keys, remove from buffer if still present, and do individual fallback
             logger.warning(
                 "Polling timed out for execution_id %s; executing individual fallback.",
                 execution_id,
             )
+            await redis_client.lrem(buffer_key, 0, payload_str)  # type: ignore[misc]
             await redis_client.delete(status_key)
             await redis_client.delete(result_key)
             return await self.tavily_provider.extract(url, execution_id)
@@ -328,6 +331,13 @@ class ExtractionManager:
             logger.error(
                 "Error in Tavily batch coordination: %s. Falling back to individual Tavily.", e
             )
+            # Safe cleanup attempt
+            try:
+                await redis_client.lrem(buffer_key, 0, payload_str)  # type: ignore[misc]
+                await redis_client.delete(status_key)
+                await redis_client.delete(result_key)
+            except Exception:
+                pass
             return await self.tavily_provider.extract(url, execution_id)
 
     async def _set_idempotency_cache(self, key: str, result: ExtractionResult) -> None:
