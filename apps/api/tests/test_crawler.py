@@ -202,7 +202,9 @@ async def test_crawl_article_stealth_fallback():
     import httpx
 
     url = "https://example.com/stealth-test"
-    sample_html = "<html><body><p>Stealth fallback content to extract, let's write at least 150 characters here so that the minimum length check passes successfully and newspaper4k parses it.</p></body></html>"
+    sample_html = (
+        "<html><body><p>" + ("Stealth fallback content to extract. " * 60) + "</p></body></html>"
+    )
 
     class MockCurlResponse:
         def __init__(self, text, status_code=200):
@@ -220,6 +222,6 @@ async def test_crawl_article_stealth_fallback():
     ):
         result = await crawler_service.crawl_article(url)
         assert result["success"] is True
-        assert result["diagnostics"]["fetch_method"] == "curl_cffi_chrome"
+        assert result["diagnostics"]["fetch_method"] == "curl_cffi_chrome124"
         assert result["diagnostics"]["failure_reason"] is None
         assert "Stealth fallback content" in result["content"]
