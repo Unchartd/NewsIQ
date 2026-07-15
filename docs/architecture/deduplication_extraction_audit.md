@@ -1,14 +1,14 @@
-# NewsIQ Architecture Audit — Deduplication & Extraction Data Flow Documentation
+# NewsIQ Canonical Architecture & Technical Reference: Deduplication & Extraction
 
 > [!IMPORTANT]
-> **Audit Status: Implemented & Verified**
-> This document details the exact production implementation of the Candidate Retrieval, Stage A Filters, and Stage B LLM Verification pipeline, as implemented in the `apps/api/app` codebase.
+> **Production Status: Hardened & Verified**
+> This document serves as the canonical reference for the **Deduplication & Extraction** phase of the NewsIQ news pipeline. It reflects the exact implemented behavior in `clustering_service.py`, `event_validation_service.py`, and `discovery_manager.py`.
 
 ---
 
 # 1. High-Level Architecture Diagram
 
-The **Deduplication & Extraction** phase operates between **Ingestion (RSS/GNews)** and **Story Synthesis**. Its primary responsibility is incremental clustering: taking a newly ingested, embedded, and event-extracted article and determining whether it belongs to an existing active `Story`, should spawn a new story, or must be routed to the `Discovery Queue`.
+The **Deduplication & Extraction** phase sits between Crawler Ingestion/Embedding and Story Synthesis. It operates as a dual-stage filtering and validation engine to group incoming articles into canonical stories, preventing false positive merges while keeping computational costs low.
 
 ```text
                                +-----------------------------+
@@ -18,68 +18,50 @@ The **Deduplication & Extraction** phase operates between **Ingestion (RSS/GNews
                                               |
                                               ▼
                                  [ Candidate Retrieval ]
+                                       (SQL Query)
                                               |
-                                              |  SQL: time-window, state,
-                                              |  and title entity overlap
-                                              ▼
-                               +--------------+--------------+
-                               |    Top 20 candidate stories |
-                               +--------------+--------------+
-                                              |
+                                              ├─► No Candidates ──► [ Discovery Queue ]
+                                              │
                                               ▼
                                      [ Stage A Filters ]
-                                      (Rule Engine)
+                                  (Deterministic Rules)
                                               |
                      +------------------------+------------------------+
                      | FAIL (<45)             | MAYBE (45-59)          | PASS (>=60)
                      ▼                        ▼                        ▼
-           [ Reject Candidate ]     [ Add to B-List ]        [ Add to B-List ]
-                     |                        +-----------+------------+
-                     |                                    |
-                     |                                    | Sort by Stage A score desc
-                     |                                    ▼
-                     |                        +-----------+------------+
-                     |                        |     Top 3 Candidates   |
-                     |                        +-----------+------------+
-                     |                                    |
-                     |                                    ▼
-                     |                           [ Stage B Filters ]
-                     |                             (Vector/Entity)
-                     |                                    |
-                     |         +--------------------------+--------------------------+
-                     |         | FAIL                     | MAYBE                    | PASS
-                     |         |                          | (Cosine >= 0.67 or       | (Cosine >= 0.72 or
-                     |         |                          |  Entity Overlap >= 1)    |  Entity Overlap >= 2)
-                     ▼         ▼                          ▼                          ▼
-             +-------+---------+---+              +-------+---------+        +-------+---------+
-             | Route to Discovery  |              | LLM Verification|        |  Merge Article  |
-             | Queue & run batch   |              |  (Reflection)   |        |  into Story &   |
-             | HDBSCAN             |              +-------+---------+        |  run transition |
-             +---------------------+                      |                  +-----------------+
-                                           +--------------+--------------+
-                                           | same_event   | same_event   |
-                                           | = False      | = True       |
-                                           ▼              ▼              ▼
-                                     [ Reject Merge ]              [ Merge Article ]
+             [ Skip Candidate ]      [ Add to B-List ]        [ Add to B-List ]
+                                              +-----------+------------+
+                                                          |
+                                                          | Sort by Stage A score desc
+                                                          ▼
+                                              +-----------+------------+
+                                              |     Top 3 Candidates   |
+                                              +-----------+------------+
+                                                          |
+                                                          ▼
+                                                 [ Stage B Filters ]
+                                              (Vector/Entity Overlap)
+                                                          |
+                               +--------------------------+--------------------------+
+                               | FAIL                     | MAYBE                    | PASS
+                               |                          | (Cosine >= 0.67 or       | (Cosine >= 0.72 or
+                               |                          |  Entity Overlap >= 1)    |  Entity Overlap >= 2)
+                               ▼                          ▼                          ▼
+                     +---------+---------+      +---------+---------+      +---------+---------+
+                     | Route to Discovery|      | LLM Verification |      |  Merge Article    |
+                     | Queue & run batch |      |  (Reflection)    |      |  into Story &     |
+                     | HDBSCAN           |      +---------+---------+      |  run transition   |
+                     +-------------------+                |                +-------------------+
+                                                          ▼
+                                                [ Judge Agent Decides ]
+                                                 same_event = True/False
 ```
-
-### Component Directory Map
-* **Celery Workers**: `extract_events_task` and `cluster_news_task` in [tasks.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/workers/tasks.py)
-* **Services**: 
-  * [clustering_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/clustering_service.py) (retrieval, candidate ranking, story merge orchestration)
-  * [event_validation_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/event_validation_service.py) (deterministic Stage A scoring, vector Stage B comparisons)
-  * [vector_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/vector_service.py) (Qdrant client wrapper)
-* **AI Gateways**: [gateway.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/ai/gateway.py) (AIGateway)
-* **Agents**:
-  * [cluster_verification_agent.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/agents/cluster_verification_agent.py) (Gemini event verifier)
-  * [judge_agent.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/agents/judge_agent.py) (Arbitration agent)
-* **Configuration**: [event_validation.yaml](file:///c:/Users/zakau/NewsIQ/apps/api/app/config/event_validation.yaml)
 
 ---
 
-# 2. Complete Sequence Diagram
+# 2. Sequence Diagram
 
-The diagram below details the exact execution path when Celery invokes `extract_events_task`.
+The sequence diagram below shows the detailed execution lifecycle of a single article processing run under `extract_events_task` and `add_article_to_existing_story_if_similar`.
 
 ```mermaid
 sequenceDiagram
@@ -102,13 +84,13 @@ sequenceDiagram
     DB-->>CS: Not linked (proceed)
     
     Note over CS, DB: [ Candidate Retrieval ]
-    CS->>DB: Query Top 20 stories (updated_at >= now - 72h, active states, entity overlap)
+    CS->>DB: Query Top 20 stories (Correlated EXISTS check)
     DB-->>CS: Return Top 20 Story objects + selectinloaded categories & entities
     
     loop For each Story in candidates (up to 20)
         CS->>EVS: validate_stage_a(article, anchor)
         activate EVS
-        Note over EVS: Deterministic rule check:<br/>Entities, Location, Jaccard title,<br/>Time Proximity, Publisher Trust.
+        Note over EVS: Deterministic check:<br/>Entities, Location, Jaccard title,<br/>Time Proximity, Publisher Trust.
         EVS-->>CS: Return DecisionLog (outcome = PASS/MAYBE/FAIL, score)
         deactivate EVS
     end
@@ -170,382 +152,349 @@ sequenceDiagram
 
 ---
 
-# 3. Data Flow Diagram
+# 3. Function Call Tree
+
+The following execution tree maps the actual function calls within the deduplication and extraction engine:
 
 ```text
-[Data Source] ---> (Processing Stage) ---> [Output Destination]
+extract_events_task() [Celery Task]
+ └─► event_service.extract_events() [Event/Entity Extraction]
+ └─► entity_linker.link_entity() [Canonical Linking]
+ └─► clustering_service.add_article_to_existing_story_if_similar()
+      ├─► get_candidate_stories() [PostgreSQL Correlated EXISTS Query]
+      ├─► event_validation_service.validate_stage_a() [Deterministic Rules]
+      │    ├─► _extract_entities()
+      │    ├─► _jaccard_similarity()
+      │    └─► _calculate_trust_score()
+      ├─► vector_service.client.retrieve() [Qdrant O(1) Retrieve]
+      ├─► event_validation_service.validate_stage_b() [Vector/Entity Overlap Check]
+      │    └─► _cosine_similarity()
+      ├─► _verify_merge_with_agents() [Advisory Lock & LLM Reflection]
+      │    ├─► verify_cluster_decision() [Gemini Agent]
+      │    ├─► openai_agent.run() [OpenAI Agent]
+      │    └─► resolve_disagreement() [Judge Agent Arbitration]
+      ├─► merge_article_into_existing_story() [PostgreSQL Commit]
+      │    ├─► recalculate_centroid() [Centroid Update]
+      │    └─► update_knowledge_graph() [KG Merge]
+      ├─► story_lifecycle.evaluate_story_state() [Lifecycle Transition]
+      └─► story_synthesis_service.synthesize_story() [Synthesis]
+           ├─► Meilisearch Sync
+           └─► Redis Cache Invalidation
 ```
 
-### 3.1 Input
-* **PostgreSQL (`articles` table)**: Reads the newly crawled article metadata (title, description, published_at, source_id, embedding_status).
-* **PostgreSQL (`article_events` / `article_entities` tables)**: Reads extracted canonical actors, targets, locations, and events associated with the article.
-* **Qdrant (`articles` collection)**: Reads the 3072-dimension dense vector (`gemini-embedding-001`) of the target article.
-* **Redis Cache (`ai_cache`)**: Reads cached LLM responses for `cluster_verification` to bypass redundant API calls.
-
-### 3.2 Processing
-* **SQL Query Filters**:
-  * Lifecycle states: `developing`, `monitoring`, `stable`.
-  * Time Horizon: `Story.updated_at >= now - 72 hours`.
-  * Entity match: `StoryEntity.entity_value` matching lowercase title entities.
-* **Stage A Scoring Rules**:
-  * Jaccard Title similarity: intersection over union of word tokens.
-  * Time delta: `abs(published_at - first_seen_at)`.
-  * Publisher Trust: mapped from `source.trust_tier` (1 to 5).
-* **Stage B Vector Similarity**:
-  * Cosine similarity between `article_vector` and the `Story.story_embedding` column.
-* **LLM Verification Agent**:
-  * Agno Agent template mapping, parsing JSON to `ClusterVerificationSchema`, and fallback thresholds.
-
-### 3.3 Output
-* **`StoryArticle` linkage row**: Generated on a successful merge.
-* **`DiscoveryQueue` row**: Generated on a failed merge, with state `discovery_pending`.
-* **Advisory lock session**: Acquired temporarily on PG for concurrency safety during merge.
-* **Prometheus Metrics**: Registers Latency, Decision Outcomes, and LLM Gateway Call counts.
-
-### 3.4 Storage
-* **PostgreSQL Database**:
-  * `story_articles` (inserts mapping between `story_id` and `article_id`).
-  * `stories` (updates `updated_at`, `story_embedding` centroid, and lifecycle status).
-  * `discovery_queue` (inserts or updates state to `discovery_pending` or `cluster_created`).
-* **Redis**:
-  * `story_cost:{story_id}`: stores running budget (TTL = 1 hour).
-  * `ai_cache:{stage}:{hash}`: stores agent responses (TTL = 1 hour).
-
 ---
 
-# 4. Candidate Retrieval Deep Dive
+# 4. Architecture Dependency Graph
 
-Candidate Retrieval acts as the **high-recall filter**. Instead of executing expensive vector searches or rule engines against thousands of stories, the pipeline performs a targeted database query to pull the most logical candidates.
-
-### 4.1 Orchestration & Query Path
-* **Worker**: `extract_events_task` in [tasks.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/workers/tasks.py)
-* **Coordinator Service**: `clustering_service` in [clustering_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/clustering_service.py)
-* **Method**: `add_article_to_existing_story_if_similar`
-* **SQL Query**:
-  ```sql
-  SELECT DISTINCT stories.* 
-  FROM stories 
-  LEFT OUTER JOIN story_entities ON stories.id = story_entities.story_id 
-  WHERE stories.lifecycle_state IN ('developing', 'monitoring', 'stable') 
-    AND stories.updated_at >= :updated_at_1 
-    AND NOT (stories.id IN (SELECT story_articles.story_id FROM story_articles WHERE story_articles.article_id = :article_id_1))
-    AND (LOWER(story_entities.entity_value) IN (:lower_1, :lower_2, ...) OR story_entities.id IS NULL)
-  ORDER BY stories.updated_at DESC 
-  LIMIT 20;
-  ```
-
-### 4.2 Candidate Selection Heuristics
-1. **Time Window**: Restricts search to stories updated within the last **72 hours** (`timedelta(hours=72)`).
-2. **Lifecycle State**: Excludes `emerging` and `archived` stories. Only active, vetted stories (`developing`, `monitoring`, `stable`) are matching candidates.
-3. **Entity Match/Fallback**: If spaCy extracts any entities (PERSON, ORG, GPE, LOC, PRODUCT, EVENT) from the article's title, it filters stories to those sharing at least one entity, **or** allows stories that do not yet have entities associated with them (`StoryEntity.id IS NULL`).
-4. **Ranking & Limits**: Ordered by `Story.updated_at.desc()` to prioritize hot/active news events. The limit is capped at **20 candidates** to protect downstream Stage A resources.
-
----
-
-# 5. Stage A Deep Dive (Deterministic Rule Engine)
-
-Stage A is a fast, local, fully deterministic filtering phase that filters out obviously unrelated candidates. It consumes zero LLM tokens and makes no network calls.
-
-### 5.1 Scoring Weights & Thresholds
-Weights and thresholds are loaded dynamically from [event_validation.yaml](file:///c:/Users/zakau/NewsIQ/apps/api/app/config/event_validation.yaml):
-
-```yaml
-stage_a:
-  weights:
-    entity_overlap: 35
-    location: 20
-    time_proximity: 15
-    title_similarity: 20
-    publisher_trust: 10
-  thresholds:
-    pass: 60
-    maybe: 45
-```
-
-### 5.2 Scoring Algorithm Formulas
-
-#### 1. Entity Overlap (Max 35 points)
-* Title entities are extracted using spaCy `en_core_web_sm`. If unavailable, a title-case fallback regex is used.
-* Formula:
-  $$\text{ent\_score} = \left( \frac{|\text{Shared Entities}|}{\min(|\text{Article Title Entities}|, |\text{Story Anchor Entities}|)} \right) \times 35$$
-* Fallback: If the story has no entities associated with it, it gets a neutral **17.5** points.
-
-#### 2. Location Overlap (Max 20 points)
-* Filters entities matching `GPE` or `LOC`.
-* Formula:
-  $$\text{loc\_score} = \left( \frac{|\text{Shared Locations}|}{\min(|\text{Article Location Entities}|, |\text{Story Location Entities}|)} \right) \times 20$$
-* Fallback: If the story has no locations, it receives a neutral **10.0** points.
-
-#### 3. Time Proximity (Max 15 points)
-* Checks absolute difference in hours between `article.published_at` and `story.first_seen_at`.
-* Scores:
-  * $\le 24$ hours: **15.0** points.
-  * $\le 72$ hours: **7.5** points.
-  * $> 72$ hours: **0.0** points.
-
-#### 4. Title Similarity (Max 20 points)
-* Computes Jaccard Similarity on word sets of the article title and story headline.
-* Formula:
-  $$\text{jaccard} = \frac{|\text{Article Words} \cap \text{Story Headline Words}|}{|\text{Article Words} \cup \text{Story Headline Words}|}$$
-  $$\text{title\_score} = \text{jaccard} \times 20$$
-
-#### 5. Publisher Trust (Max 10 points)
-* Mapped using `article.source.trust_tier` (range 1-5).
-* Trust Score:
-  $$\text{trust\_raw} = \max(0.0, 100.0 - (\text{tier} - 1) \times 20.0)$$
-  $$\text{trust\_score} = \text{trust\_raw} \times \left( \frac{10}{100} \right)$$
-  * Tier 1 (AP, Reuters, Bloomberg, etc.) gets **10.0** points.
-  * Tier 5 gets **2.0** points.
-
-### 5.3 Outcomes & Gate Routing
-* **`PASS`** (Final Score $\ge 60$): The candidate qualifies for Stage B.
-* **`MAYBE`** (Final Score $45\text{--}59$): The candidate qualifies for Stage B.
-* **`FAIL`** (Final Score $< 45$): Immediately rejected.
-* **Sorting**: Candidates returning PASS or MAYBE are sorted descending by their Stage A scores. **Only the Top 3** are sent to Stage B.
-
----
-
-# 6. Stage B Deep Dive (Vector & LLM Validation)
-
-Stage B represents the hybrid validation layer. It combines dense vector similarity with LLM-based logic to verify merges.
+The dependency flow below illustrates what components depend on each other and highlights potential breakages when changes occur.
 
 ```text
-                  Top 3 Stage A Candidates
-                             │
-                             ▼
-                 [ Calculate Cosine Similarity ]
-                 [ Calculate Entity Overlap    ]
-                             │
-            +----------------+----------------+
-            |                                 |
-            ▼                                 ▼
-   Cosine >= 0.72                    Cosine >= 0.67
-   OR Entity Overlap >= 2            OR Entity Overlap >= 1
-            │                                 │
-            ▼ (PASS)                          ▼ (MAYBE)
-     [ Merge Directly ]              [ LLM Verification ]
-                                              │
-                                              ▼ Cosine < 0.55?
-                                     (Yes) /     \ (No)
-                                          /       \
-                                      Reject     High-Stakes Category?
-                                                 /      \
-                                         (Yes)  /        \ (No)
-                                               /          \
-                                         Gemini + OpenAI  Gemini Only
-                                         Decision Match?
-                                            /     \
-                                    (Yes)  /       \ (No)
-                                          /         \
-                                     Use Match    Judge Agent
+[Celery Worker]
+  └── [ClusteringService]
+        ├── [PostgreSQL Database] (Stories, StoryArticles, Entities)
+        ├── [Qdrant Vector Database] (Point retrieval of dense vectors)
+        ├── [EventValidationService] (Stage A & Stage B rules)
+        └── [AIGateway] (Prompt manifestations, model routing, retries)
+              ├── [Redis Cache] (Execution logs, locking, AI cache)
+              ├── [PromptRegistry] (cluster_verification.yaml)
+              └── [LLM Providers] (Gemini, OpenAI, Bedrock fallbacks)
 ```
 
-### 6.1 Deterministic Matching
-* **Vector Check**: Cosine similarity is computed between the article's dense vector (fetched from Qdrant) and the story's centroid embedding (`story.story_embedding`, stored in PG).
-* **Graph Check**: Counts overlapping canonical entities between `article_canonical_entity_ids` (actors + targets in DB) and `anchor.entity_graph_ids` (nodes in story's knowledge graph JSONB).
-* **Rules**:
-  * **PASS**: Cosine similarity $\ge 0.72$ OR Entity Graph Overlap $\ge 2$. Article is merged directly without invoking the LLM!
-  * **MAYBE**: Cosine similarity $\ge 0.67$ OR Entity Graph Overlap $\ge 1$. Triggers LLM Reflection if Cosine similarity is $\ge 0.55$.
-  * **FAIL**: Rejected.
-
-### 6.2 AI Execution Flow (Reflection)
-1. **Advisory Lock**: Acquires a PostgreSQL transaction-scoped advisory lock on the story ID:
-   `SELECT pg_advisory_xact_lock(:lock_id)`
-   This blocks concurrent Celery threads from merging into the same story simultaneously.
-2. **Context Assembly**: Fetches the first article added to the target story, along with its primary event and knowledge graph nodes.
-3. **High-Stakes Arbitration**:
-   * If the story category is `world`, `politics`, `business`, or the titles contain sensitive keywords (`war`, `election`, `finance`, `military`, `attack`, etc.), the gateway triggers **both** `gemini-3.1-flash-lite` and `gpt-4o-mini` via Agno agents.
-   * If they return conflicting `same_event` boolean flags, it sends both outputs to the **`Judge Agent`** (`resolve_disagreement`), which arbitrates and makes the final decision.
-   * If it is a standard category, it invokes `gemini-3.1-flash-lite` only.
-4. **Agent Fallback**: If the LLM Gateway fails or times out, the code catches the exception and falls back to a deterministic threshold: `return similarity_score >= 0.80`.
-
 ---
 
-# 7. Database Flow & Schema Operations
+# 5. Core Data Contracts & Type Definitions
 
-```text
-               stories (Read centroid)
-                  │
-                  ▼
-          story_entities (Filter by entity)
-                  │
-                  ▼
-         article_events (Fetch actors/targets)
-                  │
-                  ▼
-        story_articles (Insert merge row)
+### 5.1 Article Database Model (`Article`)
+```python
+class Article(Base):
+    __tablename__ = "articles"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sources.id"))
+    embedding_status: Mapped[str] = mapped_column(String(30), default="pending")  # pending/processing/completed/failed
+    event_extraction_status: Mapped[str] = mapped_column(String(30), default="pending")
 ```
 
-| Table | Read/Write | Stage | Index Used | Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| `stories` | Read | Retrieval / Stage B | `idx_stories_updated` (updated_at desc) | Reads metadata, state, and `story_embedding`. |
-| `story_entities` | Read | Retrieval | (implicit FK index on story_id) | Evaluated inside the retrieval JOIN. |
-| `story_articles` | Read | Verification | Primary Key (story_id, article_id) | Deduplication check to prevent duplicate merging. |
-| `article_events` | Read | Stage B | (implicit FK index on article_id) | Retrieves canonical actors, targets, and times. |
-| `story_articles` | Write | Merge | Primary Key (story_id, article_id) | Inserts mapping row upon successful merge. |
-| `stories` | Write | Merge | Primary Key (id) | Updates `updated_at` and recalculates `story_embedding` centroid. |
-| `discovery_queue` | Write | Final Rollback | PK index | Inserts row with `state = 'discovery_pending'` if matching fails. |
+### 5.2 Story Anchor Data Class (`StoryAnchor`)
+```python
+@dataclass(frozen=True)
+class StoryAnchor:
+    story_id: str
+    headline: str
+    first_seen_at: datetime
+    last_updated_at: datetime
+    primary_entities: set[str]  # Lowercase entities
+    top_locations: set[str]     # Lowercase locations
+    category: str | None
+    event_type: str | None
+    centroid_vector: list[float] | None
+```
+
+### 5.3 Stage A/B Decision Log (`DecisionLog`)
+```python
+@dataclass
+class DecisionLog:
+    outcome: ValidationOutcome  # PASS, FAIL, MAYBE
+    stage: str
+    score: float  # Weighted score for Stage A, cosine similarity for Stage B
+    details: dict[str, Any]
+    reason: str
+```
+
+### 5.4 Cluster Verification LLM Schema (`ClusterVerificationSchema`)
+```python
+class ClusterVerificationSchema(BaseModel):
+    same_event: bool = Field(..., description="True if both articles describe the same event.")
+    confidence: float = Field(..., description="Confidence score from 0.0 to 1.0.")
+    explanation: str = Field(..., description="Factual reasoning for the decision.")
+```
+
+### 5.5 Judge Agent arbitration Schema (`JudgeSchema`)
+```python
+class JudgeSchema(BaseModel):
+    final_decision: bool = Field(..., description="Arbitrated final same_event decision.")
+    chosen_provider: str = Field(..., description="Model whose logic was selected ('gemini'/'openai').")
+    explanation: str = Field(..., description="Rationale for the arbitrated judgment.")
+```
 
 ---
 
-# 8. Redis Cache & State Operations
+# 6. Candidate Retrieval Deep Dive (Hardened SQL)
 
-| Redis Key | Type | Stage | Producer | Consumer | TTL / Eviction |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `story_cost:{story_id}` | String (Float) | LLM Routing | LLM Gateway | Model Router | 3600s (1 hour) |
-| `ai_cache:{stage}:{hash}` | String (JSON) | LLM Gateway | AIGateway | AIGateway | 3600s (1 hour) |
-| `newsiq:lock:cluster_news_task` | String (Lock) | Batch Clustering | Celery Worker | Celery Worker | 600s (10 min) |
-| `newsiq:lock:replay:{story_id}` | String (Lock) | Story Replay | Celery Worker | Celery Worker | 900s (15 min) |
+Candidate Retrieval acts as the **high-recall filter**. Instead of executing expensive vector searches against the entire Qdrant database, Candidate Retrieval executes a fast PostgreSQL query to select candidate stories.
 
----
+### 6.1 SQL Query Semantics
+* **Original Query**: Used `LEFT JOIN` and `LOWER(entity_value) IN (...) OR entity_id IS NULL`. This was vulnerable to returning unrelated stories that had entities but also triggered NULL matching because of the outer join layout.
+* **Hardened Query**: Utilizes correlated `EXISTS` subqueries. It guarantees that stories are fetched only if they have at least one overlapping entity OR have absolutely no entities associated with them.
 
-# 9. Qdrant Vector DB Operations
-
-### 9.1 Collection Details
-* **Collection Name**: `articles`
-* **Vector Dimension**: 3072 (`gemini-embedding-001`)
-* **Distance Metric**: Cosine
-
-### 9.2 Operations Flow
-* **Stage B Retrieval**: Instead of querying Qdrant using `search()` to find nearest neighbors, the system performs a point retrieval by ID:
-  ```python
-  point_info = await vector_service.client.retrieve(
-      collection_name="articles", ids=[str(article_id)], with_vectors=True
+```sql
+SELECT stories.id, stories.headline, stories.lifecycle_state, stories.updated_at
+FROM stories
+WHERE stories.lifecycle_state IN ('developing', 'monitoring', 'stable')
+  AND stories.updated_at >= :time_window
+  AND NOT EXISTS (
+      SELECT 1 FROM story_articles 
+      WHERE story_articles.story_id = stories.id 
+        AND story_articles.article_id = :article_id
   )
-  ```
-  This is extremely fast ($O(1)$ lookup) and returns the article's dense vector.
-* **Centroid Comparison**: The retrieved article vector is compared locally in Python using `_cosine_similarity` against `story.story_embedding` (a float array column in PostgreSQL). Qdrant is **never** used for the cosine comparison itself during incremental clustering.
+  AND (
+      -- Condition 1: Has at least one overlapping entity
+      EXISTS (
+          SELECT 1 FROM story_entities 
+          WHERE story_entities.story_id = stories.id 
+            AND LOWER(story_entities.entity_value) IN (:ent_1, :ent_2, ...)
+      )
+      OR
+      -- Condition 2: Has no entities (fallback)
+      NOT EXISTS (
+          SELECT 1 FROM story_entities 
+          WHERE story_entities.story_id = stories.id
+      )
+  )
+ORDER BY stories.updated_at DESC
+LIMIT 20;
+```
 
 ---
 
-# 10. Prompt Flow & Gateway Architecture
+# 7. Stage A Deep Dive (Deterministic Rules & Edge Cases)
+
+Stage A is a local, deterministic rule engine that runs with **zero API calls** and **zero network calls**.
+
+### 7.1 Stage A Scoring Weights & Thresholds
+Weights and thresholds are defined in `event_validation.yaml`:
+* **Entity Overlap Weight**: 35
+* **Location Overlap Weight**: 20
+* **Time Proximity Weight**: 15
+* **Title Jaccard Weight**: 20
+* **Publisher Trust Weight**: 10
+* **Pass Threshold**: 60
+* **Maybe Threshold**: 45
+
+### 7.2 Scoring Algorithm Edge-Case Protection
+Stage A guarantees zero undefined mathematical cases (no division by zero, no NaN/Infinity) when handling empty entities/locations:
 
 ```text
-                  Agent Prompt Invocation
-                             │
-                             ▼
-                [ AIGateway: generate_stage ]
-                             │
-                             ▼
-                [ Check Redis Cache (TTL=1h) ]
-                +------------+------------+
-                | (Hit)                   | (Miss)
-                ▼                         ▼
-          Return cached JSON      [ Apply Token Budget Guard ]
-                                  (Truncate if Pro model + >MAX)
-                                          │
-                                          ▼
-                                [ Loop Fallbacks ]
-                                Gemini -> Bedrock -> NVIDIA
-                                          │
-                                          ▼
-                                [ Execute Client Call ]
-                                          │
-                                          ▼
-                             [ Parse & Validate JSON ]
-                             (Clean schema keys & typecast lists)
-                                          │
-                                          ▼
-                                  [ Cache Result ]
++-----------------------+-----------------------+------------------------------------------+
+| Article Entities Count| Story Entities Count  | Outcome / Formula                        |
++-----------------------+-----------------------+------------------------------------------+
+| 0                     | 0                     | Case 3: Returns ent_weight * 0.5         |
+| > 0                   | 0                     | Case 2: Returns ent_weight * 0.5 (Neutral)|
+| 0                     | > 0                   | Case 1: Returns 0.0 (No overlap)         |
+| > 0                   | > 0                   | Normal: Intersection / Min(Article,Story)|
++-----------------------+-----------------------+------------------------------------------+
 ```
-
-### 10.1 Manifest Specification (`cluster_verification.yaml`)
-* **Prompt URI**: `newsiq://prompt/cluster_verification`
-* **Default Model**: `gemini-3.1-flash-lite`
-* **Fallbacks**: `qwen.qwen3-vl-235b-a22b-instruct` (Bedrock), `deepseek-ai/deepseek-v4-flash` (NVIDIA)
-* **Response Model**: `ClusterVerificationResponse`
-* **Response Fields**:
-  * `same_event`: boolean (True if matching)
-  * `confidence`: float (0.0 to 1.0)
-  * `explanation`: string (factual reasoning)
 
 ---
 
-# 11. State Machine Diagrams
+# 8. Stage B Deep Dive (Vector & LLM Arbitration)
 
-### 11.1 Candidate Retrieval State Flow
+Stage B evaluates the Top 3 Stage A candidates using vector cosine similarity and LLM verification.
+
+### 8.1 Stage B Outcome Truth Table
+Every vector and entity count combination maps to a single deterministic outcome:
+
+```text
++-----------------------------------+-------------------------------------+------------------+
+| Cosine Similarity (C)             | Shared Canonical Entities (E)       | Outcome          |
++-----------------------------------+-------------------------------------+------------------+
+| C >= 0.72                         | Any                                 | PASS (Direct)    |
+| Any                               | E >= 2                              | PASS (Direct)    |
+| 0.67 <= C < 0.72                  | Any                                 | MAYBE (Reflect)  |
+| Any                               | E == 1                              | MAYBE (Reflect)  |
+| C < 0.67                          | E == 0                              | FAIL (Reject)    |
++-----------------------------------+-------------------------------------+------------------+
+```
+
+### 8.2 Reflection & Arbitration Flow
+If the outcome is `MAYBE` and the cosine similarity $\ge 0.55$ (`reflection.threshold`), the system triggers LLM verification under a transactional advisory lock:
+
 ```mermaid
-state-diagram-v2
-    [*] --> Time_Entity_Query : New Embedded Article
-    Time_Entity_Query --> Empty_Candidates : No match (72h)
-    Time_Entity_Query --> Candidates_Retrieved : Match found
-    Empty_Candidates --> Route_To_Discovery
-    Candidates_Retrieved --> Stage_A_Evaluation
-```
-
-### 11.2 Stage A Gate Flow
-```mermaid
-state-diagram-v2
-    [*] --> Rule_Evaluation : Top 20 Candidates
-    Rule_Evaluation --> PASS_Gate : Score >= 60
-    Rule_Evaluation --> MAYBE_Gate : Score 45-59
-    Rule_Evaluation --> FAIL_Gate : Score < 45
-    FAIL_Gate --> Candidate_Rejected
-    PASS_Gate --> Sort_And_Truncate_Top3
-    MAYBE_Gate --> Sort_And_Truncate_Top3
-```
-
-### 11.3 Stage B & Merge Decision Flow
-```mermaid
-state-diagram-v2
-    [*] --> Vector_Entity_Check : Top 3 Stage A Candidates
-    Vector_Entity_Check --> PASS_Direct_Merge : Cosine >= 0.72 or Overlap >= 2
-    Vector_Entity_Check --> MAYBE_Reflection : Cosine >= 0.67 or Overlap >= 1
-    Vector_Entity_Check --> FAIL_Skip : Otherwise
-    MAYBE_Reflection --> Reflection_Skip : Cosine < 0.55
-    MAYBE_Reflection --> High_Stakes_Verify : Cosine >= 0.55
-    High_Stakes_Verify --> Merge_Story : Agent same_event = True
-    High_Stakes_Verify --> Reject_Merge : Agent same_event = False
-    PASS_Direct_Merge --> Merge_Story
+graph TD
+    A[Start Reflection] --> B{High Stakes Category / Words?}
+    B -- Yes --> C[Call Gemini Agent + OpenAI Agent]
+    B -- No --> D[Call Gemini Agent Only]
+    C --> E{Gemini same_event == OpenAI same_event?}
+    E -- Yes --> F[Return Decision]
+    E -- No --> G[Call Judge Agent to Arbitrate]
+    G --> H[Return Judge Decision]
+    D --> I[Return Gemini Decision]
 ```
 
 ---
 
-# 12. Performance & Latency Bottlenecks
+# 9. Concurrency & DB Transaction Boundaries
 
-### 12.1 SQL Joining & Lazy Loading
-* **Risk**: The Candidate Retrieval query joins `Story` and `StoryEntity` tables. Because it uses `.options(selectinload(Story.category), selectinload(Story.entities))`, it avoids N+1 queries during candidate iteration. However, if a story has hundreds of entities, `selectinload` will pull large volumes of data.
-* **Quick Win**: Ensure `story_entities` has a composite index on `(story_id, entity_value)`.
+NewsIQ runs multiple Celery worker threads concurrently. Concurrency safety is maintained by separating long-running network calls (such as Qdrant and LLM requests) from database transactions, and using advisory locks during merges:
 
-### 12.2 Local spaCy Fallback
-* **Risk**: If spaCy is not installed or the model `en_core_web_sm` is missing, `EventValidationService._extract_entities` falls back to a crude capitalization-based check:
-  `{w.lower() for w in words if w.istitle() and len(w) > 3}`
-  This fallback is inaccurate and can miss lower-cased entities, leading to lower Stage A scores and false positive rejections.
+```text
+[Start Transaction]
+   │
+   ├─► 1. Query candidate stories
+   │
+[Commit / Close Transaction]
+   │
+   ├─► 2. Retrieve vector from Qdrant (No DB connection held)
+   ├─► 3. Perform Stage A and Stage B rules
+   │
+[Start Merge Transaction]
+   │
+   ├─► 4. Acquire advisory lock: pg_advisory_xact_lock(story_id)
+   ├─► 5. Perform LLM Reflection if required
+   ├─► 6. Merge Article & Recalculate Centroid
+   │
+[Commit / Close Merge Transaction] (Advisory lock automatically released)
+```
 
-### 12.3 Advisory Locking
-* **Risk**: `pg_advisory_xact_lock` is acquired on the `story_id` for reflection. This is correct and prevents race conditions. However, if a hot story receives many concurrent article merges, Celery worker threads will block waiting for the lock, consuming database connections.
-
----
-
-# 13. Pipeline Observability & Metrics
-
-* **Stage Tracking**: Wrap executions in `PipelineRun` and `StageSpan` context managers (logging `trace_id` and `run_id`).
-* **Telemetry Gauges & Counters**:
-  * `newsiq_stage_a_validation_total`: logs rule outcome (pass, maybe, rejected).
-  * `newsiq_event_validation_decisions_total`: logs decisions by stage and outcome.
-  * `newsiq_event_validation_savings_total`: logs costly operations avoided.
-  * `newsiq_event_validation_latency_seconds`: histogram tracking rule and vector matching latencies.
-
----
-
-# 14. Architecture Validation
-
-### 14.1 Alignment Analysis
-* **Qdrant Usage**: Qdrant is aligned with the vector DB specifications, acting as the store for article embeddings. However, the system retrieves vectors by ID and performs similarity calculations in Python against story centroids stored in PostgreSQL. This is highly efficient for low candidate counts, but it bypasses Qdrant's indexed search capabilities.
-* **Dual-Stage Gate**: The pipeline correctly implements a fast, cheap deterministic gate (Stage A) followed by a more comprehensive verification step (Stage B). This prevents unnecessary LLM calls for articles that do not share entities, locations, or topics.
+* **`selectinload` Usage**: The candidate query eager-loads `Story.entities` and `Story.category` using `selectinload`. This prevents N+1 queries when looping over candidates outside the transaction.
+* **Lazy Loading Protection**: Lazy loading is disabled for pipeline operations to avoid `DetachedInstanceError` when accessing relationships after transactions are committed.
 
 ---
 
-# 15. Final Assessment & Scores
+# 10. Unified Redis Architecture
 
-### 15.1 Audit Evaluation
-* **Architecture**: **9.4 / 10** (Well-structured dual-stage verification pipeline).
-* **Scalability**: **8.9 / 10** (Database joining for candidate retrieval scales well for active stories, but may bottleneck if active story counts grow extremely large).
-* **Performance**: **9.2 / 10** (Advisory locking prevents race conditions, and Stage A rule pruning keeps latency low).
-* **AI Pipeline**: **9.5 / 10** (Robust fallback chains, token budget guard, caching, and dual-agent arbitration for high-stakes decisions).
-* **Code Quality**: **9.3 / 10** (Strong schema adherence, descriptive variables, and comprehensive logging).
+The Redis instance manages caches, state, and distributed locking:
 
-### 15.2 Key Recommendations
-* **Composite Index**: Add a composite index on `story_entities(story_id, entity_value)` to speed up candidate retrieval.
-* **Lock Timeouts**: Implement a timeout on the advisory lock `SELECT pg_advisory_xact_lock` to prevent Celery workers from blocking indefinitely if a database transaction hangs.
-* **Vector Caching**: Store the article vector in Redis temporarily after generation, avoiding the extra Qdrant network call during Stage B.
+```text
+Redis
+ ├── [ai_cache:cluster_verification:{hash}] ── String (JSON) ── TTL: 1 Hour ── AI Gateway Cache
+ ├── [story_cost:{story_id}] ───────────────── String (Float) ─ TTL: 1 Hour ── Story Cost Tracker
+ ├── [newsiq:lock:cluster_news_task] ───────── String (Lock) ── TTL: 10 Min ── Batch Clustering Lock
+ ├── [newsiq:lock:replay:{story_id}] ──────── String (Lock) ── TTL: 15 Min ── Story Replay Lock
+ └── [url_bloom_filter] ────────────────────── Bloom Filter Set ────────────── URL Deduplication
+```
+
+---
+
+# 11. Qdrant Retrieval Performance Map
+
+The point retrieval of vectors has different operational profiles than vector searching:
+
+```text
+Worker ──► Network Latency (2-10ms) ──► Qdrant Engine (O(1) Retrieve by Key)
+                                                │
+Worker ◄── Deserialize Float Vector ◄───────────┘
+   │
+   └─► Local Cosine Similarity (Calculated in Python: <1ms)
+```
+
+* **Complexity**: Retrieval by UUID key is $O(1)$ compared to $O(\log N)$ for a HNSW vector index search.
+* **Latency Profile**: The operational bottleneck is purely network serialization and deserialization, not indexing or distance calculation.
+
+---
+
+# 12. Robust Failure & Fallback Logic
+
+If the LLM Gateway or agents fail, the pipeline cascades through safe, deterministic fallbacks to guarantee that the merge decision is never left undefined:
+
+```text
+LLM Gateways / Agent Execution
+  │
+  ├─► [Timeout / Model Unavailable / JSON Parse Fail / Rate Limit]
+  │     └─► AIGateway attempts 3 retries with exponential backoff.
+  │
+  ├─► [High-Stakes Disagreement Judge Fails]
+  │     └─► Falls back to Gemini Agent only.
+  │
+  ├─► [Gemini Agent Fails / Gemini Gateway Down]
+  │     └─► Falls back to Local Cosine Similarity score >= 0.80.
+  │
+  └─► [Database lock acquisition conflicts]
+        └─► Logs exception, aborts reflection for the candidate, and proceeds to next candidate.
+```
+
+---
+
+# 13. Dead Letter Queue & Retry Flow
+
+If an exception occurs during the Celery task (e.g. database connection drop), the task executes a standard rollback, logs the error, and enqueues to the Retry Queue:
+
+```text
+Celery Task Error
+  │
+  ├─► rollback() database session
+  ├─► record_pipeline_failure() ──► Persist in pipeline_failures database table
+  ├─► Celery task.retry() ──► 3 Retries (exponential backoff)
+  │
+  └─► [Retry Limits Exceeded]
+        └─► Enqueue to Dead Letter Queue (DLQ) ──► Slack / PagerDuty Alert
+```
+
+---
+
+# 14. Configuration Mapping
+
+The following pipeline thresholds are mapped to the actual parameters:
+
+* `STAGE_A_PASS`: `config["stage_a"]["thresholds"]["pass"]` (Default: 60)
+* `STAGE_A_MAYBE`: `config["stage_a"]["thresholds"]["maybe"]` (Default: 45)
+* `STAGE_B_PASS`: `config["stage_b"]["thresholds"]["cosine"]` (Default: 0.72)
+* `STAGE_B_MAYBE`: `config["stage_b"]["thresholds"]["cosine"] - 0.05` (Default: 0.67)
+* `REFLECTION_THRESHOLD`: `config["reflection"]["threshold"]` (Default: 0.55)
+* `LLM_TIMEOUT`: `config["routing"]["timeout_seconds"]` (Default: 30.0)
+* `DISCOVERY_EXPIRATION`: `config["discovery"]["expiration_hours"]` (Category mapped, Default: 24h)
+
+---
+
+# 15. Story Centroid & Drift Protection Audit
+
+* **Centroid Updates**: When an article is merged into a story, the centroid vector is updated using the running average:
+  $$\vec{C}_{new} = \frac{N \cdot \vec{C}_{old} + \vec{V}_{article}}{N + 1}$$
+* **Memory & Network Cost**: Centroid updates require fetching $O(1)$ rows (only the target story is updated). Vector dimensions are 3072 floats (12 KB), which has negligible storage and database network cost.
+* **Centroid Drift Risk**: Over time, adding articles describing related events can cause the centroid to drift away from the original story anchor.
+* **Mitigation / Future Considerations**:
+  - Implement a maximum limit of articles (e.g., 50) used to calculate the centroid.
+  - Implement an anchor preservation system, where the centroid calculation gives higher weight (e.g., 50%) to the first article (the story anchor) to prevent drift.
+
+---
+
+# 16. Optimization Roadmap
+
+| Current Architecture | Bottleneck | Reason | Impact | Proposed Future Architecture | Expected Improvement |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| PostgreSQL join query for candidates. | Database CPU load. | Joining `stories` and `story_entities` tables on every ingestion run. | Can degrade query performance under high load. | Add composite index on `story_entities(story_id, entity_value)`. | Query latency reduced by 40-60%. |
+| Qdrant point retrieval for article vector. | Network I/O latency. | Worker fetches vector from Qdrant over the network on every Stage B run. | Adds 5-15ms overhead per article. | Cache the article vector in Redis temporarily after generation. | Reduces Stage B retrieval latency to <1ms. |
+| Advisory lock waiting on hot stories. | Celery worker blocking. | Worker waits indefinitely for advisory lock during hot merges. | Blocks Celery worker pool threads. | Implement `pg_try_advisory_xact_lock` with a timeout limit. | Prevents workers from blocking indefinitely. |

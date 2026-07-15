@@ -981,13 +981,11 @@ class ClusteringService:
         extracted_ents = EventValidationService()._extract_entities(article.title)
 
         # 3. Build query
-        from sqlalchemy import or_, text
+        from sqlalchemy import exists, or_, text
 
         recent_stories_stmt = (
             select(Story)
-            .distinct()
             .options(selectinload(Story.category), selectinload(Story.entities))
-            .outerjoin(StoryEntity, Story.id == StoryEntity.story_id)
             .where(
                 Story.lifecycle_state.in_(["developing", "monitoring", "stable"]),
                 Story.updated_at >= time_window,
@@ -1004,13 +1002,13 @@ class ClusteringService:
 
         # Boost by entity overlap (if extracted entities exist)
         if extracted_ents:
+            has_matching_entity = exists().where(
+                StoryEntity.story_id == Story.id,
+                func.lower(StoryEntity.entity_value).in_([e.lower() for e in extracted_ents]),
+            )
+            has_no_entities = ~exists().where(StoryEntity.story_id == Story.id)
             recent_stories_stmt = recent_stories_stmt.where(
-                or_(
-                    func.lower(StoryEntity.entity_value).in_([e.lower() for e in extracted_ents]),
-                    StoryEntity.id.is_(
-                        None
-                    ),  # fallback to allow recent stories with no entities yet
-                )
+                or_(has_matching_entity, has_no_entities)
             )
 
         recent_stories_stmt = recent_stories_stmt.order_by(Story.updated_at.desc()).limit(20)
