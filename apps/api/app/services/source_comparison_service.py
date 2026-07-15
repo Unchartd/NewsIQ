@@ -208,10 +208,13 @@ class SourceComparisonService:
 
         if not rows:
             from sqlalchemy import delete
+
             await session.execute(
                 delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
             )
-            await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
+            await session.execute(
+                delete(StoryDifference).where(StoryDifference.story_id == story_id)
+            )
             if articles is None:
                 await session.commit()
             else:
@@ -221,10 +224,13 @@ class SourceComparisonService:
         unique_sources = {src.id for _, src in rows}
         if len(unique_sources) < 2:
             from sqlalchemy import delete
+
             await session.execute(
                 delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
             )
-            await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
+            await session.execute(
+                delete(StoryDifference).where(StoryDifference.story_id == story_id)
+            )
             if articles is None:
                 await session.commit()
             else:
@@ -413,6 +419,7 @@ class SourceComparisonService:
 
         # Delete existing coverages and differences for this story to avoid duplication or stale data
         from sqlalchemy import delete
+
         await session.execute(
             delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
         )

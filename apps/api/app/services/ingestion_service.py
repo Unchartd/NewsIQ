@@ -731,6 +731,7 @@ class IngestionService:
         logger.info("Starting ingestion for source: %s (%s)", source_name, rss_url)
         try:
             from app.core.http_client import http_client_pool
+
             client = http_client_pool.client
             response = await client.get(rss_url, timeout=15.0, follow_redirects=True)
             response.raise_for_status()

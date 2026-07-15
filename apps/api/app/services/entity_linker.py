@@ -329,6 +329,7 @@ class EntityLinker:
         headers = {"User-Agent": "NewsIQ/1.0 (admin@newsiq.com)"}
 
         from app.core.http_client import http_client_pool
+
         client = http_client_pool.client
         response = await client.get(url, params=params, headers=headers, timeout=5.0)
         response.raise_for_status()

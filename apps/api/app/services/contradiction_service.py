@@ -208,6 +208,7 @@ class ContradictionService:
         unique_sources = {art.source_id for art, _ in rows if art.source_id}
         if len(unique_sources) < 2:
             from sqlalchemy import delete
+
             await session.execute(
                 delete(StoryContradiction).where(StoryContradiction.story_id == story_id)
             )
@@ -373,6 +374,7 @@ class ContradictionService:
 
         # Delete existing contradictions for this story to avoid duplication or stale data
         from sqlalchemy import delete
+
         await session.execute(
             delete(StoryContradiction).where(StoryContradiction.story_id == story_id)
         )

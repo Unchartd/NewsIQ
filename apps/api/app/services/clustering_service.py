@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import yaml
@@ -850,9 +850,24 @@ class ClusteringService:
             metadata = {}
 
         metadata["triggered"] = True
-        metadata["gemini"] = {"decision": None, "latency_ms": 0.0, "provider": "gemini", "model": "gemini-2.5-flash"}
-        metadata["openai"] = {"decision": None, "latency_ms": 0.0, "provider": "openai", "model": "gpt-4o-mini"}
-        metadata["judge"] = {"decision": None, "latency_ms": 0.0, "provider": "openai", "model": "gpt-4o"}
+        metadata["gemini"] = {
+            "decision": None,
+            "latency_ms": 0.0,
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
+        }
+        metadata["openai"] = {
+            "decision": None,
+            "latency_ms": 0.0,
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+        }
+        metadata["judge"] = {
+            "decision": None,
+            "latency_ms": 0.0,
+            "provider": "openai",
+            "model": "gpt-4o",
+        }
         metadata["fallback"] = {"reason": None, "used": None}
 
         art_a_evt_dict = {
@@ -944,6 +959,7 @@ class ClusteringService:
                 except TimeoutError:
                     logger.warning("OpenAI Verification Agent timed out.")
                     from app.core.metrics import newsiq_reflection_timeout_total
+
                     newsiq_reflection_timeout_total.labels(agent_type="openai").inc()
                     metadata["openai"]["decision"] = "TIMEOUT"
                 except Exception as ex:
@@ -967,10 +983,14 @@ class ClusteringService:
                                 ),
                                 timeout=settings.REFLECTION_AGENT_TIMEOUT_SECONDS,
                             )
-                            metadata["judge"]["decision"] = "PASS" if judgment.final_decision else "FAIL"
+                            metadata["judge"]["decision"] = (
+                                "PASS" if judgment.final_decision else "FAIL"
+                            )
                             metadata["judge"]["chosen_provider"] = judgment.chosen_provider
                             metadata["judge"]["explanation"] = judgment.explanation
-                            metadata["judge"]["latency_ms"] = (_now() - start_j).total_seconds() * 1000.0
+                            metadata["judge"]["latency_ms"] = (
+                                _now() - start_j
+                            ).total_seconds() * 1000.0
                             return judgment.final_decision
                         except TimeoutError:
                             logger.warning("Judge Agent arbitration timed out.")
@@ -979,8 +999,11 @@ class ClusteringService:
                                 newsiq_reflection_fallback_total,
                                 newsiq_reflection_timeout_total,
                             )
+
                             newsiq_reflection_timeout_total.labels(agent_type="judge").inc()
-                            newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
+                            newsiq_reflection_fallback_total.labels(
+                                fallback_type="cached_gemini"
+                            ).inc()
                             newsiq_reflection_cache_reused_total.inc()
                             metadata["judge"]["decision"] = "TIMEOUT"
                             metadata["fallback"]["reason"] = "judge_timeout"
@@ -992,7 +1015,10 @@ class ClusteringService:
                                 newsiq_reflection_cache_reused_total,
                                 newsiq_reflection_fallback_total,
                             )
-                            newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
+
+                            newsiq_reflection_fallback_total.labels(
+                                fallback_type="cached_gemini"
+                            ).inc()
                             newsiq_reflection_cache_reused_total.inc()
                             metadata["judge"]["decision"] = "ERROR"
                             metadata["judge"]["error"] = str(j_err)
@@ -1007,6 +1033,7 @@ class ClusteringService:
                         newsiq_reflection_cache_reused_total,
                         newsiq_reflection_fallback_total,
                     )
+
                     newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
                     newsiq_reflection_cache_reused_total.inc()
                     metadata["fallback"]["reason"] = "openai_unavailable"
@@ -1022,6 +1049,7 @@ class ClusteringService:
                     newsiq_reflection_cache_reused_total,
                     newsiq_reflection_fallback_total,
                 )
+
                 newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
                 newsiq_reflection_cache_reused_total.inc()
                 metadata["fallback"]["reason"] = "dual_agent_setup_error"
@@ -1030,6 +1058,7 @@ class ClusteringService:
 
         # Deterministic fallback threshold (Gemini failed entirely)
         from app.core.metrics import newsiq_reflection_fallback_total
+
         newsiq_reflection_fallback_total.labels(fallback_type="deterministic_threshold").inc()
         metadata["fallback"]["reason"] = "gemini_unavailable"
         metadata["fallback"]["used"] = "deterministic_threshold"
@@ -1142,6 +1171,7 @@ class ClusteringService:
 
             # Expose Stage A Prom Counter
             from app.core.metrics import newsiq_stage_a_pass_total
+
             newsiq_stage_a_pass_total.labels(outcome=decision.outcome.value).inc()
 
             if decision.outcome in (ValidationOutcome.PASS, ValidationOutcome.MAYBE):
@@ -1159,6 +1189,7 @@ class ClusteringService:
                 import json
 
                 from app.models import PipelineTraceModel
+
                 trace_data = {
                     "stage_a": {
                         "score": round(decision.score, 4),
@@ -1225,6 +1256,7 @@ class ClusteringService:
         import json
 
         from app.models import PipelineTraceModel
+
         for story, anchor, stage_a_decision, start_time_a, latency_a in skipped_candidates:
             trace_data = {
                 "stage_a": {
@@ -1234,7 +1266,10 @@ class ClusteringService:
                     "latency_ms": round(latency_a, 2),
                     "details": stage_a_decision.details,
                 },
-                "stage_b": {"triggered": False, "reason": "Skipped: Story did not make Top 3 Stage A cut"},
+                "stage_b": {
+                    "triggered": False,
+                    "reason": "Skipped: Story did not make Top 3 Stage A cut",
+                },
                 "reflection": {"triggered": False},
                 "overall_decision": "FAIL",
             }
@@ -1260,6 +1295,7 @@ class ClusteringService:
 
             # Expose Stage B Prom Counter
             from app.core.metrics import newsiq_stage_b_pass_total
+
             newsiq_stage_b_pass_total.labels(outcome=decision_b.outcome.value).inc()
 
             story_id = story.id
@@ -1353,6 +1389,7 @@ class ClusteringService:
                     story_id,
                 )
                 from app.core.metrics import newsiq_reflection_triggered_total
+
                 newsiq_reflection_triggered_total.labels(reason_type="borderline_similarity").inc()
                 newsiq_reflection_requests_total.labels(outcome="requested").inc()
 
@@ -1379,7 +1416,7 @@ class ClusteringService:
                 if first_art and first_evt and article_event:
                     category_slug = story.category.slug if story.category else ""
                     start_time_ref = _now()
-                    reflection_metadata = {}
+                    reflection_metadata: dict[str, Any] = {}
 
                     should_merge = await self._verify_merge_with_agents(
                         article_a=article,

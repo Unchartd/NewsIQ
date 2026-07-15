@@ -1722,9 +1722,7 @@ async def get_prompt_analytics(
                 "failed_runs"
             ),
             func.avg(AIExecutionRecordModel.retry_count).label("avg_retries"),
-            func.sum(case((AIExecutionRecordModel.cache_hit, 1), else_=0)).label(
-                "cache_hits"
-            ),
+            func.sum(case((AIExecutionRecordModel.cache_hit, 1), else_=0)).label("cache_hits"),
         )
         .group_by(AIExecutionRecordModel.prompt_name, AIExecutionRecordModel.prompt_version)
         .where(AIExecutionRecordModel.prompt_name.isnot(None))

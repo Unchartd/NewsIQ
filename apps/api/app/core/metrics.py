@@ -389,4 +389,3 @@ newsiq_stage_b_pass_total = Counter(
     "Total number of Stage B checks that passed or borderline passed.",
     ["outcome"],
 )
-
