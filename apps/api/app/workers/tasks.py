@@ -930,6 +930,356 @@ async def _check_discovery_task_completion(discovery_task_id: uuid.UUID, session
             )
 
 
+async def _check_story_candidate_completion(story_candidate_id: uuid.UUID, session: Any) -> None:
+    """Advance a StoryCandidate to READY when all its CrawlTasks are terminal.
+
+    Called after each CrawlTask completes (SUCCESS or FAILED) so that the
+    StoryCandidate lifecycle is updated incrementally without a polling loop.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from app.models.models import CrawlTask, CrawlTaskState, StoryCandidate, StoryCandidateState
+
+    stmt = select(CrawlTask).where(CrawlTask.story_candidate_id == story_candidate_id)
+    res = await session.execute(stmt)
+    crawl_tasks = list(res.scalars().all())
+
+    if not crawl_tasks:
+        return
+
+    all_done = all(
+        ct.status in (CrawlTaskState.SUCCESS, CrawlTaskState.FAILED) for ct in crawl_tasks
+    )
+    if all_done:
+        sc_stmt = select(StoryCandidate).where(StoryCandidate.id == story_candidate_id)
+        sc_res = await session.execute(sc_stmt)
+        sc = sc_res.scalar_one_or_none()
+        if sc and sc.status == StoryCandidateState.CRAWLING:
+            sc.status = StoryCandidateState.READY
+            sc.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            logger.info(
+                "StoryCandidate %s → READY (%d articles persisted).",
+                story_candidate_id,
+                sc.articles_persisted,
+            )
+
+
+@celery_app.task(name="app.workers.tasks.dispatch_story_candidate_task")
+def dispatch_story_candidate_task(
+    story_candidate_id_str: str, run_id: str | None = None, trace_id: str | None = None
+) -> None:
+    """Execute Google News search for a StoryCandidate after the collection window.
+
+    This task fires via apply_async(eta=collect_until) as the safety-net timeout,
+    OR via .delay() when the early-dispatch threshold (STORY_FIRST_EARLY_DISPATCH_THRESHOLD
+    publishers) is reached inside _attach_rss_source.
+
+    Guard: if status != COLLECTING at execution time, it means the early-dispatch path
+    already ran. The task returns immediately (idempotent no-op).
+    """
+    logger.info("Celery task: Dispatching StoryCandidate search for %s", story_candidate_id_str)
+
+    async def _run():
+        import hashlib
+        from datetime import UTC, datetime
+        from urllib.parse import urlparse
+
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.ingestion import get_discovery_provider
+        from app.models.models import (
+            CrawlTask,
+            CrawlTaskState,
+            DiscoveryTask,
+            DiscoveryTaskState,
+            StoryCandidate,
+            StoryCandidateState,
+        )
+        from app.services.cache_service import cache_service
+        from app.services.gnews_service import gnews_service
+
+        story_candidate_id = uuid.UUID(story_candidate_id_str)
+
+        async with async_session_factory() as session:
+            # 1. Load StoryCandidate
+            stmt = select(StoryCandidate).where(StoryCandidate.id == story_candidate_id)
+            res = await session.execute(stmt)
+            sc = res.scalar_one_or_none()
+            if not sc:
+                logger.error("StoryCandidate %s not found.", story_candidate_id_str)
+                return
+
+            # 2. Guard: early-dispatch path already ran (status transitioned to DISCOVERING)
+            #    The ETA-based timeout task becomes a no-op.
+            if sc.status == StoryCandidateState.DISCOVERING:
+                logger.info(
+                    "[StoryFirst] StoryCandidate %s already DISCOVERING (early dispatch ran). No-op.",
+                    story_candidate_id_str,
+                )
+                return
+
+            if sc.status != StoryCandidateState.COLLECTING:
+                logger.info(
+                    "[StoryFirst] StoryCandidate %s is %s — skipping dispatch.",
+                    story_candidate_id_str,
+                    sc.status,
+                )
+                return
+
+            # 3. Transition to DISCOVERING
+            sc.status = StoryCandidateState.DISCOVERING
+            sc.search_dispatched_at = datetime.now(UTC).replace(tzinfo=None)
+            await session.flush()
+
+            # 4. Check Daily Search Budget
+            date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+            budget_key = f"discovery:daily_searches_run:{date_str}"
+            try:
+                current_searches = int(await cache_service.get(budget_key) or 0)
+                if current_searches >= settings.DISCOVERY_DAILY_SEARCH_BUDGET:
+                    logger.warning(
+                        "[StoryFirst] Daily search budget exceeded (%d/%d). Expiring StoryCandidate %s.",
+                        current_searches,
+                        settings.DISCOVERY_DAILY_SEARCH_BUDGET,
+                        story_candidate_id_str,
+                    )
+                    sc.status = StoryCandidateState.EXPIRED
+                    sc.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                    await session.commit()
+                    return
+            except Exception as e:
+                logger.warning("[StoryFirst] Failed to check search budget: %s", e)
+
+            # 5. Duplicate search lock (per query_hash + date, same as legacy path)
+            query_hash = hashlib.sha256(sc.normalized_query.encode("utf-8")).hexdigest()
+            lock_key = f"discovery:search_lock:{sc.discovery_provider}:{query_hash}:{date_str}"
+            try:
+                acquired = await cache_service.set(lock_key, "1", ttl=600, nx=True)
+                if not acquired:
+                    logger.info(
+                        "[StoryFirst] Duplicate search lock for query '%s'. Expiring StoryCandidate %s.",
+                        sc.normalized_query,
+                        story_candidate_id_str,
+                    )
+                    sc.status = StoryCandidateState.EXPIRED
+                    sc.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                    await session.commit()
+                    return
+            except Exception as e:
+                logger.warning("[StoryFirst] Failed to check search lock: %s", e)
+
+            # 6. Load associated DiscoveryTask
+            dt_stmt = select(DiscoveryTask).where(
+                DiscoveryTask.story_candidate_id == story_candidate_id,
+                DiscoveryTask.status == DiscoveryTaskState.PENDING,
+            )
+            dt_res = await session.execute(dt_stmt)
+            discovery_task = dt_res.scalar_one_or_none()
+            if not discovery_task:
+                logger.error(
+                    "[StoryFirst] No PENDING DiscoveryTask for StoryCandidate %s.",
+                    story_candidate_id_str,
+                )
+                sc.status = StoryCandidateState.EXPIRED
+                await session.commit()
+                return
+
+            discovery_task.status = DiscoveryTaskState.SEARCHING
+            discovery_task.search_started_at = datetime.now(UTC).replace(tzinfo=None)
+            discovery_task.queued_at = (
+                datetime.now(UTC).replace(tzinfo=None)
+                if not discovery_task.queued_at
+                else discovery_task.queued_at
+            )
+            await session.flush()
+
+            # Increment search budget counter
+            try:
+                redis_client = cache_service._redis
+                if redis_client:
+                    new_count = await redis_client.incr(budget_key)
+                    if new_count == 1:
+                        await redis_client.expire(budget_key, 36 * 3600)
+                else:
+                    await cache_service.set(budget_key, str(current_searches + 1), ttl=36 * 3600)
+            except Exception as e:
+                logger.warning("[StoryFirst] Failed to increment search budget: %s", e)
+
+            # 7. Execute Provider Search
+            try:
+                provider = get_discovery_provider(sc.discovery_provider)
+                raw_results = await asyncio.wait_for(
+                    provider.search(
+                        query=sc.normalized_query,
+                        max_results=settings.STORY_FIRST_MAX_SEARCH_RESULTS * 3,
+                    ),
+                    timeout=5.0,
+                )
+
+                # rank_and_filter_search_results needs an original_title for RapidFuzz scoring.
+                # Use the best RSS headline we have.
+                discovered_urls = gnews_service.rank_and_filter_search_results(
+                    results=raw_results,
+                    original_title=sc.headline,
+                    original_pub_date=None,
+                    max_results=settings.STORY_FIRST_MAX_CRAWL_RESULTS,
+                )
+
+                discovery_task.search_completed_at = datetime.now(UTC).replace(tzinfo=None)
+                sc.search_completed_at = datetime.now(UTC).replace(tzinfo=None)
+
+                from app.core.metrics import newsiq_discovery_searches_succeeded
+
+                newsiq_discovery_searches_succeeded.inc()
+
+            except Exception as e:
+                logger.error(
+                    "[StoryFirst] Search failed for StoryCandidate %s: %s",
+                    story_candidate_id_str,
+                    e,
+                )
+                from app.core.metrics import newsiq_discovery_searches_failed
+
+                newsiq_discovery_searches_failed.inc()
+
+                discovery_task.retry_count += 1
+                if discovery_task.retry_count < settings.DISCOVERY_MAX_RETRIES:
+                    discovery_task.status = DiscoveryTaskState.PENDING
+                    sc.status = StoryCandidateState.COLLECTING  # allow retry
+                else:
+                    discovery_task.status = DiscoveryTaskState.SEARCH_FAILED
+                    sc.status = StoryCandidateState.EXPIRED
+                    sc.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                discovery_task.last_error = f"Search failed: {e}"
+                await session.commit()
+                return
+
+            # 8. Inject original RSS source URLs (ensure seed article is always crawled)
+            original_rss_urls: list[str] = [
+                s["url"] for s in (sc.rss_sources or []) if s.get("url")
+            ]
+            discovered_domains = set()
+            for u in discovered_urls:
+                try:
+                    discovered_domains.add(urlparse(u).netloc)
+                except Exception:
+                    pass
+
+            for orig_url in original_rss_urls:
+                try:
+                    orig_domain = urlparse(orig_url).netloc
+                    if orig_domain not in discovered_domains:
+                        discovered_urls.insert(0, orig_url)  # prepend: tier sort handles ordering
+                        discovered_domains.add(orig_domain)
+                except Exception:
+                    pass
+
+            if not discovered_urls:
+                logger.info(
+                    "[StoryFirst] No URLs found for StoryCandidate %s. Completing.",
+                    story_candidate_id_str,
+                )
+                sc.status = StoryCandidateState.EXPIRED
+                sc.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                discovery_task.status = DiscoveryTaskState.COMPLETE
+                discovery_task.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                await session.commit()
+                return
+
+            # 9. Resolve Google News redirect URLs
+            try:
+                resolved_urls = await asyncio.gather(
+                    *[provider.resolve_url(u) for u in discovered_urls]
+                )
+                from app.core.metrics import (
+                    newsiq_discovery_urls_decode_failed,
+                    newsiq_discovery_urls_decoded,
+                )
+
+                for orig_url, res_url in zip(discovered_urls, resolved_urls):
+                    if "news.google.com" in orig_url:
+                        if orig_url != res_url:
+                            newsiq_discovery_urls_decoded.inc()
+                        else:
+                            newsiq_discovery_urls_decode_failed.inc()
+            except Exception as resolve_exc:
+                logger.warning("[StoryFirst] URL resolution failed: %s", resolve_exc)
+                resolved_urls = discovered_urls
+
+            # 10. Assign tiers and sort (Tier 1 first)
+            def _get_tier(url: str) -> int:
+                try:
+                    domain = urlparse(url).netloc.lower().replace("www.", "")
+                    if any(t in domain for t in settings.CRAWL_TIER_1_PUBLISHERS):
+                        return 1
+                    if any(t in domain for t in settings.CRAWL_TIER_2_PUBLISHERS):
+                        return 2
+                    return 3
+                except Exception:
+                    return 3
+
+            tiered_urls = sorted(resolved_urls, key=_get_tier)
+
+            # 11. Update StoryCandidate metrics
+            sc.status = StoryCandidateState.DISCOVERED
+            sc.urls_found = len(tiered_urls)
+            discovery_task.status = DiscoveryTaskState.URLS_FOUND
+            await session.flush()
+
+            # 12. Create CrawlTasks in tier order (Tier-1 created and dispatched first)
+            from app.core.fingerprint import compute_fingerprints
+
+            created_crawl_task_ids = []
+            for url in tiered_urls:
+                url_canonical = (
+                    gnews_service.canonicalize_url(url)
+                    if hasattr(gnews_service, "canonicalize_url")
+                    else url
+                )
+                url_hash = compute_fingerprints(url_canonical, "", "")["url_hash"]
+                tier = _get_tier(url_canonical)
+
+                new_crawl_task = CrawlTask(
+                    discovery_task_id=discovery_task.id,
+                    story_candidate_id=story_candidate_id,
+                    url=url_canonical,
+                    url_hash=url_hash,
+                    tier=tier,
+                    status=CrawlTaskState.PENDING,
+                    task_version=2,
+                    created_at=datetime.now(UTC).replace(tzinfo=None),
+                )
+                session.add(new_crawl_task)
+                await session.flush()
+                created_crawl_task_ids.append(new_crawl_task.id)
+
+            sc.status = StoryCandidateState.CRAWLING
+            discovery_task.status = DiscoveryTaskState.CRAWLING
+            await session.commit()
+
+            # Dispatch CrawlTasks (they are already in tier order)
+            for ct_id in created_crawl_task_ids:
+                discovery_crawl_task.delay(str(ct_id), run_id, trace_id)
+
+            logger.info(
+                "[StoryFirst] StoryCandidate %s → CRAWLING. %d CrawlTasks dispatched.",
+                story_candidate_id_str,
+                len(created_crawl_task_ids),
+            )
+
+    async def _wrapped_run():
+        async with PipelineRun(
+            trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
+        ) as run:
+            async with StageSpan(run, stage=PipelineStage.DISCOVERY_SEARCH):
+                await _run()
+
+    return run_async(_wrapped_run())
+
+
 @celery_app.task(name="app.workers.tasks.discovery_search_task")
 def discovery_search_task(
     discovery_task_id_str: str, run_id: str | None = None, trace_id: str | None = None
@@ -1062,7 +1412,7 @@ def discovery_search_task(
                 # Rank results and apply base domain diversity filtering
                 discovered_urls = gnews_service.rank_and_filter_search_results(
                     results=raw_results,
-                    original_title=original_article.title,
+                    original_title=original_article.title or "",
                     original_pub_date=original_article.published_at,
                     max_results=settings.DISCOVERY_MAX_RESULTS,
                 )
@@ -1142,6 +1492,9 @@ def discovery_search_task(
 
                 new_crawl_task = CrawlTask(
                     discovery_task_id=task.id,
+                    # Propagate story_candidate_id if this DiscoveryTask was created
+                    # by the legacy Article-First path that later got a story_candidate.
+                    story_candidate_id=task.story_candidate_id,
                     url=url_canonical,
                     url_hash=url_hash,
                     status=CrawlTaskState.PENDING,
@@ -1264,11 +1617,14 @@ def discovery_crawl_task(
                 logger.warning("Failed to increment download budget counter: %s", e)
 
             # 5. Execute HTTP crawl
-            crawled = None
+            crawled: dict[str, Any] = {}
             try:
-                crawled = await crawler_service.crawl_article(crawl_task.url)
+                crawled_res = await crawler_service.crawl_article(crawl_task.url)
+                if crawled_res:
+                    crawled = crawled_res
                 if not crawled or not crawled.get("success") or not crawled.get("content"):
-                    diagnostics = crawled.get("diagnostics") if crawled else {}
+                    raw_diag = crawled.get("diagnostics") if crawled else None
+                    diagnostics: dict[str, Any] = raw_diag if isinstance(raw_diag, dict) else {}
                     failure_reason = diagnostics.get("failure_reason") or "EMPTY_CONTENT"
                     raise ValueError(f"Crawl failed: {failure_reason}")
 
@@ -1287,9 +1643,8 @@ def discovery_crawl_task(
                     e,
                 )
 
-                diagnostics = (
-                    crawled.get("diagnostics") if (crawled and isinstance(crawled, dict)) else {}
-                )
+                raw_diag = crawled.get("diagnostics") if isinstance(crawled, dict) else None
+                diagnostics = raw_diag if isinstance(raw_diag, dict) else {}
                 failure_reason = diagnostics.get("failure_reason") or "FAILED"
 
                 from app.core.metrics import newsiq_discovery_crawls_failed
@@ -1412,7 +1767,31 @@ def discovery_crawl_task(
                     e,
                 )
 
+            # Increment StoryCandidate funnel metric (articles_persisted)
+            if crawl_task.story_candidate_id:
+                try:
+                    from app.models.models import StoryCandidate
+
+                    sc_stmt = select(StoryCandidate).where(
+                        StoryCandidate.id == crawl_task.story_candidate_id
+                    )
+                    sc_res = await session.execute(sc_stmt)
+                    sc_obj = sc_res.scalar_one_or_none()
+                    if sc_obj:
+                        sc_obj.articles_persisted += 1
+                        sc_obj.urls_crawled = (sc_obj.urls_crawled or 0) + 1
+                        await session.flush()
+                except Exception as sc_err:
+                    logger.warning(
+                        "[StoryFirst] Failed to update StoryCandidate funnel metrics: %s", sc_err
+                    )
+
             await _check_discovery_task_completion(crawl_task.discovery_task_id, session)
+
+            # Check StoryCandidate lifecycle completion (Story-First path)
+            if crawl_task.story_candidate_id:
+                await _check_story_candidate_completion(crawl_task.story_candidate_id, session)
+
             await session.commit()
 
     async def _wrapped_run():
@@ -1547,6 +1926,64 @@ def cleanup_discovery_tasks_task() -> dict[str, int]:
                 "deleted_expired": count_expired,
                 "total_deleted": total_deleted,
             }
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.poll_story_candidate_timeouts_task")
+def poll_story_candidate_timeouts_task() -> dict[str, int]:
+    """Re-queue StoryCandidate objects stuck in COLLECTING state past their collect_until deadline.
+
+    This is the safety net for ETA-based dispatch. If dispatch_story_candidate_task
+    didn't fire because the worker was down during the collection window, this task
+    picks up the stranded StoryCandidate and dispatches it immediately.
+
+    Runs every minute via Celery Beat.
+    """
+    logger.debug("Celery task: Polling StoryCandidate timeouts.")
+
+    async def _run() -> dict[str, int]:
+        from datetime import UTC, datetime
+
+        from sqlalchemy import select
+
+        from app.models.models import StoryCandidate, StoryCandidateState
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        dispatched_count = 0
+
+        async with async_session_factory() as session:
+            # Find StoryCandidate rows still in COLLECTING state past collect_until
+            stmt = select(StoryCandidate).where(
+                StoryCandidate.status == StoryCandidateState.COLLECTING,
+                StoryCandidate.collect_until <= now,
+            )
+            res = await session.execute(stmt)
+            timed_out = res.scalars().all()
+
+            if not timed_out:
+                return {"dispatched": 0}
+
+            logger.info(
+                "[StoryFirst] poll_story_candidate_timeouts: Found %d timed-out candidates.",
+                len(timed_out),
+            )
+
+            for sc in timed_out:
+                try:
+                    dispatch_story_candidate_task.delay(str(sc.id))
+                    dispatched_count += 1
+                    logger.info(
+                        "[StoryFirst] Timeout re-dispatch for StoryCandidate %s (query='%s').",
+                        sc.id,
+                        sc.normalized_query[:60],
+                    )
+                except Exception as e:
+                    logger.error(
+                        "[StoryFirst] Failed to re-dispatch StoryCandidate %s: %s", sc.id, e
+                    )
+
+        return {"dispatched": dispatched_count}
 
     return run_async(_run())
 

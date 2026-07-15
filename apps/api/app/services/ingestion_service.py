@@ -6,7 +6,7 @@ import logging
 import re
 import time
 import unicodedata
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import feedparser
@@ -197,7 +197,13 @@ class IngestionService:
         pub_date: datetime | None,
         source_name: str | None = None,
     ) -> tuple[bool, str]:
-        """Apply quality and prioritization filters using weighted Discovery Score model."""
+        """Apply quality and prioritization filters using weighted Discovery Score model.
+
+        .. deprecated::
+            Use calculate_metadata_score() for the Story-First pipeline (metadata only,
+            no content required). This method remains for the legacy Article-First path
+            (GNews ingestion) and will be removed once that path is migrated.
+        """
         score, breakdown = IngestionService.calculate_discovery_score(
             title, content, pub_date, source_name
         )
@@ -210,6 +216,132 @@ class IngestionService:
             return False, f"low_discovery_score_{int(score * 100)}"
 
         return True, ""
+
+    @staticmethod
+    def calculate_metadata_score(
+        title: str | None,
+        description: str | None,
+        pub_date: datetime | None,
+        source_name: str | None = None,
+    ) -> tuple[float, dict[str, Any]]:
+        """Metadata-only discovery score for the Story-First pipeline.
+
+        Unlike calculate_discovery_score(), this does NOT require crawled content
+        and does NOT apply a content-length gate. It is designed for RSS entry
+        screening where only title, description, published_at, and source_name
+        are available.
+
+        Returns:
+            (score, breakdown) where score is in [-1.0, 1.0].
+            Negative scores indicate the entry should be skipped entirely.
+        """
+        if not title:
+            return 0.0, {"reason": "missing_title"}
+
+        # 1. Opinion/Editorial/Live-score gate (same exclusions as full scorer)
+        opinion_keywords = (
+            "opinion",
+            "editorial",
+            "column",
+            "weather forecast",
+            "horoscope",
+            "gossip",
+            "obituary",
+            "live score",
+            "live updates",
+            "deal of the day",
+        )
+        title_lower = title.lower()
+        if any(kw in title_lower for kw in opinion_keywords):
+            return -1.0, {"reason": "skipped_topic_opinion", "score": -1.0}
+
+        # 2. Freshness (same 24-hour decay as full scorer)
+        if pub_date:
+            now_dt = datetime.now(UTC).replace(tzinfo=None)
+            age_hours = (now_dt - pub_date).total_seconds() / 3600.0
+            if age_hours > 24.0:
+                return -1.0, {"reason": "stale_article", "score": -1.0}
+            normalized_freshness = max(0.0, 1.0 - (age_hours / 24.0))
+        else:
+            normalized_freshness = 0.25
+
+        # 3. Source trust weight
+        normalized_trust = 0.0
+        if source_name:
+            source_lower = source_name.lower().strip()
+            for pub_key, weight in settings.DISCOVERY_TRUSTED_PUBLISHERS.items():
+                if pub_key.lower().strip() in source_lower:
+                    normalized_trust = weight
+                    break
+
+        # 4. Entity count from title + description (no content available)
+        from app.services.ner_service_v2 import ner_service_v2
+
+        text_for_ner = f"{title} {description or ''}".strip()
+        entities = ner_service_v2.extract_entities_sync(text_for_ner)
+
+        # Proper-noun heuristic (same as full scorer)
+        words = title.strip().split()
+        proper_nouns = 0
+        _stopwords = {
+            "the",
+            "a",
+            "an",
+            "this",
+            "what",
+            "how",
+            "why",
+            "who",
+            "when",
+            "where",
+            "if",
+            "in",
+            "on",
+            "at",
+            "by",
+            "for",
+            "with",
+        }
+        if words:
+            first = words[0].rstrip(":,.-!\"'")
+            if first and first[0].isupper() and first.lower() not in _stopwords:
+                proper_nouns += 1
+            for w in words[1:]:
+                cleaned = w.rstrip(":,.-!\"'")
+                if cleaned and cleaned[0].isupper():
+                    proper_nouns += 1
+
+        entity_count = max(len(entities), proper_nouns)
+        normalized_entity = min(1.0, entity_count / 4.0)
+
+        # 5. Weighted score
+        # Content weight (DISCOVERY_CONTENT_WEIGHT) is redistributed proportionally
+        # across freshness, trust, and entity since there is no content to score.
+        w_fresh = settings.DISCOVERY_FRESHNESS_WEIGHT
+        w_trust = settings.DISCOVERY_TRUST_WEIGHT
+        w_ent = settings.DISCOVERY_ENTITY_WEIGHT
+        w_cont = settings.DISCOVERY_CONTENT_WEIGHT
+
+        # Redistribute content weight proportionally
+        total_meta_weight = w_fresh + w_trust + w_ent
+        scale = (total_meta_weight + w_cont) / total_meta_weight if total_meta_weight > 0 else 1.0
+
+        final_score = (
+            (w_fresh * normalized_freshness)
+            + (w_trust * normalized_trust)
+            + (w_ent * normalized_entity)
+        ) * scale
+
+        breakdown = {
+            "freshness": round(normalized_freshness, 4),
+            "trust": normalized_trust,
+            "entity": normalized_entity,
+            "entity_count": entity_count,
+            "score": round(final_score, 4),
+            "source": "metadata_only",
+        }
+
+        return final_score, breakdown
 
     @staticmethod
     def clean_html(html_content: str | None) -> str:
@@ -236,7 +368,17 @@ class IngestionService:
         return datetime.now(UTC).replace(tzinfo=None)
 
     async def ingest_rss_source(self, source: Source, session: AsyncSession) -> int:
-        """Ingest articles from a source's RSS feed."""
+        """Ingest articles from a source's RSS feed.
+
+        Story-First path (STORY_FIRST_ENABLED=True — default):
+            RSS entries are treated as metadata seeds. No HTTP crawling happens here.
+            Each qualifying entry is upserted into StoryCandidate (deduplicated by
+            headline hash). The dispatch_story_candidate_task fires after the
+            collection window to run the Google News search and create CrawlTasks.
+
+        Legacy path (STORY_FIRST_ENABLED=False):
+            Original Article-First flow: crawl → persist → dispatch discovery.
+        """
         if not source.rss_url:
             logger.info(
                 "Source '%s' does not have an RSS URL; skipping RSS ingestion.", source.name
@@ -253,26 +395,337 @@ class IngestionService:
 
         existing_articles = await self._batch_existing_articles(feed_urls, session)
 
-        # PERF-01: Only crawl URLs that are genuinely new.
-        # Since we filter out existing URLs before crawling, we do not need to pass them
-        # to _persist_articles, preventing their full contents in the DB from being
-        # overwritten by short feed summaries/snippets.
+        if settings.STORY_FIRST_ENABLED:
+            return await self._ingest_rss_story_first(
+                feed_urls, url_to_entry, existing_articles, source, session
+            )
+
+        # ── Legacy Article-First path ─────────────────────────────────────────
         entries_to_crawl: list[tuple[Any, str, Article | None]] = [
-            (url_to_entry[url], url, None)
-            for url in feed_urls
-            if url not in existing_articles  # new URL — must crawl
+            (url_to_entry[url], url, None) for url in feed_urls if url not in existing_articles
         ]
-
         crawled_results = await self._crawl_articles(entries_to_crawl)
-
         new_articles_count, discovery_candidates = await self._persist_articles(
             crawled_results, source, session
         )
-
         if discovery_candidates:
             await self._dispatch_discovery(discovery_candidates, source.name, session)
-
         return new_articles_count
+
+    async def _ingest_rss_story_first(
+        self,
+        feed_urls: list[str],
+        url_to_entry: dict[str, Any],
+        existing_articles: dict[str, Any],
+        source: Source,
+        session: AsyncSession,
+    ) -> int:
+        """Story-First ingestion path: score metadata, upsert StoryCandidates.
+
+        Returns the count of StoryCandidates dispatched (new or updated).
+        No articles are crawled here. Crawling happens in discovery_crawl_task
+        after dispatch_story_candidate_task completes the discovery search.
+        """
+        from app.services.gnews_service import gnews_service
+
+        dispatched = 0
+        for url in feed_urls:
+            if url in existing_articles:
+                continue  # already crawled and persisted
+
+            entry = url_to_entry[url]
+            title = getattr(entry, "title", None)
+            description = self.clean_html(getattr(entry, "summary", "") or "")
+            pub_date = self.parse_pub_date(entry)
+
+            score, breakdown = self.calculate_metadata_score(
+                title, description, pub_date, source.name
+            )
+
+            await gnews_service._incr_metric("rss_metadata_scored")
+
+            if score < 0 or score < settings.STORY_FIRST_SCORE_THRESHOLD:
+                skip_reason = breakdown.get("reason") or f"low_metadata_score_{int(score * 100)}"
+                logger.debug(
+                    "[StoryFirst] Skipping RSS entry '%s' — %s (score=%.2f)",
+                    title,
+                    skip_reason,
+                    score,
+                )
+                await gnews_service._incr_metric(f"rss_skipped_{skip_reason}")
+                continue
+
+            rss_entry_meta = {
+                "source_name": source.name,
+                "url": url,
+                "published_at": pub_date.isoformat() if pub_date else None,
+                "score": round(score, 4),
+                "title": title or "",
+                "description": description[:500] if description else "",
+            }
+
+            await self._upsert_story_candidate(
+                title=title or "",
+                rss_entry_meta=rss_entry_meta,
+                source=source,
+                score=score,
+                session=session,
+            )
+            dispatched += 1
+
+        logger.info(
+            "[StoryFirst] Ingested %s '%s': %d entries qualified, %d story candidates dispatched.",
+            source.name,
+            source.rss_url,
+            dispatched,
+            dispatched,
+        )
+        return dispatched
+
+    async def _upsert_story_candidate(
+        self,
+        title: str,
+        rss_entry_meta: dict[str, Any],
+        source: Source,
+        score: float,
+        session: AsyncSession,
+    ) -> None:
+        """Deduplicate by headline hash and create or update a StoryCandidate.
+
+        Strategy:
+            1. Normalize headline → SHA256 query_hash.
+            2. SETNX Redis key (STORY_CANDIDATE_DEDUP_TTL) → get existing SC id.
+            3a. Existing → _attach_rss_source (updates count, triggers early dispatch).
+            3b. New → INSERT StoryCandidate + INSERT DiscoveryTask +
+                      dispatch_story_candidate_task.apply_async(eta=collect_until).
+        """
+        from app.models.models import (
+            DiscoveryTask,
+            DiscoveryTaskState,
+            StoryCandidate,
+            StoryCandidateState,
+        )
+        from app.services.cache_service import cache_service
+        from app.workers.tasks import dispatch_story_candidate_task
+
+        normalized_query = self.normalize_headline(title)
+        if not normalized_query or len(normalized_query) < 10:
+            logger.debug(
+                "[StoryFirst] Skipping too-short headline after normalization: '%s'", title
+            )
+            return
+
+        date_bucket = datetime.now(UTC).strftime("%Y-%m-%d")
+        query_hash = hashlib.sha256(f"{normalized_query}:{date_bucket}".encode()).hexdigest()
+        dedup_redis_key = f"story_candidate:query:{query_hash}:{date_bucket}"
+
+        # ── Check Redis for existing StoryCandidate ─────────────────────────
+        existing_id_str: str | None = None
+        try:
+            existing_id_str = await cache_service.get(dedup_redis_key)
+        except Exception as e:
+            logger.warning("[StoryFirst] Redis dedup read failed: %s", e)
+
+        if existing_id_str:
+            # Duplicate story detected — attach this RSS source
+            try:
+                import uuid
+
+                existing_sc_id = uuid.UUID(existing_id_str)
+                await self._attach_rss_source(existing_sc_id, rss_entry_meta, session)
+            except Exception as e:
+                logger.warning(
+                    "[StoryFirst] Failed to attach RSS source to existing candidate: %s", e
+                )
+            return
+
+        # ── New story — create StoryCandidate ─────────────────────────────────
+        source_lower = source.name.lower()
+        priority = (
+            90
+            if any(
+                x in source_lower for x in ("reuters", "apnews", "associated press", "bloomberg")
+            )
+            else 50
+        )
+        priority_reason = "Trusted Source" if priority == 90 else "Standard"
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        collect_until = now + timedelta(seconds=settings.STORY_CANDIDATE_COLLECTION_WINDOW_SECONDS)
+        idempotency_key = f"{settings.DISCOVERY_PROVIDER}:{query_hash}:{date_bucket}"
+
+        story_candidate = StoryCandidate(
+            normalized_query=normalized_query,
+            query_hash=query_hash,
+            date_bucket=date_bucket,
+            headline=title,
+            discovery_provider=settings.DISCOVERY_PROVIDER,
+            status=StoryCandidateState.COLLECTING,
+            priority=priority,
+            priority_reason=priority_reason,
+            rss_sources=[rss_entry_meta],
+            rss_source_count=1,
+            collect_until=collect_until,
+            created_at=now,
+        )
+        session.add(story_candidate)
+
+        try:
+            async with session.begin_nested():
+                await session.flush()  # get story_candidate.id without committing
+        except IntegrityError:
+            # Race condition: another worker won the UniqueConstraint race.
+            # Re-query the winner and attach this source to it.
+            logger.info(
+                "[StoryFirst] StoryCandidate race for query '%s' — re-querying winner.",
+                normalized_query,
+            )
+            await session.rollback()
+            try:
+                stmt = select(StoryCandidate).where(
+                    StoryCandidate.query_hash == query_hash,
+                    StoryCandidate.date_bucket == date_bucket,
+                )
+                res = await session.execute(stmt)
+                winner = res.scalar_one_or_none()
+                if winner:
+                    await self._attach_rss_source(winner.id, rss_entry_meta, session)
+            except Exception as re_e:
+                logger.error("[StoryFirst] Failed to re-query winner StoryCandidate: %s", re_e)
+            return
+
+        # ── Create the associated DiscoveryTask ─────────────────────────────
+        discovery_task = DiscoveryTask(
+            story_candidate_id=story_candidate.id,
+            article_id=None,  # Story-First: no article row at this stage
+            query=normalized_query,
+            provider=settings.DISCOVERY_PROVIDER,
+            priority=priority,
+            priority_reason=priority_reason,
+            status=DiscoveryTaskState.PENDING,
+            idempotency_key=idempotency_key,
+            created_at=now,
+        )
+        session.add(discovery_task)
+
+        try:
+            async with session.begin_nested():
+                await session.flush()
+        except IntegrityError:
+            # DiscoveryTask idempotency key already exists — normal on re-ingestion
+            logger.info(
+                "[StoryFirst] DiscoveryTask idempotency key hit for query '%s'.", normalized_query
+            )
+            await session.rollback()
+            return
+
+        await session.commit()
+
+        # ── Set Redis dedup key so subsequent sources attach instead of create ─
+        try:
+            await cache_service.set(
+                dedup_redis_key,
+                str(story_candidate.id),
+                ttl=settings.STORY_CANDIDATE_DEDUP_TTL,
+            )
+        except Exception as e:
+            logger.warning("[StoryFirst] Redis dedup write failed: %s", e)
+
+        # ── Schedule dispatch via ETA (collection window timeout path) ────────
+        from app.core.trace import active_pipeline_run_ctx
+
+        active_run = active_pipeline_run_ctx.get(None)
+        run_id = str(active_run.id) if active_run else None
+        trace_id = str(active_run.trace_id) if active_run else None
+
+        dispatch_story_candidate_task.apply_async(
+            args=[str(story_candidate.id), run_id, trace_id],
+            eta=collect_until,
+        )
+        logger.info(
+            "[StoryFirst] Created StoryCandidate %s for '%s' (priority=%d, dispatch_eta=%s).",
+            story_candidate.id,
+            title[:60],
+            priority,
+            collect_until.isoformat(),
+        )
+
+    async def _attach_rss_source(
+        self,
+        story_candidate_id: Any,
+        rss_entry_meta: dict[str, Any],
+        session: AsyncSession,
+    ) -> None:
+        """Attach an additional RSS source to an existing StoryCandidate.
+
+        Increments rss_source_count. If the count reaches
+        STORY_FIRST_EARLY_DISPATCH_THRESHOLD, fires dispatch_story_candidate_task
+        immediately (bypassing the collection window ETA).
+        """
+        from app.models.models import StoryCandidate, StoryCandidateState
+        from app.workers.tasks import dispatch_story_candidate_task
+
+        stmt = select(StoryCandidate).where(StoryCandidate.id == story_candidate_id)
+        res = await session.execute(stmt)
+        sc = res.scalar_one_or_none()
+        if not sc:
+            logger.warning(
+                "[StoryFirst] _attach_rss_source: StoryCandidate %s not found.",
+                story_candidate_id,
+            )
+            return
+
+        # Only attach if still in the COLLECTING phase
+        if sc.status != StoryCandidateState.COLLECTING:
+            logger.debug(
+                "[StoryFirst] StoryCandidate %s is %s — skipping attach.",
+                story_candidate_id,
+                sc.status,
+            )
+            return
+
+        current_sources = list(sc.rss_sources or [])
+        # Avoid duplicates from the same source URL
+        known_urls = {s.get("url") for s in current_sources}
+        if rss_entry_meta.get("url") in known_urls:
+            return
+
+        current_sources.append(rss_entry_meta)
+        sc.rss_sources = current_sources
+        sc.rss_source_count = len(current_sources)
+
+        await session.flush()
+
+        logger.info(
+            "[StoryFirst] Attached RSS source '%s' to StoryCandidate %s (count=%d).",
+            rss_entry_meta.get("source_name"),
+            story_candidate_id,
+            sc.rss_source_count,
+        )
+
+        # ── Early dispatch: trigger search if enough publishers have attached ─
+        if sc.rss_source_count >= settings.STORY_FIRST_EARLY_DISPATCH_THRESHOLD:
+            # Transition to DISCOVERING to prevent the ETA task from also running
+            sc.status = StoryCandidateState.DISCOVERING
+            sc.search_dispatched_at = datetime.now(UTC).replace(tzinfo=None)
+            await session.commit()
+
+            from app.core.trace import active_pipeline_run_ctx
+
+            active_run = active_pipeline_run_ctx.get(None)
+            run_id = str(active_run.id) if active_run else None
+            trace_id = str(active_run.trace_id) if active_run else None
+
+            dispatch_story_candidate_task.delay(str(story_candidate_id), run_id, trace_id)
+            logger.info(
+                "[StoryFirst] Early dispatch triggered for StoryCandidate %s "
+                "(%d publishers reached threshold=%d).",
+                story_candidate_id,
+                sc.rss_source_count,
+                settings.STORY_FIRST_EARLY_DISPATCH_THRESHOLD,
+            )
+        else:
+            await session.commit()
 
     async def _fetch_feed(self, rss_url: str, source_name: str) -> str | None:
         """Fetch raw RSS feed content."""
@@ -315,7 +768,13 @@ class IngestionService:
     async def _crawl_articles(
         self, new_entries: list[tuple[Any, str, Article | None]]
     ) -> list[tuple[Any, str, dict[str, Any] | None, Article | None]]:
-        """Crawl the list of new articles concurrently using settings.CRAWLER_MAX_CONCURRENT_REQUESTS."""
+        """Crawl the list of new articles concurrently using settings.CRAWLER_MAX_CONCURRENT_REQUESTS.
+
+        .. deprecated::
+            Used by the legacy Article-First path (STORY_FIRST_ENABLED=False) and
+            the GNews ingestion path. Will be removed once GNews is migrated to
+            Story-First. Do not add new callers.
+        """
         max_concurrent = settings.CRAWLER_MAX_CONCURRENT_REQUESTS or 5
         sem = asyncio.Semaphore(max_concurrent)
 
@@ -339,7 +798,13 @@ class IngestionService:
         source: Source,
         session: AsyncSession,
     ) -> tuple[int, list[Article]]:
-        """Parse, check duplicate contents, and save/update articles to the database."""
+        """Parse, check duplicate contents, and save/update articles to the database.
+
+        .. deprecated::
+            Used by the legacy Article-First path (STORY_FIRST_ENABLED=False) and
+            the GNews ingestion path. Will be removed once GNews is migrated to
+            Story-First. Do not add new callers.
+        """
         source_id = source.id
         new_articles_count = 0
         discovery_candidates = []
@@ -499,7 +964,14 @@ class IngestionService:
     async def _dispatch_discovery(
         self, discovery_candidates: list[Article], source_name: str, session: AsyncSession
     ) -> None:
-        """Create DiscoveryTask records and dispatch asynchronously to the Celery search queue."""
+        """Create DiscoveryTask records and dispatch asynchronously to the Celery search queue.
+
+        .. deprecated::
+            Used by the legacy Article-First path (STORY_FIRST_ENABLED=False) and
+            the GNews ingestion path. In the Story-First path, StoryCandidate
+            creation and dispatch happens in _upsert_story_candidate().
+            Will be removed once GNews is migrated. Do not add new callers.
+        """
         from app.models.models import DiscoveryTask, DiscoveryTaskState
         from app.services.gnews_service import gnews_service
         from app.workers.tasks import discovery_search_task

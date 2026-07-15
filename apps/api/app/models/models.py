@@ -739,6 +739,128 @@ class StoryReview(Base):
     reviewed_at: Mapped[datetime] = mapped_column(default=_now)
 
 
+# ──────────────────────────────────────────────
+# Story-First Pipeline: StoryCandidate
+# ──────────────────────────────────────────────
+
+
+class StoryCandidateState(enum.StrEnum):
+    """Lifecycle states for a StoryCandidate.
+
+    Transitions:
+        COLLECTING → DISCOVERING (on early dispatch threshold OR collect_until timeout)
+        DISCOVERING → DISCOVERED (on successful search)
+        DISCOVERED  → CRAWLING   (on CrawlTask creation)
+        CRAWLING    → READY      (when all CrawlTasks complete)
+        READY       → CLUSTERED  (when assigned to a Story)
+        Any         → EXPIRED    (on timeout / budget exceeded)
+    """
+
+    COLLECTING = "collecting"  # Buffering RSS sources; waiting for collection window
+    DISCOVERING = "discovering"  # Search task dispatched; waiting for results
+    DISCOVERED = "discovered"  # Search complete; CrawlTasks created
+    CRAWLING = "crawling"  # At least one CrawlTask in progress
+    READY = "ready"  # All CrawlTasks done; articles persisted
+    CLUSTERED = "clustered"  # Story record created and linked
+    EXPIRED = "expired"  # Timed out or budget exceeded
+
+
+class StoryCandidate(Base):
+    """Central orchestration object for the Story-First ingestion pipeline.
+
+    A StoryCandidate is created from RSS metadata *before* any article is crawled.
+    Multiple RSS sources covering the same story attach to a single StoryCandidate
+    (deduplicated by query_hash + date_bucket via a Redis SETNX guard).
+
+    Relationships:
+        story_candidate → 1:many → discovery_tasks
+        story_candidate → 1:many → crawl_tasks  (direct shortcut, avoids JOIN)
+    """
+
+    __tablename__ = "story_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid
+    )
+
+    # ── Query & Deduplication ──────────────────────────────────────────────────
+    normalized_query: Mapped[str] = mapped_column(Text)
+    query_hash: Mapped[str] = mapped_column(String(64), index=True)
+    date_bucket: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD
+    headline: Mapped[str] = mapped_column(Text)  # Best headline observed
+    discovery_provider: Mapped[str] = mapped_column(String(50), default="google_rss")
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+    status: Mapped[str] = mapped_column(
+        String(30), default=StoryCandidateState.COLLECTING, index=True
+    )
+    priority: Mapped[int] = mapped_column(Integer, default=50, index=True)
+    priority_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # ── RSS Source Aggregation ─────────────────────────────────────────────────
+    # JSONB list of {source_name, url, published_at, score} dicts.
+    # Appended each time a new RSS source attaches to this candidate.
+    rss_sources: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    rss_source_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # ── Collection Window ─────────────────────────────────────────────────────
+    # dispatch_story_candidate_task fires via apply_async(eta=collect_until).
+    # If rss_source_count reaches STORY_FIRST_EARLY_DISPATCH_THRESHOLD before
+    # collect_until, an immediate .delay() fires and the ETA task becomes a no-op
+    # (it checks status != COLLECTING and returns early).
+    collect_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True, index=True
+    )
+    search_dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    search_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+
+    # ── End-to-End Funnel Metrics ─────────────────────────────────────────────
+    urls_found: Mapped[int] = mapped_column(Integer, default=0)
+    urls_crawled: Mapped[int] = mapped_column(Integer, default=0)
+    articles_persisted: Mapped[int] = mapped_column(Integer, default=0)
+    articles_clustered: Mapped[int] = mapped_column(Integer, default=0)
+
+    # ── Story Linkage ─────────────────────────────────────────────────────────
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stories.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # ── Timestamps ────────────────────────────────────────────────────────────
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+
+    # ── Relationships ─────────────────────────────────────────────────────────
+    discovery_tasks: Mapped[list["DiscoveryTask"]] = relationship(
+        back_populates="story_candidate",
+        cascade="all, delete-orphan",
+        foreign_keys="DiscoveryTask.story_candidate_id",
+    )
+    crawl_tasks: Mapped[list["CrawlTask"]] = relationship(
+        back_populates="story_candidate",
+        foreign_keys="CrawlTask.story_candidate_id",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("query_hash", "date_bucket", name="uq_story_candidate_query_date"),
+        Index("idx_story_candidates_status", "status"),
+        Index("idx_story_candidates_collect_until", "collect_until"),
+        Index("idx_story_candidates_created", "created_at"),
+        Index("idx_story_candidates_priority", "priority", "created_at"),
+    )
+
+
+# ──────────────────────────────────────────────
+# Discovery & Crawl Task Infrastructure
+# ──────────────────────────────────────────────
+
+
 class DiscoveryTaskState(enum.StrEnum):
     PENDING = "pending"
     SEARCHING = "searching"
@@ -759,14 +881,35 @@ class CrawlTaskState(enum.StrEnum):
 
 
 class DiscoveryTask(Base):
+    """Represents a single search execution within the discovery pipeline.
+
+    Story-First pipeline: story_candidate_id is the primary parent reference.
+    Legacy pipeline: article_id is set (nullable for backward compat).
+    """
+
     __tablename__ = "discovery_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid
     )
-    article_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("articles.id", ondelete="CASCADE"), index=True
+
+    # ── Story-First parent reference (new) ────────────────────────────────────
+    story_candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("story_candidates.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
+
+    # ── Legacy parent reference (kept nullable for backward compat) ───────────
+    # Populated by the old Article-First pipeline. New tasks leave this NULL.
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("articles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     query: Mapped[str] = mapped_column(Text)
     provider: Mapped[str] = mapped_column(String(50))
     priority: Mapped[int] = mapped_column(Integer, default=50, index=True)
@@ -794,7 +937,11 @@ class DiscoveryTask(Base):
     metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    article: Mapped["Article"] = relationship(foreign_keys=[article_id])
+    story_candidate: Mapped["StoryCandidate | None"] = relationship(
+        back_populates="discovery_tasks",
+        foreign_keys=[story_candidate_id],
+    )
+    article: Mapped["Article | None"] = relationship(foreign_keys=[article_id])
     crawl_tasks: Mapped[list["CrawlTask"]] = relationship(
         back_populates="discovery_task", cascade="all, delete-orphan"
     )
@@ -807,6 +954,20 @@ class DiscoveryTask(Base):
 
 
 class CrawlTask(Base):
+    """Represents a single HTTP crawl of a discovered URL.
+
+    story_candidate_id provides a direct shortcut to the parent StoryCandidate
+    for completion tracking and funnel metrics (avoids an extra JOIN through
+    discovery_tasks).
+
+    tier indicates crawl priority:
+        1 = Tier-1 trusted publishers (Reuters, AP, Bloomberg, BBC, Guardian)
+        2 = Tier-2 standard publishers (CNN, NYT, WaPo, Fox, DW, France24)
+        3 = Everything else (blogs, regional, unknown)
+    CrawlTasks are created and dispatched in ascending tier order so that
+    the highest-quality content is persisted first.
+    """
+
     __tablename__ = "crawl_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -815,6 +976,15 @@ class CrawlTask(Base):
     discovery_task_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("discovery_tasks.id", ondelete="CASCADE"), index=True
     )
+
+    # ── Direct shortcut to StoryCandidate (Story-First pipeline) ──────────────
+    story_candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("story_candidates.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     url: Mapped[str] = mapped_column(Text)
     url_hash: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(30), default=CrawlTaskState.PENDING, index=True)
@@ -825,6 +995,9 @@ class CrawlTask(Base):
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     task_version: Mapped[int] = mapped_column(Integer, default=2)
+
+    # Publisher tier (1=highest quality, 3=default). Controls crawl dispatch order.
+    tier: Mapped[int] = mapped_column(Integer, default=3)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
@@ -842,9 +1015,17 @@ class CrawlTask(Base):
 
     # Relationships
     discovery_task: Mapped["DiscoveryTask"] = relationship(back_populates="crawl_tasks")
+    story_candidate: Mapped["StoryCandidate | None"] = relationship(
+        back_populates="crawl_tasks",
+        foreign_keys=[story_candidate_id],
+    )
     persisted_article: Mapped["Article | None"] = relationship(foreign_keys=[article_id])
 
-    __table_args__ = (Index("idx_crawl_tasks_status_outcome", "status", "outcome"),)
+    __table_args__ = (
+        Index("idx_crawl_tasks_status_outcome", "status", "outcome"),
+        Index("idx_crawl_tasks_story_candidate", "story_candidate_id"),
+        Index("idx_crawl_tasks_tier", "tier"),
+    )
 
 
 class DomainExtractionPolicy(Base):

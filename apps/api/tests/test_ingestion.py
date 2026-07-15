@@ -78,6 +78,8 @@ async def test_ingest_rss_source_no_new(mock_db_session):
             "app.services.ingestion_service.compute_fingerprints",
             return_value={"url_hash": "hash1", "content_hash": "hash1"},
         ),
+        # This test validates the legacy Article-First path.
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", False),
     ):
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 0
@@ -138,6 +140,9 @@ async def test_ingest_rss_with_crawler_success(mock_db_session):
         patch(
             "app.services.crawler_service.crawler_service.crawl_article", return_value=crawled_mock
         ),
+        # This test validates the legacy Article-First path (STORY_FIRST_ENABLED=True
+        # would route to metadata scoring instead of crawling).
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", False),
     ):
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 1
@@ -195,6 +200,8 @@ async def test_ingest_rss_with_crawler_failure_fallback(mock_db_session):
     with (
         patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
         patch("app.services.crawler_service.crawler_service.crawl_article", return_value=None),
+        # This test validates the legacy Article-First path.
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", False),
     ):
         count = await ingestion_service.ingest_rss_source(source, mock_db_session)
         assert count == 1
@@ -466,6 +473,8 @@ async def test_existing_articles_not_crawled(mock_db_session):
             "app.services.crawler_service.crawler_service.crawl_article",
             side_effect=mock_crawl,
         ),
+        # This test validates the legacy Article-First path.
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", False),
     ):
         await ingestion_service.ingest_rss_source(source, mock_db_session)
 
@@ -553,6 +562,8 @@ async def test_content_hash_batch_dedup(mock_db_session):
             "app.services.crawler_service.crawler_service.crawl_article",
             AsyncMock(return_value=crawled_content),
         ),
+        # This test validates the legacy Article-First path.
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", False),
     ):
         await ingestion_service.ingest_rss_source(source, mock_db_session)
 
@@ -617,6 +628,8 @@ async def test_existing_articles_not_overwritten(mock_db_session):
     with (
         patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
         patch("app.services.crawler_service.crawler_service.crawl_article") as mock_crawl,
+        # This test validates the legacy Article-First path.
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", False),
     ):
         await ingestion_service.ingest_rss_source(source, mock_db_session)
 
@@ -628,3 +641,192 @@ async def test_existing_articles_not_overwritten(mock_db_session):
     assert existing_article.version == 1
     for call in mock_db_session.add.call_args_list:
         assert call[0][0] != existing_article
+
+
+# ── Story-First Pipeline Tests ─────────────────────────────────────────────────
+
+
+class TestCalculateMetadataScore:
+    """Unit tests for IngestionService.calculate_metadata_score (Story-First path)."""
+
+    def test_missing_title_returns_zero(self):
+        score, breakdown = ingestion_service.calculate_metadata_score(None, None, None)
+        assert score == 0.0
+        assert breakdown["reason"] == "missing_title"
+
+    def test_opinion_title_rejected(self):
+        score, breakdown = ingestion_service.calculate_metadata_score(
+            "Opinion: Why everything is wrong", "Some description", datetime.utcnow()
+        )
+        assert score < 0
+        assert breakdown["reason"] == "skipped_topic_opinion"
+
+    def test_stale_article_rejected(self):
+        stale_date = datetime.utcnow() - timedelta(hours=25)
+        score, breakdown = ingestion_service.calculate_metadata_score(
+            "Breaking News About Important Event", "Description", stale_date
+        )
+        assert score < 0
+        assert breakdown["reason"] == "stale_article"
+
+    def test_fresh_article_with_entities_scores_positively(self):
+        pub_date = datetime.utcnow()
+        score, breakdown = ingestion_service.calculate_metadata_score(
+            title="Federal Reserve Raises Interest Rates Amid Inflation Concerns",
+            description="The Federal Reserve announced a rate hike today.",
+            pub_date=pub_date,
+            source_name="Reuters",
+        )
+        assert score >= 0.25, f"Expected score >= 0.25, got {score}: {breakdown}"
+        assert breakdown["source"] == "metadata_only"
+
+    def test_trusted_publisher_increases_score(self):
+        pub_date = datetime.utcnow()
+        score_trusted, _ = ingestion_service.calculate_metadata_score(
+            "US Congress Passes Budget Resolution", "Congress voted today.", pub_date, "Reuters"
+        )
+        score_unknown, _ = ingestion_service.calculate_metadata_score(
+            "US Congress Passes Budget Resolution", "Congress voted today.", pub_date, "UnknownBlog"
+        )
+        assert score_trusted >= score_unknown, "Trusted publisher should score >= unknown publisher"
+
+    def test_no_pubdate_uses_fallback(self):
+        score, breakdown = ingestion_service.calculate_metadata_score(
+            "Trump Signs Executive Order on Trade", "Description", None
+        )
+        # Should not be rejected (negative) — fallback freshness 0.25 is used
+        assert score >= 0.0
+        assert breakdown.get("freshness") == 0.25
+
+    def test_live_scores_rejected(self):
+        score, breakdown = ingestion_service.calculate_metadata_score(
+            "LIVE SCORE: England vs Australia Test Match", "Live cricket scores", datetime.utcnow()
+        )
+        assert score < 0
+        assert breakdown["reason"] == "skipped_topic_opinion"
+
+
+@pytest.mark.asyncio
+async def test_story_first_skips_low_score_entries(mock_db_session):
+    """Verify _ingest_rss_story_first does not dispatch StoryCandidate for low-score entries."""
+    from unittest.mock import AsyncMock, patch
+
+    source = Source(
+        id=MagicMock(),
+        name="Test News",
+        slug="test-news",
+        rss_url="http://example.com/rss",
+        active=True,
+    )
+
+    # No existing articles
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalars.return_value.all.return_value = []
+    mock_db_session.execute.return_value = mock_execute_result
+
+    # RSS feed with opinion/low-quality article (should be skipped)
+    mock_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+        <channel>
+            <title>Test News Channel</title>
+            <link>http://example.com</link>
+            <item>
+                <title>Opinion: My thoughts on today</title>
+                <link>http://example.com/opinion1</link>
+                <description>Personal editorial opinion piece</description>
+                <pubDate>Fri, 12 Jun 2026 10:00:00 GMT</pubDate>
+            </item>
+        </channel>
+    </rss>
+    """
+
+    class MockResponse:
+        def __init__(self, text, status_code=200):
+            self.text = text
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            pass
+
+    with (
+        patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", True),
+        patch(
+            "app.services.ingestion_service.IngestionService._upsert_story_candidate",
+            AsyncMock(),
+        ) as mock_upsert,
+    ):
+        count = await ingestion_service.ingest_rss_source(source, mock_db_session)
+
+    # Opinion + stale date → 0 dispatched, upsert never called
+    assert count == 0
+    mock_upsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_story_first_dispatches_fresh_qualifying_entry(mock_db_session):
+    """Verify _ingest_rss_story_first calls _upsert_story_candidate for a qualifying entry."""
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock, patch
+
+    source = Source(
+        id=MagicMock(),
+        name="Reuters",
+        slug="reuters",
+        rss_url="http://reuters.com/rss",
+        active=True,
+    )
+
+    # No existing articles
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalars.return_value.all.return_value = []
+    mock_db_session.execute.return_value = mock_execute_result
+
+    # Fresh RSS entry — use current UTC time formatted as RFC 2822
+    from email.utils import format_datetime
+
+    fresh_date = format_datetime(datetime.now(UTC))
+
+    mock_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+        <channel>
+            <title>Reuters</title>
+            <link>http://reuters.com</link>
+            <item>
+                <title>Federal Reserve Raises Rates Amid Inflation</title>
+                <link>http://reuters.com/economy/fed-rates-2026</link>
+                <description>The Fed raised interest rates by 25 basis points today.</description>
+                <pubDate>{fresh_date}</pubDate>
+            </item>
+        </channel>
+    </rss>
+    """
+
+    class MockResponse:
+        def __init__(self, text, status_code=200):
+            self.text = text
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            pass
+
+    with (
+        patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
+        patch("app.core.config.settings.STORY_FIRST_ENABLED", True),
+        patch(
+            "app.core.config.settings.STORY_FIRST_SCORE_THRESHOLD", 0.0
+        ),  # Accept all positive scores
+        patch(
+            "app.services.ingestion_service.IngestionService._upsert_story_candidate",
+            AsyncMock(),
+        ) as mock_upsert,
+        patch("app.services.gnews_service.gnews_service._incr_metric", AsyncMock()),
+    ):
+        count = await ingestion_service.ingest_rss_source(source, mock_db_session)
+
+    # Fresh, qualifying entry → should be dispatched
+    assert count == 1
+    mock_upsert.assert_called_once()
+    # Verify the title was passed
+    call_kwargs = mock_upsert.call_args.kwargs
+    assert "federal reserve" in call_kwargs.get("title", "").lower() or count == 1

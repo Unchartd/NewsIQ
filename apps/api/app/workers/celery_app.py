@@ -71,6 +71,9 @@ _conf: dict = {
         "app.workers.digest_tasks",
     ],
     "task_routes": {
+        # Story-First pipeline: dispatch_story_candidate_task runs in the same
+        # discovery_search queue as the legacy discovery_search_task.
+        "app.workers.tasks.dispatch_story_candidate_task": {"queue": "discovery_search"},
         "app.workers.tasks.discovery_search_task": {"queue": "discovery_search"},
         "app.workers.tasks.discovery_crawl_task": {"queue": "discovery_crawl"},
     },
@@ -143,6 +146,12 @@ celery_app.conf.beat_schedule = {
     # Poll discovery retries every minute
     "poll-discovery-retries-every-minute": {
         "task": "app.workers.tasks.poll_discovery_retries_task",
+        "schedule": crontab(minute="*"),
+    },
+    # Poll stuck StoryCandidate COLLECTING entries every minute.
+    # Catches cases where the ETA-based dispatch didn't fire (e.g., worker was down).
+    "poll-story-candidate-timeouts-every-minute": {
+        "task": "app.workers.tasks.poll_story_candidate_timeouts_task",
         "schedule": crontab(minute="*"),
     },
     # Cleanup discovery tasks daily
