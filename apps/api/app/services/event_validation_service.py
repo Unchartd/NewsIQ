@@ -143,30 +143,47 @@ class EventValidationService:
         # 1. Entity Overlap (Max weight)
         article_title_entities = self._extract_entities(article.title)
         shared_entities = article_title_entities.intersection(anchor.primary_entities)
-
-        # If anchor has no primary entities yet, we score proportionally or give partial credit
         ent_weight = self.stage_a_weights.get("entity_overlap", 35)
-        if anchor.primary_entities:
+
+        if not article_title_entities and not anchor.primary_entities:
+            # Case 3: Both have 0 entities
+            ent_score = ent_weight * 0.5
+        elif not anchor.primary_entities:
+            # Case 2: Story has 0 entities, Article has entities
+            ent_score = ent_weight * 0.5
+        elif not article_title_entities:
+            # Case 1: Article has 0 entities, Story has entities
+            ent_score = 0.0
+        else:
+            # Normal case: both have entities
             ent_score = (
                 len(shared_entities)
-                / min(len(article_title_entities) or 1, len(anchor.primary_entities))
+                / min(len(article_title_entities), len(anchor.primary_entities))
             ) * ent_weight
-        else:
-            ent_score = ent_weight * 0.5  # Neutral if anchor is empty
+
         score += ent_score
         details["entity_overlap_score"] = ent_score
         details["shared_entities"] = list(shared_entities)
 
         # 2. Location Overlap
-        # (Assuming location is parsed in entities for article)
         loc_weight = self.stage_a_weights.get("location", 20)
         shared_locs = article_title_entities.intersection(anchor.top_locations)
-        if anchor.top_locations:
-            loc_score = (
-                len(shared_locs) / min(len(article_title_entities) or 1, len(anchor.top_locations))
-            ) * loc_weight
-        else:
+
+        if not article_title_entities and not anchor.top_locations:
+            # Case 3: Both have 0 locations
             loc_score = loc_weight * 0.5
+        elif not anchor.top_locations:
+            # Case 2: Story has 0 locations, Article has entities/locations
+            loc_score = loc_weight * 0.5
+        elif not article_title_entities:
+            # Case 1: Article has 0 entities/locations, Story has locations
+            loc_score = 0.0
+        else:
+            # Normal case: both have locations
+            loc_score = (
+                len(shared_locs) / min(len(article_title_entities), len(anchor.top_locations))
+            ) * loc_weight
+
         score += loc_score
         details["location_score"] = loc_score
 

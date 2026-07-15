@@ -50,6 +50,16 @@ class DiscoveryManager:
             logger.error("Cannot enqueue missing article %s", article_id)
             return False
 
+        # Direct duplicate check on exact article_id in active or processed states
+        chk_q_stmt = select(DiscoveryQueue).where(DiscoveryQueue.article_id == article_id).limit(1)
+        chk_q_res = await session.execute(chk_q_stmt)
+        if chk_q_res.scalar_one_or_none():
+            logger.info(
+                "Skipping enqueue: Article %s is already in the Discovery Queue.",
+                article_id,
+            )
+            return False
+
         if article.content_hash:
             dup_stmt = (
                 select(DiscoveryQueue)
