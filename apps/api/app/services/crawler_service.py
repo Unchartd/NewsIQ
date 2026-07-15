@@ -80,12 +80,10 @@ BROWSER_PROFILES: list[dict[str, str]] = [
         # Firefox 125 — Windows 10/11
         # Intentionally omits Sec-Ch-Ua (Firefox does not send client hints).
         "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) "
-            "Gecko/20100101 Firefox/125.0"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0"
         ),
         "Accept": (
-            "text/html,application/xhtml+xml,application/xml;"
-            "q=0.9,image/avif,image/webp,*/*;q=0.8"
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
         ),
         "Accept-Language": "en-US,en;q=0.5",
         "Accept-Encoding": "gzip, deflate, br",
@@ -345,14 +343,22 @@ class CrawlerService:
                 if status == 200:
                     html = response.text
                     if not html or not html.strip():
-                        self._record_failure("EMPTY_HTML", "curl_cffi_chrome124", diagnostics, status)
+                        self._record_failure(
+                            "EMPTY_HTML", "curl_cffi_chrome124", diagnostics, status
+                        )
                         logger.warning("Attempt 2 (curl-cffi): empty HTML for %s", url)
                     elif self.check_bot_blocking(html):
-                        self._record_failure("BOT_BLOCKED", "curl_cffi_chrome124", diagnostics, status)
-                        newsiq_crawler_http_failure_total.labels(reason="bot_blocked_curl_chrome").inc()
+                        self._record_failure(
+                            "BOT_BLOCKED", "curl_cffi_chrome124", diagnostics, status
+                        )
+                        newsiq_crawler_http_failure_total.labels(
+                            reason="bot_blocked_curl_chrome"
+                        ).inc()
                         logger.warning("Attempt 2 (curl-cffi): bot block detected for %s", url)
                     else:
-                        return self._finalize(html, "curl_cffi_chrome124", status, diagnostics, start_time)
+                        return self._finalize(
+                            html, "curl_cffi_chrome124", status, diagnostics, start_time
+                        )
 
                 elif status in (401, 403):
                     self._record_failure("BOT_BLOCKED", "curl_cffi_chrome124", diagnostics, status)
@@ -395,14 +401,24 @@ class CrawlerService:
                 if status == 200:
                     html = response.text
                     if not html or not html.strip():
-                        self._record_failure("EMPTY_HTML", "curl_cffi_safari17_2", diagnostics, status)
+                        self._record_failure(
+                            "EMPTY_HTML", "curl_cffi_safari17_2", diagnostics, status
+                        )
                         logger.warning("Attempt 3 (curl-cffi safari): empty HTML for %s", url)
                     elif self.check_bot_blocking(html):
-                        self._record_failure("BOT_BLOCKED", "curl_cffi_safari17_2", diagnostics, status)
-                        newsiq_crawler_http_failure_total.labels(reason="bot_blocked_curl_safari").inc()
-                        logger.warning("Attempt 3 (curl-cffi safari): bot block detected for %s", url)
+                        self._record_failure(
+                            "BOT_BLOCKED", "curl_cffi_safari17_2", diagnostics, status
+                        )
+                        newsiq_crawler_http_failure_total.labels(
+                            reason="bot_blocked_curl_safari"
+                        ).inc()
+                        logger.warning(
+                            "Attempt 3 (curl-cffi safari): bot block detected for %s", url
+                        )
                     else:
-                        return self._finalize(html, "curl_cffi_safari17_2", status, diagnostics, start_time)
+                        return self._finalize(
+                            html, "curl_cffi_safari17_2", status, diagnostics, start_time
+                        )
 
                 elif status in (401, 403):
                     self._record_failure("BOT_BLOCKED", "curl_cffi_safari17_2", diagnostics, status)
@@ -418,7 +434,9 @@ class CrawlerService:
             is_timeout = "timeout" in str(exc).lower()
             reason = "TIMEOUT" if is_timeout else "HTTP_ERROR"
             self._record_failure(reason, "curl_cffi_safari17_2", diagnostics)
-            newsiq_crawler_http_failure_total.labels(reason=f"curl_safari_{type(exc).__name__}").inc()
+            newsiq_crawler_http_failure_total.labels(
+                reason=f"curl_safari_{type(exc).__name__}"
+            ).inc()
             if is_timeout:
                 newsiq_crawler_timeout_total.inc()
             logger.warning("Attempt 3 (curl-cffi safari): error for %s — %s", url, exc)
