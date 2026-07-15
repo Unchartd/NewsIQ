@@ -10,6 +10,8 @@
 
 The Story Clustering and Synthesis pipeline groups incoming embedded articles into canonical stories, detects contradictions, compares source focus, chronologically compiles timelines, generates summaries, checks for quality via edit feedback, and publishes the stories to Meilisearch and the web API.
 
+The pipeline operates on a **Story-First** model where incoming articles are routed in real-time to active stories (Primary Path), while unclustered articles are placed in a Discovery Queue for periodic batch clustering (Secondary Path).
+
 ```text
                                +-----------------------------+
                                |     Incoming Article        |
@@ -17,33 +19,33 @@ The Story Clustering and Synthesis pipeline groups incoming embedded articles in
                                +--------------+--------------+
                                               |
                                               ▼
-                                 [ Candidate Retrieval ]
-                                       (SQL Query)
-                                              |
-                     +------------------------+------------------------+
-                     | Candidates Found                                | No Candidates
-                     ▼                                                 ▼
+                                 [ Candidate Retrieval ] ──────────────────┐
+                                  (SQL Query - Section 4)                  │
+                                              |                            │
+                     +------------------------+------------------------+   │
+                     | Candidates Found                                |   │ No Candidates
+                     ▼                                                 ▼   ▼
              [ Stage A Filters ]                             [ Discovery Queue ]
-            (Deterministic Rules)                                      |
-                     |                                                 ▼
-         +-----------+-----------+                            [ Batch Clustering ]
-         | PASS or MAYBE         | FAIL (<45)                      (HDBSCAN)
-         ▼                       ▼                                     |
-  [ Stage B Filters ]    [ Discovery Queue ]                           ▼
- (Vector + Entity graph)                                      [ Create New Story ]
-         |                                                             |
+           (Deterministic Rules - Sec 5)                          (Section 3.3)
+                     |                                                 |
+         +-----------+-----------+                                     ▼
+         | PASS or MAYBE         | FAIL (<45)                 [ Batch Clustering ]
+         ▼                       ▼                             (HDBSCAN - Sec 9)
+  [ Stage B Filters ]    [ Discovery Queue ]                           |
+(Vector + Entity graph - Sec 6)                                        ▼
+         |                                                    [ Create New Story ]
          +-----------------------+                                     |
          | PASS or (MAYBE + LLM) | FAIL                                |
          ▼                       ▼                                     |
   [ Story Merge & Lock ]   [ Discovery Queue ]                         |
- (pg_advisory_xact_lock)                                               |
+ (pg_advisory_xact_lock - Sec 8)                                       |
          |                                                             |
          ▼                                                             |
    [ Merge Story ] <───────────────────────────────────────────────────+
          |
          ▼
  +───────────────────────────────────────────────────────────────────────────+
- |                        [ Story Synthesis Pipeline ]                       |
+ |                 [ Story Synthesis Pipeline (Section 10) ]                  |
  |                                                                           |
  |  1. Knowledge Graph   ──► Builds node-edge network (deterministic)        |
  |  2. Contradiction     ──► Local heuristics mismatch + LLM Verification    |
@@ -60,7 +62,9 @@ The Story Clustering and Synthesis pipeline groups incoming embedded articles in
 
 ---
 
-# 2. Detailed Sequence Diagram
+# 2. Detailed Sequence Diagram & Pipeline Latency
+
+Below is the execution sequence for an article running through the clustering and synthesis stages, annotated with approximate latency ranges based on typical model response times and database query executions.
 
 ```mermaid
 sequenceDiagram
@@ -75,28 +79,32 @@ sequenceDiagram
     participant cache as CacheService (Redis)
     participant Search as Meilisearch
 
-    Note over Worker, CS: [ Real-Time Incremental Clustering ]
+    Note over Worker, CS: [ Real-Time Incremental Clustering ] (Total: 400 - 1500 ms)
     Worker->>CS: add_article_to_existing_story_if_similar(article_id)
     activate CS
+    Note over CS, DB: 20-40 ms query latency
     CS->>DB: Query Top 20 Candidates (EXISTS matching entities/no entities)
     DB-->>CS: Return Candidate Stories
     
     loop For each Story candidate (up to 20)
+        Note over CS, EVS: <1 ms local execution
         CS->>EVS: validate_stage_a(article, anchor)
         EVS-->>CS: Return DecisionLog (outcome = PASS/MAYBE/FAIL)
     end
     
     Note over CS: Sort PASS/MAYBE candidates by score desc -> Take Top 3
+    Note over CS, Qdrant: O(1) Vector lookup (2-10 ms)
     CS->>Qdrant: Retrieve Article Vector (O(1) point retrieval)
     Qdrant-->>CS: Return Vector
     
-    loop For each Top 3 candidate
+    loop For each Top 3 candidate (Stage B: 30-60 ms)
         CS->>EVS: validate_stage_b(article, anchor, vector, entities)
         EVS-->>CS: Return DecisionLog (outcome)
         
         alt outcome == PASS
             Note over CS: Merge directly
         else outcome == MAYBE and score >= REFLECTION_THRESHOLD (0.55)
+            Note over CS, Gateway: Reflection Agent Execution (400-1200 ms)
             CS->>DB: Acquire advisory lock (pg_advisory_xact_lock) on story_id
             CS->>DB: Query first article + event in Story
             DB-->>CS: Return Article & Event
@@ -116,14 +124,14 @@ sequenceDiagram
 
     alt Article Merged
         CS->>DB: INSERT StoryArticle link & update Story
-        Note over CS: Trigger Synthesis
+        Note over CS: Trigger Synthesis (3 - 8 seconds)
     else Article Not Merged
         CS->>DB: INSERT DiscoveryQueue (state = READY)
         Note over CS: Batch Clustering will handle it
     end
     deactivate CS
 
-    Note over Worker, CS: [ Batch Clustering Task ]
+    Note over Worker, CS: [ Batch Clustering Task ] (Triggered periodically)
     Worker->>CS: run_batch_clustering()
     activate CS
     CS->>DB: Acquire global advisory lock (GLOBAL_CLUSTERING_LOCK_ID = 888888888)
@@ -146,22 +154,22 @@ sequenceDiagram
     CS->>DB: Commit & Release Lock
     deactivate CS
 
-    Note over CS, FA: [ Story Synthesis Pipeline ]
+    Note over CS, FA: [ Story Synthesis Pipeline ] (Total: 3 - 8 seconds)
     rect rgb(20, 20, 30)
         CS->>cache: Check daily synthesis budget limit ($0.10) for Story
         cache-->>CS: Budget OK
-        Note over CS: Step 1: Knowledge Graph (deterministic)
-        Note over CS: Step 2: Contradiction Detection (hybrid cache check -> Agno Agent -> LLM Gateway)
+        Note over CS: Step 1: Knowledge Graph (deterministic: <50 ms)
+        Note over CS: Step 2: Contradiction Detection (cache check -> Agno Agent -> LLM: 1-2 s)
         CS->>Gateway: Run contradiction_detection.yaml
         Gateway-->>CS: Return Contradictions
-        Note over CS: Step 3: Source Comparison (hybrid cache check -> LLM compare focus/angle)
+        Note over CS: Step 3: Source Comparison (cache check -> LLM: 1-2 s)
         CS->>Gateway: Run source_comparison.yaml
         Gateway-->>CS: Return Coverage and Differences
-        Note over CS: Step 4: Timeline Compilation (deterministic sorted chronological events)
-        Note over CS: Step 5: Summary Generation (Gemini 2.5 Pro)
+        Note over CS: Step 4: Timeline Compilation (deterministic: <10 ms)
+        Note over CS: Step 5: Summary Generation (Gemini 2.5 Pro: 2-4 s)
         CS->>Gateway: Run summary_generation.yaml
         Gateway-->>CS: Return Headline & Summaries
-        Note over CS: Step 6: Quality Evaluation (Feedback Agent)
+        Note over CS: Step 6: Quality Evaluation (Feedback Agent: 1-2 s)
         CS->>FA: evaluate_story_quality()
         activate FA
         Note over FA: Check HHI diversity, min cosine similarity, missing entities, leakage
@@ -175,7 +183,7 @@ sequenceDiagram
             FA-->>CS: Return action = request_human_review (locks story_status = pending)
         end
         deactivate FA
-        Note over CS: Step 7: Publisher (atomic upserts inside transaction)
+        Note over CS: Step 7: Publisher (atomic transactions: 150-300 ms)
         CS->>DB: Clear sub-tables & INSERT StoryTimelineEvent, StoryContradiction, StorySourceCoverage, StoryDifference
         CS->>DB: INSERT StoryVersion snapshot
         CS->>Search: Index Story Document in Meilisearch
@@ -187,60 +195,79 @@ sequenceDiagram
 
 # 3. Story Clustering Deep Dive
 
-### Purpose
-To organize isolated, multi-source news articles into unified, semantic stories. This avoids story duplication, groups coverage from different perspectives, and prepares the cluster for structured synthesis.
+### 3.1 Overview: Incremental vs. Batch Clustering
+NewsIQ employs a hybrid, story-centric clustering model split into two pathways:
+* **Incremental Clustering (Primary Path)**: Incoming crawl-completed, embedded articles are immediately matched against active stories. If a match is found, they are merged and the story is instantly updated and synthesized. This ensures real-time updates for active stories (developing events).
+* **Batch Clustering (Secondary Path / Fallback)**: If an article fails to match any active candidate story, it is placed in the [Discovery Queue](#33-discovery-queue-lifecycle) in a `READY` state. A periodic Celery worker (`cluster_news_task`) processes the queue using `HDBSCAN` to identify new emergent events (clusters of size $\ge 2$) that occurred outside existing stories.
 
-### Input Data
-* **Article IDs**: UUIDs of incoming completed articles.
-* **Embeddings**: 3072-dimensional float vectors representing article content.
-* **Events**: `ArticleEvent` objects containing parsed actors, targets, locations, and raw times.
-* **Entities**: `ArticleEntity` links mapped to canonical entities.
-* **Category**: Raw category tags of articles.
-* **Story IDs**: UUIDs of active candidate stories.
+### 3.2 Story Embedding Strategy
+A story's embedding is represented as a **Story Centroid**, which is calculated as the mathematical average of the individual embeddings of all articles currently linked to that story.
 
-### Processing Steps
-1. **Candidate Retrieval**: Correlated SQL EXISTS check fetches up to 20 candidate stories within a 72-hour window.
-2. **Stage A Validation**: A deterministic, local scoring check evaluating Entity Overlap, Location, Time Proximity, Title Jaccard similarity, and Publisher Trust.
-3. **Stage B Validation**: O(1) Qdrant point retrieval fetches the article vector, which is compared to the candidate stories' centroids using cosine similarity and entity graph overlap.
-4. **Reflection Agent**: If Stage B returns `MAYBE` and similarity $\ge 0.55$, Agno Verification Agents (Gemini + OpenAI) are called under a transactional advisory lock. If they disagree, a Judge Agent arbitrates.
-5. **Merge / Enqueue**: If validation passes, the article is merged into the Story, and the Story's centroid is incrementally recalculated. If it fails all candidates, it is added to the `DiscoveryQueue` for batch clustering.
+$$\vec{C}_{story} = \frac{1}{N} \sum_{i=1}^{N} \vec{V}_{article\_i}$$
 
-### Database SQLAlchemy Queries
-```python
-# 1. Check if article already linked to prevent duplicates
-select(StoryArticle).where(StoryArticle.article_id == article_id).limit(1)
+#### Advantages
+* **O(1) Similarity Checks**: Comparing an incoming article's vector against a single story centroid is highly efficient, avoiding $O(N)$ comparisons against every article in the story.
+* **Semantic Consolidation**: The centroid represents the shared core of all reports, naturally balancing out minor wording variances between individual articles.
 
-# 2. Candidate Stories retrieval
-select(Story).options(selectinload(Story.category), selectinload(Story.entities)).where(...)
+#### Limitations & Centroid Drift
+* **Centroid Drift**: As a story evolves and new articles with slightly different angles are merged, the centroid mathematical average shifts. Over a long series of merges, the centroid may drift far enough from the original anchor event vector to begin matching adjacent topics (e.g., merging a follow-up trial into an initial arrest story, and eventually merging unrelated legal changes).
+* **Giant Stories**: If unchecked, centroid drift causes stories to grow indefinitely, consuming surrounding news events.
+* **Architectural Status**: The current implementation accepts this drift trade-off. Future updates may introduce a hybrid scoring mechanism that compares the candidate article against both the **Story Centroid** (representing current scope) and the **Story Anchor** (the embedding of the first article, representing the root event) in a weighted configuration:
 
-# 3. Advisory lock on story_id during reflection and merge
-text("SELECT pg_advisory_xact_lock(:lock_id)")
+$$\text{Composite Score} = \alpha \cdot \text{Cosine}(\vec{V}, \vec{C}_{story}) + (1 - \alpha) \cdot \text{Cosine}(\vec{V}, \vec{V}_{anchor})$$
 
-# 4. Insert story article link
-insert(StoryArticle).values(story_id=story_id, article_id=article_id)
+### 3.3 Discovery Queue Lifecycle
+The **Discovery Queue** manages the queueing, execution, and state transitions of unclustered articles that fail incremental real-time matching.
+
+```text
+       [Article Ingested]
+               │
+      (Incremental Match?)
+        ├── Yes ──► [Merged into Story] ──► [Synthesize] ──► [Completed]
+        └── No
+             │
+             ▼
+      [DiscoveryQueue] ──► State: PENDING (deduplication check)
+             │
+             ▼
+      [DiscoveryQueue] ──► State: READY (after embedding & event extraction)
+             │
+             ▼
+     (Periodic Celery Task) ──► State: GROUPING (under global lock)
+             │
+      [HDBSCAN Clustering]
+             ├─► Cluster Found (Size >= 2) ──► State: CLUSTER_CREATED ──► [Create Story & Synthesize]
+             └─► Outlier / Single Article  ──► [Create Single Story]  ──► [Defer Synthesis]
 ```
 
-### Redis Usage
-* **Updates Guard Key**: `story_synthesis_hash:{story_id}` (TTL: 7 days, String). Caches the article hash of a story to skip redundant synthesis runs when no new articles are added.
-* **Daily Story Budget Lock**: `newsiq:budget:story:{story_id}:{date_str}` (TTL: 24h, Float). Keeps track of LLM spending per story to enforce the daily $0.10 limit.
-* **Task Lock**: `newsiq:lock:cluster_news_task` (TTL: 10 min, String). Prevents multiple worker nodes from running batch clustering concurrently.
+* **Processing States**:
+  - `PENDING`: The article has been ingested but is undergoing initial processing.
+  - `READY`: The article has its embedding and events extracted, is not linked to any story, and is ready for batch clustering.
+  - `GROUPING`: The article is currently being processed by the HDBSCAN batch clustering task under `GLOBAL_CLUSTERING_LOCK_ID`.
+  - `CLUSTER_CREATED`: The article has been successfully clustered and assigned to a story.
+* **Idempotency & Replay Protection**: To prevent duplicate processing during worker retries, `discovery_manager.py` verifies if an `article_id` is already linked to a story or has an active `DiscoveryQueue` row before enqueuing.
+* **Queue Expiration**: Articles in the `DiscoveryQueue` that fail to form a cluster or join a story after a configurable TTL (default: 72 hours) are marked as expired. They remain archived for historical analysis but are excluded from future active batch clustering iterations.
 
-### Qdrant Usage
+### 3.4 Qdrant Vector Usage
 * **Collection**: `"articles"`
 * **Point IDs**: The exact `article_id` UUID strings.
-* **Retrieval**: Uses `vector_service.client.retrieve` to fetch vectors. This runs as an $O(1)$ key lookup rather than an expensive approximate nearest neighbor (ANN) search, reducing latency to 2-10ms.
+* **Retrieval**: Uses `vector_service.client.retrieve` to fetch vectors. This runs as an $O(1)$ key lookup rather than an ANN search, keeping latency to 2-10ms.
 * **Embedding Dimensions**: 3072 floats.
-
-### Output Data
-* **Merged Story**: Article mapped to an existing story cluster, triggering incremental synthesis.
-* **Discovery Queue Link**: Article enqueued for batch clustering.
-* **New Story**: A new story row initialized with a default `trend_score` of 1.0.
 
 ---
 
 # 4. Candidate Retrieval
 
-Candidate Retrieval acts as the first gate, selecting up to 20 candidate stories within a 72-hour window that share entities with the incoming article (or have no entities linked yet).
+Candidate Retrieval selects the top active stories to evaluate against an incoming article. To reduce DB load, it uses an index-friendly SQL query that filters by time, lifecycle, and entity overlap.
+
+### Candidate Filtering Signals
+Rather than checking all stories, the system uses multiple retrieval filters:
+1. **Time Window**: Evaluates only stories updated within the last 72 hours (`Story.updated_at >= time_window`).
+2. **Lifecycle State**: Restricts candidates to stories in `developing`, `monitoring`, or `stable` states. (See [Section 7: Story Lifecycle](#7-story-lifecycle)).
+3. **Exclusion**: Excludes stories that already contain the incoming article.
+4. **Entity Overlap Boost**: If spaCy extracts entities from the article title, candidates are filtered to stories that share at least one canonical entity or have no entities linked yet.
+5. **Ordering**: Results are sorted by `Story.updated_at DESC`.
+6. **Limit**: Capped at 20 candidate stories.
 
 ```sql
 SELECT stories.id, stories.headline, stories.lifecycle_state, stories.updated_at
@@ -272,18 +299,18 @@ LIMIT 20;
 
 # 5. Stage A Validation
 
-Stage A runs locally with zero API or network calls, calculating a weighted score from five attributes:
+Stage A runs locally on the application server with zero network or database dependencies. It evaluates the candidate stories returned by [Candidate Retrieval (Section 4)](#4-candidate-retrieval) using a weighted, rule-based scoring system.
 
 $$\text{Score} = \text{Entity Overlap (35)} + \text{Location (20)} + \text{Time Proximity (15)} + \text{Title Similarity (20)} + \text{Publisher Trust (10)}$$
 
-### Scoring Formulas & Handling
+### Scoring Logic & Edge Cases
 * **Entity Overlap (Weight 35)**:
-  - If both article and story have 0 entities: returns $35 \times 0.5 = 17.5$ (Neutral).
-  - If story has 0 entities but article has entities: returns $35 \times 0.5 = 17.5$.
-  - If article has 0 entities but story has entities: returns $0.0$.
-  - Normal case: $\frac{|\text{Shared Entities}|}{\min(|\text{Article Entities}|, |\text{Story Entities}|)} \times 35$.
+  - *Case 1 (Article has 0 entities, Story has entities)*: Score = `0.0`.
+  - *Case 2 (Story has 0 entities, Article has entities)*: Score = `17.5` (Neutral).
+  - *Case 3 (Both have 0 entities)*: Score = `17.5` (Neutral).
+  - *Normal Case*: $\frac{|\text{Shared Entities}|}{\min(|\text{Article Entities}|, |\text{Story Entities}|)} \times 35$.
 * **Location Overlap (Weight 20)**:
-  - Follows the same edge-case handling as entities: returns $10.0$ for Case 2/3, $0.0$ for Case 1, or Jaccard overlap $\times 20$ for normal cases.
+  - Follows the same Case 1/2/3 logic as entities to prevent division-by-zero errors when location metadata is missing.
 * **Time Proximity (Weight 15)**:
   - $\le 24$ hours: 15 points.
   - $\le 72$ hours: 7.5 points.
@@ -291,50 +318,69 @@ $$\text{Score} = \text{Entity Overlap (35)} + \text{Location (20)} + \text{Time 
 * **Title Similarity (Weight 20)**:
   - Jaccard similarity of words in titles $\times 20$.
 * **Publisher Trust (Weight 10)**:
-  - Calculated based on the source's trust tier: $10.0$ for Tiers 1-3, $5.0$ for Tier 4, and $0.0$ for Tier 5.
+  - $10.0$ for Tiers 1-3, $5.0$ for Tier 4, and $0.0$ for Tier 5.
 
 ### Outcomes
-* **PASS**: $\ge 60$
-* **MAYBE**: $\ge 45$ and $< 60$
-* **FAIL**: $< 45$
+* **PASS**: $\ge 60$ (Proceeds directly to [Stage B Validation](#6-stage-b-validation)).
+* **MAYBE**: $\ge 45$ and $< 60$ (Proceeds to Stage B).
+* **FAIL**: $< 45$ (Article is sent to the [Discovery Queue](#33-discovery-queue-lifecycle)).
 
 ---
 
 # 6. Stage B Validation
 
-Stage B runs only on the Top 3 candidates that passed Stage A. It retrieves the article's vector from Qdrant and measures cosine similarity against the story's centroid, alongside entity graph overlap.
+Stage B is executed for the Top 3 candidate stories that passed Stage A. It retrieves the article's vector from Qdrant and evaluates multiple signals rather than relying solely on cosine similarity.
 
-* **Cosine Similarity**: $\frac{\vec{V}_{article} \cdot \vec{C}_{story}}{\|\vec{V}_{article}\| \|\vec{C}_{story}\|}$
-* **Entity Overlap**: Counts matching canonical entities between the article and the story's knowledge graph nodes.
-* **Thresholds**:
-  - **PASS**: Cosine $\ge 0.72$ OR Entity Overlap $\ge 2$. (Direct merge).
-  - **MAYBE**: Cosine $\ge 0.67$ OR Entity Overlap $\ge 1$. (Triggers reflection if cosine $\ge 0.55$).
-  - **FAIL**: Cosine $< 0.67$ AND Entity Overlap $< 1$. (Rejection).
+### Evaluation Signals
+1. **Embedding Similarity**: Cosine similarity between the article vector and the story centroid vector.
+2. **Canonical Entity Overlap**: The count of matching entities between the article and the story's knowledge graph nodes.
+3. **Event Overlap**: Comparison of parsed events (actors, targets, location, time) extracted during ingestion.
+
+### Thresholds & Routing
+* **PASS**: Cosine Similarity $\ge 0.72$ OR Canonical Entity Overlap $\ge 2$. (Direct merge).
+* **MAYBE**: Cosine Similarity $\ge 0.67$ OR Canonical Entity Overlap $\ge 1$. (Triggers the [Reflection Agent](#7-reflection-agent) if cosine $\ge 0.55$).
+* **FAIL**: Cosine Similarity $< 0.67$ AND Canonical Entity Overlap $< 1$. (Rejection; routes to the [Discovery Queue](#33-discovery-queue-lifecycle)).
 
 ---
 
 # 7. Reflection Agent
 
-If Stage B yields a `MAYBE` decision, LLM reflection is triggered.
+If Stage B returns a `MAYBE` decision, the pipeline triggers LLM reflection to verify the merge decision using contextual information.
 
-* **Input**: Article title, article event (actors, targets, location, time), story first article title, story first article event, similarity score, and story knowledge graph nodes.
-* **Gateway Execution Flow**:
-  - **High Stakes (politics, world, business, etc.)**: Runs Gemini Verification Agent (`verify_cluster_decision` using `cluster_verification.yaml`) and OpenAI Verification Agent concurrently. If they agree, the decision is returned. If they disagree, the **Judge Agent** resolves the conflict.
-  - **Standard Category**: Runs Gemini Verification Agent only.
-* **Fallbacks**: If LLM Gateway or agents fail, it falls back to a deterministic threshold: merges if cosine similarity $\ge 0.80$, else rejects.
+```text
+                             [Stage B: MAYBE]
+                                     │
+                             (High Stakes Category?)
+                               ├── Yes ──► Run Gemini + OpenAI Verification Agents
+                               │                │
+                               │         (Do they agree?)
+                               │           ├── Yes ──► Return Decision
+                               │           └── No  ──► [Judge Agent Arbitration]
+                               │
+                               └── No  ──► Run Gemini Verification Agent Only
+```
+
+### Reflection Failure Handling & Fallback Paths
+LLM Gateway calls are wrapped with robust fallbacks to handle timeouts, rate limits, or API outages:
+1. **Agent Failure/Timeout**: If either the Gemini or OpenAI verification agents fail or time out, the system falls back to a Gemini-only decision.
+2. **Judge Agent Failure**: If the Judge Agent fails or times out during arbitration, the system falls back to the Gemini Agent's decision.
+3. **Gateway Outage**: If the AI Gateway is completely unavailable, the pipeline falls back to a deterministic threshold:
+   - The article is merged if its cosine similarity to the story centroid is $\ge 0.80$.
+   - Otherwise, the merge is rejected, and the article is routed to the [Discovery Queue](#33-discovery-queue-lifecycle).
+4. **Malformed Responses**: Responses that fail Pydantic validation are retried using exponential backoff. If retries are exhausted, they are treated as gateway failures and fall back to the deterministic thresholds.
 
 ---
 
-# 8. Story Merge
+# 8. Story Merge & Lock
 
-Story merges are managed under a database transaction using PostgreSQL advisory locks:
+To prevent race conditions when multiple articles are processed concurrently, merges are handled under a database transaction using PostgreSQL advisory locks:
 
 ```text
 [Start Transaction]
    │
    ├─► 1. Fold story_id (UUID) to 64-bit signed integer
    ├─► 2. Acquire lock: SELECT pg_advisory_xact_lock(lock_id)
-   ├─► 3. Verify StoryArticle link does not already exist
+   ├─► 3. Verify StoryArticle link does not already exist (idempotency check)
    ├─► 4. Insert StoryArticle relationship row
    ├─► 5. Trigger StorySynthesisOrchestrator synthesis
    ├─► 6. Recompute trending score
@@ -342,11 +388,13 @@ Story merges are managed under a database transaction using PostgreSQL advisory 
 [Commit Transaction] (Advisory lock automatically released)
 ```
 
+If a lock cannot be acquired or a transaction fails, the worker logs a warning and the article is deferred to the next periodic queue processing run.
+
 ---
 
 # 9. Batch Clustering
 
-If an article fails all incremental candidate checks, it remains in the `DiscoveryQueue` in a `READY` state. The periodic Celery task `cluster_news_task` executes batch clustering:
+Batch Clustering runs periodically via the Celery task `cluster_news_task` to process articles in the `DiscoveryQueue` that are in a `READY` state.
 
 ```text
 [DiscoveryQueue READY] (Limit 200)
@@ -357,16 +405,13 @@ If an article fails all incremental candidate checks, it remains in the `Discove
         ▼
 [Run HDBSCAN] (min_cluster_size=2, eps=0.35)
         │
-        ├─► Outliers (Label -1) ──► Keep as single-article cluster (Synthesis Deferred)
+        ├─► Outliers (Label -1) ──► Keep as single-article cluster (Story status = pending, Synthesis Deferred)
         │
         ▼
 [Pairwise Similarity Verification]
         │
         ├─► Combined Sim (90% Event + 10% Entity) >= 0.90 ──► Merge
-        ├─► Combined Sim >= 0.70 ────────────────────────────► Trigger Reflection
-        │                                                           │
-        │                                                           ▼
-        │                                                     [Agno Agent]
+        ├─► Combined Sim >= 0.70 ────────────────────────────► Trigger Reflection (Sec 7)
         │
         ▼
 [Pre-Grouping Identical event_fingerprints] ──► Merges duplicate reporting
@@ -383,7 +428,7 @@ If an article fails all incremental candidate checks, it remains in the `Discove
 
 # 10. Story Synthesis
 
-Story Synthesis compiles multi-source article clusters into structured stories through seven stages:
+Once a merge is completed or a new cluster is created, the pipeline executes the **Story Synthesis Orchestrator**, which coordinates a multi-stage synthesis process.
 
 ```text
 1. Knowledge Graph ──► 2. Contradictions ──► 3. Source Comparison ──► 4. Timeline
@@ -394,36 +439,33 @@ Story Synthesis compiles multi-source article clusters into structured stories t
 ```
 
 ### 10.1 Knowledge Graph Stage
-* **Input**: DTO contexts of articles, article events, story entities, and sources.
-* **Processing**: Builds a deterministic network. Nodes represent entities, sources, and events; edges represent relationships (e.g. `REPORTED`, `INVOLVED_IN`).
+* **Input**: Article records, article events, story entities, and sources.
+* **Processing**: Deterministically builds a graph where nodes represent entities, events, or sources, and edges represent relationships (e.g. `INVOLVED_IN`, `REPORTED`).
 * **Database Writes**: Writes JSON payload to `SynthesisArtifact` (type `knowledge_graph`).
 
 ### 10.2 Contradiction Stage
-* **Input**: Articles, events, source map, sources list, and context.
-* **Processing**: Performs local pairwise heuristic mismatch checks on actors, targets, locations, times, and numbers. If mismatches are found, they are validated by the contradiction agent (using `contradiction_detection.yaml`).
-* **LLM Prompt**: Instructs the model to check if mismatches represent actual contradictions or just minor wording differences.
-* **Cache & DB**: Cached in Redis under `contradiction_detection` with input hash. Outputs are expunged from the DB session during synthesis to maintain transactional boundaries, and written to `SynthesisArtifact` (type `contradictions`).
+* **Input**: Articles, events, and source names.
+* **Processing**: Runs local pairwise heuristic checks on actors, targets, locations, times, and numbers. If potential mismatches are found, they are validated by the contradiction agent (using `contradiction_detection.yaml`).
+* **Database Writes**: Writes JSON payload to `SynthesisArtifact` (type `contradictions`).
 
 ### 10.3 Source Comparison Stage
-* **Input**: Articles, events, source map, sources list, and precomputed contradictions.
-* **Processing**: Performs local heuristic calculations to identify unique and missing details per publisher. Uses the source comparison agent (using `source_comparison.yaml`) to summarize focus areas and differences.
-* **LLM Prompt**: Generates focus area sentences and lists of unique/missing details.
-* **Cache & DB**: Cached in Redis. Outputs are expunged from the DB session and written to `SynthesisArtifact` (type `source_comparison`).
+* **Input**: Articles, events, source names, and precomputed contradictions.
+* **Processing**: Runs local heuristic checks to identify unique details or omissions per publisher. Uses the source comparison agent (using `source_comparison.yaml`) to summarize focus areas and differences.
+* **Database Writes**: Writes JSON payload to `SynthesisArtifact` (type `source_comparison`).
 
 ### 10.4 Timeline Stage
 * **Input**: Event contexts and source map.
-* **Processing**: Chronologically compiles events using `TimelineCompiler`.
+* **Processing**: Chronologically sorts and formats events using `TimelineCompiler`.
 * **Database Writes**: Writes JSON payload to `SynthesisArtifact` (type `timeline`).
 
 ### 10.5 Summary Stage
 * **Input**: Knowledge graph, contradictions, timeline, source comparisons, and optional targeted corrections.
 * **Processing**: Generates headline, one-line summary, short summary, detailed summary, and key facts using Gemini 2.5 Pro (using `summary_generation.yaml`). If targeted corrections are provided, it runs `summary_refinement.yaml` to revise specific sections.
-* **LLM Prompt**: Generates structured summaries.
-* **Cache & DB**: Cached in Redis. Outputs are written to `SynthesisArtifact` (type `summary`).
+* **Database Writes**: Writes JSON payload to `SynthesisArtifact` (type `summary`).
 
 ### 10.6 Quality Evaluation Stage (Feedback Agent)
 * **Input**: Story, articles, knowledge graph, contradictions, timeline, summary text, and category.
-* **Processing**: Computes programmatic checks (HHI source diversity, min cosine similarity, missing entities, event leakage). If the category is high stakes (world, politics, business, health) or programmatic checks score $<0.85$, it calls the LLM Feedback Agent to check for hallucinations.
+* **Processing**: Computes programmatic checks (HHI source diversity, min cosine similarity, missing entities, event leakage). If the category is high stakes or programmatic checks score $<0.85$, it calls the LLM Feedback Agent to check for hallucinations.
 * **Feedback Decisions**:
   - `publish`: Green-lights publication.
   - `regenerate_summary`: Reruns the summary stage with corrections instructions (max 1 run).
@@ -435,9 +477,61 @@ Story Synthesis compiles multi-source article clusters into structured stories t
 
 ---
 
-# 11. AI Pipeline & Call Specifications
+# 11. Story Lifecycle
 
-The table below lists the structured parameters for every LLM invocation within the synthesis and validation pipeline:
+Stories transition through four lifecycle states which govern their eligibility for candidate retrieval and synthesis frequency:
+
+```text
+[Discovery / Batch] ──► [Developing] ──► [Stable] ──► [Monitoring] ──► [Archived]
+```
+
+* **`developing`**:
+  - *Definition*: Active story with frequent new article merges.
+  - *Retrieval*: Fully eligible for candidate retrieval.
+  - *Synthesis*: Synthesized immediately on every merge.
+* **`stable`**:
+  - *Definition*: Story has a mature narrative and the rate of new merges has slowed.
+  - *Retrieval*: Eligible for candidate retrieval.
+  - *Synthesis*: Synthesis is throttled (executed only for highly matching updates or new publisher perspectives).
+* **`monitoring`**:
+  - *Definition*: Old story monitored for late-arriving follow-ups.
+  - *Retrieval*: Eligible for candidate retrieval (lower priority).
+  - *Synthesis*: Synthesis runs on a delayed batch schedule.
+* **`archived`**:
+  - *Definition*: Inactive story.
+  - *Retrieval*: Excluded from candidate retrieval queries.
+  - *Synthesis*: Lock-state; no updates or synthesis allowed.
+
+---
+
+# 12. AI Gateway & Runtime Execution
+
+The **AI Gateway** acts as the runtime layer for all LLM calls, managing prompts, routing, retries, and schema validation.
+
+```text
+ [Prompt Registry] ──► Resolves YAML prompt version & model configuration
+        │
+        ▼
+ [AI Gateway] ──► Determines active provider & initializes client (Gemini/OpenAI)
+        │
+        ▼
+ [Execution] ──► Generates message array (system + user variables)
+        │
+        ▼
+ [Structured Output Validation] ──► Validates response against Pydantic schema
+        │
+        ├── Success ──► Return parsed response
+        └── Failure / Exception
+                │
+                ▼
+         [Tenacity Retry] ──► Retry with exponential backoff (Max 3 attempts)
+                │
+                ├── Success ──► Return parsed response
+                └── Retries Exhausted ──► Fallback model or deterministic logic
+```
+
+### AI Pipeline & Call Specifications
+Below are the configuration profiles managed by the Gateway for each stage:
 
 | Stage | Prompt YAML | Primary Model | Temp | Structured Output Schema | Fallback Behavior |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -452,52 +546,45 @@ The table below lists the structured parameters for every LLM invocation within 
 
 ---
 
-# 12. Prompt Registry Reference
+# 13. Cache Architecture
 
-| Prompt Name | YAML Filename | Default Model | System Prompt Purpose |
-| :--- | :--- | :--- | :--- |
-| `cluster_verification` | `cluster_verification.yaml` | `gemini-2.5-flash` | Assesses if two event-extraction reports represent the same physical event. |
-| `contradiction_detection`| `contradiction_detection.yaml`| `gemini-2.5-flash-lite`| Verifies if heuristic mismatches are true contradictions. |
-| `source_comparison` | `source_comparison.yaml` | `gemini-2.5-flash-lite`| Summarizes source focus areas and omissions. |
-| `summary_generation` | `summary_generation.yaml` | `gemini-2.5-pro` | Generates narrative summaries and headlines from the KG. |
-| `summary_refinement` | `summary_refinement.yaml` | `gemini-2.5-pro` | Refines summary sections based on Feedback Agent instructions. |
-| `summary_reflection` | `summary_reflection.yaml` | `gemini-2.5-pro` | Evaluates summaries for hallucinations and omissions. |
+NewsIQ uses Redis as a high-performance caching layer to prevent duplicate synthesis, gate LLM costs, and manage distributed locks.
 
----
-
-# 13. Data Models Reference
-
-### 13.1 `Story`
-* **Purpose**: Represents a canonical story cluster.
-* **Relationships**: Has many `StoryArticles`, `StoryVersions`, `StoryEntities`, `StoryTimelineEvents`, `StoryContradictions`, `StoryDifferences`, and `StorySourceCoverages`. Belongs to a `Category`.
-* **Indexes**: Primary key `id` (UUID). Eager-loaded relationships use `selectinload` to prevent N+1 queries.
-
-### 13.2 `StoryArticle`
-* **Purpose**: Join table linking `Story` and `Article`.
-* **Indexes**: Composite primary key `(story_id, article_id)`. Index on `article_id` to quickly verify if an article is already linked.
-
-### 13.3 `StoryVersion`
-* **Purpose**: Snapshot version of a story's synthesis run.
-* **Relationships**: Pointers to `SynthesisArtifact` rows: `summary_artifact_id`, `timeline_artifact_id`, `kg_artifact_id`, `source_comparison_artifact_id`, `contradiction_artifact_id`.
-
-### 13.4 `SynthesisArtifact`
-* **Purpose**: Stores deduplicated JSON payloads of generated artifacts.
-* **Indexes**: Primary key `id` (UUID). Unique index on `(story_id, artifact_type, content_hash)`.
+| Key Pattern | Data Type | TTL | Purpose / Description | Invalidation Event |
+| :--- | :--- | :--- | :--- | :--- |
+| `story_synthesis_hash:{story_id}` | String | 7 days | Caches composite hash of story articles to prevent duplicate synthesis. | Recalculated on new article merge. |
+| `newsiq:budget:story:{story_id}:{date}`| String | 24 hours| Tracks accumulated dollar cost of LLM calls for a story. | Expires daily. |
+| `newsiq:lock:cluster_news_task` | String | 10 min | Distributed lock to prevent concurrent batch clustering tasks. | Auto-released or expired. |
+| Stage: `summary_generation` / hash | String | 30 days | Caches generated summaries to prevent redundant Gemini 2.5 Pro calls. | Invalidated if article hash changes. |
+| Stage: `contradiction_detection` / hash | String | 30 days | Caches contradiction evaluation results. | Invalidated on new source merge. |
+| Stage: `source_comparison` / hash | String | 30 days | Caches publisher focus area analysis. | Invalidated on new source merge. |
 
 ---
 
-# 14. Failure Handling & Resilience
+# 14. Story Metrics & Observability Flow
+
+Metrics evolve incrementally as articles are ingested and merged, culminating in trend score updates and lifecycle transitions.
 
 ```text
-+------------------------------+-------------------------------------------------------------------------------------------------+
-| Failure Type                 | Pipeline Action & Mitigation Path                                                               |
-+------------------------------+-------------------------------------------------------------------------------------------------+
-| Missing Embedding            | Article remains in DiscoveryQueue in READY state; Qdrant retrieval failure aborts loop step safely|
-| Reflection Timeout / LLM Fail| Aborts reflection loop; falls back to local cosine similarity threshold >= 0.80 verification    |
-| DB Lock Acquisition Conflict  | Skips merging to that candidate story and proceeds to evaluate the next candidate               |
-| Synthesis Budget Exceeded    | Skips LLM calls; records a pipeline trace with decision="skip" and keeps story status unchanged|
-| Meilisearch Index Failure    | Logs warning, but transaction commits successfully (non-blocking failure path)                 |
-+------------------------------+-------------------------------------------------------------------------------------------------+
+ [Article Ingestion] ──► Increments raw metrics (Article views, bookmarks, shares, clicks)
+        │
+        ▼
+ [Story Article Merge] ──► Groups metrics under StoryMetric association
+        │
+        ▼
+ [Trend Score Recomputation] (ClusteringService.compute_trending_score)
+        ├── Source Score: Unique source count / 5 (capped at 1.0)
+        ├── Recency Score: Exponential decay with 6-hour half-life
+        └── Engagement Score: (views * 1 + bookmarks * 3 + shares * 5) / 500
+        │
+        ▼
+ [Lifecycle Update] ──► Transitions story state (Developing -> Stable -> Monitoring -> Archived)
+        │
+        ▼
+ [Quality Evaluation] ──► Feedback Agent generates QA Quality Score & checks hallucinations
+        │
+        ▼
+ [Publisher Stage] ──► Writes active story document to Meilisearch
 ```
 
 ---
@@ -546,18 +633,37 @@ The table below lists the structured parameters for every LLM invocation within 
 
 ---
 
-# 17. Architecture Audit
+# 17. Architecture Maturity Status
 
-### ✅ Correct
-* **Incremental Validation Gates**: The separation between deterministic Stage A and vector Stage B works correctly and avoids unnecessary embedding lookups or LLM calls.
-* **Transactional Advisory Locks**: Folder-based UUID locking during story merges prevents race conditions and duplicate merges.
-* **DTO Context Isolation**: Eager mapping of database models to DTO contexts prevents detached instance errors during synthesis.
+Below is the status of major pipeline components, distinguishing production-ready paths from experimental, legacy, or planned capabilities:
 
-### ⚠ Needs Improvement
-* **Centroid Recalculation**: Story centroids are updated as simple averages. Over time, large clusters can suffer from centroid drift, where the centroid moves away from the original story anchor.
-* **Batch Clustering Verification Latency**: During batch clustering, pairwise comparison of all articles in a cluster can scale quadratically ($O(N^2)$). Under high volume, this can lead to longer task durations.
+| Component | Status | Description |
+| :--- | :--- | :--- |
+| **Incremental Clustering** | Production | The primary pathway for real-time article routing. |
+| **Batch Clustering** | Production | Fallback recovery path using HDBSCAN. |
+| **Reflection Agent** | Production | Multi-signal verification gate for borderline matches. |
+| **Judge Agent** | Experimental | Dual-provider arbitration for high-stakes categories. |
+| **Discovery Queue** | Production | State machine tracking unclustered articles. |
+| **Knowledge Graph** | Production | Deterministic node-edge constructor for synthesis. |
+| **Timeline Compiler** | Production | Chronological parser for events. |
+| **Feedback Agent** | Production | Automated quality checks and summary refinement loop. |
+| **Publisher** | Production | Atomic database upserts and Meilisearch indexing. |
+| **Prompt Registry** | Production | YAML-configured, versioned prompt repository. |
+| **Story Embedding Index**| Planned | Future indexing of story centroids directly in Qdrant. |
 
-### ❌ Technical Debt
-* **Unused/Legacy Prompts**: Prompt files such as `summary_reflection.yaml` are present in the repository but have been replaced by the programmatic Quality check and Agno-based Feedback Agent.
-* **Centroid Vector Storage**: Story embedding centroids are calculated but not written back to Qdrant or indexed, requiring the system to retrieve all article vectors in a cluster to re-verify similarities.
-* **Hardcoded Thresholds**: Several thresholds (such as the 72-hour time window and the $0.10 synthesis budget) are hardcoded in python services rather than managed through configuration files.
+---
+
+# 18. Technical Debt, Limitations & Roadmap
+
+### 🔴 High Priority (Architectural Debt)
+* **Centroid Drift**: Story centroids are updated as simple averages. Over time, large clusters can suffer from centroid drift. A hybrid scoring mechanism incorporating the original anchor event vector is planned.
+* **Hardcoded Thresholds**: Values such as the 72-hour time window, the $0.10 synthesis budget, and Stage A/B scores are hardcoded in python services rather than loaded from configuration files.
+* **Story Embedding Persistence**: Story embedding centroids are recalculated dynamically rather than stored in Qdrant, requiring the system to retrieve all article vectors in a cluster to re-verify similarities.
+
+### 🟡 Medium Priority (Scalability)
+* **Batch Clustering Verification Latency**: Pairwise similarity comparison of all articles in a cluster scales quadratically ($O(N^2)$), causing potential latency issues under high volumes.
+* **Legacy Prompts**: Outdated prompt files such as `summary_reflection.yaml` remain in the repository but have been replaced by the programmatic checks and the Agno-based Feedback Agent.
+
+### 🟢 Low Priority (Maintenance)
+* **Configuration Cleanup**: Consolidate config files (`event_validation.yaml` and YAML prompt definitions) under a single settings schema.
+* **Documentation Maintenance**: Ensure Mermaid diagrams are updated alongside any future state-machine changes.
