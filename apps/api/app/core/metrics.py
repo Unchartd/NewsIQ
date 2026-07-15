@@ -352,3 +352,41 @@ newsiq_crawler_failure_reason_total = Counter(
     "Total count of failure reasons by provider and domain.",
     ["provider", "failure_reason", "domain"],
 )
+
+# ── Story Clustering Hardening Metrics (Section 3) ───────────────────────────
+
+newsiq_reflection_triggered_total = Counter(
+    "newsiq_reflection_triggered_total",
+    "Total number of reflection triggers by reason type.",
+    ["reason_type"],
+)
+
+newsiq_reflection_timeout_total = Counter(
+    "newsiq_reflection_timeout_total",
+    "Total number of reflection timeouts by agent type.",
+    ["agent_type"],
+)
+
+newsiq_reflection_fallback_total = Counter(
+    "newsiq_reflection_fallback_total",
+    "Total number of reflection fallbacks by type.",
+    ["fallback_type"],
+)
+
+newsiq_reflection_cache_reused_total = Counter(
+    "newsiq_reflection_cache_reused_total",
+    "Total number of times cached Gemini reflection decisions were reused.",
+)
+
+newsiq_stage_a_pass_total = Counter(
+    "newsiq_stage_a_pass_total",
+    "Total number of Stage A checks that passed or borderline passed.",
+    ["outcome"],
+)
+
+newsiq_stage_b_pass_total = Counter(
+    "newsiq_stage_b_pass_total",
+    "Total number of Stage B checks that passed or borderline passed.",
+    ["outcome"],
+)
+

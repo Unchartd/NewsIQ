@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     # ── Pipeline Optimization ─────────────────────────────────────────────────
     PIPELINE_VERSION: str = "1.0.0"
     PIPELINE_CACHE_ENABLED: bool = True
+    REFLECTION_AGENT_TIMEOUT_SECONDS: float = 5.0
     ENTITY_LINKING_MODE: str = "hybrid"  # hybrid | deterministic | llm
     INCREMENTAL_STORY_UPDATES: bool = True
     CONTEXT_EXTRACTOR_ENABLED: bool = True

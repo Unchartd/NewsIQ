@@ -838,10 +838,21 @@ class ClusteringService:
         similarity_score: float,
         category_slug: str = "",
         kg_nodes: list = None,
+        metadata: dict = None,
     ) -> bool:
         """Call Agno agents to verify if two articles describe the same event, using Judge Agent if needed."""
         from app.agents.cluster_verification_agent import verify_cluster_decision
         from app.core.config import settings
+        import asyncio
+
+        if metadata is None:
+            metadata = {}
+
+        metadata["triggered"] = True
+        metadata["gemini"] = {"decision": None, "latency_ms": 0.0, "provider": "gemini", "model": "gemini-2.5-flash"}
+        metadata["openai"] = {"decision": None, "latency_ms": 0.0, "provider": "openai", "model": "gpt-4o-mini"}
+        metadata["judge"] = {"decision": None, "latency_ms": 0.0, "provider": "openai", "model": "gpt-4o"}
+        metadata["fallback"] = {"reason": None, "used": None}
 
         art_a_evt_dict = {
             "type": event_a.event_type_canonical,
@@ -864,11 +875,29 @@ class ClusteringService:
             for w in ("war", "election", "finance", "military", "police", "arrest", "attack")
         )
 
-        if high_stakes and settings.OPENAI_API_KEY:
+        gemini_ver = None
+        start_g = _now()
+        try:
+            gemini_ver = await verify_cluster_decision(
+                article_a_title=article_a.title or "",
+                article_a_event=art_a_evt_dict,
+                article_b_title=article_b.title or "",
+                article_b_event=art_b_evt_dict,
+                similarity_score=similarity_score,
+                kg_nodes=kg_nodes,
+            )
+            metadata["gemini"]["decision"] = "PASS" if gemini_ver.same_event else "FAIL"
+            metadata["gemini"]["confidence"] = getattr(gemini_ver, "confidence", 1.0)
+        except Exception as e:
+            logger.error("Gemini cluster verification agent failed: %s", e)
+            metadata["gemini"]["decision"] = "ERROR"
+            metadata["gemini"]["error"] = str(e)
+        metadata["gemini"]["latency_ms"] = (_now() - start_g).total_seconds() * 1000.0
+
+        if high_stakes and settings.OPENAI_API_KEY and gemini_ver is not None:
             try:
                 from agno.agent import Agent
                 from agno.models.openai import OpenAIChat
-
                 from app.agents.base_agent import run_agent_with_observability
                 from app.agents.cluster_verification_agent import cluster_verification_agent
                 from app.agents.judge_agent import resolve_disagreement
@@ -897,60 +926,114 @@ class ClusteringService:
                 Determine if they represent the same event.
                 """
 
-                # Run Gemini and OpenAI agents
-                gemini_ver = await verify_cluster_decision(
-                    article_a_title=article_a.title or "",
-                    article_a_event=art_a_evt_dict,
-                    article_b_title=article_b.title or "",
-                    article_b_event=art_b_evt_dict,
-                    similarity_score=similarity_score,
-                    kg_nodes=kg_nodes,
-                )
-
-                run_output_oa = await run_agent_with_observability(
-                    agent=openai_agent, prompt=prompt, stage="cluster_verification"
-                )
-                openai_ver = run_output_oa.content
-
-                if gemini_ver.same_event != openai_ver.same_event:
-                    judgment = await resolve_disagreement(
-                        task_description="Verify if two articles describe the same event",
-                        provider_a_name="gemini",
-                        provider_a_output=gemini_ver.model_dump(),
-                        provider_b_name="openai",
-                        provider_b_output=openai_ver.model_dump(),
-                        context=f"Article A: {article_a.title}\nArticle B: {article_b.title}",
+                # Run OpenAI agent with configurable timeout
+                start_o = _now()
+                openai_ver = None
+                try:
+                    run_output_oa = await asyncio.wait_for(
+                        run_agent_with_observability(
+                            agent=openai_agent, prompt=prompt, stage="cluster_verification"
+                        ),
+                        timeout=settings.REFLECTION_AGENT_TIMEOUT_SECONDS,
                     )
-                    logger.info(
-                        "Judge Agent resolved disagreement between Gemini (%s) and OpenAI (%s) to: %s (explanation: %s)",
-                        gemini_ver.same_event,
-                        openai_ver.same_event,
-                        judgment.final_decision,
-                        judgment.explanation,
-                    )
-                    return judgment.final_decision
+                    openai_ver = run_output_oa.content
+                    metadata["openai"]["decision"] = "PASS" if openai_ver.same_event else "FAIL"
+                    metadata["openai"]["confidence"] = getattr(openai_ver, "confidence", 1.0)
+                except asyncio.TimeoutError:
+                    logger.warning("OpenAI Verification Agent timed out.")
+                    from app.core.metrics import newsiq_reflection_timeout_total
+                    newsiq_reflection_timeout_total.labels(agent_type="openai").inc()
+                    metadata["openai"]["decision"] = "TIMEOUT"
+                except Exception as ex:
+                    logger.warning("OpenAI Verification Agent failed: %s", ex)
+                    metadata["openai"]["decision"] = "ERROR"
+                    metadata["openai"]["error"] = str(ex)
+                metadata["openai"]["latency_ms"] = (_now() - start_o).total_seconds() * 1000.0
+
+                if openai_ver is not None:
+                    if gemini_ver.same_event != openai_ver.same_event:
+                        start_j = _now()
+                        try:
+                            judgment = await asyncio.wait_for(
+                                resolve_disagreement(
+                                    task_description="Verify if two articles describe the same event",
+                                    provider_a_name="gemini",
+                                    provider_a_output=gemini_ver.model_dump(),
+                                    provider_b_name="openai",
+                                    provider_b_output=openai_ver.model_dump(),
+                                    context=f"Article A: {article_a.title}\nArticle B: {article_b.title}",
+                                ),
+                                timeout=settings.REFLECTION_AGENT_TIMEOUT_SECONDS,
+                            )
+                            metadata["judge"]["decision"] = "PASS" if judgment.final_decision else "FAIL"
+                            metadata["judge"]["chosen_provider"] = judgment.chosen_provider
+                            metadata["judge"]["explanation"] = judgment.explanation
+                            metadata["judge"]["latency_ms"] = (_now() - start_j).total_seconds() * 1000.0
+                            return judgment.final_decision
+                        except asyncio.TimeoutError:
+                            logger.warning("Judge Agent arbitration timed out.")
+                            from app.core.metrics import (
+                                newsiq_reflection_timeout_total,
+                                newsiq_reflection_fallback_total,
+                                newsiq_reflection_cache_reused_total,
+                            )
+                            newsiq_reflection_timeout_total.labels(agent_type="judge").inc()
+                            newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
+                            newsiq_reflection_cache_reused_total.inc()
+                            metadata["judge"]["decision"] = "TIMEOUT"
+                            metadata["fallback"]["reason"] = "judge_timeout"
+                            metadata["fallback"]["used"] = "cached_gemini"
+                            return gemini_ver.same_event
+                        except Exception as j_err:
+                            logger.warning("Judge Agent arbitration failed: %s", j_err)
+                            from app.core.metrics import (
+                                newsiq_reflection_fallback_total,
+                                newsiq_reflection_cache_reused_total,
+                            )
+                            newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
+                            newsiq_reflection_cache_reused_total.inc()
+                            metadata["judge"]["decision"] = "ERROR"
+                            metadata["judge"]["error"] = str(j_err)
+                            metadata["fallback"]["reason"] = "judge_error"
+                            metadata["fallback"]["used"] = "cached_gemini"
+                            return gemini_ver.same_event
+                    else:
+                        return gemini_ver.same_event
                 else:
+                    # OpenAI failed/timed out, reuse cached Gemini decision
+                    from app.core.metrics import (
+                        newsiq_reflection_fallback_total,
+                        newsiq_reflection_cache_reused_total,
+                    )
+                    newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
+                    newsiq_reflection_cache_reused_total.inc()
+                    metadata["fallback"]["reason"] = "openai_unavailable"
+                    metadata["fallback"]["used"] = "cached_gemini"
                     return gemini_ver.same_event
             except Exception as e:
-                logger.error("Dual-agent verification failed, falling back to Gemini only: %s", e)
+                logger.error("Dual-agent verification setup failed: %s", e)
 
-        # Primary Gemini-only path (default)
-        try:
-            gemini_ver = await verify_cluster_decision(
-                article_a_title=article_a.title or "",
-                article_a_event=art_a_evt_dict,
-                article_b_title=article_b.title or "",
-                article_b_event=art_b_evt_dict,
-                similarity_score=similarity_score,
-                kg_nodes=kg_nodes,
-            )
+        # Primary Gemini-only path / fallback if cached Gemini succeeded
+        if gemini_ver is not None:
+            if high_stakes and settings.OPENAI_API_KEY:
+                from app.core.metrics import (
+                    newsiq_reflection_fallback_total,
+                    newsiq_reflection_cache_reused_total,
+                )
+                newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
+                newsiq_reflection_cache_reused_total.inc()
+                metadata["fallback"]["reason"] = "dual_agent_setup_error"
+                metadata["fallback"]["used"] = "cached_gemini"
             return gemini_ver.same_event
-        except Exception as e:
-            logger.error(
-                "Gemini cluster verification agent failed, falling back to True/False based on threshold: %s",
-                e,
-            )
-            return similarity_score >= 0.80
+
+        # Deterministic fallback threshold (Gemini failed entirely)
+        from app.core.metrics import newsiq_reflection_fallback_total
+        newsiq_reflection_fallback_total.labels(fallback_type="deterministic_threshold").inc()
+        metadata["fallback"]["reason"] = "gemini_unavailable"
+        metadata["fallback"]["used"] = "deterministic_threshold"
+
+        should_merge_det = similarity_score >= 0.80
+        return should_merge_det
 
     async def add_article_to_existing_story_if_similar(
         self, article_id: uuid.UUID, session: AsyncSession
@@ -1051,9 +1134,16 @@ class ClusteringService:
                 else set(),
             )
 
+            start_time_a = _now()
             decision = event_validation_service.validate_stage_a(article, anchor)
+            latency_a = (_now() - start_time_a).total_seconds() * 1000.0
+
+            # Expose Stage A Prom Counter
+            from app.core.metrics import newsiq_stage_a_pass_total
+            newsiq_stage_a_pass_total.labels(outcome=decision.outcome.value).inc()
+
             if decision.outcome in (ValidationOutcome.PASS, ValidationOutcome.MAYBE):
-                stage_a_passed_candidates.append((story, anchor, decision))
+                stage_a_passed_candidates.append((story, anchor, decision, start_time_a, latency_a))
                 newsiq_stage_a_validation_total.labels(outcome=decision.outcome.value).inc()
             else:
                 newsiq_stage_a_validation_total.labels(outcome="rejected").inc()
@@ -1063,6 +1153,33 @@ class ClusteringService:
                     story.id,
                     decision.reason,
                 )
+                # Save single trace entry for Stage A rejection
+                import json
+                from app.models import PipelineTraceModel
+                trace_data = {
+                    "stage_a": {
+                        "score": round(decision.score, 4),
+                        "decision": decision.outcome.value,
+                        "reason": decision.reason,
+                        "latency_ms": round(latency_a, 2),
+                        "details": decision.details,
+                    },
+                    "stage_b": {"triggered": False},
+                    "reflection": {"triggered": False},
+                    "overall_decision": "FAIL",
+                }
+                trace = PipelineTraceModel(
+                    id=uuid.uuid4(),
+                    story_id=story.id,
+                    article_id=article.id,
+                    stage="article_clustering",
+                    started_at=start_time_a,
+                    completed_at=_now(),
+                    latency_ms=latency_a,
+                    decision="FAIL",
+                    reason=json.dumps(trace_data),
+                )
+                session.add(trace)
 
         if not stage_a_passed_candidates:
             logger.info(
@@ -1099,11 +1216,47 @@ class ClusteringService:
         # Sort stage_a_passed_candidates by Stage A score descending and take Top 3
         stage_a_passed_candidates.sort(key=lambda x: x[2].score, reverse=True)
         top_3_candidates = stage_a_passed_candidates[:3]
+        skipped_candidates = stage_a_passed_candidates[3:]
 
-        for story, anchor, stage_a_decision in top_3_candidates:
+        # Record traces for skipped candidates (passed Stage A but not in Top 3)
+        import json
+        from app.models import PipelineTraceModel
+        for story, anchor, stage_a_decision, start_time_a, latency_a in skipped_candidates:
+            trace_data = {
+                "stage_a": {
+                    "score": round(stage_a_decision.score, 4),
+                    "decision": stage_a_decision.outcome.value,
+                    "reason": stage_a_decision.reason,
+                    "latency_ms": round(latency_a, 2),
+                    "details": stage_a_decision.details,
+                },
+                "stage_b": {"triggered": False, "reason": "Skipped: Story did not make Top 3 Stage A cut"},
+                "reflection": {"triggered": False},
+                "overall_decision": "FAIL",
+            }
+            trace = PipelineTraceModel(
+                id=uuid.uuid4(),
+                story_id=story.id,
+                article_id=article.id,
+                stage="article_clustering",
+                started_at=start_time_a,
+                completed_at=_now(),
+                latency_ms=latency_a,
+                decision="FAIL",
+                reason=json.dumps(trace_data),
+            )
+            session.add(trace)
+
+        for story, anchor, stage_a_decision, start_time_a, latency_a in top_3_candidates:
+            start_time_b = _now()
             decision_b = event_validation_service.validate_stage_b(
                 article, anchor, cast(list[float], vector), article_canonical_entity_ids
             )
+            latency_b = (_now() - start_time_b).total_seconds() * 1000.0
+
+            # Expose Stage B Prom Counter
+            from app.core.metrics import newsiq_stage_b_pass_total
+            newsiq_stage_b_pass_total.labels(outcome=decision_b.outcome.value).inc()
 
             story_id = story.id
             if decision_b.outcome == ValidationOutcome.PASS:
@@ -1111,6 +1264,39 @@ class ClusteringService:
                 logger.info(
                     "Article %s passed Stage B for story %s. Merging.", article_id, story_id
                 )
+                trace_data = {
+                    "stage_a": {
+                        "score": round(stage_a_decision.score, 4),
+                        "decision": stage_a_decision.outcome.value,
+                        "reason": stage_a_decision.reason,
+                        "latency_ms": round(latency_a, 2),
+                        "details": stage_a_decision.details,
+                    },
+                    "stage_b": {
+                        "triggered": True,
+                        "cosine": round(getattr(decision_b, "score", 0.0), 4),
+                        "entities": decision_b.details.get("shared_canonical_entities", 0),
+                        "decision": decision_b.outcome.value,
+                        "reason": decision_b.reason,
+                        "latency_ms": round(latency_b, 2),
+                        "details": decision_b.details,
+                    },
+                    "reflection": {"triggered": False},
+                    "overall_decision": "PASS",
+                }
+                trace = PipelineTraceModel(
+                    id=uuid.uuid4(),
+                    story_id=story.id,
+                    article_id=article.id,
+                    stage="article_clustering",
+                    started_at=start_time_a,
+                    completed_at=_now(),
+                    latency_ms=latency_a + latency_b,
+                    decision="PASS",
+                    reason=json.dumps(trace_data),
+                )
+                session.add(trace)
+
                 return await self.merge_article_into_existing_story(article, story_id, session)
 
             elif decision_b.outcome == ValidationOutcome.MAYBE:
@@ -1121,6 +1307,38 @@ class ClusteringService:
                         decision_b.score,
                         REFLECTION_THRESHOLD,
                     )
+                    trace_data = {
+                        "stage_a": {
+                            "score": round(stage_a_decision.score, 4),
+                            "decision": stage_a_decision.outcome.value,
+                            "reason": stage_a_decision.reason,
+                            "latency_ms": round(latency_a, 2),
+                            "details": stage_a_decision.details,
+                        },
+                        "stage_b": {
+                            "triggered": True,
+                            "cosine": round(getattr(decision_b, "score", 0.0), 4),
+                            "entities": decision_b.details.get("shared_canonical_entities", 0),
+                            "decision": decision_b.outcome.value,
+                            "reason": f"MAYBE (below reflection threshold {REFLECTION_THRESHOLD})",
+                            "latency_ms": round(latency_b, 2),
+                            "details": decision_b.details,
+                        },
+                        "reflection": {"triggered": False},
+                        "overall_decision": "FAIL",
+                    }
+                    trace = PipelineTraceModel(
+                        id=uuid.uuid4(),
+                        story_id=story.id,
+                        article_id=article.id,
+                        stage="article_clustering",
+                        started_at=start_time_a,
+                        completed_at=_now(),
+                        latency_ms=latency_a + latency_b,
+                        decision="FAIL",
+                        reason=json.dumps(trace_data),
+                    )
+                    session.add(trace)
                     continue
 
                 # Send to LLM Reflection
@@ -1130,7 +1348,10 @@ class ClusteringService:
                     decision_b.score,
                     story_id,
                 )
+                from app.core.metrics import newsiq_reflection_triggered_total
+                newsiq_reflection_triggered_total.labels(reason_type="borderline_similarity").inc()
                 newsiq_reflection_requests_total.labels(outcome="requested").inc()
+                
                 lock_id = uuid_to_advisory_lock_id(story_id)
                 await session.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
 
@@ -1153,6 +1374,9 @@ class ClusteringService:
 
                 if first_art and first_evt and article_event:
                     category_slug = story.category.slug if story.category else ""
+                    start_time_ref = _now()
+                    reflection_metadata = {}
+                    
                     should_merge = await self._verify_merge_with_agents(
                         article_a=article,
                         event_a=article_event,
@@ -1163,7 +1387,51 @@ class ClusteringService:
                         kg_nodes=story.knowledge_graph.get("nodes", [])
                         if story.knowledge_graph
                         else [],
+                        metadata=reflection_metadata,
                     )
+                    latency_ref = (_now() - start_time_ref).total_seconds() * 1000.0
+
+                    trace_data = {
+                        "stage_a": {
+                            "score": round(stage_a_decision.score, 4),
+                            "decision": stage_a_decision.outcome.value,
+                            "reason": stage_a_decision.reason,
+                            "latency_ms": round(latency_a, 2),
+                            "details": stage_a_decision.details,
+                        },
+                        "stage_b": {
+                            "triggered": True,
+                            "cosine": round(getattr(decision_b, "score", 0.0), 4),
+                            "entities": decision_b.details.get("shared_canonical_entities", 0),
+                            "decision": decision_b.outcome.value,
+                            "reason": decision_b.reason,
+                            "latency_ms": round(latency_b, 2),
+                            "details": decision_b.details,
+                        },
+                        "reflection": {
+                            "triggered": True,
+                            "trigger_reason": {
+                                "cosine": round(getattr(decision_b, "score", 0.0), 4),
+                                "entities": decision_b.details.get("shared_canonical_entities", 0),
+                            },
+                            "latency_ms": round(latency_ref, 2),
+                            "details": reflection_metadata,
+                        },
+                        "overall_decision": "PASS" if should_merge else "FAIL",
+                    }
+                    trace = PipelineTraceModel(
+                        id=uuid.uuid4(),
+                        story_id=story.id,
+                        article_id=article.id,
+                        stage="article_clustering",
+                        started_at=start_time_a,
+                        completed_at=_now(),
+                        latency_ms=latency_a + latency_b + latency_ref,
+                        decision="PASS" if should_merge else "FAIL",
+                        reason=json.dumps(trace_data),
+                    )
+                    session.add(trace)
+
                     if should_merge:
                         logger.info(
                             "Reflection passed for article %s into story %s", article_id, story_id
@@ -1179,6 +1447,41 @@ class ClusteringService:
                         )
                 else:
                     logger.warning("Missing event data for reflection on story %s", story_id)
+                    trace_data = {
+                        "stage_a": {
+                            "score": round(stage_a_decision.score, 4),
+                            "decision": stage_a_decision.outcome.value,
+                            "reason": stage_a_decision.reason,
+                            "latency_ms": round(latency_a, 2),
+                            "details": stage_a_decision.details,
+                        },
+                        "stage_b": {
+                            "triggered": True,
+                            "cosine": round(getattr(decision_b, "score", 0.0), 4),
+                            "entities": decision_b.details.get("shared_canonical_entities", 0),
+                            "decision": decision_b.outcome.value,
+                            "reason": decision_b.reason,
+                            "latency_ms": round(latency_b, 2),
+                            "details": decision_b.details,
+                        },
+                        "reflection": {
+                            "triggered": True,
+                            "error": "Missing event data for reflection",
+                        },
+                        "overall_decision": "FAIL",
+                    }
+                    trace = PipelineTraceModel(
+                        id=uuid.uuid4(),
+                        story_id=story.id,
+                        article_id=article.id,
+                        stage="article_clustering",
+                        started_at=start_time_a,
+                        completed_at=_now(),
+                        latency_ms=latency_a + latency_b,
+                        decision="FAIL",
+                        reason=json.dumps(trace_data),
+                    )
+                    session.add(trace)
 
             else:
                 logger.info(
@@ -1187,6 +1490,38 @@ class ClusteringService:
                     story.id,
                     decision_b.reason,
                 )
+                trace_data = {
+                    "stage_a": {
+                        "score": round(stage_a_decision.score, 4),
+                        "decision": stage_a_decision.outcome.value,
+                        "reason": stage_a_decision.reason,
+                        "latency_ms": round(latency_a, 2),
+                        "details": stage_a_decision.details,
+                    },
+                    "stage_b": {
+                        "triggered": True,
+                        "cosine": round(getattr(decision_b, "score", 0.0), 4),
+                        "entities": decision_b.details.get("shared_canonical_entities", 0),
+                        "decision": decision_b.outcome.value,
+                        "reason": decision_b.reason,
+                        "latency_ms": round(latency_b, 2),
+                        "details": decision_b.details,
+                    },
+                    "reflection": {"triggered": False},
+                    "overall_decision": "FAIL",
+                }
+                trace = PipelineTraceModel(
+                    id=uuid.uuid4(),
+                    story_id=story.id,
+                    article_id=article.id,
+                    stage="article_clustering",
+                    started_at=start_time_a,
+                    completed_at=_now(),
+                    latency_ms=latency_a + latency_b,
+                    decision="FAIL",
+                    reason=json.dumps(trace_data),
+                )
+                session.add(trace)
 
         return False
 
