@@ -841,9 +841,10 @@ class ClusteringService:
         metadata: dict = None,
     ) -> bool:
         """Call Agno agents to verify if two articles describe the same event, using Judge Agent if needed."""
+        import asyncio
+
         from app.agents.cluster_verification_agent import verify_cluster_decision
         from app.core.config import settings
-        import asyncio
 
         if metadata is None:
             metadata = {}
@@ -898,6 +899,7 @@ class ClusteringService:
             try:
                 from agno.agent import Agent
                 from agno.models.openai import OpenAIChat
+
                 from app.agents.base_agent import run_agent_with_observability
                 from app.agents.cluster_verification_agent import cluster_verification_agent
                 from app.agents.judge_agent import resolve_disagreement
@@ -939,7 +941,7 @@ class ClusteringService:
                     openai_ver = run_output_oa.content
                     metadata["openai"]["decision"] = "PASS" if openai_ver.same_event else "FAIL"
                     metadata["openai"]["confidence"] = getattr(openai_ver, "confidence", 1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("OpenAI Verification Agent timed out.")
                     from app.core.metrics import newsiq_reflection_timeout_total
                     newsiq_reflection_timeout_total.labels(agent_type="openai").inc()
@@ -970,12 +972,12 @@ class ClusteringService:
                             metadata["judge"]["explanation"] = judgment.explanation
                             metadata["judge"]["latency_ms"] = (_now() - start_j).total_seconds() * 1000.0
                             return judgment.final_decision
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             logger.warning("Judge Agent arbitration timed out.")
                             from app.core.metrics import (
-                                newsiq_reflection_timeout_total,
-                                newsiq_reflection_fallback_total,
                                 newsiq_reflection_cache_reused_total,
+                                newsiq_reflection_fallback_total,
+                                newsiq_reflection_timeout_total,
                             )
                             newsiq_reflection_timeout_total.labels(agent_type="judge").inc()
                             newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
@@ -987,8 +989,8 @@ class ClusteringService:
                         except Exception as j_err:
                             logger.warning("Judge Agent arbitration failed: %s", j_err)
                             from app.core.metrics import (
-                                newsiq_reflection_fallback_total,
                                 newsiq_reflection_cache_reused_total,
+                                newsiq_reflection_fallback_total,
                             )
                             newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
                             newsiq_reflection_cache_reused_total.inc()
@@ -1002,8 +1004,8 @@ class ClusteringService:
                 else:
                     # OpenAI failed/timed out, reuse cached Gemini decision
                     from app.core.metrics import (
-                        newsiq_reflection_fallback_total,
                         newsiq_reflection_cache_reused_total,
+                        newsiq_reflection_fallback_total,
                     )
                     newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
                     newsiq_reflection_cache_reused_total.inc()
@@ -1017,8 +1019,8 @@ class ClusteringService:
         if gemini_ver is not None:
             if high_stakes and settings.OPENAI_API_KEY:
                 from app.core.metrics import (
-                    newsiq_reflection_fallback_total,
                     newsiq_reflection_cache_reused_total,
+                    newsiq_reflection_fallback_total,
                 )
                 newsiq_reflection_fallback_total.labels(fallback_type="cached_gemini").inc()
                 newsiq_reflection_cache_reused_total.inc()
@@ -1155,6 +1157,7 @@ class ClusteringService:
                 )
                 # Save single trace entry for Stage A rejection
                 import json
+
                 from app.models import PipelineTraceModel
                 trace_data = {
                     "stage_a": {
@@ -1220,6 +1223,7 @@ class ClusteringService:
 
         # Record traces for skipped candidates (passed Stage A but not in Top 3)
         import json
+
         from app.models import PipelineTraceModel
         for story, anchor, stage_a_decision, start_time_a, latency_a in skipped_candidates:
             trace_data = {
@@ -1351,7 +1355,7 @@ class ClusteringService:
                 from app.core.metrics import newsiq_reflection_triggered_total
                 newsiq_reflection_triggered_total.labels(reason_type="borderline_similarity").inc()
                 newsiq_reflection_requests_total.labels(outcome="requested").inc()
-                
+
                 lock_id = uuid_to_advisory_lock_id(story_id)
                 await session.execute(text(f"SELECT pg_advisory_xact_lock({lock_id})"))
 
@@ -1376,7 +1380,7 @@ class ClusteringService:
                     category_slug = story.category.slug if story.category else ""
                     start_time_ref = _now()
                     reflection_metadata = {}
-                    
+
                     should_merge = await self._verify_merge_with_agents(
                         article_a=article,
                         event_a=article_event,
