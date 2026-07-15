@@ -2,13 +2,16 @@
 
 This document provides a comprehensive technical audit of the **Ingestion & Discovery** pipeline of the NewsIQ platform. It outlines the end-to-end execution paths, database transactions, caching strategies, queue distribution, decision boundaries, and file relationships.
 
+> [!IMPORTANT]
+> **Status as of 2026-07-15**: The Story-First pipeline described in Section 10 has been **fully implemented** on branch `feature/story-first-ingestion` (commit `e26e878`). Sections 1–9 have been updated to reflect the current dual-path architecture. The legacy Article-First path remains active when `STORY_FIRST_ENABLED=False`.
+
 ---
 
 ## 1. System Architecture & Diagrams
 
 ### 1.1 End-to-End Sequence Diagram
 
-The sequence diagram below displays the lifecycle of an article starting from RSS polling, through crawl extraction, priority scoring, DiscoveryTask creation, Google News RSS discovery search, CrawlTask registration, content crawling, and downstream matching.
+The sequence diagram shows the **Story-First path** (active by default: `STORY_FIRST_ENABLED=True`). The legacy Article-First path is noted where it diverges.
 
 ```mermaid
 sequenceDiagram
@@ -17,85 +20,88 @@ sequenceDiagram
     participant W as Celery Ingest Worker
     participant DB as PostgreSQL
     participant R as Redis Cache
-    participant EM as ExtractionManager
     participant DS as Celery Search Worker
     participant DC as Celery Crawl Worker
+    participant EM as ExtractionManager
     participant CS as ClusteringService
 
-    %% Stage 1: RSS Ingestion
+    %% Stage 1: RSS Ingestion (Story-First Path)
     CB->>W: ingest_news_task()
     activate W
     W->>DB: SELECT * FROM sources WHERE active = true
     DB-->>W: List of Sources
-    W->>W: httpx.get(source.rss_url) (Fetch Feed XML)
+    W->>W: httpx.get(source.rss_url) — Fetch Feed XML
     W->>W: feedparser.parse() & canonicalize_url()
-    W->>DB: SELECT url FROM articles WHERE url IN (feed_urls)
-    DB-->>W: Existing URLs Map
-    Note over W: Filter out existing URLs (PERF-01)
-    
-    %% Async crawl of new URLs
-    W->>EM: crawl_article(new_url)
-    activate EM
-    EM->>R: GET extraction:idempotency:{url_hash}
-    R-->>EM: Cache Miss
-    EM->>EM: Attempt 1: Local HTTP Scraper (httpx -> curl-cffi impersonation)
-    EM->>EM: Attempt 2 (Fallback): Tavily Extract (via Redis Tavily Buffer)
-    EM->>EM: Attempt 3 (Fallback): Firecrawl Scrape API
-    EM->>DB: UPDATE domain_extraction_policies (latency, success rates)
-    EM->>R: SET extraction:idempotency:{url_hash} (Cache result)
-    EM-->>W: Crawled Content & Metadata
-    deactivate EM
 
-    W->>W: compute_fingerprints() (url_hash, content_hash)
-    W->>DB: SELECT * FROM articles WHERE content_hash IN (new_content_hashes) (PERF-02)
-    DB-->>W: Content duplicates map
-    W->>DB: INSERT INTO articles (duplicate_of_article_id if content duplicate found)
-    W->>R: url_bloom_filter.add(url_hash)
-    
-    %% Discovery Dispatch
-    W->>W: calculate_discovery_score() (NER proper nouns, freshness, length)
-    alt Score >= settings.DISCOVERY_SCORE_THRESHOLD
-        W->>DB: INSERT INTO discovery_tasks (state: PENDING)
-        W->>DS: discovery_search_task.delay(new_task_id)
+    Note over W: STORY_FIRST_ENABLED=True → Story-First path
+
+    loop For each RSS entry
+        W->>W: calculate_metadata_score(title, description, pub_date, source)
+        alt score < STORY_FIRST_SCORE_THRESHOLD (0.25) or opinion/stale
+            W->>W: Skip entry (log reason)
+        else Score qualifies
+            W->>R: GET story:dedup:{query_hash} (SETNX dedup check)
+            alt Cache HIT — story already being collected
+                W->>DB: UPDATE story_candidates SET rss_sources += entry, rss_source_count += 1
+                alt rss_source_count >= STORY_FIRST_EARLY_DISPATCH_THRESHOLD (3)
+                    W->>DB: UPDATE story_candidates SET status = DISCOVERING
+                    W->>DS: dispatch_story_candidate_task.delay(sc_id) — EARLY dispatch
+                end
+            else Cache MISS — new story
+                W->>DB: INSERT INTO story_candidates (status=COLLECTING, collect_until=now+60s)
+                W->>DB: INSERT INTO discovery_tasks (story_candidate_id=sc_id, status=PENDING)
+                W->>R: SET story:dedup:{query_hash} = sc_id, TTL=300s
+                W->>DS: dispatch_story_candidate_task.apply_async(eta=collect_until)
+            end
+        end
     end
     deactivate W
 
-    %% Stage 2: Discovery Search
+    %% Stage 2: Story-First Search (fires after 60s collection window or early)
     activate DS
-    DS->>DB: SELECT * FROM discovery_tasks WHERE id = task_id
-    DB-->>DS: DiscoveryTask & Original Article
-    DS->>R: GET discovery:daily_searches_run:{date_str} (Check Budget)
-    DS->>R: SETNX discovery:search_lock:{query_hash}:{date_str}
-    DS->>DS: Transition status to SEARCHING
-    DS->>DS: Execute Provider Search (Google News RSS query)
-    DS->>DS: rank_and_filter_search_results() (Jaccard + RapidFuzz + NER overlap)
-    DS->>DS: Enforce domain diversity (keep only first result per domain)
-    DS->>DS: Decode Google News redirects concurrently
-    DS->>DB: INSERT INTO crawl_tasks (state: PENDING)
-    DS->>DB: Transition DiscoveryTask status to CRAWLING
-    DS->>DC: discovery_crawl_task.delay(crawl_task_id)
+    DS->>DB: SELECT * FROM story_candidates WHERE id = sc_id
+    DB-->>DS: StoryCandidate (status=COLLECTING or DISCOVERING)
+    alt status == DISCOVERING (early dispatch already ran)
+        DS->>DS: No-op return
+    else status == COLLECTING
+        DS->>DB: UPDATE status = DISCOVERING
+        DS->>R: GET discovery:daily_searches_run:{date} (Budget check)
+        DS->>R: SETNX discovery:search_lock:{query_hash}:{date}
+        DS->>DS: provider.search(normalized_query, max_results=45)
+        DS->>DS: rank_and_filter_search_results() — Jaccard + RapidFuzz + NER
+        DS->>DS: Inject original rss_sources URLs (domain-deduped)
+        DS->>DS: Tier-classify URLs (Tier 1=Reuters/AP/Bloomberg, Tier 2=CNN/NYT...)
+        DS->>DS: Concurrent provider.resolve_url() for Google News redirects
+        DS->>DB: INSERT INTO crawl_tasks (story_candidate_id, tier, status=PENDING)
+        DS->>DB: UPDATE story_candidates SET status = CRAWLING, urls_found = N
+        DS->>DC: discovery_crawl_task.delay(crawl_task_id) × N tasks
+    end
     deactivate DS
 
-    %% Stage 3: Crawl Queue Processing
+    %% Stage 3: Crawl Queue
     activate DC
     DC->>DB: SELECT * FROM crawl_tasks WHERE id = crawl_task_id
-    DB-->>DC: CrawlTask
-    DC->>R: GET discovery:daily_downloads_run:{date_str} (Check Budget)
-    DC->>R: url_bloom_filter.exists(url_hash) (Early Skip Check)
+    DB-->>DC: CrawlTask (with story_candidate_id)
+    DC->>R: GET discovery:daily_downloads_run:{date} (Budget check)
+    DC->>R: url_bloom_filter.exists(url_hash) (Early skip)
     DC->>DC: Transition status to CRAWLING
-    DC->>EM: crawl_article(crawl_url) (extraction chain)
+    DC->>EM: crawl_article(url) — extraction chain
     EM-->>DC: Clean Article Body
-    DC->>DB: SELECT id FROM articles WHERE url = crawl_url
-    DC->>DB: SELECT id FROM articles WHERE content_hash = crawled_content_hash
-    alt Is Duplicate URL or Content
-        DC->>DB: Transition CrawlTask status to SUCCESS (Outcome: DUPLICATE_*)
-    else Is Genuinely New Discovered Article
-        DC->>DB: INSERT INTO articles (embedding_status: pending, url_hash, content_hash)
+    DC->>DB: SELECT FROM articles WHERE url = crawl_url OR content_hash = ...
+    alt Duplicate URL or Content
+        DC->>DB: UPDATE crawl_tasks SET status=SUCCESS, outcome=DUPLICATE_*
+    else Genuinely New Article
+        DC->>DB: INSERT INTO articles (embedding_status=pending)
         DC->>R: url_bloom_filter.add(url_hash)
-        DC->>DB: Transition CrawlTask status to SUCCESS (Outcome: SUCCESS)
-        DC->>CS: add_article_to_existing_story_if_similar(article_id) (Downstream match)
+        DC->>DB: UPDATE crawl_tasks SET status=SUCCESS, outcome=SUCCESS
+        DC->>DB: UPDATE story_candidates SET articles_persisted += 1, urls_crawled += 1
+        DC->>CS: add_article_to_existing_story_if_similar(article_id)
     end
-    DC->>DB: Check if sibling crawl tasks are complete -> mark DiscoveryTask COMPLETE
+    DC->>DC: _check_story_candidate_completion()
+    alt All CrawlTasks terminal (SUCCESS or FAILED)
+        DC->>DB: UPDATE story_candidates SET status = READY
+        DC->>DB: UPDATE discovery_tasks SET status = COMPLETE
+    end
     deactivate DC
 ```
 
@@ -107,17 +113,19 @@ The Component Diagram shows dependencies, internal services, caching layers, and
 
 ```mermaid
 graph TB
-    subgraph Celery Beat Scheduling
+    subgraph "Celery Beat Scheduling"
         Beat[Celery Beat Scheduler]
     end
 
-    subgraph Background Workers
-        IngestWorker[Ingest News Worker]
-        SearchWorker[Search Discovery Worker]
-        CrawlWorker[Crawl Task Worker]
+    subgraph "Background Workers"
+        IngestWorker["Ingest News Worker\n(ingest_news_task)"]
+        SCWorker["StoryCandidate Worker\n(dispatch_story_candidate_task)"]
+        TimeoutWorker["Timeout Poller\n(poll_story_candidate_timeouts_task)"]
+        SearchWorker["Search Discovery Worker\n(discovery_search_task — legacy)"]
+        CrawlWorker["Crawl Task Worker\n(discovery_crawl_task)"]
     end
 
-    subgraph Service Layer
+    subgraph "Service Layer"
         IngService[IngestionService]
         GNewsService[GNewsService]
         CrawlerService[CrawlerService]
@@ -125,39 +133,45 @@ graph TB
         ClustService[ClusteringService]
     end
 
-    subgraph Data & Cache Layers
-        DB[(PostgreSQL DB)]
-        Redis[(Redis Caching & Queue)]
-        Qdrant[(Qdrant Vector DB)]
+    subgraph "Data & Cache Layers"
+        DB[("PostgreSQL DB")]
+        Redis[("Redis Caching & Queue")]
+        Qdrant[("Qdrant Vector DB")]
     end
 
-    subgraph External APIs
+    subgraph "External APIs"
         GoogleNews[Google News Feed / RSS]
         Tavily[Tavily Extract API]
         Firecrawl[Firecrawl Scrape API]
     end
 
     %% Scheduling triggers
-    Beat -->|1. Scheduled Trigger| IngestWorker
-    
-    %% Ingestion Flow
+    Beat -->|1. Every 15 min| IngestWorker
+    Beat -->|Every minute| TimeoutWorker
+
+    %% Story-First path
     IngestWorker --> IngService
     IngService -->|Fetch raw feed| GoogleNews
-    IngService --> CrawlerService
+    IngService -->|"2. Upsert StoryCandidate\n(STORY_FIRST_ENABLED=True)"| SCWorker
+    TimeoutWorker -->|Re-dispatch stuck COLLECTING| SCWorker
+    SCWorker --> GNewsService
+    SCWorker -->|"3. Tier-ordered CrawlTasks"| CrawlWorker
+
+    %% Legacy path (STORY_FIRST_ENABLED=False)
+    IngService -->|"2b. Legacy: crawl & dispatch\n(STORY_FIRST_ENABLED=False)"| SearchWorker
+    SearchWorker --> GNewsService
+    SearchWorker -->|3b. CrawlTasks| CrawlWorker
+
+    %% Crawl
+    CrawlWorker --> CrawlerService
     CrawlerService --> ExtManager
     ExtManager -->|Fetch HTML| Tavily
     ExtManager -->|Fetch HTML| Firecrawl
-    
-    %% Task Dispatches
-    IngService -->|2. Dispatch Search| SearchWorker
-    SearchWorker --> GNewsService
-    SearchWorker -->|3. Dispatch Crawl| CrawlWorker
-    CrawlWorker --> CrawlerService
-    
+
     %% Database and Caches
-    IngService & GNewsService & CrawlWorker --> DB
-    ExtManager & GNewsService & CrawlWorker --> Redis
-    CrawlWorker -->|4. Downstream Story Matching| ClustService
+    IngService & GNewsService & CrawlWorker & SCWorker --> DB
+    ExtManager & GNewsService & CrawlWorker & SCWorker --> Redis
+    CrawlWorker -->|"4. Downstream Story Matching"| ClustService
     ClustService --> Qdrant
 ```
 
@@ -171,20 +185,22 @@ NewsIQ distributes state across three main boundaries: relational storage (Postg
  ┌────────────────────────────────────────────────────────────────────────────┐
  │                                PostgreSQL                                  │
  │                                                                            │
- │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
- │  │    sources      │    │    articles     │    │ discovery_tasks │         │
- │  └────────┬────────┘    └────────┬────────┘    └────────┬────────┘         │
- │           │ 1                      │ 1                  │ 1                │
- │           │                        │                    │                  │
- │           │ *                      │ *                  │ *                │
- │  ┌────────▼────────┐    ┌────────▼────────┐    ┌────────▼────────┐         │
- │  │    articles     │    │ discovery_tasks │    │   crawl_tasks   │         │
- │  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
- └─────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                        Checks Bloom   │ Dispatches Crawl Tasks
-                        Filter & ID    │
-                                       ▼
+ │  ┌─────────────────┐    ┌─────────────────┐    ┌──────────────────────┐   │
+ │  │    sources      │    │    articles     │    │   story_candidates   │   │
+ │  └────────┬────────┘    └────────┬────────┘    └──────────┬───────────┘   │
+ │           │                      │                        │               │
+ │           │                      │              ┌─────────▼────────┐      │
+ │  ┌────────▼────────┐    ┌────────▼────────┐    │  discovery_tasks  │      │
+ │  │    articles     │    │ discovery_tasks │    └─────────┬────────┘      │
+ │  └─────────────────┘    └────────┬────────┘             │               │
+ │                                  │              ┌────────▼────────┐      │
+ │                                  └─────────────►│   crawl_tasks   │◄─────┘
+ │                                                 └─────────────────┘      │
+ └────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                         Checks Bloom   │ Dispatches Crawl Tasks
+                         Filter & ID    │
+                                        ▼
  ┌────────────────────────────────────────────────────────────────────────────┐
  │                                  Redis                                     │
  │                                                                            │
@@ -208,31 +224,37 @@ NewsIQ distributes state across three main boundaries: relational storage (Postg
 ## 2. Component & Process Breakdown
 
 ### 2.1 RSS Ingestion
-- **Purpose**: Polling and crawling articles from registered RSS feeds, checking for exact content duplication, and filtering high-priority articles to dispatch Google search topic discovery.
+- **Purpose**: Polling registered RSS feeds and routing entries through the **Story-First** or legacy Article-First path based on `STORY_FIRST_ENABLED`.
 - **Entry Point**: [tasks.py: ingest_news_task()](file:///c:/Users/zakau/NewsIQ/apps/api/app/workers/tasks.py#L161-L217)
 - **Primary Service**: [ingestion_service.py: IngestionService](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/ingestion_service.py#L32-L609)
-- **Celery Workflow**: Initiated periodically by Celery Beat on `app.workers.tasks.ingest_news_task`. If new articles are persisted (RSS or discovery), dispatches `app.workers.tasks.process_pending_embeddings_task` via `.delay()`.
+- **Celery Workflow**: Initiated periodically by Celery Beat on `app.workers.tasks.ingest_news_task` every 15 minutes.
 
-#### Step-by-Step Execution Flow
+#### Story-First Path (`STORY_FIRST_ENABLED=True`) — Default
+
 1. **Load Active Sources**: Queries PostgreSQL for all sources where `active = true`.
-2. **Fetch Feed XML**: Downloads RSS XML payload from `source.rss_url` using `httpx.AsyncClient` (15-second timeout).
-3. **Parse XML**: Normalizes feed using `feedparser.parse()`. Canonicalizes URLs using [utils.py: canonicalize_url()](file:///c:/Users/zakau/NewsIQ/apps/api/app/core/utils.py) (lowercases domains, strips tracking query parameters like `utm_*`).
-4. **URL Batch Check**: Executes a batch lookup against `articles` table to identify which URLs are already stored, filtering them out to avoid unnecessary crawling (PERF-01).
-5. **Concurrent Crawl**: Launches concurrent scrapers for new URLs using an `asyncio.Semaphore` bounded by `settings.CRAWLER_MAX_CONCURRENT_REQUESTS` (default: 5).
-6. **Fetch HTML & Parse Content**: Coordinates extraction attempts via [extraction_manager.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/extraction_manager.py):
-   - Check idempotency in Redis: `extraction:idempotency:{url_hash}` (TTL: 10m).
-   - **Attempt 1**: `LocalCrawlerProvider` (raw HTTP scrape via `httpx` falling back to Chrome/Safari impersonation on block/empty html). Parses content using `newspaper4k`, falling back to `trafilatura`, `readability-lxml`, and custom BeautifulSoup filters.
-   - **Attempt 2**: `TavilyExtractProvider` (Redis-based batching). Pushes url to Redis queue list `extraction:tavily_buffer`, acquires distributed leader lock `extraction:tavily_leader` (5s), flushes batch (up to 5 URLs) to Tavily Extract API, stores responses in Redis keys `extraction:result:{exec_id}`, status key `extraction:tavily_status:{exec_id}`. Leaders/workers poll status and return data.
-   - **Attempt 3**: `FirecrawlProvider` scraper API (final fallback).
-   - Updates `DomainExtractionPolicy` table in the DB.
-7. **Compute Fingerprints**: Generates `url_hash` and `content_hash` (SHA-256 of lowercase stripped clean text body) via [fingerprint.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/core/fingerprint.py).
-8. **Batch Duplicate Check**: Batch queries database for existing records matching the calculated `content_hash`es (PERF-02).
-9. **Persist Article**: Inserts records to PostgreSQL `articles` table. If a duplicate is found by content hash, populates `duplicate_of_article_id`.
-10. **Update Bloom Filter**: Pushes the new `url_hash` into Redis Bloom filter (`url_bloom_filter`).
-11. **Prioritize Discovery**: Computes discovery priority score:
-    $$\text{Score} = (0.35 \times \text{Freshness}) + (0.25 \times \text{Publisher Trust}) + (0.20 \times \text{Entity Count}) + (0.20 \times \text{Content Length})$$
-    Excludes opinion pieces, horoscopes, obituaries, weather, and sports scores.
-12. **Dispatch Discovery**: If Score $\ge 0.60$, normalizes the headline, generates `idempotency_key = google:{query_hash}:{date_bucket}`, inserts `DiscoveryTask` into the database in state `pending`, and dispatches `discovery_search_task.delay(task_id)`.
+2. **Fetch Feed XML**: Downloads RSS XML payload using `httpx.AsyncClient` (15-second timeout).
+3. **Parse XML**: Normalizes feed using `feedparser.parse()`. Canonicalizes URLs via `canonicalize_url()` (lowercases domains, strips `utm_*` params).
+4. **Metadata-Only Score**: Calls `calculate_metadata_score(title, description, pub_date, source_name)` for each entry.
+   - Gate: **Opinion / Editorial / Weather / Sports Scores filter** → score = -1 (skip)
+   - Gate: **Freshness** → score = -1 if `pub_date > 24h ago` (skip)
+   - Score formula (metadata-only, content weight redistributed): $\text{Score} = (0.45 \times \text{Freshness}) + (0.30 \times \text{Publisher Trust}) + (0.25 \times \text{Entity Count})$
+   - Threshold: `STORY_FIRST_SCORE_THRESHOLD = 0.25` (tuned independently of `DISCOVERY_SCORE_THRESHOLD = 0.50`)
+5. **Dedup + Upsert StoryCandidate** (`_upsert_story_candidate`):
+   - Computes `query_hash = SHA256(normalize_headline(title) + date_bucket)` 
+   - Redis `SETNX story:dedup:{query_hash}` → **miss** = new story, **hit** = attach to existing
+   - **New story**: INSERT `StoryCandidate` (status=`COLLECTING`, `collect_until=now+60s`) + INSERT `DiscoveryTask` → schedules `dispatch_story_candidate_task.apply_async(eta=collect_until)`
+   - **Existing story**: `_attach_rss_source()` appends publisher to `rss_sources` JSONB and increments `rss_source_count`. If count ≥ `STORY_FIRST_EARLY_DISPATCH_THRESHOLD (3)` → early dispatch fires immediately
+
+#### Legacy Article-First Path (`STORY_FIRST_ENABLED=False`)
+
+1. **URL Batch Check**: Batch lookup against `articles` table to identify existing URLs (PERF-01).
+2. **Concurrent Crawl**: Launches concurrent scrapers for new URLs (bounded by `CRAWLER_MAX_CONCURRENT_REQUESTS=5` semaphore).
+3. **Extraction Chain**: Routes through [extraction_manager.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/extraction_manager.py) — Local → Tavily → Firecrawl.
+4. **Compute Fingerprints**: Generates `url_hash` + `content_hash` (SHA-256 clean body).
+5. **Batch Dedup**: Queries `articles` by `content_hash IN (...)` (PERF-02).
+6. **Persist Article**: Inserts to `articles` table, sets `duplicate_of_article_id` if duplicate.
+7. **Update Bloom Filter**: Adds `url_hash` to Redis Bloom filter.
+8. **Score & Dispatch**: If `calculate_discovery_score() >= 0.60`, inserts `DiscoveryTask` and dispatches `discovery_search_task`.
 
 ---
 
@@ -487,9 +509,16 @@ WHERE id = '0190beec-1d90-7d12-92a1-da9024b11ac2';
 | `articles` | `SELECT` | `IngestionService._batch_existing_articles` | Bulk check existing URLs to avoid crawling duplicate articles. |
 | `articles` | `SELECT` | `IngestionService._persist_articles` | Bulk content hash query (`SELECT ... WHERE content_hash IN (...)`) to detect duplicate bodies. |
 | `articles` | `INSERT` | `IngestionService._persist_articles` | Save crawled article. Fields like `url_hash`, `content_hash`, and `duplicate_of_article_id` are persisted. |
-| `discovery_tasks` | `INSERT` | `IngestionService._dispatch_discovery` | Register search query task. Inserts `idempotency_key` with unique constraint to block duplicate queries. |
+| `story_candidates` | `INSERT` | `IngestionService._upsert_story_candidate` | Creates new StoryCandidate when a qualifying RSS headline is first seen. Status starts as `COLLECTING`. |
+| `story_candidates` | `UPDATE` | `IngestionService._attach_rss_source` | Appends publisher to `rss_sources` JSONB, increments `rss_source_count`. Triggers status → `DISCOVERING` on early dispatch. |
+| `story_candidates` | `UPDATE` | `dispatch_story_candidate_task` | Status → `CRAWLING`, sets `urls_found` count. |
+| `story_candidates` | `UPDATE` | `_check_story_candidate_completion` | Status → `READY` when all `CrawlTask`s complete. |
+| `story_candidates` | `UPDATE` | `discovery_crawl_task` | Increments `articles_persisted` and `urls_crawled` on each successful article insert. |
+| `discovery_tasks` | `INSERT` | `IngestionService._upsert_story_candidate` | Registers search query task linked to StoryCandidate via `story_candidate_id`. |
+| `discovery_tasks` | `INSERT` | `IngestionService._dispatch_discovery` | Legacy path: Register search query task. Inserts `idempotency_key` with unique constraint to block duplicate queries. |
 | `discovery_tasks` | `UPDATE` | `discovery_search_task` | Update task state (`searching`, `crawling`, `complete`, `search_failed`). |
-| `crawl_tasks` | `INSERT` | `discovery_search_task` | Register crawled URLs found from search provider. |
+| `crawl_tasks` | `INSERT` | `dispatch_story_candidate_task` | Registers crawled URLs with `story_candidate_id`, `tier` (1–3), in tier order. |
+| `crawl_tasks` | `INSERT` | `discovery_search_task` | Legacy path: Register crawled URLs found from search provider. |
 | `crawl_tasks` | `UPDATE` | `discovery_crawl_task` | Update state (`crawling`, `success`, `failed`), set retry counts, log `last_error`. |
 | `domain_extraction_policies` | `SELECT` / `INSERT` / `UPDATE` | `ExtractionManager._update_domain_policy` | Record metrics (success rates, latencies) per domain to evaluate future scraper efficiency. |
 
@@ -502,6 +531,7 @@ Redis handles three critical functions in this pipeline: distributed locking, Bl
 | Key Name | Type | Purpose | TTL | Lifecycle |
 | :--- | :--- | :--- | :--- | :--- |
 | `url_bloom_filter` | Redis Bloom | Tracks crawled and duplicate URLs to allow fast early-skip checks. | Permanent | Checked at start of `discovery_crawl_task`; updated on successful article persistence. |
+| `story:dedup:{query_hash}` | String | **[Story-First]** Dedup sentinel for `StoryCandidate`. SHA256 of `normalize_headline(title) + date_bucket`. Value = `story_candidate_id`. | 300s (configurable `STORY_CANDIDATE_DEDUP_TTL`) | Set via `SETNX` in `_upsert_story_candidate`. Hit = attach to existing; miss = create new. |
 | `gnews:lock:{category}:{country}` | String | Rate-limit guard to avoid hitting GNews endpoints too frequently. | 25 mins | Created when querying headlines; blocks subsequent fetches within TTL. |
 | `discovery:daily_searches_run:{date_str}` | String | Daily budget counter for search queries. | 36 hours | Atomically incremented using Redis `incr` at the start of a discovery search. |
 | `discovery:daily_downloads_run:{date_str}` | String | Daily budget counter for article crawled/downloaded. | 36 hours | Atomically incremented using Redis `incr` at the start of a crawl task. |
@@ -517,7 +547,34 @@ Redis handles three critical functions in this pipeline: distributed locking, Bl
 
 ## 5. State Machine Lifecycles
 
-### 5.1 DiscoveryTask State Machine
+### 5.1 StoryCandidateState Machine *(Story-First — New)*
+```
+   ┌────────────┐
+   │ COLLECTING │  ← Created by _upsert_story_candidate, ETA task queued
+   └─────┬──────┘
+         │ collect_until reached OR rss_source_count >= 3 (early dispatch)
+         ▼
+   ┌─────────────┐
+   │ DISCOVERING │  ← dispatch_story_candidate_task starts search
+   └─────┬───────┘
+         │ Search completes, CrawlTasks created
+         ▼
+   ┌──────────┐
+   │ CRAWLING │  ← CrawlTasks dispatched
+   └────┬─────┘
+        │ _check_story_candidate_completion() triggered after each CrawlTask
+        │ All CrawlTasks are terminal (SUCCESS or FAILED)
+        ▼
+   ┌─────────┐
+   │  READY  │  ← Available for clustering
+   └─────────┘
+
+Alternate paths:
+   COLLECTING → (collect_until exceeded, worker was down) → poll_story_candidate_timeouts_task → re-dispatches
+   DISCOVERING → (search budget exhausted) → EXPIRED
+```
+
+### 5.2 DiscoveryTask State Machine
 ```
    ┌─────────┐
    │ PENDING │
@@ -549,7 +606,7 @@ Redis handles three critical functions in this pipeline: distributed locking, Bl
   └───────────┘
 ```
 
-### 5.2 CrawlTask State Machine
+### 5.3 CrawlTask State Machine
 ```
       ┌─────────┐
       │ PENDING │
@@ -601,37 +658,50 @@ The following table summarizes the concurrency, synchronization method, executio
 
 ## 7. Storage Map: Data Lifecycle Tracking
 
-Relational, cache, vector, and memory scopes are mapped below for a single article's lifecycle:
+Relational, cache, vector, and memory scopes are mapped below for a single article's lifecycle through the **Story-First** pipeline:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │ 1. RSS XML Entry                                                                       │
-│    Memory / Temporary parsed dict                                                      │
+│    Memory / Temporary parsed dict (title, link, description, pubDate, source)          │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 2. Canonicalization                                                                    │
-│    Transforms raw URL parameters into standard formats (Memory object)                 │
+│ 2. Metadata-Only Score                                                                 │
+│    calculate_metadata_score() → opinion/stale gate → freshness + trust + entity score  │
+│    score < STORY_FIRST_SCORE_THRESHOLD (0.25) → skip; score ≥ 0.25 → proceed           │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 3. Bloom Filter Query                                                                  │
-│    Checks url_hash exists in Redis Bloom Filter. If hit, skips; if miss, proceeds      │
+│ 3. StoryCandidate Dedup Check                                                          │
+│    Redis SETNX story:dedup:{SHA256(normalized_headline + date_bucket)}                  │
+│    HIT → _attach_rss_source() (append publisher, maybe early dispatch)                 │
+│    MISS → INSERT story_candidates (COLLECTING) + INSERT discovery_tasks (PENDING)      │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 4. Crawler Extraction                                                                  │
-│    Tries local fetch, Tavily (using Redis Tavily Buffer), and Firecrawl.               │
+│ 4. 60-Second Collection Window                                                         │
+│    ETA task queued: dispatch_story_candidate_task.apply_async(eta=collect_until)        │
+│    Other RSS sources attach during window (rss_source_count++)                          │
+│    If count ≥ 3: early dispatch fires, StoryCandidate → DISCOVERING                    │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 5. Fingerprinting                                                                      │
-│    Calculates URL and Content hashes (Memory object)                                   │
+│ 5. Discovery Search                                                                    │
+│    dispatch_story_candidate_task: provider.search() → rank_and_filter_search_results() │
+│    Injects original rss_sources URLs (domain-deduped)                                  │
+│    Tier-classifies URLs: Tier 1 (Reuters/AP/Bloomberg) → Tier 3 (unknown)              │
+│    Concurrent URL resolution (Google News redirect decode)                              │
+│    INSERT crawl_tasks (story_candidate_id, tier, status=PENDING) in tier order         │
+│    story_candidates → CRAWLING                                                         │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 6. PostgreSQL Persistence                                                              │
-│    Saves record to articles table. Sets duplicate_of_article_id if duplicate.          │
+│ 6. Concurrent Distributed Crawl                                                        │
+│    discovery_crawl_task × N (one per CrawlTask, dispatched in tier order)              │
+│    Bloom filter check → extract via ExtractionManager (Local → Tavily → Firecrawl)     │
+│    Fingerprint (url_hash, content_hash) → dedup check → INSERT articles                │
+│    story_candidates.articles_persisted += 1, urls_crawled += 1                         │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ 7. Redis Bloom Filter Add                                                              │
 │    Inserts url_hash to url_bloom_filter to prevent future scrapes                      │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 8. Discovery Score Check                                                               │
-│    If prioritized, inserts DiscoveryTask in PostgreSQL and schedules search task       │
+│ 8. StoryCandidate Completion Check                                                     │
+│    _check_story_candidate_completion() after each CrawlTask terminal state              │
+│    All CrawlTasks done → story_candidates → READY                                      │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 9. Google News Search & Crawl Queue                                                    │
-│    Dispatches CrawlTask to Celery. Crawled content is validated, parsed, and           │
-│    saved to articles table. url_hash pushed to Redis url_bloom_filter                  │
+│ 9. Downstream Story Matching                                                           │
+│    clustering_service.add_article_to_existing_story_if_similar(article_id)             │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ 10. Vector Embedding Queue                                                             │
 │     Triggers process_pending_embeddings_task, generates vector, and saves in Qdrant    │
@@ -644,127 +714,171 @@ Relational, cache, vector, and memory scopes are mapped below for a single artic
 
 - [tasks.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/workers/tasks.py)
   - `ingest_news_task`: Scheduled worker job that triggers RSS source ingestion.
-  - `discovery_search_task`: Task that runs Google News search based on query and creates CrawlTasks.
-  - `discovery_crawl_task`: Crawls, deduplicates, and saves discovered articles.
+  - `dispatch_story_candidate_task`: **[Story-First]** Core search + CrawlTask orchestration for a StoryCandidate. Runs in `discovery_search` queue.
+  - `poll_story_candidate_timeouts_task`: **[Story-First]** Safety net — runs every minute, re-dispatches COLLECTING StoryCandidates past `collect_until`.
+  - `_check_story_candidate_completion`: **[Story-First]** Helper — advances StoryCandidate → READY when all CrawlTasks complete.
+  - `discovery_search_task`: Legacy path — runs Google News search based on query, creates CrawlTasks.
+  - `discovery_crawl_task`: Crawls, deduplicates, and saves discovered articles. Now updates StoryCandidate funnel metrics.
   - `poll_discovery_retries_task`: Re-dispatches expired PENDING/RETRYING tasks.
   - `cleanup_discovery_tasks_task`: GC task to remove complete/failed/expired tasks.
   - `discovery_grouping_task`: Periodically groups READY discovery queue items into stories.
 - [ingestion_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/ingestion_service.py)
-  - `IngestionService.ingest_rss_source`: Fetches and processes a single RSS feed.
-  - `IngestionService.calculate_discovery_score`: Performs weighted quality heuristics.
-  - `IngestionService._dispatch_discovery`: Creates `DiscoveryTask` and schedules search tasks.
-  - `IngestionService.normalize_headline`: Normalizes titles for query standardization.
+  - `IngestionService.ingest_rss_source`: Feature-flag router — Story-First or Article-First path.
+  - `IngestionService.calculate_metadata_score`: **[Story-First]** Metadata-only scorer (no content required). Threshold: `STORY_FIRST_SCORE_THRESHOLD=0.25`.
+  - `IngestionService._ingest_rss_story_first`: **[Story-First]** Main Story-First loop.
+  - `IngestionService._upsert_story_candidate`: **[Story-First]** SHA256 dedup + StoryCandidate create/attach logic.
+  - `IngestionService._attach_rss_source`: **[Story-First]** Publisher attachment + early dispatch trigger.
+  - `IngestionService.calculate_discovery_score`: Legacy Article-First scorer. Threshold: `DISCOVERY_SCORE_THRESHOLD=0.50`.
+  - `IngestionService._dispatch_discovery`: Legacy path — creates DiscoveryTask and schedules search tasks. Annotated as deprecated.
+  - `IngestionService.normalize_headline`: Normalizes titles for query standardization (shared by both paths).
 - [gnews_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/gnews_service.py)
   - `GNewsService._resolve_source`: Finds or auto-creates source matching name/slug/domain.
-  - `GNewsService.rank_and_filter_search_results`: Computes Jaccard/Fuzz score to rank candidates.
+  - `GNewsService.rank_and_filter_search_results`: Computes Jaccard/Fuzz score to rank candidates (used by both `dispatch_story_candidate_task` and `discovery_search_task`).
 - [crawler_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/crawler_service.py)
   - `CrawlerService.fetch_html`: Implements progressive local fetch strategy.
 - [extraction_manager.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/extraction_manager.py)
   - `ExtractionManager.crawl_article`: Orchestrates local crawler, Tavily Extract, and Firecrawl.
   - `ExtractionManager.extract_via_tavily_batch`: Coordinates Redis-based Tavily batch queues.
-- [discovery_manager.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/discovery_manager.py)
-  - `DiscoveryManager.enqueue_article`: Pushes unclustered articles to the `DiscoveryQueue` table.
-  - `DiscoveryManager.check_triggers_and_group`: Groups pending items to `READY` state.
-  - `DiscoveryManager.promote_clusters`: Creates new Stories from READY clusters.
 - [models.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/models/models.py)
+  - `StoryCandidate`: **[Story-First]** Central orchestration record. `rss_sources` (JSONB), `collect_until`, `rss_source_count`, funnel metrics.
+  - `StoryCandidateState`: **[Story-First]** Enum: `COLLECTING → DISCOVERING → CRAWLING → READY → CLUSTERED → EXPIRED`.
   - `Article`: Represents ingested/discovered articles.
-  - `DiscoveryQueue`: Groups unclustered articles for clustering.
-  - `DiscoveryTask`: Relational state of search discovery.
-  - `CrawlTask`: Relational state of crawled URLs.
+  - `DiscoveryTask`: Relational state of search discovery. Now has `story_candidate_id` FK (nullable).
+  - `CrawlTask`: Relational state of crawled URLs. Now has `story_candidate_id` FK and `tier` column.
   - `DomainExtractionPolicy`: Performance metrics tracking per domain.
+- [celery_app.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/workers/celery_app.py)
+  - `dispatch_story_candidate_task` routed to `discovery_search` queue.
+  - `poll_story_candidate_timeouts_task` in Beat schedule (every minute).
+- [config.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/core/config.py)
+  - `STORY_FIRST_ENABLED` (bool, default=True)
+  - `STORY_FIRST_SCORE_THRESHOLD` (float, default=0.25)
+  - `STORY_CANDIDATE_COLLECTION_WINDOW_SECONDS` (int, default=60)
+  - `STORY_FIRST_EARLY_DISPATCH_THRESHOLD` (int, default=3)
+  - `CRAWL_TIER_1_PUBLISHERS`, `CRAWL_TIER_2_PUBLISHERS` (lists)
 
 ---
 
 ## 9. Architectural Review & Recommendations
 
 ### 9.1 Evaluation of Alignment
-The codebase exhibits a robust implementation of the progressive crawl hierarchy and distributed batch coordination. However, a major architectural coupling exists between the **Search Discovery** phase and the **GNews Ingestion** service. 
-
-Several utility methods and metrics updates are placed in [gnews_service.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/services/gnews_service.py) (e.g. `_resolve_source`, `_incr_metric`, `rank_and_filter_search_results`) but are called directly during the general RSS ingestion and general CrawlTask lifecycle. This mixes responsibilities: the GNews ingestion module should only be one client of the discovery pipeline, rather than containing the utility methods used by the generic crawler tasks.
+The codebase now implements the Story-First architecture described in Section 10. The legacy Article-First path is preserved but annotated as deprecated. The key architectural change is that `StoryCandidate` is the primary orchestration record for RSS-derived ingestion, eliminating the original coupling between article crawling and story discovery.
 
 ### 9.2 Technical Debt & Vulnerabilities
-1. **Coupled Source Resolution**: The method `gnews_service._resolve_source` is imported and used by [tasks.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/workers/tasks.py) inside `discovery_crawl_task` even if the crawled URL was discovered via standard RSS (not GNews API). This violates separation of concerns.
-2. **Synchronous NER Proper-Noun Loop**: Inside `IngestionService.calculate_discovery_score`, calls to `ner_service_v2.extract_entities_sync` are made synchronously. If feed volumes surge, this synchronous CPU-heavy loop will block Celery event loops on workers.
-3. **Transaction Rollbacks on Savepoints**: During `_resolve_source` execution, a nested transaction (`session.begin_nested()`) is created to handle concurrent source creation. Although robust, high concurrency might lead to frequent savepoint rollbacks, slowing PostgreSQL processing.
+1. **Coupled Source Resolution** *(still outstanding)*: The method `gnews_service._resolve_source` is imported and used by [tasks.py](file:///c:/Users/zakau/NewsIQ/apps/api/app/workers/tasks.py) inside `discovery_crawl_task` even if the crawled URL was discovered via the Story-First path. Tracked for future refactor into a standalone `SourceService`.
+2. **Synchronous NER Proper-Noun Loop** *(still outstanding)*: Inside `IngestionService.calculate_discovery_score` and `calculate_metadata_score`, calls to `ner_service_v2.extract_entities_sync` are made synchronously. High feed volume will block Celery event loops. Future: transition to `asyncio.to_thread`.
+3. **Transaction Rollbacks on Savepoints** *(still outstanding)*: During `_resolve_source` execution, a nested transaction (`session.begin_nested()`) is created to handle concurrent source creation. High concurrency may lead to frequent savepoint rollbacks.
 
-### 9.3 Recommended Optimizations
-- **Decouple Source Resolution**: Relocate source resolution helpers from `GNewsService` to a separate standalone `SourceService`.
-- **Asynchronous NER Calls**: Transition `extract_entities_sync` to an async version or run it within a thread pool (`asyncio.to_thread`) to prevent blocking the Celery worker process.
-- **Cache Scraper Decisions**: Use Redis to cache domain failures (e.g., if a domain regularly blocks the local crawler, immediately skip attempt 1 and route to attempt 2/3 for 24 hours to reduce latency).
+### 9.3 Recommendations Status
 
----
-
-## 10. Proposed "Story-First" (Metadata-Only) Ingestion Architecture
-
-### 10.1 Conceptual Overview
-The proposed "Story-First" model refines ingestion by treating the incoming RSS feed strictly as **metadata**. Instead of immediately crawling the RSS article URL (which hits the same domain repeatedly and downloads content that might not qualify as a multi-source story), the pipeline delays all crawling until a story context is established.
-
-### 10.2 Workflow Comparison
-
-```
-Current Pipeline:
-[RSS Feed] ──► [Crawl Original Article] ──► [Persist] ──► [Discovery Check] ──► [Discovery Search] ──► [Crawl Rest of URLs]
-
-Proposed "Story-First" Pipeline:
-[RSS Feed] ──► [Evaluate Metadata Score] ──► [Discovery Search] ──► [Remove Duplicate Domains] ──► [Create StoryCandidate] ──► [Distributed Crawl (All URLs)] ──► [Persist & Cluster]
-```
-
-### 10.3 Execution Flow Sequence
-
-1. **RSS Feed Fetch**: Downloads feed XML and parses entry metadata (Title, Link, Source, Published Date, Description).
-2. **Metadata-Only Discovery Score**: Evaluates the article quality prior to any crawl operations, filtering out editorials or sports news based on the description and title.
-3. **Google News Discovery Search**: Uses the normalized title to query Google News for coverage.
-4. **Domain De-duplication**: Filters the search results to keep only the top scoring, unique domains. If the search results include the original domain (e.g. Reuters), duplicates of that domain are removed to distribute the requests.
-5. **Create StoryCandidate**: Instantiates a temporary tracking object `StoryCandidate` containing the query, first-seen timestamp, and list of unique candidate URLs (including the original RSS URL).
-6. **Distributed Crawl**: Crawls the collection of URLs concurrently. Because they belong to different domains, requests are naturally distributed, avoiding rate-limiting on any single domain.
-7. **Batch Persistence**: Persists all successfully scraped articles in a single transactional batch.
-8. **Story Clustering**: Immediately groups the set into a multi-source Story.
+| Recommendation | Status |
+|---|---|
+| Decouple Source Resolution into `SourceService` | ⏳ Not yet — planned for follow-up PR |
+| Async NER calls (`asyncio.to_thread`) | ⏳ Not yet — open issue |
+| Cache scraper domain failures (skip local → Tavily in Redis) | ⏳ Not yet |
+| **Story-First ingestion (metadata-only + StoryCandidate)** | ✅ **Implemented** (`feature/story-first-ingestion`) |
+| **Independent metadata score threshold (`STORY_FIRST_SCORE_THRESHOLD`)** | ✅ **Implemented** |
+| **60s collection window + early dispatch** | ✅ **Implemented** |
+| **Tier-ordered CrawlTask dispatch** | ✅ **Implemented** |
+| **Safety net: `poll_story_candidate_timeouts_task`** | ✅ **Implemented** |
 
 ---
 
-### 10.4 Concrete Data Examples (Story-First Ingestion)
+## 10. Story-First Ingestion Architecture *(Implemented)*
 
-#### Stage 1: Incoming RSS Entry (Metadata-Only)
+> [!IMPORTANT]
+> **Status**: This architecture was proposed in the original audit and has been **fully implemented** on branch `feature/story-first-ingestion` (commit `e26e878`, 2026-07-15). The descriptions below reflect the **current production code**, not a proposal.
+
+### 10.1 Overview
+The Story-First model treats the incoming RSS feed strictly as **metadata**. Instead of immediately crawling the RSS article URL (which hits the same domain repeatedly and downloads content that might not qualify as a multi-source story), the pipeline delays all crawling until a story context is established via a 60-second collection window.
+
+### 10.2 Pipeline Comparison
+
+```
+Legacy Article-First (STORY_FIRST_ENABLED=False):
+[RSS Feed] ──► [Crawl Original Article] ──► [Persist] ──► [Score] ──► [discovery_search_task] ──► [Crawl URLs]
+
+Story-First (STORY_FIRST_ENABLED=True — Default):
+[RSS Feed] ──► [calculate_metadata_score()] ──► [Redis SETNX dedup] ──► [StoryCandidate COLLECTING]
+    ──► [60s window] ──► [dispatch_story_candidate_task]
+    ──► [search + rank + tier] ──► [CrawlTasks (Tier 1→3)] ──► [Persist + Cluster]
+```
+
+### 10.3 Key Design Decisions
+
+| Decision | Value | Rationale |
+|---|---|---|
+| Collection window | 60 seconds | Gives Google News time to index the same event across multiple publishers |
+| Score threshold | 0.25 (vs 0.50 Article-First) | Metadata-only scoring lacks content length signal; tuned independently |
+| Early dispatch trigger | 3 publishers | No need to wait 60s if 3 sources are already covering the story |
+| Max search results | 15 × 3 = 45 fetched, 7 crawled | Balance coverage vs cost |
+| Tier 1 publishers | Reuters, AP, Bloomberg, BBC, Guardian | Crawled first; highest trust/quality |
+| URL resolution | Concurrent (asyncio.gather) | Resolve Google News redirects without blocking |
+| Safety net | `poll_story_candidate_timeouts_task` every minute | Recovers COLLECTING entries if worker was down |
+
+### 10.4 Concrete Data Example
+
+#### Stage 1: RSS Entry (Metadata-Only)
 ```json
 {
   "title": "US announces new semiconductor trade rules",
   "link": "https://www.reuters.com/business/us-announces-semiconductor-trade-rules-2026-07-15",
   "source": "Reuters",
-  "published_at": "2026-07-15T10:00:00",
-  "description": "The Biden administration unveiled updated guidelines restricting certain microchip exports to foreign markets."
+  "published_at": "2026-07-15T10:00:00Z",
+  "description": "The Biden administration unveiled updated guidelines restricting certain microchip exports."
 }
 ```
 
-#### Stage 2: Discovery Search Output
-Google News RSS yields:
-1. `https://news.google.com/articles/reuters-us-chip-rules-news` (Reuters)
-2. `https://news.google.com/articles/bloomberg-export-restrictions` (Bloomberg)
-3. `https://news.google.com/articles/reuters-semiconductors-us` (Reuters - Duplicate Domain)
-4. `https://news.google.com/articles/bbc-chip-export-curbs` (BBC)
-5. `https://news.google.com/articles/dw-us-restricts-china-chips` (DW)
+`calculate_metadata_score()` → score = 0.71 (fresh, Reuters tier-1 trust, 4 entities) → qualifies
 
-#### Stage 3: Duplicate Domain Filter
-- Bloomberg -> `bloomberg.com` (Retained)
-- Reuters -> `reuters.com` (Retained)
-- Reuters Duplicate -> `reuters.com` (Discarded)
-- BBC -> `bbc.co.uk` (Retained)
-- DW -> `dw.com` (Retained)
-
-#### Stage 4: StoryCandidate Object Creation
+#### Stage 2: StoryCandidate Created
 ```json
 {
-  "candidate_id": "0190beec-23d2-7fb2-bc32-da9184a22c1e",
-  "headline_query": "us announces new semiconductor trade rules",
-  "urls": [
-    "https://www.reuters.com/business/us-announces-semiconductor-trade-rules-2026-07-15",
-    "https://www.bloomberg.com/news/export-restrictions",
-    "https://www.bbc.co.uk/news/chip-export-curbs",
-    "https://www.dw.com/en/us-restricts-chips"
-  ],
-  "state": "DISCOVERED"
+  "id": "0190beec-23d2-7fb2-bc32-da9184a22c1e",
+  "normalized_query": "us announces new semiconductor trade rules",
+  "status": "collecting",
+  "rss_sources": [{"publisher": "Reuters", "url": "https://reuters.com/...", "score": 0.71}],
+  "rss_source_count": 1,
+  "collect_until": "2026-07-15T10:01:00Z",
+  "urls_found": 0, "urls_crawled": 0, "articles_persisted": 0
 }
 ```
 
-#### Stage 5: Crawl, Persist & Cluster
-All four URLs are crawled concurrently. They are verified and persisted, then clustered directly into `Story` #`0190beec-24b8-7c01-ac19-bda914aa1c8f` containing the four articles.
+Redis: `SETNX story:dedup:{sha256} = 0190beec-...` (TTL=300s)
 
+ETA task: `dispatch_story_candidate_task.apply_async(eta=2026-07-15T10:01:00Z)`
+
+#### Stage 3: Discovery Search (after 60s)
+`dispatch_story_candidate_task` fires:
+- `provider.search("us announces new semiconductor trade rules")` → 45 raw results
+- `rank_and_filter_search_results()` → 6 after domain diversity filter
+- Inject Reuters source URL (already in `rss_sources`)
+- Tier-classify: Reuters=T1, Bloomberg=T1, BBC=T1, CNN=T2, DW=T3
+- Resolve Google News redirects concurrently
+- INSERT 6 `CrawlTask` rows in tier order, `story_candidate_id` set on all
+- `story_candidates` → `CRAWLING`, `urls_found=6`
+
+#### Stage 4: Tier-Ordered CrawlTask Output
+```json
+[
+  {"url": "https://reuters.com/...", "tier": 1, "status": "pending"},
+  {"url": "https://bloomberg.com/...", "tier": 1, "status": "pending"},
+  {"url": "https://bbc.co.uk/...", "tier": 1, "status": "pending"},
+  {"url": "https://cnn.com/...", "tier": 2, "status": "pending"},
+  {"url": "https://dw.com/...", "tier": 3, "status": "pending"}
+]
+```
+
+#### Stage 5: Completion
+All 5 URLs crawled concurrently. Each success increments `StoryCandidate.articles_persisted`. When all CrawlTasks are terminal:
+- `_check_story_candidate_completion()` → `story_candidates` → `READY`
+- `DiscoveryTask` → `COMPLETE`
+- Articles flow to `clustering_service` → matched into multi-source Story
+
+### 10.5 Rollback
+
+Set `STORY_FIRST_ENABLED=False` in env to revert to legacy Article-First path. No migration needed for existing rows (all new columns are nullable).
+
+Full schema rollback:
+```bash
+alembic downgrade 1af5d702f838
+```
