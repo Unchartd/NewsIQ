@@ -379,17 +379,17 @@ class CrawlerService:
                 newsiq_crawler_timeout_total.inc()
             logger.warning("Attempt 2 (curl-cffi): error for %s — %s", url, exc)
 
-        # ── Attempt 3: curl-cffi safari17_2 — Safari TLS fingerprint ──────────
-        # safari17_2 emits a distinct JA3/JA4 fingerprint vs. Chrome, giving
+        # ── Attempt 3: curl-cffi safari17_0 — Safari TLS fingerprint ──────────
+        # safari17_0 emits a distinct JA3/JA4 fingerprint vs. Chrome, giving
         # a different bypass path against WAFs that fingerprint TLS.
         # Paired with Chrome 124 macOS headers (BROWSER_PROFILES[2]) which
         # are consistent with a macOS browser — avoids Windows UA + Safari TLS
         # mismatch that advanced detectors flag.
-        logger.info("Attempt 3 (curl-cffi safari17_2): fetching %s", url)
+        logger.info("Attempt 3 (curl-cffi safari17_0): fetching %s", url)
         try:
             from curl_cffi.requests import AsyncSession
 
-            async with AsyncSession(impersonate="safari17_2") as session:
+            async with AsyncSession(impersonate="safari17_0") as session:
                 response = await session.get(
                     url,
                     timeout=45.0,
@@ -402,12 +402,12 @@ class CrawlerService:
                     html = response.text
                     if not html or not html.strip():
                         self._record_failure(
-                            "EMPTY_HTML", "curl_cffi_safari17_2", diagnostics, status
+                            "EMPTY_HTML", "curl_cffi_safari17_0", diagnostics, status
                         )
                         logger.warning("Attempt 3 (curl-cffi safari): empty HTML for %s", url)
                     elif self.check_bot_blocking(html):
                         self._record_failure(
-                            "BOT_BLOCKED", "curl_cffi_safari17_2", diagnostics, status
+                            "BOT_BLOCKED", "curl_cffi_safari17_0", diagnostics, status
                         )
                         newsiq_crawler_http_failure_total.labels(
                             reason="bot_blocked_curl_safari"
@@ -417,23 +417,23 @@ class CrawlerService:
                         )
                     else:
                         return self._finalize(
-                            html, "curl_cffi_safari17_2", status, diagnostics, start_time
+                            html, "curl_cffi_safari17_0", status, diagnostics, start_time
                         )
 
                 elif status in (401, 403):
-                    self._record_failure("BOT_BLOCKED", "curl_cffi_safari17_2", diagnostics, status)
+                    self._record_failure("BOT_BLOCKED", "curl_cffi_safari17_0", diagnostics, status)
                     newsiq_crawler_http_failure_total.labels(reason=f"curl_safari_{status}").inc()
                     logger.warning("Attempt 3 (curl-cffi safari): %d for %s", status, url)
 
                 else:
-                    self._record_failure("HTTP_ERROR", "curl_cffi_safari17_2", diagnostics, status)
+                    self._record_failure("HTTP_ERROR", "curl_cffi_safari17_0", diagnostics, status)
                     newsiq_crawler_http_failure_total.labels(reason=f"curl_safari_{status}").inc()
                     logger.warning("Attempt 3 (curl-cffi safari): HTTP %d for %s", status, url)
 
         except Exception as exc:
             is_timeout = "timeout" in str(exc).lower()
             reason = "TIMEOUT" if is_timeout else "HTTP_ERROR"
-            self._record_failure(reason, "curl_cffi_safari17_2", diagnostics)
+            self._record_failure(reason, "curl_cffi_safari17_0", diagnostics)
             newsiq_crawler_http_failure_total.labels(
                 reason=f"curl_safari_{type(exc).__name__}"
             ).inc()

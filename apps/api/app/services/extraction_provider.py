@@ -88,7 +88,7 @@ class LocalCrawlerProvider(ExtractionProvider):
         if parsed and parsed.get("content"):
             res.success = True
             res.title = parsed.get("title")
-            res.content = parsed.get("content")
+            res.content = parsed["content"]
             res.author = parsed.get("author")
             res.image_url = parsed.get("image_url")
             res.published_at = parsed.get("published_at")
@@ -100,7 +100,7 @@ class LocalCrawlerProvider(ExtractionProvider):
         if parsed and parsed.get("content"):
             res.success = True
             res.title = parsed.get("title")
-            res.content = parsed.get("content")
+            res.content = parsed["content"]
             res.author = parsed.get("author")
             res.published_at = parsed.get("published_at")
             res.failure = ExtractionFailure.SUCCESS
@@ -111,7 +111,7 @@ class LocalCrawlerProvider(ExtractionProvider):
         if parsed and parsed.get("content"):
             res.success = True
             res.title = parsed.get("title")
-            res.content = parsed.get("content")
+            res.content = parsed["content"]
             res.failure = ExtractionFailure.SUCCESS
             res.diagnostics.notes.append("extractor: readability-lxml")
             return res
@@ -120,7 +120,7 @@ class LocalCrawlerProvider(ExtractionProvider):
         if parsed and parsed.get("content"):
             res.success = True
             res.title = parsed.get("title")
-            res.content = parsed.get("content")
+            res.content = parsed["content"]
             res.failure = ExtractionFailure.SUCCESS
             res.diagnostics.notes.append("extractor: custom-bs4")
             return res

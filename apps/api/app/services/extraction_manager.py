@@ -105,13 +105,14 @@ class ExtractionManager:
             await self._set_idempotency_cache(idempotency_key, local_res)
             return self._to_legacy_dict(local_res)
 
+        failure_reason = local_res.failure.value if local_res.failure else "unknown"
         logger.warning("Local extraction failed for %s. Reason: %s", url, local_res.failure)
         newsiq_crawler_provider_failure_total.labels(provider="local").inc()
         newsiq_crawler_provider_failure_total_v2.labels(
-            provider="local", failure_reason=local_res.failure.value, domain=domain
+            provider="local", failure_reason=failure_reason, domain=domain
         ).inc()
         newsiq_crawler_failure_reason_total.labels(
-            provider="local", failure_reason=local_res.failure.value, domain=domain
+            provider="local", failure_reason=failure_reason, domain=domain
         ).inc()
 
         # Failure Classification: Stop immediately on 404 / Gone
@@ -155,13 +156,14 @@ class ExtractionManager:
             await self._set_idempotency_cache(idempotency_key, tavily_res)
             return self._to_legacy_dict(tavily_res)
 
+        failure_reason = tavily_res.failure.value if tavily_res.failure else "unknown"
         logger.warning("Tavily extraction failed for %s. Reason: %s", url, tavily_res.failure)
         newsiq_crawler_provider_failure_total.labels(provider="tavily").inc()
         newsiq_crawler_provider_failure_total_v2.labels(
-            provider="tavily", failure_reason=tavily_res.failure.value, domain=domain
+            provider="tavily", failure_reason=failure_reason, domain=domain
         ).inc()
         newsiq_crawler_failure_reason_total.labels(
-            provider="tavily", failure_reason=tavily_res.failure.value, domain=domain
+            provider="tavily", failure_reason=failure_reason, domain=domain
         ).inc()
 
         # 4. Attempt 3: Firecrawl Scrape (final synchronous fallback)
@@ -202,13 +204,14 @@ class ExtractionManager:
             await self._set_idempotency_cache(idempotency_key, firecrawl_res)
             return self._to_legacy_dict(firecrawl_res)
 
+        failure_reason = firecrawl_res.failure.value if firecrawl_res.failure else "unknown"
         logger.error("All extraction providers failed for URL: %s", url)
         newsiq_crawler_provider_failure_total.labels(provider="firecrawl").inc()
         newsiq_crawler_provider_failure_total_v2.labels(
-            provider="firecrawl", failure_reason=firecrawl_res.failure.value, domain=domain
+            provider="firecrawl", failure_reason=failure_reason, domain=domain
         ).inc()
         newsiq_crawler_failure_reason_total.labels(
-            provider="firecrawl", failure_reason=firecrawl_res.failure.value, domain=domain
+            provider="firecrawl", failure_reason=failure_reason, domain=domain
         ).inc()
         return self._to_legacy_dict(firecrawl_res)
 
@@ -289,7 +292,8 @@ class ExtractionManager:
                             batch_exec_ids = [p["execution_id"] for p in batch_payloads]
 
                             logger.info(
-                                "Leader executing Tavily batch extraction for %d URLs", len(batch_urls)
+                                "Leader executing Tavily batch extraction for %d URLs",
+                                len(batch_urls),
                             )
                             newsiq_crawler_tavily_batch_requests_total.inc()
                             newsiq_crawler_tavily_urls_processed_total.inc(len(batch_urls))
@@ -306,7 +310,9 @@ class ExtractionManager:
                                 if exec_id:
                                     res_key = f"extraction:result:{exec_id}"
                                     st_key = f"extraction:tavily_status:{exec_id}"
-                                    await redis_client.set(res_key, json.dumps(res.to_dict()), ex=600)
+                                    await redis_client.set(
+                                        res_key, json.dumps(res.to_dict()), ex=600
+                                    )
                                     await redis_client.set(
                                         st_key, "success" if res.success else "failed", ex=600
                                     )
