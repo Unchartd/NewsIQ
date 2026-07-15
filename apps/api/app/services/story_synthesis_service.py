@@ -931,16 +931,21 @@ class StorySynthesisOrchestrator:
         dto_entities = [map_entity_to_context(sent) for sent in story_entities]
         dto_sources = [map_source_to_context(src) for src in sources_list]
 
+        # Commit initial reads and pending caller writes to release connection during Stage 1-6 executions
+        await session.commit()
+
         # ── multi-stage execution pipeline ──
         # Stage 1: KG Construction
         kg_artifact_id, kg_dict = await self.run_knowledge_graph_stage(
             session, story_id, dto_articles, dto_events, dto_entities, dto_sources
         )
+        await session.commit()
 
         # Stage 2: Contradiction Detection
         contras_artifact_id, contras_payload = await self.run_contradiction_stage(
             session, story_id, story_input_hash, dto_articles, dto_events, article_source_map
         )
+        await session.commit()
 
         # Stage 3: Source Comparison
         source_comp_artifact_id, source_comp_payload = await self.run_source_comparison_stage(
@@ -953,11 +958,13 @@ class StorySynthesisOrchestrator:
             dto_sources,
             contras_payload,
         )
+        await session.commit()
 
         # Stage 4: Timeline
         timeline_artifact_id, timeline_payload = await self.run_timeline_stage(
             session, story_id, dto_events, article_source_map
         )
+        await session.commit()
 
         # Stage 5: Summary Generation (First Pass)
         summary_artifact_id, summary_payload = await self.run_summary_stage(
@@ -969,6 +976,7 @@ class StorySynthesisOrchestrator:
             timeline_payload,
             source_comp_payload.get("differences", []),
         )
+        await session.commit()
 
         # Stage 6: Quality check & Feedback loop
         # We start with regeneration_count = 0
@@ -1007,6 +1015,7 @@ class StorySynthesisOrchestrator:
                 corrections=feedback_report.targeted_corrections,
                 existing_summary_payload=summary_payload,
             )
+            await session.commit()
 
             # Re-evaluate
             summary_text = f"Headline: {summary_payload.get('headline')}\nSummaries: {summary_payload.get('one_line_summary')} - {summary_payload.get('short_summary')}\nKey facts: {summary_payload.get('key_facts')}"
@@ -1102,6 +1111,9 @@ class StorySynthesisOrchestrator:
             await cache_service.set_raw(guard_key, story_input_hash, ttl=604800)
         except Exception as e:
             logger.warning("Failed to update guard key in Redis: %s", e)
+
+        # Commit final changes (StoryVersion, Story updates, and Publisher stage events/coverages)
+        await session.commit()
 
 
 story_synthesis_orchestrator = StorySynthesisOrchestrator()

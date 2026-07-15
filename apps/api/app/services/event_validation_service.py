@@ -66,6 +66,7 @@ class StoryAnchor:
     event_type: str | None
     centroid_vector: list[float] | None = None
     entity_graph_ids: set[str] = None
+    anchor_vector: list[float] | None = None
 
 
 class EventValidationService:

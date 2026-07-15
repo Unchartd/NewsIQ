@@ -206,15 +206,15 @@ class SourceComparisonService:
                 if src:
                     rows.append((art, src))
 
-        # Delete existing coverages and differences for this story to avoid duplication or stale data
-        from sqlalchemy import delete
-
-        await session.execute(
-            delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
-        )
-        await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
-
         if not rows:
+            from sqlalchemy import delete
+
+            await session.execute(
+                delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
+            )
+            await session.execute(
+                delete(StoryDifference).where(StoryDifference.story_id == story_id)
+            )
             if articles is None:
                 await session.commit()
             else:
@@ -223,6 +223,14 @@ class SourceComparisonService:
 
         unique_sources = {src.id for _, src in rows}
         if len(unique_sources) < 2:
+            from sqlalchemy import delete
+
+            await session.execute(
+                delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
+            )
+            await session.execute(
+                delete(StoryDifference).where(StoryDifference.story_id == story_id)
+            )
             if articles is None:
                 await session.commit()
             else:
@@ -396,7 +404,6 @@ class SourceComparisonService:
                 focus_area=focus_area,
                 published_at=datetime.now(UTC).replace(tzinfo=None),
             )
-            session.add(coverage)
             saved_coverage.append(coverage)
 
             # Save StoryDifference
@@ -408,14 +415,25 @@ class SourceComparisonService:
                 missing_information=resolution.missing_information or None,
                 contradictions=resolution.contradictions or None,
             )
-            session.add(diff)
             saved_differences.append(diff)
 
-        if saved_coverage or saved_differences:
-            if articles is None:
-                await session.commit()
-            else:
-                await session.flush()
+        # Delete existing coverages and differences for this story to avoid duplication or stale data
+        from sqlalchemy import delete
+
+        await session.execute(
+            delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
+        )
+        await session.execute(delete(StoryDifference).where(StoryDifference.story_id == story_id))
+
+        for cov in saved_coverage:
+            session.add(cov)
+        for diff in saved_differences:
+            session.add(diff)
+
+        if articles is None:
+            await session.commit()
+        else:
+            await session.flush()
 
         return saved_coverage, saved_differences
 

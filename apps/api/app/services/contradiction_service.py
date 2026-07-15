@@ -204,16 +204,14 @@ class ContradictionService:
                         rows.append((art, evt))
             local_source_map = article_source_map or {}
 
-        # Delete existing contradictions for this story to avoid duplication or stale data
-        from sqlalchemy import delete
-
-        await session.execute(
-            delete(StoryContradiction).where(StoryContradiction.story_id == story_id)
-        )
-
         # Check unique sources count to avoid contradiction checking on single-source stories
         unique_sources = {art.source_id for art, _ in rows if art.source_id}
         if len(unique_sources) < 2:
+            from sqlalchemy import delete
+
+            await session.execute(
+                delete(StoryContradiction).where(StoryContradiction.story_id == story_id)
+            )
             if articles is None:
                 await session.commit()
             else:
@@ -372,14 +370,22 @@ class ContradictionService:
                         cand["src2_id"]: str(cand["val2"]),
                     },
                 )
-                session.add(contradiction)
                 validated_contradictions.append(contradiction)
 
-        if validated_contradictions:
-            if articles is None:
-                await session.commit()
-            else:
-                await session.flush()
+        # Delete existing contradictions for this story to avoid duplication or stale data
+        from sqlalchemy import delete
+
+        await session.execute(
+            delete(StoryContradiction).where(StoryContradiction.story_id == story_id)
+        )
+
+        for contradiction in validated_contradictions:
+            session.add(contradiction)
+
+        if articles is None:
+            await session.commit()
+        else:
+            await session.flush()
 
         return validated_contradictions
 

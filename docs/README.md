@@ -52,6 +52,7 @@ Troubleshooting guidelines for common outage scenarios:
 - **[Database Outage Runbook](file:///c:/Users/zakau/NewsIQ/docs/runbooks/database-outage.md)**
 - **[Redis Cache Failure Runbook](file:///c:/Users/zakau/NewsIQ/docs/runbooks/redis-failure.md)**
 - **[LLM API Timeout Runbook](file:///c:/Users/zakau/NewsIQ/docs/runbooks/llm-provider-outage.md)**
+- **[Wikidata API Resiliency Runbook](file:///c:/Users/zakau/NewsIQ/docs/runbooks/wikidata-resiliency.md)**
 - **[Emergency Rollbacks](file:///c:/Users/zakau/NewsIQ/docs/runbooks/emergency-procedures.md)**
 
 ### 8. [System Changelogs](file:///c:/Users/zakau/NewsIQ/docs/changelogs/CHANGELOG.md)

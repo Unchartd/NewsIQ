@@ -224,3 +224,89 @@ def test_admin_rollback_endpoint():
         assert response.status_code == 200
         assert response.json()["version_number"] == version_number
         assert "successfully rolled back" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_story_synthesis_transaction_decoupling():
+    """Verify that synthesize_story commits after stage transitions to release DB connections."""
+    from app.models.models import Category, Source, Story
+    from app.services.story_synthesis_service import story_synthesis_orchestrator
+
+    story_id = uuid.uuid4()
+    mock_db_session = AsyncMock()
+
+    category = Category(id=uuid.uuid4(), name="World", slug="world")
+    source = Source(id=uuid.uuid4(), name="Test Source")
+    story = Story(id=story_id, headline=None, story_status="pending", category_id=category.id)
+
+    # Mock articles
+    article1 = Article(
+        id=uuid.uuid4(), source_id=source.id, title="A", description="A", content="A"
+    )
+
+    async def mock_execute_side_effect(stmt, params=None, *args, **kwargs):
+        stmt_str = str(stmt).lower()
+        res = MagicMock()
+        res.scalar_one_or_none.return_value = None
+        res.scalars.return_value.all.return_value = []
+
+        if "articleevent" in stmt_str or "article_event" in stmt_str:
+            res.scalars.return_value.all.return_value = []
+        elif "synthesis_artifact" in stmt_str:
+            res.scalar_one_or_none.return_value = None
+        elif "storyarticle" in stmt_str or "article" in stmt_str:
+            res.scalars.return_value.all.return_value = [article1]
+        elif "story" in stmt_str:
+            res.scalar_one_or_none.return_value = story
+        elif "category" in stmt_str:
+            res.scalar_one_or_none.return_value = category
+        elif "source" in stmt_str:
+            res.scalar_one_or_none.return_value = source
+
+        return res
+
+    mock_db_session.execute.side_effect = mock_execute_side_effect
+
+    # Mock AI Service & Feedback QA
+    from app.services.ai_service import StorySummaryResponse
+    mock_summary = StorySummaryResponse(
+        headline="AI Growth",
+        one_line_summary="AI is growing.",
+        short_summary="A short summary.",
+        detailed_summary="Detailed summary.",
+        key_facts=["AI is growing"],
+        category="world",
+    )
+
+    from app.agents.feedback_agent import FeedbackReport
+    mock_feedback = FeedbackReport(
+        action="publish", score=0.95, explanation="Approved.", hallucination_detected=False
+    )
+
+    with (
+        patch(
+            "app.services.ai_service.AIService.summarize_story_from_kg",
+            AsyncMock(return_value=mock_summary),
+        ),
+        patch(
+            "app.agents.feedback_agent.evaluate_story_quality",
+            AsyncMock(return_value=mock_feedback),
+        ),
+        patch(
+            "app.services.vector_service.vector_service.retrieve_vectors",
+            AsyncMock(return_value={}),
+        ),
+        patch(
+            "app.services.story_synthesis_service.story_synthesis_orchestrator.record_trace",
+            AsyncMock(),
+        ),
+    ):
+        # Run orchestrator
+        await story_synthesis_orchestrator.synthesize_story(
+            session=mock_db_session, story_id=story_id, trigger="manual_regenerate"
+        )
+
+    # Assert session.commit was called after stage transitions
+    # At least: once at start, after Stage 1, Stage 2, Stage 3, Stage 4, Stage 5, and at end.
+    assert mock_db_session.commit.call_count >= 6
+

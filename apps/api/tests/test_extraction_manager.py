@@ -44,6 +44,15 @@ class MockRedis:
         self.lists.pop(key, None)
         return 1
 
+    async def lrem(self, key, count, value):
+        if key in self.lists:
+            try:
+                self.lists[key].remove(value)
+                return 1
+            except ValueError:
+                pass
+        return 0
+
 
 @pytest.mark.asyncio
 async def test_local_success_skips_apis():

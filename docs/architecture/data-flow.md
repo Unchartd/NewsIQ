@@ -69,13 +69,14 @@ sequenceDiagram
     participant LLM as Gemini Pro API
     participant Search as Meilisearch Index
 
-    Worker->>DB: Fetch Story where updated_at < article.created_at
-    DB-->>Worker: Story entity + all associated Articles content
+    Worker->>DB: Fetch Story (updated_at < article.created_at)
+    DB-->>Worker: Story entity + associated Articles
+    Worker->>DB: Commit & Release Transaction (Connection Pool Protection)
     Worker->>Worker: Group articles by Publisher Source
     Worker->>LLM: Send difference prompt (group details)
     LLM-->>Worker: JSON: Timelines, facts, contradictions, unique info
-    Worker->>DB: Update Story (headline, key_facts, summaries)
-    Worker->>DB: INSERT / UPDATE StoryTimelineEvents, StoryDifferences
+    Worker->>DB: Start short transaction / Save Story Summary
+    Worker->>DB: Start short transaction / INSERT/UPDATE TimelineEvents & Contradictions
     Worker->>Search: Index Story headline and summaries
-    Worker->>DB: Update Story updated_at timestamp
+    Worker->>DB: Start short transaction / Update updated_at timestamp
 ```

@@ -15,17 +15,35 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/newsiq-api
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Multi-platform build strategy
+#
+# Each image is built in a matrix across two native runners:
+#   - ubuntu-latest        → linux/amd64  (standard x86-64 GitHub runner)
+#   - ubuntu-24.04-arm     → linux/arm64  (native ARM64 GitHub runner)
+#
+# This avoids QEMU emulation which can increase Python/Next.js build times
+# by 5–10× for ARM64. Native runners build each platform concurrently.
+#
+# After both arches complete, a "merge-manifest" job creates a single OCI
+# multi-arch manifest via `docker buildx imagetools create`, making the
+# image pullable on both amd64 and ARM64 hosts transparently.
+#
+# Cache strategy: each platform uses a scoped GHA cache key to prevent
+# cross-architecture cache collisions.
+# ──────────────────────────────────────────────────────────────────────────────
+
 jobs:
-  build-api:
-    name: Build & Push API Image
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Resolve tag once — shared across all build jobs
+  # ────────────────────────────────────────────────────────────────────────────
+  resolve-tag:
+    name: Resolve image tag
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: Determine image tag
         id: tag
         run: |
@@ -34,6 +52,31 @@ jobs:
           else
             echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
           fi
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # API image — build per platform natively, push platform-specific digest
+  # ────────────────────────────────────────────────────────────────────────────
+  build-api:
+    name: Build API (${{ matrix.platform }})
+    needs: resolve-tag
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            cache-scope: api-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            cache-scope: api-arm64
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -45,44 +88,84 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=${{ steps.tag.outputs.tag }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push platform digest (API)
+        id: build
+        uses: docker/build-push-action@v6
         with:
           context: ./apps/api
           file: ./apps/api/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          # Push as a platform-specific digest tag (no manifest list yet).
+          # The merge-manifest job will combine both digests into one tag.
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.cache-scope }}
+          cache-to: type=gha,scope=${{ matrix.cache-scope }},mode=max
 
-  build-web:
-    name: Build & Push Frontend Image
+  # ────────────────────────────────────────────────────────────────────────────
+  # API manifest merge — combine amd64 + arm64 digests into a single tag
+  # ────────────────────────────────────────────────────────────────────────────
+  merge-api:
+    name: Merge API manifest
+    needs: [resolve-tag, build-api]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine image tag
-        id: tag
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push multi-arch manifest (API)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          fi
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${TAG}" \
+            "${IMAGE}:${TAG}-amd64" \
+            "${IMAGE}:${TAG}-arm64"
+
+      - name: Inspect merged manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:${TAG}"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Web (Next.js) image — build per platform natively
+  # ────────────────────────────────────────────────────────────────────────────
+  build-web:
+    name: Build Web (${{ matrix.platform }})
+    needs: resolve-tag
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            cache-scope: web-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            cache-scope: web-arm64
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -94,16 +177,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web
-          tags: |
-            type=raw,value=${{ steps.tag.outputs.tag }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push platform digest (Web)
+        uses: docker/build-push-action@v6
         with:
           context: ./apps/web
           file: ./apps/web/Dockerfile
@@ -113,30 +188,72 @@ jobs:
             NEXT_PUBLIC_GA_MEASUREMENT_ID=${{ secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
             NEXT_PUBLIC_POSTHOG_TOKEN=${{ secrets.NEXT_PUBLIC_POSTHOG_TOKEN }}
             NEXT_PUBLIC_ANALYTICS_DEBUG=false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.cache-scope }}
+          cache-to: type=gha,scope=${{ matrix.cache-scope }},mode=max
 
-  build-admin:
-    name: Build & Push Admin Dashboard Image
+  merge-web:
+    name: Merge Web manifest
+    needs: [resolve-tag, build-web]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine image tag
-        id: tag
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push multi-arch manifest (Web)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          fi
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${TAG}" \
+            "${IMAGE}:${TAG}-amd64" \
+            "${IMAGE}:${TAG}-arm64"
+
+      - name: Inspect merged manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:${TAG}"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Admin Dashboard image — build per platform natively
+  # ────────────────────────────────────────────────────────────────────────────
+  build-admin:
+    name: Build Admin (${{ matrix.platform }})
+    needs: resolve-tag
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            cache-scope: admin-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            cache-scope: admin-arm64
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -148,45 +265,67 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin
-          tags: |
-            type=raw,value=${{ steps.tag.outputs.tag }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push platform digest (Admin)
+        uses: docker/build-push-action@v6
         with:
           context: ./apps/admin
           file: ./apps/admin/Dockerfile
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=https://admin-api.newsiq.online/api/v1
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.cache-scope }}
+          cache-to: type=gha,scope=${{ matrix.cache-scope }},mode=max
 
+  merge-admin:
+    name: Merge Admin manifest
+    needs: [resolve-tag, build-admin]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push multi-arch manifest (Admin)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${TAG}" \
+            "${IMAGE}:${TAG}-amd64" \
+            "${IMAGE}:${TAG}-arm64"
+
+      - name: Inspect merged manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:${TAG}"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Deploy — runs after all three multi-arch manifests are published
+  # ────────────────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to Oracle VM
-    needs: [build-api, build-web, build-admin]
+    needs: [resolve-tag, merge-api, merge-web, merge-admin]
     runs-on: ubuntu-latest
     environment: production
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Determine image tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          fi
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -216,13 +355,13 @@ jobs:
             set -e
 
             IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
-            IMAGE="${IMAGE_NAME_LOWER}:${{ steps.tag.outputs.tag }}"
+            IMAGE="${IMAGE_NAME_LOWER}:${{ needs.resolve-tag.outputs.tag }}"
 
             WEB_IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web" | tr '[:upper:]' '[:lower:]')
-            WEB_IMAGE="${WEB_IMAGE_NAME_LOWER}:${{ steps.tag.outputs.tag }}"
+            WEB_IMAGE="${WEB_IMAGE_NAME_LOWER}:${{ needs.resolve-tag.outputs.tag }}"
 
             ADMIN_IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin" | tr '[:upper:]' '[:lower:]')
-            ADMIN_IMAGE="${ADMIN_IMAGE_NAME_LOWER}:${{ steps.tag.outputs.tag }}"
+            ADMIN_IMAGE="${ADMIN_IMAGE_NAME_LOWER}:${{ needs.resolve-tag.outputs.tag }}"
 
             DEPLOY_DIR=$(echo "${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}" | xargs)
 
@@ -230,7 +369,7 @@ jobs:
             echo "=== Deploying WEB: $WEB_IMAGE ==="
             echo "=== Deploying ADMIN: $ADMIN_IMAGE ==="
 
-            # Pull new images
+            # Pull new images (Docker auto-selects the correct arch from the multi-arch manifest)
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull "$IMAGE"
             docker pull "$WEB_IMAGE"
@@ -316,9 +455,10 @@ jobs:
               alembic upgrade head
 
             # Update image tag in .env.production
-            sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${{ steps.tag.outputs.tag }}|" .env.production || true
+            sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${{ needs.resolve-tag.outputs.tag }}|" .env.production || true
 
             # Restart services with new image (prod profile)
+            # Docker pull already fetched the correct arch — compose up --no-build uses it
             echo "=== Restarting services ==="
             NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" docker compose --env-file .env.production --profile prod up -d --no-build
 
@@ -331,7 +471,7 @@ jobs:
             # Wait for Meilisearch to be healthy
             echo "=== Waiting for Meilisearch (http://localhost:7700/health) ==="
             for i in $(seq 1 24); do
-              if curl -sf http://localhost:7700/health >/dev/null 2>&1; then
+              if curl -sf http://localhost:7700/health > /dev/null 2>&1; then
                 echo "Meilisearch is responding (attempt $i)"
                 break
               fi
@@ -378,7 +518,7 @@ jobs:
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
         if: success() && env.SENTRY_AUTH_TOKEN != ''
         run: |
-          npx @sentry/cli releases new ${{ steps.tag.outputs.tag }}
-          npx @sentry/cli releases set-commits ${{ steps.tag.outputs.tag }} --auto
-          npx @sentry/cli releases finalize ${{ steps.tag.outputs.tag }}
-          npx @sentry/cli releases deploys ${{ steps.tag.outputs.tag }} new -e production
+          npx @sentry/cli releases new ${{ needs.resolve-tag.outputs.tag }}
+          npx @sentry/cli releases set-commits ${{ needs.resolve-tag.outputs.tag }} --auto
+          npx @sentry/cli releases finalize ${{ needs.resolve-tag.outputs.tag }}
+          npx @sentry/cli releases deploys ${{ needs.resolve-tag.outputs.tag }} new -e production

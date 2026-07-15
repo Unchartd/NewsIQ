@@ -355,6 +355,8 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     profiles: [prod]
     command: >
@@ -385,6 +387,8 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     profiles: [prod]
     command: >
@@ -418,6 +422,8 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     profiles: [prod]
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=4 -Q celery,discovery_search,discovery_crawl
@@ -441,6 +447,8 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     profiles: [prod]
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info

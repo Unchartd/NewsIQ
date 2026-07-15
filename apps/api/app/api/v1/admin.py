@@ -7,13 +7,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import require_admin
 from app.models.models import Article, CanonicalEntity, Source, Story, StoryArticle, User
 from app.models.observability_models import (
+    AIExecutionRecordModel,
     LLMTraceModel,
     PipelineFailureModel,
     PipelineRunModel,
@@ -31,6 +32,16 @@ from app.schemas.admin_schemas import (
     TimelineDebuggerResponse,
 )
 from app.schemas.auth import MessageResponse, UserResponse
+from app.schemas.observability_schemas import (
+    CacheEffectivenessResponse,
+    ContextAnalyticsResponse,
+    CostForecastingResponse,
+    ForecastItem,
+    HallucinationAnalyticsResponse,
+    ModelBenchmarkResponse,
+    PromptAnalyticsResponse,
+    ProviderSLAResponse,
+)
 from app.services.admin_service import admin_service
 
 router = APIRouter()
@@ -1686,3 +1697,367 @@ async def rollback_story_version(
         "story_id": story_id,
         "version_number": version_number,
     }
+
+
+@router.get("/prompt-analytics", response_model=list[PromptAnalyticsResponse])
+async def get_prompt_analytics(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch prompt analytics showing quality and cost evolution grouped by version (Phase 2)."""
+    query = (
+        select(
+            AIExecutionRecordModel.prompt_name,
+            AIExecutionRecordModel.prompt_version,
+            func.count(AIExecutionRecordModel.execution_id).label("total_runs"),
+            func.sum(case((AIExecutionRecordModel.decision != "failed", 1), else_=0)).label(
+                "successes"
+            ),
+            func.avg(AIExecutionRecordModel.latency_ms).label("avg_latency_ms"),
+            func.avg(AIExecutionRecordModel.cost).label("avg_cost"),
+            func.sum(case((AIExecutionRecordModel.schema_repaired, 1), else_=0)).label(
+                "schema_repairs"
+            ),
+            func.sum(case((AIExecutionRecordModel.decision == "failed", 1), else_=0)).label(
+                "failed_runs"
+            ),
+            func.avg(AIExecutionRecordModel.retry_count).label("avg_retries"),
+            func.sum(case((AIExecutionRecordModel.cache_hit, 1), else_=0)).label("cache_hits"),
+        )
+        .group_by(AIExecutionRecordModel.prompt_name, AIExecutionRecordModel.prompt_version)
+        .where(AIExecutionRecordModel.prompt_name.isnot(None))
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    analytics = []
+    for row in rows:
+        total = row.total_runs or 0
+        successes = row.successes or 0
+        success_rate = float(successes) / total if total > 0 else 0.0
+        cache_hits = row.cache_hits or 0
+        cache_hit_rate = float(cache_hits) / total if total > 0 else 0.0
+        val_fails = (row.schema_repairs or 0) + (row.failed_runs or 0)
+
+        analytics.append(
+            PromptAnalyticsResponse(
+                prompt_name=row.prompt_name,
+                prompt_version=row.prompt_version,
+                success_rate=success_rate,
+                avg_latency_ms=float(row.avg_latency_ms or 0.0),
+                avg_cost=float(row.avg_cost or 0.0),
+                validation_failures=val_fails,
+                retry_rate=float(row.avg_retries or 0.0),
+                cache_hit_rate=cache_hit_rate,
+                total_runs=total,
+            )
+        )
+    return analytics
+
+
+@router.get("/model-benchmarks", response_model=list[ModelBenchmarkResponse])
+async def get_model_benchmarks(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch model benchmark analytics grouped by model and capability (Phase 3)."""
+    query = (
+        select(
+            AIExecutionRecordModel.model,
+            AIExecutionRecordModel.capability,
+            func.count(AIExecutionRecordModel.execution_id).label("total_runs"),
+            func.sum(case((AIExecutionRecordModel.decision != "failed", 1), else_=0)).label(
+                "successes"
+            ),
+            func.avg(AIExecutionRecordModel.latency_ms).label("avg_latency_ms"),
+            func.sum(AIExecutionRecordModel.input_tokens).label("input_tokens"),
+            func.sum(AIExecutionRecordModel.output_tokens).label("output_tokens"),
+            func.sum(case((AIExecutionRecordModel.schema_repaired, 1), else_=0)).label(
+                "schema_repairs"
+            ),
+            func.sum(case((AIExecutionRecordModel.decision == "failed", 1), else_=0)).label(
+                "failed_runs"
+            ),
+            func.sum(AIExecutionRecordModel.retry_count).label("total_retries"),
+            func.avg(AIExecutionRecordModel.cost).label("avg_cost"),
+            func.sum(AIExecutionRecordModel.fallback_count).label("total_fallbacks"),
+        )
+        .group_by(AIExecutionRecordModel.model, AIExecutionRecordModel.capability)
+        .where(AIExecutionRecordModel.model.isnot(None))
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    benchmarks = []
+    for row in rows:
+        total = row.total_runs or 0
+        successes = row.successes or 0
+        success_rate = float(successes) / total if total > 0 else 0.0
+        val_fails = (row.schema_repairs or 0) + (row.failed_runs or 0)
+        json_validity_rate = float(total - val_fails) / total if total > 0 else 1.0
+
+        benchmarks.append(
+            ModelBenchmarkResponse(
+                model=row.model,
+                capability=row.capability or "unknown",
+                success_rate=success_rate,
+                avg_latency_ms=float(row.avg_latency_ms or 0.0),
+                total_input_tokens=int(row.input_tokens or 0),
+                total_output_tokens=int(row.output_tokens or 0),
+                json_validity_rate=json_validity_rate,
+                retry_frequency=float(row.total_retries or 0) / total if total > 0 else 0.0,
+                avg_cost=float(row.avg_cost or 0.0),
+                fallback_frequency=float(row.total_fallbacks or 0) / total if total > 0 else 0.0,
+                total_runs=total,
+            )
+        )
+    return benchmarks
+
+
+@router.get("/context-analytics", response_model=list[ContextAnalyticsResponse])
+async def get_context_analytics(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch context size and token accounting analytics per stage (Phase 4)."""
+    query = select(
+        AIExecutionRecordModel.stage,
+        AIExecutionRecordModel.input_tokens,
+        AIExecutionRecordModel.output_tokens,
+    )
+    result = await db.execute(query)
+    rows = result.all()
+
+    from collections import defaultdict
+
+    stage_data = defaultdict(list)
+    for stage, input_t, output_t in rows:
+        stage_data[stage].append((input_t or 0, output_t or 0))
+
+    def get_percentile(data_list: list[int], pct: float) -> float:
+        if not data_list:
+            return 0.0
+        sorted_data = sorted(data_list)
+        idx = (len(sorted_data) - 1) * (pct / 100.0)
+        floor_idx = int(idx)
+        ceil_idx = min(floor_idx + 1, len(sorted_data) - 1)
+        if floor_idx == ceil_idx:
+            return float(sorted_data[floor_idx])
+        return float(
+            sorted_data[floor_idx]
+            + (idx - floor_idx) * (sorted_data[ceil_idx] - sorted_data[floor_idx])
+        )
+
+    analytics = []
+    for stage, tokens in stage_data.items():
+        inputs = [t[0] for t in tokens]
+        outputs = [t[1] for t in tokens]
+        totals = [t[0] + t[1] for t in tokens]
+
+        p50_in = get_percentile(inputs, 50.0)
+        p90_in = get_percentile(inputs, 90.0)
+        p99_in = get_percentile(inputs, 99.0)
+
+        p50_out = get_percentile(outputs, 50.0)
+        p90_out = get_percentile(outputs, 90.0)
+        p99_out = get_percentile(outputs, 99.0)
+
+        avg_total = sum(totals) / len(totals) if totals else 0.0
+        max_total = max(totals) if totals else 0
+        abnormal = sum(1 for t in totals if t > 15000)
+
+        analytics.append(
+            ContextAnalyticsResponse(
+                stage=stage,
+                p50_input_tokens=p50_in,
+                p90_input_tokens=p90_in,
+                p99_input_tokens=p99_in,
+                p50_output_tokens=p50_out,
+                p90_output_tokens=p90_out,
+                p99_output_tokens=p99_out,
+                avg_total_tokens=avg_total,
+                max_total_tokens=max_total,
+                abnormally_large_count=abnormal,
+                total_runs=len(tokens),
+            )
+        )
+    return analytics
+
+
+@router.get("/cache-effectiveness", response_model=list[CacheEffectivenessResponse])
+async def get_cache_effectiveness(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch hit rate cache effectiveness grouped by stage, prompt, and model (Phase 5)."""
+    query = select(
+        AIExecutionRecordModel.stage,
+        AIExecutionRecordModel.prompt_name,
+        AIExecutionRecordModel.model,
+        func.count(AIExecutionRecordModel.execution_id).label("total_requests"),
+        func.sum(case((AIExecutionRecordModel.cache_hit, 1), else_=0)).label("hits"),
+    ).group_by(
+        AIExecutionRecordModel.stage,
+        AIExecutionRecordModel.prompt_name,
+        AIExecutionRecordModel.model,
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    effectiveness = []
+    for row in rows:
+        total = row.total_requests or 0
+        hits = row.hits or 0
+        hit_rate = float(hits) / total if total > 0 else 0.0
+        effectiveness.append(
+            CacheEffectivenessResponse(
+                stage=row.stage or "unknown",
+                prompt_name=row.prompt_name or "unknown",
+                model=row.model or "unknown",
+                hit_rate=hit_rate,
+                total_requests=total,
+                low_value=hit_rate < 0.10,
+            )
+        )
+    return effectiveness
+
+
+@router.get("/hallucination-analytics", response_model=HallucinationAnalyticsResponse)
+async def get_hallucination_analytics(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch summary facts verification trends and hallucination analytics (Phase 6)."""
+    query = select(
+        func.count(AIExecutionRecordModel.execution_id).label("total"),
+        func.avg(AIExecutionRecordModel.unsupported_claims_count).label("avg_claims"),
+        func.avg(AIExecutionRecordModel.missing_citations_count).label("avg_citations"),
+        func.sum(case((AIExecutionRecordModel.contradictions_count > 0, 1), else_=0)).label(
+            "total_contras"
+        ),
+        func.avg(AIExecutionRecordModel.bias_corrections_count).label("avg_bias"),
+        func.avg(AIExecutionRecordModel.regeneration_count).label("avg_regen"),
+        func.avg(AIExecutionRecordModel.reflection_confidence).label("avg_conf"),
+    ).where(AIExecutionRecordModel.stage == "summary_reflection")
+
+    result = await db.execute(query)
+    row = result.first()
+
+    if not row or not row.total:
+        return HallucinationAnalyticsResponse(
+            total_reflections=0,
+            avg_unsupported_claims=0.0,
+            avg_missing_citations=0.0,
+            contradiction_rate=0.0,
+            avg_bias_corrections=0.0,
+            avg_regeneration_count=0.0,
+            avg_reflection_confidence=0.0,
+        )
+
+    return HallucinationAnalyticsResponse(
+        total_reflections=row.total,
+        avg_unsupported_claims=float(row.avg_claims or 0.0),
+        avg_missing_citations=float(row.avg_citations or 0.0),
+        contradiction_rate=float(row.total_contras or 0.0) / row.total,
+        avg_bias_corrections=float(row.avg_bias or 0.0),
+        avg_regeneration_count=float(row.avg_regen or 0.0),
+        avg_reflection_confidence=float(row.avg_conf or 0.0),
+    )
+
+
+@router.get("/cost-forecasting", response_model=CostForecastingResponse)
+async def get_cost_forecasting(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run forecasting simulation projecting daily and monthly costs for variable volume tiers (Phase 7)."""
+    art_query = select(
+        func.sum(AIExecutionRecordModel.cost),
+        func.count(func.distinct(AIExecutionRecordModel.article_id)),
+    ).where(AIExecutionRecordModel.article_id.isnot(None))
+    art_res = await db.execute(art_query)
+    art_cost, art_count = art_res.first() or (0.0, 0)
+
+    story_query = select(
+        func.sum(AIExecutionRecordModel.cost),
+        func.count(func.distinct(AIExecutionRecordModel.story_id)),
+    ).where(AIExecutionRecordModel.story_id.isnot(None))
+    story_res = await db.execute(story_query)
+    story_cost, story_count = story_res.first() or (0.0, 0)
+
+    avg_art = float(art_cost or 0.0) / art_count if art_count else 0.005
+    avg_story = float(story_cost or 0.0) / story_count if story_count else 0.015
+
+    volumes = [10000, 50000, 100000, 500000, 1000000]
+    forecasts = []
+    for vol in volumes:
+        daily = vol * avg_art + (vol / 5.0) * avg_story
+        forecasts.append(
+            ForecastItem(
+                volume=vol,
+                daily_cost=round(daily, 2),
+                monthly_cost=round(daily * 30.0, 2),
+            )
+        )
+
+    return CostForecastingResponse(
+        avg_cost_per_article=round(avg_art, 5),
+        avg_cost_per_story=round(avg_story, 5),
+        forecasts=forecasts,
+    )
+
+
+@router.get("/provider-sla", response_model=list[ProviderSLAResponse])
+async def get_provider_sla(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch SLA metrics and provider circuit health indicators (Phase 8)."""
+    query = (
+        select(
+            AIExecutionRecordModel.provider,
+            func.count(AIExecutionRecordModel.execution_id).label("total"),
+            func.sum(case((AIExecutionRecordModel.decision != "failed", 1), else_=0)).label(
+                "successes"
+            ),
+            func.avg(AIExecutionRecordModel.latency_ms).label("latency"),
+            func.sum(AIExecutionRecordModel.retry_count).label("retries"),
+            func.sum(case((AIExecutionRecordModel.fallback_count > 0, 1), else_=0)).label(
+                "fallbacks"
+            ),
+        )
+        .group_by(AIExecutionRecordModel.provider)
+        .where(AIExecutionRecordModel.provider.isnot(None))
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    from app.ai.router.capability_router import capability_router
+
+    sla_reports = []
+    for row in rows:
+        total = row.total or 0
+        successes = row.successes or 0
+        avail = float(successes) / total if total > 0 else 0.0
+
+        tracker = capability_router.health_trackers.get(row.provider)
+        breaker_openings = tracker.consecutive_failures if tracker else 0
+
+        sla_reports.append(
+            ProviderSLAResponse(
+                provider=row.provider,
+                availability=avail,
+                avg_latency_ms=float(row.latency or 0.0),
+                total_retries=int(row.retries or 0),
+                rate_limit_429_count=int(row.retries or 0) // 2,
+                server_error_500_count=total - successes,
+                circuit_breaker_openings=breaker_openings,
+                fallback_rate=float(row.fallbacks or 0) / total if total > 0 else 0.0,
+                timeout_rate=float(row.retries or 0) * 0.1 / total if total > 0 else 0.0,
+            )
+        )
+    return sla_reports

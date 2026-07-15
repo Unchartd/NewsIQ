@@ -13,7 +13,6 @@ import logging
 import re
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -315,6 +314,7 @@ class EntityLinker:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=5),
         reraise=False,
+        retry_error_callback=lambda retry_state: [],
     )
     async def _query_wikidata_multi(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
         """Search Wikidata using wbsearchentities API and return multiple results."""
@@ -328,17 +328,21 @@ class EntityLinker:
         }
         headers = {"User-Agent": "NewsIQ/1.0 (admin@newsiq.com)"}
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url, params=params, headers=headers)
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("search", [])
+        from app.core.http_client import http_client_pool
+
+        client = http_client_pool.client
+        response = await client.get(url, params=params, headers=headers, timeout=5.0)
+        response.raise_for_status()
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("search", [])
         return []
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=5),
         reraise=False,
+        retry_error_callback=lambda retry_state: None,
     )
     async def _query_wikidata(self, query: str) -> dict[str, str | None] | None:
         """Search Wikidata using wbsearchentities API."""

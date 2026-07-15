@@ -60,6 +60,16 @@ class VectorService:
     def client(self) -> None:
         self._mock_client = None
 
+    async def close(self) -> None:
+        """Close all initialized Qdrant clients to prevent socket leaks."""
+        for client in self._clients.values():
+            try:
+                await client.close()
+            except Exception as e:
+                logger.warning("Error closing AsyncQdrantClient: %s", e)
+        self._clients.clear()
+        self._collection_ready = False
+
     # ── Collection management ─────────────────────────────────────────────────
 
     async def init_collection(self) -> None:

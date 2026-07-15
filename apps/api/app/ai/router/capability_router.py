@@ -238,10 +238,20 @@ class CapabilityRouter:
         return chain
 
     def get_model_route(self, model: str) -> list[tuple[AIProvider, APIKey, dict[str, Any]]]:
-        """Return prioritized list of (client, key, route_config) for a model name.
+        """Return prioritized list of (client, key, route_config) for a model name or capability tier.
 
         Performs dynamic health checks and rotates/selects API keys.
         """
+        # Resolve abstract capability identifiers if passed (Phase 9)
+        CAPABILITY_TO_MODEL = {
+            "extraction-speed": "gemini-3.1-flash-lite",
+            "reasoning-heavy": "gemini-2.5-pro",
+            "synthesis-balanced": "gemini-2.5-flash",
+            "verification": "gemini-3.1-flash-lite",
+            "embedding": "text-embedding-004",
+        }
+        resolved_model = CAPABILITY_TO_MODEL.get(model, model)
+
         # Detect testing environment
         is_testing = "pytest" in sys.modules or any(
             "pytest" in arg or "unittest" in arg for arg in sys.argv
@@ -255,14 +265,18 @@ class CapabilityRouter:
 
         from app.ai.config import MODEL_FALLBACKS
 
-        routes = MODEL_FALLBACKS.get(model)
+        routes = MODEL_FALLBACKS.get(resolved_model)
         if not routes:
             # If not configured, fall back to openrouter or gemini if we can guess,
             # or try to run model as-is on Gemini / OpenRouter. Default to gemini.
             logger.warning(
-                "get_model_route: model '%s' not in MODEL_FALLBACKS, using default.", model
+                "get_model_route: model '%s' resolved to '%s' not in MODEL_FALLBACKS, using default.",
+                model,
+                resolved_model,
             )
-            routes = [{"provider": "gemini", "model": model, "temperature": 0.1, "timeout": 30.0}]
+            routes = [
+                {"provider": "gemini", "model": resolved_model, "temperature": 0.1, "timeout": 30.0}
+            ]
 
         chain = []
         for cfg in routes:

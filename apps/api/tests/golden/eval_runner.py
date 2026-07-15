@@ -30,6 +30,34 @@ try:
         "newsiq_eval_pass_rate",
         "Pass rate percentage of the golden dataset evaluation",
     )
+    newsiq_eval_precision = Gauge(
+        "newsiq_eval_precision",
+        "Average Precision score of entity/NER extraction (0-1)",
+    )
+    newsiq_eval_recall = Gauge(
+        "newsiq_eval_recall",
+        "Average Recall score of entity/NER extraction (0-1)",
+    )
+    newsiq_eval_f1 = Gauge(
+        "newsiq_eval_f1",
+        "Average F1 score of entity/NER extraction (0-1)",
+    )
+    newsiq_eval_hallucination_score = Gauge(
+        "newsiq_eval_hallucination_score",
+        "Average Hallucination score of generated stories (0-1)",
+    )
+    newsiq_eval_event_accuracy = Gauge(
+        "newsiq_eval_event_accuracy",
+        "Average Event extraction accuracy (0-1)",
+    )
+    newsiq_eval_judge_accuracy = Gauge(
+        "newsiq_eval_judge_accuracy",
+        "Average Judge decision accuracy (0-1)",
+    )
+    newsiq_eval_regressions = Gauge(
+        "newsiq_eval_regressions",
+        "Count of quality regressions detected",
+    )
 except ImportError:
     # Fallback if prometheus_client is not installed
     class DummyGauge:
@@ -44,6 +72,13 @@ except ImportError:
 
     newsiq_eval_summary_score = DummyGauge()
     newsiq_eval_pass_rate = DummyGauge()
+    newsiq_eval_precision = DummyGauge()
+    newsiq_eval_recall = DummyGauge()
+    newsiq_eval_f1 = DummyGauge()
+    newsiq_eval_hallucination_score = DummyGauge()
+    newsiq_eval_event_accuracy = DummyGauge()
+    newsiq_eval_judge_accuracy = DummyGauge()
+    newsiq_eval_regressions = DummyGauge()
 
 
 async def run_scenario(scenario: dict) -> dict:
@@ -245,6 +280,28 @@ async def run_scenario(scenario: dict) -> dict:
     total_score = max(0.0, ((kw_score + cat_score + facts_score) / 3.0) - penalties)
     is_passed = total_score >= 80.0
 
+    # Calculate NER Precision, Recall, F1 based on target entity keywords
+    target_ents = set(scenario["expected_headline_keywords"])
+    found_capitalized = set()
+    for word in (headline + " " + " ".join(facts)).split():
+        clean_word = "".join(c for c in word if c.isalnum())
+        if clean_word and clean_word[0].isupper():
+            found_capitalized.add(clean_word)
+
+    true_positives = target_ents.intersection(found_capitalized)
+    precision = len(true_positives) / len(found_capitalized) if found_capitalized else 1.0
+    recall = len(true_positives) / len(target_ents) if target_ents else 1.0
+    f1 = 2.0 * (precision * recall) / (precision + recall) if (precision + recall) > 0.0 else 0.0
+
+    # Event Extraction Accuracy: average of keyword score & category match
+    event_accuracy = ((kw_score / 100.0) + (cat_score / 100.0)) / 2.0
+
+    # Hallucination Score: 1.0 minus penalty ratio (max 1.0 penalty total)
+    hallucination_score = max(0.0, 1.0 - (penalties / 100.0))
+
+    # Merge/Judge Accuracy: 1.0 if correct decision (passed) else 0.0
+    judge_accuracy = 1.0 if is_passed else 0.0
+
     print(f"  Headline: '{headline}'")
     print(f"  Category: '{category_slug}' (Expected: '{scenario['expected_category']}')")
     print(f"  Facts Count: {facts_count} (Expected Min: {scenario['min_key_facts']})")
@@ -268,6 +325,12 @@ async def run_scenario(scenario: dict) -> dict:
             "facts_score": facts_score,
             "forbidden_words_penalties": penalties,
             "forbidden_words_found": found_forbidden,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "event_accuracy": event_accuracy,
+            "hallucination_score": hallucination_score,
+            "judge_accuracy": judge_accuracy,
         },
         "outputs": {
             "headline": headline,
@@ -292,9 +355,28 @@ async def main():
 
     print(f"Starting NewsIQ Offline Quality Evaluation run with {len(scenarios)} scenarios...")
 
+    # Load previous evaluation report if available to detect regressions (Phase 10)
+    previous_report = None
+    report_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../evaluation_report.json")
+    )
+    if os.path.exists(report_path):
+        try:
+            with open(report_path) as prev_f:
+                previous_report = json.load(prev_f)
+        except Exception:
+            pass
+
     results = []
     passed_count = 0
     total_score_sum = 0
+    regressions_count = 0
+    precision_sum = 0.0
+    recall_sum = 0.0
+    f1_sum = 0.0
+    hallucination_sum = 0.0
+    event_acc_sum = 0.0
+    judge_acc_sum = 0.0
 
     for scenario in scenarios:
         res = await run_scenario(scenario)
@@ -303,10 +385,48 @@ async def main():
             passed_count += 1
         total_score_sum += res["score"]
 
+        # Aggregate sub-metrics
+        precision_sum += res["metrics"]["precision"]
+        recall_sum += res["metrics"]["recall"]
+        f1_sum += res["metrics"]["f1"]
+        hallucination_sum += res["metrics"]["hallucination_score"]
+        event_acc_sum += res["metrics"]["event_accuracy"]
+        judge_acc_sum += res["metrics"]["judge_accuracy"]
+
+        # Regression detection (Phase 10)
+        if previous_report:
+            prev_scenario = next(
+                (
+                    s
+                    for s in previous_report.get("scenarios", [])
+                    if s["scenario_id"] == scenario["scenario_id"]
+                ),
+                None,
+            )
+            if prev_scenario and res["score"] < prev_scenario["score"] - 5.0:
+                print(
+                    f"  [REGRESSION] Score dropped from {prev_scenario['score']:.1f}% to {res['score']:.1f}% for scenario '{scenario['scenario_id']}'"
+                )
+                regressions_count += 1
+
     pass_rate = (passed_count / len(scenarios)) * 100.0
     avg_score = total_score_sum / len(scenarios)
+    avg_precision = precision_sum / len(scenarios)
+    avg_recall = recall_sum / len(scenarios)
+    avg_f1 = f1_sum / len(scenarios)
+    avg_hallucination = hallucination_sum / len(scenarios)
+    avg_event_acc = event_acc_sum / len(scenarios)
+    avg_judge_acc = judge_acc_sum / len(scenarios)
 
+    # Publish to Prometheus
     newsiq_eval_pass_rate.set(pass_rate)
+    newsiq_eval_precision.set(avg_precision)
+    newsiq_eval_recall.set(avg_recall)
+    newsiq_eval_f1.set(avg_f1)
+    newsiq_eval_hallucination_score.set(avg_hallucination)
+    newsiq_eval_event_accuracy.set(avg_event_acc)
+    newsiq_eval_judge_accuracy.set(avg_judge_acc)
+    newsiq_eval_regressions.set(regressions_count)
 
     report = {
         "timestamp": datetime.datetime.utcnow().isoformat(),
@@ -316,6 +436,13 @@ async def main():
             "failed": len(scenarios) - passed_count,
             "pass_rate_percent": pass_rate,
             "average_score": avg_score,
+            "average_precision": avg_precision,
+            "average_recall": avg_recall,
+            "average_f1": avg_f1,
+            "average_hallucination_score": avg_hallucination,
+            "average_event_accuracy": avg_event_acc,
+            "average_judge_accuracy": avg_judge_acc,
+            "regressions_detected": regressions_count,
         },
         "scenarios": results,
     }
