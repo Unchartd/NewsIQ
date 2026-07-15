@@ -139,6 +139,65 @@ class Settings(BaseSettings):
     DISCOVERY_DAILY_DOWNLOAD_BUDGET: int = 5000
     DISCOVERY_MAX_RETRIES: int = 3
 
+    # ── Story-First Ingestion Pipeline ───────────────────────────────────────
+    # Master feature flag — set False to revert to Article-First path instantly.
+    STORY_FIRST_ENABLED: bool = True
+
+    # Metadata-only discovery score threshold (no content available at RSS stage).
+    # Tuned independently from DISCOVERY_SCORE_THRESHOLD (full content score=0.50).
+    STORY_FIRST_SCORE_THRESHOLD: float = 0.25
+
+    # Max articles from the discovery search (fetched before ranking/diversity filter).
+    STORY_FIRST_MAX_SEARCH_RESULTS: int = 15
+
+    # Max unique publisher URLs to enqueue as CrawlTasks per StoryCandidate.
+    STORY_FIRST_MAX_CRAWL_RESULTS: int = 7
+
+    # ── StoryCandidate Collection Window ─────────────────────────────────────
+    # Smart two-trigger dispatch:
+    #   1. EARLY: when rss_source_count >= STORY_FIRST_EARLY_DISPATCH_THRESHOLD
+    #      → dispatch_story_candidate_task.delay() fires immediately.
+    #   2. TIMEOUT: when collect_until is reached (ETA-based safety net).
+    #      → No-op if status != COLLECTING (early dispatch already ran).
+    STORY_CANDIDATE_COLLECTION_WINDOW_SECONDS: int = 60
+    STORY_FIRST_EARLY_DISPATCH_THRESHOLD: int = 3
+
+    # ── StoryCandidate Lifecycle ──────────────────────────────────────────────
+    # Redis key TTL for the query_hash deduplication sentinel (seconds).
+    # Keeps duplicate RSS entries from creating new StoryCandidates within this window.
+    STORY_CANDIDATE_DEDUP_TTL: int = 300  # 5 minutes
+
+    # Auto-expire StoryCandidate after this many seconds (used in cleanup job).
+    STORY_CANDIDATE_EXPIRE_AFTER: int = 24 * 3600  # 24 hours
+
+    # Retention: keep CLUSTERED/EXPIRED StoryCandidate rows this many days for telemetry.
+    STORY_CANDIDATE_RETENTION_DAYS: int = 30
+
+    # ── Crawl Tier Classification ─────────────────────────────────────────────
+    # URLs are sorted by tier before CrawlTask dispatch; Tier 1 fires first.
+    # This ensures the highest-quality content is persisted even if later crawls fail.
+    CRAWL_TIER_1_PUBLISHERS: list[str] = [
+        "reuters",
+        "apnews",
+        "associated press",
+        "bloomberg",
+        "bbc",
+        "guardian",
+    ]
+    CRAWL_TIER_2_PUBLISHERS: list[str] = [
+        "cnn",
+        "fox",
+        "nytimes",
+        "new york times",
+        "washington post",
+        "al jazeera",
+        "dw",
+        "france24",
+        "techcrunch",
+        "the verge",
+    ]
+    # Tier 3 = everything not matched in Tier 1 or Tier 2 (default).
+
     # ── Multi-Provider Extraction Configuration ──────────────────────────────
     TAVILY_API_KEY: str = ""
     FIRECRAWL_API_KEY: str = ""
