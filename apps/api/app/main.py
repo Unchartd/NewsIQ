@@ -70,6 +70,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Failed to flush Langfuse on shutdown: %s", e)
 
+    # Close shared HTTP Client Pool
+    try:
+        from app.core.http_client import http_client_pool
+
+        await http_client_pool.close()
+    except Exception as e:
+        logger.warning("Failed to close shared HTTP client pool on shutdown: %s", e)
+
+    # Close Vector DB Service Clients
+    try:
+        from app.services.vector_service import vector_service
+
+        await vector_service.close()
+    except Exception as e:
+        logger.warning("Failed to close VectorService on shutdown: %s", e)
+
 
 app = FastAPI(
     title=settings.APP_NAME,

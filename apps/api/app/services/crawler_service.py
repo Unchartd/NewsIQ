@@ -68,39 +68,41 @@ class CrawlerService:
         # Attempt 1: httpx with normal browser headers
         logger.info("Attempt 1: Fetching %s via httpx", url)
         try:
-            async with httpx.AsyncClient(
+            from app.core.http_client import http_client_pool
+            client = http_client_pool.client
+            response = await client.get(
+                url,
                 timeout=httpx.Timeout(timeout=30.0, connect=10.0),
                 follow_redirects=True,
                 headers=self.headers,
-            ) as client:
-                response = await client.get(url)
-                diagnostics["status_code"] = response.status_code
-                diagnostics["fetch_method"] = "httpx"
+            )
+            diagnostics["status_code"] = response.status_code
+            diagnostics["fetch_method"] = "httpx"
 
-                if response.status_code == 200:
-                    html = response.text
-                    if not html or not html.strip():
-                        newsiq_crawler_empty_html_total.inc()
-                        diagnostics["failure_reason"] = "EMPTY_HTML"
-                        logger.warning("Attempt 1 returned empty HTML for %s", url)
-                    elif self.check_bot_blocking(html):
-                        newsiq_crawler_bot_block_total.inc()
-                        diagnostics["failure_reason"] = "BOT_BLOCKED"
-                        logger.warning("Attempt 1 blocked by bot protection for %s", url)
-                    else:
-                        newsiq_crawler_http_success_total.inc()
-                        diagnostics["duration_ms"] = (time.perf_counter() - start_time) * 1000
-                        return html, diagnostics
+            if response.status_code == 200:
+                html = response.text
+                if not html or not html.strip():
+                    newsiq_crawler_empty_html_total.inc()
+                    diagnostics["failure_reason"] = "EMPTY_HTML"
+                    logger.warning("Attempt 1 returned empty HTML for %s", url)
+                elif self.check_bot_blocking(html):
+                    newsiq_crawler_bot_block_total.inc()
+                    diagnostics["failure_reason"] = "BOT_BLOCKED"
+                    logger.warning("Attempt 1 blocked by bot protection for %s", url)
                 else:
-                    newsiq_crawler_http_failure_total.labels(reason=str(response.status_code)).inc()
-                    if response.status_code in (401, 403):
-                        newsiq_crawler_bot_block_total.inc()
-                        diagnostics["failure_reason"] = "BOT_BLOCKED"
-                    else:
-                        diagnostics["failure_reason"] = "HTTP_ERROR"
-                    logger.warning(
-                        "Attempt 1 failed with status %d for %s", response.status_code, url
-                    )
+                    newsiq_crawler_http_success_total.inc()
+                    diagnostics["duration_ms"] = (time.perf_counter() - start_time) * 1000
+                    return html, diagnostics
+            else:
+                newsiq_crawler_http_failure_total.labels(reason=str(response.status_code)).inc()
+                if response.status_code in (401, 403):
+                    newsiq_crawler_bot_block_total.inc()
+                    diagnostics["failure_reason"] = "BOT_BLOCKED"
+                else:
+                    diagnostics["failure_reason"] = "HTTP_ERROR"
+                logger.warning(
+                    "Attempt 1 failed with status %d for %s", response.status_code, url
+                )
         except httpx.TimeoutException as te:
             newsiq_crawler_timeout_total.inc()
             newsiq_crawler_http_failure_total.labels(reason="TimeoutException").inc()

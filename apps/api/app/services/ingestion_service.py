@@ -10,7 +10,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import feedparser
-import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -731,10 +730,11 @@ class IngestionService:
         """Fetch raw RSS feed content."""
         logger.info("Starting ingestion for source: %s (%s)", source_name, rss_url)
         try:
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                response = await client.get(rss_url)
-                response.raise_for_status()
-                return response.text
+            from app.core.http_client import http_client_pool
+            client = http_client_pool.client
+            response = await client.get(rss_url, timeout=15.0, follow_redirects=True)
+            response.raise_for_status()
+            return response.text
         except Exception as e:
             logger.error("Failed to fetch RSS feed for '%s': %s", source_name, e)
             return None
