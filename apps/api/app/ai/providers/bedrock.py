@@ -157,7 +157,7 @@ class BedrockProvider(AIProvider):
 
     async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         try:
-            model_name = model or "nomic/nomic-embed-text-v1.5"
+            model_name = model or "amazon.titan-embed-text-v2:0"
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
             response = await client.embeddings.create(input=[text], model=model_name)
             raw = response.data[0].embedding

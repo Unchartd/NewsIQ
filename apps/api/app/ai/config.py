@@ -315,13 +315,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "nvidia",
-            "model": "nvidia/llama-3.2-nv-embedqa-4b-v1",
+            "model": "nvidia/nv-embed-v1",
             "temperature": 0.0,
             "timeout": 15.0,
         },
         "lastFallback": {
-            "provider": "openrouter",
-            "model": "nomic/nomic-embed-text-v1.5",
+            "provider": "bedrock",
+            "model": "amazon.titan-embed-text-v2:0",
             "temperature": 0.0,
             "timeout": 15.0,
         },
