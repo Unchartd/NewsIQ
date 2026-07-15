@@ -22,8 +22,8 @@ class EmbeddingService:
             return ""
         from app.services.context_extractor import context_extractor
 
-        # Extract optimized paragraph-aware context up to 8000 chars first
-        optimized = context_extractor.extract(text, max_chars=8000)
+        # Extract optimized paragraph-aware context up to 3000 chars first
+        optimized = context_extractor.extract(text, max_chars=3000)
         return optimized.replace("\n", " ").replace("\r", " ").strip()
 
     @staticmethod

@@ -52,7 +52,9 @@ async def test_forgot_password_stub(mock_request_reset, client: AsyncClient):
     mock_db = AsyncMock()
     app.dependency_overrides[get_db] = lambda: mock_db
     try:
-        response = await client.post("/api/v1/auth/forgot-password", json={"email": "test@example.com"})
+        response = await client.post(
+            "/api/v1/auth/forgot-password", json={"email": "test@example.com"}
+        )
         assert response.status_code == 200
         assert "reset link" in response.json()["message"]
         mock_request_reset.assert_called_once_with("test@example.com")
