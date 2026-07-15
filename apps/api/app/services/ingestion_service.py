@@ -284,8 +284,23 @@ class IngestionService:
         words = title.strip().split()
         proper_nouns = 0
         _stopwords = {
-            "the", "a", "an", "this", "what", "how", "why", "who", "when",
-            "where", "if", "in", "on", "at", "by", "for", "with",
+            "the",
+            "a",
+            "an",
+            "this",
+            "what",
+            "how",
+            "why",
+            "who",
+            "when",
+            "where",
+            "if",
+            "in",
+            "on",
+            "at",
+            "by",
+            "for",
+            "with",
         }
         if words:
             first = words[0].rstrip(":,.-!\"'")
@@ -387,9 +402,7 @@ class IngestionService:
 
         # ── Legacy Article-First path ─────────────────────────────────────────
         entries_to_crawl: list[tuple[Any, str, Article | None]] = [
-            (url_to_entry[url], url, None)
-            for url in feed_urls
-            if url not in existing_articles
+            (url_to_entry[url], url, None) for url in feed_urls if url not in existing_articles
         ]
         crawled_results = await self._crawl_articles(entries_to_crawl)
         new_articles_count, discovery_candidates = await self._persist_articles(
@@ -486,14 +499,20 @@ class IngestionService:
             3b. New → INSERT StoryCandidate + INSERT DiscoveryTask +
                       dispatch_story_candidate_task.apply_async(eta=collect_until).
         """
-        from app.models.models import DiscoveryTask, DiscoveryTaskState, StoryCandidateState
-        from app.models.models import StoryCandidate
+        from app.models.models import (
+            DiscoveryTask,
+            DiscoveryTaskState,
+            StoryCandidate,
+            StoryCandidateState,
+        )
         from app.services.cache_service import cache_service
         from app.workers.tasks import dispatch_story_candidate_task
 
         normalized_query = self.normalize_headline(title)
         if not normalized_query or len(normalized_query) < 10:
-            logger.debug("[StoryFirst] Skipping too-short headline after normalization: '%s'", title)
+            logger.debug(
+                "[StoryFirst] Skipping too-short headline after normalization: '%s'", title
+            )
             return
 
         date_bucket = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -511,17 +530,24 @@ class IngestionService:
             # Duplicate story detected — attach this RSS source
             try:
                 import uuid
+
                 existing_sc_id = uuid.UUID(existing_id_str)
                 await self._attach_rss_source(existing_sc_id, rss_entry_meta, session)
             except Exception as e:
-                logger.warning("[StoryFirst] Failed to attach RSS source to existing candidate: %s", e)
+                logger.warning(
+                    "[StoryFirst] Failed to attach RSS source to existing candidate: %s", e
+                )
             return
 
         # ── New story — create StoryCandidate ─────────────────────────────────
         source_lower = source.name.lower()
-        priority = 90 if any(
-            x in source_lower for x in ("reuters", "apnews", "associated press", "bloomberg")
-        ) else 50
+        priority = (
+            90
+            if any(
+                x in source_lower for x in ("reuters", "apnews", "associated press", "bloomberg")
+            )
+            else 50
+        )
         priority_reason = "Trusted Source" if priority == 90 else "Standard"
 
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -690,9 +716,7 @@ class IngestionService:
             run_id = str(active_run.id) if active_run else None
             trace_id = str(active_run.trace_id) if active_run else None
 
-            dispatch_story_candidate_task.delay(
-                str(story_candidate_id), run_id, trace_id
-            )
+            dispatch_story_candidate_task.delay(str(story_candidate_id), run_id, trace_id)
             logger.info(
                 "[StoryFirst] Early dispatch triggered for StoryCandidate %s "
                 "(%d publishers reached threshold=%d).",

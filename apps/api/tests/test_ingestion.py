@@ -683,16 +683,12 @@ class TestCalculateMetadataScore:
     def test_trusted_publisher_increases_score(self):
         pub_date = datetime.utcnow()
         score_trusted, _ = ingestion_service.calculate_metadata_score(
-            "US Congress Passes Budget Resolution", "Congress voted today.",
-            pub_date, "Reuters"
+            "US Congress Passes Budget Resolution", "Congress voted today.", pub_date, "Reuters"
         )
         score_unknown, _ = ingestion_service.calculate_metadata_score(
-            "US Congress Passes Budget Resolution", "Congress voted today.",
-            pub_date, "UnknownBlog"
+            "US Congress Passes Budget Resolution", "Congress voted today.", pub_date, "UnknownBlog"
         )
-        assert score_trusted >= score_unknown, (
-            "Trusted publisher should score >= unknown publisher"
-        )
+        assert score_trusted >= score_unknown, "Trusted publisher should score >= unknown publisher"
 
     def test_no_pubdate_uses_fallback(self):
         score, breakdown = ingestion_service.calculate_metadata_score(
@@ -788,6 +784,7 @@ async def test_story_first_dispatches_fresh_qualifying_entry(mock_db_session):
 
     # Fresh RSS entry — use current UTC time formatted as RFC 2822
     from email.utils import format_datetime
+
     fresh_date = format_datetime(datetime.now(UTC))
 
     mock_xml = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -816,7 +813,9 @@ async def test_story_first_dispatches_fresh_qualifying_entry(mock_db_session):
     with (
         patch("httpx.AsyncClient.get", return_value=MockResponse(mock_xml)),
         patch("app.core.config.settings.STORY_FIRST_ENABLED", True),
-        patch("app.core.config.settings.STORY_FIRST_SCORE_THRESHOLD", 0.0),  # Accept all positive scores
+        patch(
+            "app.core.config.settings.STORY_FIRST_SCORE_THRESHOLD", 0.0
+        ),  # Accept all positive scores
         patch(
             "app.services.ingestion_service.IngestionService._upsert_story_candidate",
             AsyncMock(),

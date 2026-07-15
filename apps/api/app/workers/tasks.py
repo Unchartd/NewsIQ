@@ -930,9 +930,7 @@ async def _check_discovery_task_completion(discovery_task_id: uuid.UUID, session
             )
 
 
-async def _check_story_candidate_completion(
-    story_candidate_id: uuid.UUID, session: Any
-) -> None:
+async def _check_story_candidate_completion(story_candidate_id: uuid.UUID, session: Any) -> None:
     """Advance a StoryCandidate to READY when all its CrawlTasks are terminal.
 
     Called after each CrawlTask completes (SUCCESS or FAILED) so that the
@@ -981,9 +979,7 @@ def dispatch_story_candidate_task(
     Guard: if status != COLLECTING at execution time, it means the early-dispatch path
     already ran. The task returns immediately (idempotent no-op).
     """
-    logger.info(
-        "Celery task: Dispatching StoryCandidate search for %s", story_candidate_id_str
-    )
+    logger.info("Celery task: Dispatching StoryCandidate search for %s", story_candidate_id_str)
 
     async def _run():
         import hashlib
@@ -1136,6 +1132,7 @@ def dispatch_story_candidate_task(
                 sc.search_completed_at = datetime.now(UTC).replace(tzinfo=None)
 
                 from app.core.metrics import newsiq_discovery_searches_succeeded
+
                 newsiq_discovery_searches_succeeded.inc()
 
             except Exception as e:
@@ -1145,6 +1142,7 @@ def dispatch_story_candidate_task(
                     e,
                 )
                 from app.core.metrics import newsiq_discovery_searches_failed
+
                 newsiq_discovery_searches_failed.inc()
 
                 discovery_task.retry_count += 1
@@ -1196,7 +1194,11 @@ def dispatch_story_candidate_task(
                 resolved_urls = await asyncio.gather(
                     *[provider.resolve_url(u) for u in discovered_urls]
                 )
-                from app.core.metrics import newsiq_discovery_urls_decode_failed, newsiq_discovery_urls_decoded
+                from app.core.metrics import (
+                    newsiq_discovery_urls_decode_failed,
+                    newsiq_discovery_urls_decoded,
+                )
+
                 for orig_url, res_url in zip(discovered_urls, resolved_urls):
                     if "news.google.com" in orig_url:
                         if orig_url != res_url:
@@ -1410,7 +1412,7 @@ def discovery_search_task(
                 # Rank results and apply base domain diversity filtering
                 discovered_urls = gnews_service.rank_and_filter_search_results(
                     results=raw_results,
-                    original_title=original_article.title,
+                    original_title=original_article.title or "",
                     original_pub_date=original_article.published_at,
                     max_results=settings.DISCOVERY_MAX_RESULTS,
                 )
@@ -1615,11 +1617,14 @@ def discovery_crawl_task(
                 logger.warning("Failed to increment download budget counter: %s", e)
 
             # 5. Execute HTTP crawl
-            crawled = None
+            crawled: dict[str, Any] = {}
             try:
-                crawled = await crawler_service.crawl_article(crawl_task.url)
+                crawled_res = await crawler_service.crawl_article(crawl_task.url)
+                if crawled_res:
+                    crawled = crawled_res
                 if not crawled or not crawled.get("success") or not crawled.get("content"):
-                    diagnostics = crawled.get("diagnostics") if crawled else {}
+                    raw_diag = crawled.get("diagnostics") if crawled else None
+                    diagnostics: dict[str, Any] = raw_diag if isinstance(raw_diag, dict) else {}
                     failure_reason = diagnostics.get("failure_reason") or "EMPTY_CONTENT"
                     raise ValueError(f"Crawl failed: {failure_reason}")
 
@@ -1638,9 +1643,8 @@ def discovery_crawl_task(
                     e,
                 )
 
-                diagnostics = (
-                    crawled.get("diagnostics") if (crawled and isinstance(crawled, dict)) else {}
-                )
+                raw_diag = crawled.get("diagnostics") if isinstance(crawled, dict) else None
+                diagnostics = raw_diag if isinstance(raw_diag, dict) else {}
                 failure_reason = diagnostics.get("failure_reason") or "FAILED"
 
                 from app.core.metrics import newsiq_discovery_crawls_failed

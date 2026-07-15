@@ -756,13 +756,13 @@ class StoryCandidateState(enum.StrEnum):
         Any         → EXPIRED    (on timeout / budget exceeded)
     """
 
-    COLLECTING  = "collecting"   # Buffering RSS sources; waiting for collection window
+    COLLECTING = "collecting"  # Buffering RSS sources; waiting for collection window
     DISCOVERING = "discovering"  # Search task dispatched; waiting for results
-    DISCOVERED  = "discovered"   # Search complete; CrawlTasks created
-    CRAWLING    = "crawling"     # At least one CrawlTask in progress
-    READY       = "ready"        # All CrawlTasks done; articles persisted
-    CLUSTERED   = "clustered"    # Story record created and linked
-    EXPIRED     = "expired"      # Timed out or budget exceeded
+    DISCOVERED = "discovered"  # Search complete; CrawlTasks created
+    CRAWLING = "crawling"  # At least one CrawlTask in progress
+    READY = "ready"  # All CrawlTasks done; articles persisted
+    CLUSTERED = "clustered"  # Story record created and linked
+    EXPIRED = "expired"  # Timed out or budget exceeded
 
 
 class StoryCandidate(Base):
@@ -787,7 +787,7 @@ class StoryCandidate(Base):
     normalized_query: Mapped[str] = mapped_column(Text)
     query_hash: Mapped[str] = mapped_column(String(64), index=True)
     date_bucket: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD
-    headline: Mapped[str] = mapped_column(Text)            # Best headline observed
+    headline: Mapped[str] = mapped_column(Text)  # Best headline observed
     discovery_provider: Mapped[str] = mapped_column(String(50), default="google_rss")
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -817,9 +817,7 @@ class StoryCandidate(Base):
     search_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True
     )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=False), nullable=True
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
 
     # ── End-to-End Funnel Metrics ─────────────────────────────────────────────
     urls_found: Mapped[int] = mapped_column(Integer, default=0)
