@@ -266,8 +266,8 @@ export default function DashboardHome() {
         />
         <StatCard
           label="Cost Today (USD)"
-          value={costs ? `$${costs.total_cost_usd.toFixed(4)}` : "—"}
-          sub={`${costs?.total_tokens?.toLocaleString() ?? "—"} tokens`}
+          value={metrics?.llm_usage ? `$${metrics.llm_usage.cost_today.toFixed(4)}` : "—"}
+          sub={`${metrics?.llm_usage?.tokens_today?.toLocaleString() ?? "—"} tokens`}
           icon={DollarSign}
           color="bg-amber-500/15 text-amber-400"
           href="/admin/costs"
@@ -296,8 +296,8 @@ export default function DashboardHome() {
         />
         <StatCard
           label="Tokens Used Today"
-          value={costs?.total_tokens?.toLocaleString() ?? "—"}
-          sub="Across all LLM calls"
+          value={metrics?.llm_usage?.tokens_today?.toLocaleString() ?? "—"}
+          sub="Across all LLM calls today"
           icon={Zap}
           color="bg-pink-500/15 text-pink-400"
           href="/admin/costs"
@@ -308,7 +308,7 @@ export default function DashboardHome() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Discovery Queue"
-          value={metrics?.queue_size ?? "—"}
+          value={metrics?.discovery_queue_size ?? "—"}
           sub="Articles pending clustering"
           icon={Database}
           color="bg-indigo-500/15 text-indigo-400"

@@ -582,7 +582,15 @@ class AdminService:
         from sqlalchemy import case, func, select, text
 
         from app.core.config import settings
-        from app.models.models import Article, Story, StoryLifecycleState
+        from app.models.models import (
+            Article,
+            CrawlTask,
+            CrawlTaskState,
+            DiscoveryQueue,
+            DiscoveryState,
+            Story,
+            StoryLifecycleState,
+        )
         from app.models.observability_models import LLMTraceModel, StageRunModel
 
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -614,9 +622,21 @@ class AdminService:
         except Exception:
             queue_size = 0
 
-        # 3. Backlog
-        backlog_stmt = select(func.count(Article.id)).where(Article.embedding_status == "pending")
+        # 3. Backlog (Crawl Backlog: URLs pending/crawling/retrying download)
+        backlog_stmt = select(func.count(CrawlTask.id)).where(
+            CrawlTask.status.in_(
+                [CrawlTaskState.PENDING, CrawlTaskState.CRAWLING, CrawlTaskState.RETRYING]
+            )
+        )
         discovery_backlog = (await db.execute(backlog_stmt)).scalar_one() or 0
+
+        # 3b. Discovery Queue Size (Articles pending batch clustering)
+        dq_stmt = select(func.count(DiscoveryQueue.id)).where(
+            DiscoveryQueue.state.in_(
+                [DiscoveryState.PENDING, DiscoveryState.GROUPING, DiscoveryState.READY]
+            )
+        )
+        discovery_queue_size = (await db.execute(dq_stmt)).scalar_one() or 0
 
         # 4. Active Stories
         active_stories_stmt = select(func.count(Story.id)).where(
@@ -660,12 +680,17 @@ class AdminService:
         by_stage_res = await db.execute(by_stage_stmt)
         by_stage = {row.stage: float(row.sum or 0.0) for row in by_stage_res.all()}
 
-        # Cost today
+        # Cost & Tokens today
         start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         cost_today_stmt = select(func.sum(LLMTraceModel.cost_usd)).where(
             LLMTraceModel.created_at >= start_of_today
         )
         cost_today = float((await db.execute(cost_today_stmt)).scalar_one() or 0.0)
+
+        tokens_today_stmt = select(
+            func.sum(LLMTraceModel.input_tokens + LLMTraceModel.output_tokens)
+        ).where(LLMTraceModel.created_at >= start_of_today)
+        tokens_today = int((await db.execute(tokens_today_stmt)).scalar_one() or 0)
 
         # Projections
         hours_passed = now.hour + now.minute / 60.0
@@ -849,6 +874,7 @@ class AdminService:
         metrics = {
             "rss_throughput": rss_throughput,
             "queue_size": queue_size,
+            "discovery_queue_size": discovery_queue_size,
             "discovery_backlog": discovery_backlog,
             "active_stories_count": active_stories_count,
             "lifecycle_distribution": lifecycle_distribution,
@@ -856,6 +882,7 @@ class AdminService:
             "llm_usage": {
                 "total_cost": round(total_cost, 6),
                 "total_tokens": total_tokens,
+                "tokens_today": tokens_today,
                 "by_model": by_model,
                 "by_stage": by_stage,
                 "cost_today": round(cost_today, 6),

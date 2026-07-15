@@ -725,6 +725,7 @@ async def get_dashboard_metrics(
         return {
             "rss_throughput": [],
             "queue_size": 0,
+            "discovery_queue_size": 0,
             "discovery_backlog": 0,
             "active_stories_count": 0,
             "lifecycle_distribution": {},
@@ -732,6 +733,7 @@ async def get_dashboard_metrics(
             "llm_usage": {
                 "total_cost": 0.0,
                 "total_tokens": 0,
+                "tokens_today": 0,
                 "by_model": {},
                 "by_stage": {},
                 "cost_today": 0.0,
