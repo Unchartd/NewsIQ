@@ -517,16 +517,50 @@ class ClusteringService:
             logger.error("Incremental contradiction detection failed for story %s: %s", story.id, e)
 
         # 5. Incremental Source Comparison
+        all_articles = existing_articles + [new_article]
+
+        all_art_ids = [art.id for art in all_articles]
+        art_evt_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(all_art_ids))
+        art_evt_res = await session.execute(art_evt_stmt)
+        all_article_events = list(art_evt_res.scalars().all())
+
+        source_ids_incr = list({art.source_id for art in all_articles if art.source_id is not None})
+        if source_ids_incr:
+            src_res_incr = await session.execute(
+                select(Source).where(Source.id.in_(source_ids_incr))
+            )
+            source_by_id_incr = {src.id: src for src in src_res_incr.scalars().all()}
+        else:
+            source_by_id_incr = {}
+
+        sources_list = []
+        seen_sources = set()
+        for art in all_articles:
+            source = source_by_id_incr.get(art.source_id)
+            if source and source.id not in seen_sources:
+                seen_sources.add(source.id)
+                sources_list.append(source)
+
+        article_source_map = {
+            art.id: source_by_id_incr[art.source_id].name
+            for art in all_articles
+            if art.source_id in source_by_id_incr
+        }
+
         try:
-            await source_comparison_service.compare_sources_and_save(story.id, session)
+            await source_comparison_service.compare_sources_and_save(
+                story_id=story.id,
+                session=session,
+                articles=all_articles,
+                article_events=all_article_events,
+                article_source_map=article_source_map,
+                sources_list=sources_list,
+            )
         except Exception as e:
             logger.error("Incremental source comparison failed for story %s: %s", story.id, e)
 
         # 6. Update Knowledge Graph
         try:
-            # Re-fetch all articles including the new one
-            all_articles = existing_articles + [new_article]
-
             # Fetch all timeline events for this story
             tl_stmt = select(StoryTimelineEvent).where(StoryTimelineEvent.story_id == story.id)
             tl_res = await session.execute(tl_stmt)
@@ -536,32 +570,6 @@ class ClusteringService:
             ent_stmt = select(StoryEntity).where(StoryEntity.story_id == story.id)
             ent_res = await session.execute(ent_stmt)
             saved_story_entities = list(ent_res.scalars().all())
-
-            # Fetch all article events
-            all_art_ids = [art.id for art in all_articles]
-            art_evt_stmt = select(ArticleEvent).where(ArticleEvent.article_id.in_(all_art_ids))
-            art_evt_res = await session.execute(art_evt_stmt)
-            all_article_events = list(art_evt_res.scalars().all())
-
-            # Get unique sources list — batch fetch instead of N per-article queries
-            source_ids_incr = list(
-                {art.source_id for art in all_articles if art.source_id is not None}
-            )
-            if source_ids_incr:
-                src_res_incr = await session.execute(
-                    select(Source).where(Source.id.in_(source_ids_incr))
-                )
-                source_by_id_incr: dict = {src.id: src for src in src_res_incr.scalars().all()}
-            else:
-                source_by_id_incr = {}
-
-            sources_list = []
-            seen_sources = set()
-            for art in all_articles:
-                source = source_by_id_incr.get(art.source_id)
-                if source and source.id not in seen_sources:
-                    seen_sources.add(source.id)
-                    sources_list.append(source)
 
             kg = build_story_knowledge_graph(
                 articles=all_articles,

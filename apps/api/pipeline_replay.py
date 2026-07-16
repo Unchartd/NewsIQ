@@ -71,6 +71,22 @@ def apply_ai_mocks():
                 latency_ms=1.0,
                 cost_usd=0.0,
             )
+        elif capability == "entity_linking" or (schema and schema.__name__ == "EntityResolution"):
+            from app.services.entity_linker import EntityResolution
+
+            parsed = EntityResolution(
+                canonical_name="Mock Canonical Entity",
+                wikidata_search_query="Mock Canonical Entity",
+                description="Mocked canonical entity description",
+            )
+            return GatewayResponse(
+                content="{}",
+                parsed=parsed,
+                provider="mock",
+                model="mock",
+                latency_ms=1.0,
+                cost_usd=0.0,
+            )
 
         parsed = None
         if schema:

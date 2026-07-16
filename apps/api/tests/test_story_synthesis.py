@@ -269,6 +269,7 @@ async def test_story_synthesis_transaction_decoupling():
 
     # Mock AI Service & Feedback QA
     from app.services.ai_service import StorySummaryResponse
+
     mock_summary = StorySummaryResponse(
         headline="AI Growth",
         one_line_summary="AI is growing.",
@@ -279,6 +280,7 @@ async def test_story_synthesis_transaction_decoupling():
     )
 
     from app.agents.feedback_agent import FeedbackReport
+
     mock_feedback = FeedbackReport(
         action="publish", score=0.95, explanation="Approved.", hallucination_detected=False
     )
@@ -309,4 +311,3 @@ async def test_story_synthesis_transaction_decoupling():
     # Assert session.commit was called after stage transitions
     # At least: once at start, after Stage 1, Stage 2, Stage 3, Stage 4, Stage 5, and at end.
     assert mock_db_session.commit.call_count >= 6
-
