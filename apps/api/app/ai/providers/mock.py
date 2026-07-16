@@ -67,8 +67,10 @@ class MockProvider(AIProvider):
                 name_lower = schema.__name__.lower()
                 if "verification" in name_lower or "verify" in name_lower:
                     fields = {
+                        "same_event": True,
                         "verified": True,
                         "confidence": 1.0,
+                        "explanation": "Articles report on the same core news event and share matching details.",
                         "reasoning": "Articles report on the same core news event and share matching details.",
                     }
                 elif "extraction" in name_lower or "entity" in name_lower:
