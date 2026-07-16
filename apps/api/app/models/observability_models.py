@@ -162,6 +162,18 @@ class LLMTraceModel(Base):
         nullable=True,
         index=True,
     )
+    stage_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stage_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    parent_llm_trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("llm_traces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     trace_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
@@ -623,3 +635,21 @@ class AIExecutionRecordModel(Base):
         Index("idx_ai_execution_records_prompt_version", "prompt_name", "prompt_version"),
         Index("idx_ai_execution_records_model_provider", "model", "provider"),
     )
+
+
+class StoryEvolutionModel(Base):
+    """Tracks splits, merges, drops, and promotions of story clusters."""
+
+    __tablename__ = "story_evolutions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
+    story_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
+    event_type: Mapped[str] = mapped_column(String(50), index=True)  # created, article_merged, split, merged, promoted
+    article_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
+    parent_story_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    child_story_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    before_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    after_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)

@@ -149,3 +149,133 @@ def test_calculate_llm_cost():
     # Unknown model (should return 0.0 cost)
     cost = calculate_llm_cost("unknown-model", 100, 100)
     assert cost == 0.0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_trace_collector_lifecycle():
+    """Verify PipelineTraceCollector event emission, sequence numbering, and data sampling."""
+    from app.core.trace import PipelineTraceCollector, sequence_number_ctx
+
+    sequence_number_ctx.set(0)
+
+    with (
+        patch("app.core.trace.emit_pipeline_event", AsyncMock()) as mock_emit_event,
+        patch("app.core.trace.save_artifact", return_value="art_path") as mock_save_artifact,
+        patch("app.core.trace.StageTrace._persist_db", AsyncMock()) as mock_persist,
+    ):
+        async with PipelineTraceCollector.stage("embedding") as stage:
+            assert stage.status == "RUNNING"
+            stage.metric("accuracy", 0.99)
+            stage.metric("latency_ms", 12.5)
+
+            # Test input sampling limits (mock articles list)
+            class MockArticle:
+                def __init__(self, id_):
+                    self.id = id_
+
+            articles = [MockArticle(f"art_{i}") for i in range(25)]
+            stage.input(articles=articles)
+
+            # Output
+            stage.output(articles=articles[:5])
+
+            # Artifact
+            stage.artifact("test_artifact", {"matrix": [1, 2, 3]}, tier=1)
+
+            # Lineage
+            stage.lineage("art_1", "ARTICLE", "EMBEDDED")
+
+        # Exited context successfully
+        assert stage.status == "COMPLETED"
+        assert stage.latency_ms > 0
+        assert mock_emit_event.call_count == 2  # StageStarted + StageCompleted
+
+        # Check sequence numbers
+        start_call = mock_emit_event.call_args_list[0][0][0]
+        end_call = mock_emit_event.call_args_list[1][0][0]
+        assert start_call["event_type"] == "StageStarted"
+        assert start_call["sequence_number"] == 1
+        assert end_call["event_type"] == "StageCompleted"
+        assert end_call["sequence_number"] == 2
+
+        # Check input/output sampling (first 10, last 10, count)
+        assert stage.input_data["articles"]["total_count"] == 25
+        assert len(stage.input_data["articles"]["sample"]) == 21  # 10 + "..." + 10
+        assert stage.input_data["articles"]["sample"][10] == "..."
+        assert stage.input_data["articles"]["sample"][0] == "art_0"
+        assert stage.input_data["articles"]["sample"][-1] == "art_24"
+
+        # Check lineage
+        assert len(stage.lineage_data) == 1
+        assert stage.lineage_data[0]["node_id"] == "art_1"
+        assert stage.lineage_data[0]["transition"] == "EMBEDDED"
+
+        # Check artifact
+        mock_save_artifact.assert_called_once()
+        assert stage.artifacts_data["test_artifact"] == "art_path"
+
+        # Check db persistence
+        mock_persist.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_save_artifact_tier_policy():
+    """Verify save_artifact respects Tier 1, 2, and 3 policies."""
+    from app.core.trace import save_artifact
+    import tempfile
+    import os
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("app.core.config.settings.LOCAL_STORAGE_PATH", tmpdir):
+            # Tier 3: Never save
+            res = save_artifact("vectors", [1.0, 2.0], tier=3, run_id="run_1", span_id="span_1")
+            assert res is None
+
+            # Tier 2: Save on failure only. Success = True -> Should not save.
+            res = save_artifact("html", "<html></html>", tier=2, run_id="run_1", span_id="span_1", success=True)
+            assert res is None
+
+            # Tier 2: Save on failure only. Success = False -> Should save.
+            res = save_artifact("html", "<html></html>", tier=2, run_id="run_1", span_id="span_1", success=False)
+            assert res is not None
+            assert os.path.exists(os.path.join(tmpdir, res))
+
+            # Tier 1: Always save.
+            res = save_artifact("matrix", {"similarity": 0.8}, tier=1, run_id="run_1", span_id="span_1")
+            assert res is not None
+            assert os.path.exists(os.path.join(tmpdir, res))
+
+
+@pytest.mark.asyncio
+async def test_llm_trace_parent_relationship():
+    """Verify nested track_llm_call invocations propagate parent_llm_trace_id."""
+    from app.core.trace import parent_llm_trace_id_ctx
+
+    parent_llm_trace_id_ctx.set("")
+
+    with (
+        patch("app.core.trace._persist_llm_call", AsyncMock()) as mock_persist,
+        patch("app.core.trace.langfuse_client") as mock_lf,
+    ):
+        async with track_llm_call(
+            provider="gemini", model="gemini-2.5-flash", stage="summary"
+        ) as parent_call:
+            # Check context variable set
+            assert parent_llm_trace_id_ctx.get() == parent_call.call_id
+
+            # Trigger nested child call
+            async with track_llm_call(
+                provider="gemini", model="gemini-2.0-flash", stage="judge"
+            ) as child_call:
+                assert child_call.parent_llm_trace_id == parent_call.call_id
+
+        # Checks after completion
+        assert mock_persist.call_count == 2
+        calls = mock_persist.call_args_list
+        # First call completed (child)
+        assert calls[0][0][0].call_id == child_call.call_id
+        assert calls[0][0][0].parent_llm_trace_id == parent_call.call_id
+        # Second call completed (parent)
+        assert calls[1][0][0].call_id == parent_call.call_id
+        assert calls[1][0][0].parent_llm_trace_id == ""
+

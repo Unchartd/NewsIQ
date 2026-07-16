@@ -133,10 +133,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.evaluate_story_lifecycles_task",
         "schedule": crontab(minute="*/15"),
     },
-    # Collect queue and worker metrics every minute
-    "collect-queue-metrics-every-minute": {
+    # Collect queue and worker metrics every 30 seconds
+    "collect-queue-metrics-every-30-seconds": {
         "task": "app.workers.tasks.collect_queue_metrics_task",
-        "schedule": crontab(minute="*"),
+        "schedule": 30.0,
     },
     # Aggregate pipeline dashboard metrics every minute
     "aggregate-pipeline-metrics-every-minute": {
@@ -158,6 +158,11 @@ celery_app.conf.beat_schedule = {
     "cleanup-discovery-tasks-daily": {
         "task": "app.workers.tasks.cleanup_discovery_tasks_task",
         "schedule": crontab(hour="1", minute="0"),
+    },
+    # Purge old observability telemetry daily at midnight UTC
+    "purge-observability-data-daily": {
+        "task": "app.workers.tasks.purge_observability_data_task",
+        "schedule": crontab(hour="0", minute="0"),
     },
 }
 

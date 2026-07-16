@@ -44,6 +44,72 @@ article_id_ctx: ContextVar[str] = ContextVar("article_id", default="")
 active_pipeline_run_ctx: ContextVar[PipelineRun | None] = ContextVar(
     "active_pipeline_run", default=None
 )
+sequence_number_ctx: ContextVar[int] = ContextVar("sequence_number", default=0)
+parent_llm_trace_id_ctx: ContextVar[str] = ContextVar("parent_llm_trace_id", default="")
+
+
+def get_next_sequence_number() -> int:
+    """Increment and return the sequence number for this execution context."""
+    seq = sequence_number_ctx.get(0) + 1
+    sequence_number_ctx.set(seq)
+    return seq
+
+
+async def emit_pipeline_event(event: dict[str, Any]) -> None:
+    """Publish an observability event to a Redis Stream."""
+    import json
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+
+    try:
+        r = aioredis.from_url(settings.REDIS_URL)
+        await r.xadd("newsiq:pipeline:stream", {"event": json.dumps(event, default=str)})
+        await r.aclose()
+    except Exception as exc:
+        logger.warning("Failed to emit pipeline event: %s", exc)
+
+
+def save_artifact(name: str, payload: Any, tier: int, run_id: str, span_id: str, success: bool = True) -> str | None:
+    """Save an execution artifact to disk according to tiered policies.
+
+    Tiers:
+      - Tier 1 (Always Save): Similarity matrices, final prompts, final responses.
+      - Tier 2 (Save on Failure Only): HTML, Markdown, Intermediate JSON.
+      - Tier 3 (Never Save): Embeddings, large vectors, temporary buffers.
+    """
+    if tier == 3:
+        return None
+
+    if tier == 2 and success:
+        return None
+
+    import os
+    import json
+    from app.core.config import settings
+
+    try:
+        # Create artifacts directory
+        artifacts_dir = os.path.join(settings.LOCAL_STORAGE_PATH, "observability_artifacts", run_id, span_id)
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        filename = f"{name}.json" if not isinstance(payload, (str, bytes)) else f"{name}.txt"
+        file_path = os.path.join(artifacts_dir, filename)
+
+        if isinstance(payload, bytes):
+            with open(file_path, "wb") as f:
+                f.write(payload)
+        elif isinstance(payload, str):
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(payload)
+        else:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, default=str)
+
+        # Return local path relative to storage root
+        return os.path.relpath(file_path, settings.LOCAL_STORAGE_PATH).replace("\\", "/")
+    except Exception as e:
+        logger.warning("Failed to save artifact %s: %s", name, e)
+        return None
 
 
 def _to_uuid(val: Any) -> uuid.UUID | None:
@@ -234,10 +300,33 @@ class PipelineRun:
 
         return False  # Don't suppress exceptions
 
+    def _get_git_sha(self) -> str:
+        import subprocess
+        try:
+            return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("utf-8").strip()
+        except Exception:
+            return "unknown"
+
+    def _get_alembic_revision(self) -> str:
+        import os
+        try:
+            # Check directory relative to current cwd or project layout
+            for path in ["alembic/versions", "apps/api/alembic/versions"]:
+                if os.path.exists(path):
+                    files = [f for f in os.listdir(path) if f.endswith(".py") and not f.startswith("__")]
+                    if files:
+                        files.sort(key=lambda x: os.path.getmtime(os.path.join(path, x)))
+                        return files[-1].split("_")[0]
+            return "unknown"
+        except Exception:
+            return "unknown"
+
     async def _persist(self) -> None:
         """Persist/Upsert the PipelineRun and all StageRuns to the database."""
+        import os
         from app.core.database import async_session_factory
         from app.models.observability_models import PipelineRunModel, StageRunModel
+        from app.core.config import settings
 
         async with async_session_factory() as session:
             stmt = select(PipelineRunModel).where(PipelineRunModel.id == _to_uuid(self.id))
@@ -245,6 +334,14 @@ class PipelineRun:
             run = res.scalar_one_or_none()
 
             if not run:
+                env_metadata = {
+                    "versions": {
+                        "git_sha": self._get_git_sha(),
+                        "docker_image": os.environ.get("DOCKER_IMAGE_NAME", "newsiq-api:latest"),
+                        "alembic_revision": self._get_alembic_revision(),
+                        "config_version": settings.APP_VERSION,
+                    }
+                }
                 run = PipelineRunModel(
                     id=_to_uuid(self.id),
                     trace_id=_to_uuid(self.trace_id),
@@ -261,7 +358,7 @@ class PipelineRun:
                         else 0
                     ),
                     error=self.error,
-                    metadata_payload={},
+                    metadata_payload=env_metadata,
                 )
                 session.add(run)
             else:
@@ -309,19 +406,8 @@ class PipelineRun:
 
 
 async def publish_pipeline_event(data: dict[str, Any]) -> None:
-    """Broadcast pipeline status transitions to Redis for SSE streaming."""
-    import json
-
-    import redis.asyncio as aioredis
-
-    from app.core.config import settings
-
-    try:
-        r = aioredis.from_url(settings.REDIS_URL)
-        await r.publish("newsiq-pipeline-events", json.dumps(data))
-        await r.aclose()
-    except Exception:
-        pass
+    """Broadcast pipeline status transitions to Redis using Streams."""
+    await emit_pipeline_event(data)
 
 
 # ── StageSpan Context Manager ────────────────────────────────────────────────
@@ -597,7 +683,321 @@ class StageSpan:
         self.status = StageStatus.SKIPPED
 
 
-# ── LLM Call Tracker ─────────────────────────────────────────────────────────
+# ── Pipeline Trace Collector & Stage Trace ───────────────────────────────────
+
+def _get_system_resources() -> dict[str, float]:
+    res = {"cpu_percent": 0.0, "memory_mb": 0.0}
+    try:
+        import psutil
+        res["cpu_percent"] = psutil.cpu_percent()
+        res["memory_mb"] = psutil.Process().memory_info().rss / (1024 * 1024)
+    except Exception:
+        pass
+    return res
+
+
+def _get_db_pool_status() -> int:
+    try:
+        from app.core.database import engine
+        return engine.pool.checkedout()
+    except Exception:
+        return 0
+
+
+async def _get_redis_status() -> int:
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        r = aioredis.from_url(settings.REDIS_URL)
+        info = await r.info("clients")
+        clients = int(info.get("connected_clients", 0))
+        await r.aclose()
+        return clients
+    except Exception:
+        return 0
+
+
+class StageTrace:
+    """OTel-aligned context manager for tracking metrics, lineage, resources, and artifacts in a stage."""
+
+    def __init__(self, stage_name: str, story_id: str | None = None, article_id: str | None = None) -> None:
+        self.stage = stage_name
+        self.span_id = str(uuid.uuid4())
+        self.run_id = run_id_ctx.get("")
+        self.trace_id = trace_id_ctx.get("")
+        self.story_id = story_id or story_id_ctx.get("")
+        self.article_id = article_id or article_id_ctx.get("")
+
+        if not self.run_id:
+            self.run_id = str(uuid.uuid4())
+            self.trace_id = str(uuid.uuid4())
+
+        self.status = "RUNNING"
+        self.started_at = datetime.now(UTC).replace(tzinfo=None)
+        self.completed_at = None
+        self.latency_ms = 0.0
+        self.retry_count = 0
+        self.errors = []
+        self.warnings = []
+        self.metrics_data = {}
+        self.input_data = {}
+        self.output_data = {}
+        self.artifacts_data = {}
+        self.lineage_data = []
+        self.resources_start = {}
+        self.resources_end = {}
+        self.resources_history = []
+        self._sampling_task = None
+        self._start_time = 0.0
+        self._span_token = None
+        self._stage_token = None
+
+    async def _resource_sampling_loop(self, interval_seconds: float = 5.0) -> None:
+        import asyncio
+        try:
+            while self.status == "RUNNING":
+                await asyncio.sleep(interval_seconds)
+                if self.status != "RUNNING":
+                    break
+                sample = _get_system_resources()
+                sample["db_connections"] = _get_db_pool_status()
+                sample["redis_clients"] = await _get_redis_status()
+                sample["timestamp"] = datetime.now(UTC).replace(tzinfo=None).isoformat()
+                self.resources_history.append(sample)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
+
+    async def __aenter__(self) -> StageTrace:
+        self._start_time = time.perf_counter()
+        self._span_token = span_id_ctx.set(self.span_id)
+        self._stage_token = stage_ctx.set(self.stage)
+
+        # Profile resource start snapshot
+        self.resources_start = _get_system_resources()
+        self.resources_start["db_connections"] = _get_db_pool_status()
+        self.resources_start["redis_clients"] = await _get_redis_status()
+
+        # Start background resource sampling loop
+        import asyncio
+        self._sampling_task = asyncio.create_task(self._resource_sampling_loop(5.0))
+
+        # Emit StageStarted event
+        await self._emit_event("StageStarted")
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.completed_at = datetime.now(UTC).replace(tzinfo=None)
+        self.latency_ms = round((time.perf_counter() - self._start_time) * 1000, 2)
+
+        # Stop resource sampling loop
+        if self._sampling_task:
+            self._sampling_task.cancel()
+            try:
+                await self._sampling_task
+            except BaseException:
+                pass
+
+        # Reset context variables
+        span_id_ctx.reset(self._span_token)
+        stage_ctx.reset(self._stage_token)
+
+        # Profile resource end snapshot
+        self.resources_end = _get_system_resources()
+        self.resources_end["db_connections"] = _get_db_pool_status()
+        self.resources_end["redis_clients"] = await _get_redis_status()
+
+        if self.resources_history:
+            self.metadata["resources_history"] = self.resources_history
+
+        if exc_type:
+            self.status = "FAILED"
+            self.errors.append(str(exc_val))
+            await self._save_failure_artifacts()
+            await self._emit_event("StageFailed", error=str(exc_val))
+        else:
+            if self.status == "RUNNING":
+                self.status = "COMPLETED"
+            await self._emit_event("StageCompleted")
+
+        # Persist to database
+        await self._persist_db()
+        return False  # Don't suppress exceptions
+
+    def input(self, **kwargs) -> None:
+        """Add stage input snapshot with sampling limits."""
+        sampled = {}
+        for k, v in kwargs.items():
+            if isinstance(v, list):
+                count = len(v)
+                sample = []
+                if count <= 20:
+                    sample = [str(x.id) if hasattr(x, "id") else str(x) for x in v]
+                else:
+                    first_10 = [str(x.id) if hasattr(x, "id") else str(x) for x in v[:10]]
+                    last_10 = [str(x.id) if hasattr(x, "id") else str(x) for x in v[-10:]]
+                    sample = first_10 + ["..."] + last_10
+                sampled[k] = {
+                    "total_count": count,
+                    "sample": sample,
+                    "checksum": self._compute_checksum(v)
+                }
+            else:
+                sampled[k] = str(v.id) if hasattr(v, "id") else str(v)
+        self.input_data.update(sampled)
+
+    def output(self, **kwargs) -> None:
+        """Add stage output snapshot with sampling."""
+        sampled = {}
+        for k, v in kwargs.items():
+            if isinstance(v, list):
+                count = len(v)
+                sample = []
+                if count <= 20:
+                    sample = [str(x.id) if hasattr(x, "id") else str(x) for x in v]
+                else:
+                    first_10 = [str(x.id) if hasattr(x, "id") else str(x) for x in v[:10]]
+                    last_10 = [str(x.id) if hasattr(x, "id") else str(x) for x in v[-10:]]
+                    sample = first_10 + ["..."] + last_10
+                sampled[k] = {
+                    "total_count": count,
+                    "sample": sample
+                }
+            else:
+                sampled[k] = str(v.id) if hasattr(v, "id") else str(v)
+        self.output_data.update(sampled)
+
+    def metric(self, name: str, value: Any) -> None:
+        """Record stage execution metrics."""
+        self.metrics_data[name] = value
+
+    def warn(self, message: str) -> None:
+        """Record execution warnings."""
+        self.warnings.append(message)
+
+    def lineage(self, node_id: str, node_type: str, transition: str) -> None:
+        """Record data lineage transition logs."""
+        self.lineage_data.append({
+            "node_id": node_id,
+            "type": node_type,
+            "transition": transition,
+            "created_at": datetime.now(UTC).isoformat() + "Z",
+            "produced_by": self.stage
+        })
+
+    def artifact(self, name: str, payload: Any, tier: int = 1) -> None:
+        """Save tiered large execution payloads to filesystem."""
+        path = save_artifact(
+            name=name,
+            payload=payload,
+            tier=tier,
+            run_id=self.run_id,
+            span_id=self.span_id,
+            success=(self.status != "FAILED")
+        )
+        if path:
+            self.artifacts_data[name] = path
+
+    def mark_skipped(self, reason: str = "no_pending_items") -> None:
+        """Mark stage status as skipped with reason details."""
+        self.status = "SKIPPED"
+        self.warnings.append(f"Stage skipped: {reason}")
+
+    async def _emit_event(self, event_type: str, error: str | None = None) -> None:
+        seq = get_next_sequence_number()
+        event = {
+            "trace_id": self.trace_id,
+            "span_id": self.span_id,
+            "sequence_number": seq,
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
+            "event_type": event_type,
+            "stage": self.stage,
+            "status": self.status,
+            "duration_ms": self.latency_ms,
+            "metrics": self.metrics_data,
+            "input": self.input_data,
+            "output": self.output_data,
+            "artifacts": self.artifacts_data,
+            "warnings": self.warnings,
+            "errors": self.errors + ([error] if error else []),
+            "lineage": self.lineage_data,
+            "resources": {
+                "start": self.resources_start,
+                "end": self.resources_end
+            }
+        }
+        await emit_pipeline_event(event)
+
+    async def _save_failure_artifacts(self) -> None:
+        if self.input_data:
+            self.artifact("failure_input_context", self.input_data, tier=2)
+
+    def _compute_checksum(self, data: Any) -> str:
+        import hashlib
+        try:
+            return hashlib.sha256(str(data).encode("utf-8")).hexdigest()
+        except Exception:
+            return ""
+
+    async def _persist_db(self) -> None:
+        from app.core.database import async_session_factory
+        from app.models.observability_models import StageRunModel
+
+        async with async_session_factory() as session:
+            stmt = select(StageRunModel).where(StageRunModel.id == _to_uuid(self.span_id))
+            res = await session.execute(stmt)
+            stage_run = res.scalar_one_or_none()
+
+            metadata_payload = {
+                "input": self.input_data,
+                "output": self.output_data,
+                "metrics": self.metrics_data,
+                "warnings": self.warnings,
+                "errors": self.errors,
+                "lineage": self.lineage_data,
+                "artifacts": self.artifacts_data,
+                "resources": {
+                    "start": self.resources_start,
+                    "end": self.resources_end
+                }
+            }
+
+            if not stage_run:
+                stage_run = StageRunModel(
+                    id=_to_uuid(self.span_id),
+                    run_id=_to_uuid(self.run_id),
+                    trace_id=_to_uuid(self.trace_id),
+                    stage=self.stage,
+                    status=self.status.lower(),
+                    started_at=self.started_at,
+                    completed_at=self.completed_at,
+                    latency_ms=self.latency_ms,
+                    retry_count=self.retry_count,
+                    error=self.errors[0] if self.errors else None,
+                    error_type="Exception" if self.errors else None,
+                    story_id=_to_uuid(self.story_id),
+                    article_id=_to_uuid(self.article_id),
+                    metadata_payload=metadata_payload
+                )
+                session.add(stage_run)
+            else:
+                stage_run.status = self.status.lower()
+                stage_run.completed_at = self.completed_at
+                stage_run.latency_ms = self.latency_ms
+                stage_run.retry_count = self.retry_count
+                stage_run.error = self.errors[0] if self.errors else None
+                stage_run.metadata_payload = metadata_payload
+
+            await session.commit()
+
+
+class PipelineTraceCollector:
+    """Centralized manager to spawn instrumented stage contexts."""
+
+    @classmethod
+    def stage(cls, name: str, story_id: str | None = None, article_id: str | None = None) -> StageTrace:
+        return StageTrace(name, story_id=story_id, article_id=article_id)
 
 
 @dataclass
@@ -621,6 +1021,8 @@ class LLMCallData:
     error: str | None = None
     retry_count: int = 0
     run_id: str = ""
+    stage_run_id: str = ""
+    parent_llm_trace_id: str = ""
     trace_id: str = ""
     story_id: str = ""
     article_id: str = ""
@@ -663,13 +1065,6 @@ async def track_llm_call(
     """Context manager to track an individual LLM API call.
 
     Captures timing, tokens, cost, and persists to LLMTrace table.
-
-    Usage:
-        async with track_llm_call("gemini", "gemini-2.5-flash", "summary") as call:
-            response = await client.generate(...)
-            call.response_text = response.text
-            call.input_tokens = response.usage.input_tokens
-            call.output_tokens = response.usage.output_tokens
     """
     call = LLMCallData(
         call_id=str(uuid.uuid4()),
@@ -680,6 +1075,8 @@ async def track_llm_call(
         user_prompt=user_prompt[:10000],
         temperature=temperature,
         run_id=run_id_ctx.get(""),
+        stage_run_id=span_id_ctx.get(""),
+        parent_llm_trace_id=parent_llm_trace_id_ctx.get(""),
         trace_id=trace_id_ctx.get(""),
         story_id=story_id or story_id_ctx.get(""),
         article_id=article_id or article_id_ctx.get(""),
@@ -705,6 +1102,7 @@ async def track_llm_call(
         except Exception:
             lf_generation = None
 
+    parent_token = parent_llm_trace_id_ctx.set(call.call_id)
     start = time.perf_counter()
     try:
         yield call
@@ -714,6 +1112,7 @@ async def track_llm_call(
         call.error = str(exc)
         raise
     finally:
+        parent_llm_trace_id_ctx.reset(parent_token)
         call.latency_ms = round((time.perf_counter() - start) * 1000, 2)
         call.total_tokens = call.input_tokens + call.output_tokens
         call.cost_usd = calculate_llm_cost(call.model, call.input_tokens, call.output_tokens)
@@ -772,11 +1171,10 @@ async def track_llm_call(
 async def _persist_llm_call(call: LLMCallData) -> None:
     """Persist an LLM call record to the database."""
     import hashlib
-
     from sqlalchemy import func, select, update
-
     from app.core.database import async_session_factory
     from app.models.observability_models import LLMTraceModel, PromptVersionModel
+    from app.core.config import settings
 
     async with async_session_factory() as session:
         # Find active prompt version for this stage
@@ -796,7 +1194,7 @@ async def _persist_llm_call(call: LLMCallData) -> None:
             combined = f"stage:{call.stage}\nsys:{sys_prompt}\nuser:{user_tmpl}"
             prompt_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
-            # Check if this prompt hash already exists in DB (maybe it was deactivated)
+            # Check if this prompt hash already exists in DB
             stmt_hash = select(PromptVersionModel).where(
                 PromptVersionModel.prompt_hash == prompt_hash
             )
@@ -832,16 +1230,25 @@ async def _persist_llm_call(call: LLMCallData) -> None:
                 session.add(pv)
                 await session.flush()
 
+        # Decide whether to save prompt text based on settings & status
+        save_prompts = (
+            call.status == "error" or 
+            settings.DEBUG or 
+            getattr(call, "sample_prompt", False)
+        )
+
         trace = LLMTraceModel(
             id=uuid.UUID(call.call_id),
             run_id=uuid.UUID(call.run_id) if call.run_id else None,
+            stage_run_id=uuid.UUID(call.stage_run_id) if call.stage_run_id else None,
+            parent_llm_trace_id=uuid.UUID(call.parent_llm_trace_id) if call.parent_llm_trace_id else None,
             trace_id=uuid.UUID(call.trace_id) if call.trace_id else None,
             provider=call.provider,
             model=call.model,
             stage=call.stage,
-            system_prompt=call.system_prompt,
-            user_prompt=call.user_prompt,
-            response_text=call.response_text[:50000],  # Truncate response
+            system_prompt=call.system_prompt if save_prompts else None,
+            user_prompt=call.user_prompt if save_prompts else None,
+            response_text=call.response_text[:50000] if (save_prompts or call.status == "error") else None,
             input_tokens=call.input_tokens,
             output_tokens=call.output_tokens,
             total_tokens=call.total_tokens,
