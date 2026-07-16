@@ -13,7 +13,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/newsiq-api
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Multi-platform build strategy
@@ -36,13 +35,16 @@ env:
 jobs:
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Resolve tag once — shared across all build jobs
+  # Resolve tag and lowercase image paths once — shared across all build jobs
   # ────────────────────────────────────────────────────────────────────────────
   resolve-tag:
     name: Resolve image tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      api_image: ${{ steps.images.outputs.api }}
+      web_image: ${{ steps.images.outputs.web }}
+      admin_image: ${{ steps.images.outputs.admin }}
     steps:
       - name: Determine image tag
         id: tag
@@ -52,6 +54,13 @@ jobs:
           else
             echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
           fi
+      - name: Lowercase image names
+        id: images
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "api=ghcr.io/${REPO_LOWER}/newsiq-api" >> $GITHUB_OUTPUT
+          echo "web=ghcr.io/${REPO_LOWER}/newsiq-web" >> $GITHUB_OUTPUT
+          echo "admin=ghcr.io/${REPO_LOWER}/newsiq-admin" >> $GITHUB_OUTPUT
 
   # ────────────────────────────────────────────────────────────────────────────
   # API image — build per platform natively, push platform-specific digest
@@ -97,7 +106,7 @@ jobs:
           push: true
           # Push as a platform-specific digest tag (no manifest list yet).
           # The merge-manifest job will combine both digests into one tag.
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          tags: ${{ needs.resolve-tag.outputs.api_image }}:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           platforms: ${{ matrix.platform }}
           provenance: false
           cache-from: type=gha,scope=${{ matrix.cache-scope }}
@@ -127,7 +136,7 @@ jobs:
 
       - name: Create and push multi-arch manifest (API)
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ${{ needs.resolve-tag.outputs.api_image }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           docker buildx imagetools create \
@@ -137,7 +146,7 @@ jobs:
 
       - name: Inspect merged manifest
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ${{ needs.resolve-tag.outputs.api_image }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           docker buildx imagetools inspect "${IMAGE}:${TAG}"
@@ -188,7 +197,7 @@ jobs:
             NEXT_PUBLIC_GA_MEASUREMENT_ID=${{ secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
             NEXT_PUBLIC_POSTHOG_TOKEN=${{ secrets.NEXT_PUBLIC_POSTHOG_TOKEN }}
             NEXT_PUBLIC_ANALYTICS_DEBUG=false
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          tags: ${{ needs.resolve-tag.outputs.web_image }}:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           platforms: ${{ matrix.platform }}
           provenance: false
           cache-from: type=gha,scope=${{ matrix.cache-scope }}
@@ -215,7 +224,7 @@ jobs:
 
       - name: Create and push multi-arch manifest (Web)
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web
+          IMAGE: ${{ needs.resolve-tag.outputs.web_image }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           docker buildx imagetools create \
@@ -225,7 +234,7 @@ jobs:
 
       - name: Inspect merged manifest
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web
+          IMAGE: ${{ needs.resolve-tag.outputs.web_image }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           docker buildx imagetools inspect "${IMAGE}:${TAG}"
@@ -273,7 +282,7 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=https://admin-api.newsiq.online/api/v1
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          tags: ${{ needs.resolve-tag.outputs.admin_image }}:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           platforms: ${{ matrix.platform }}
           provenance: false
           cache-from: type=gha,scope=${{ matrix.cache-scope }}
@@ -300,7 +309,7 @@ jobs:
 
       - name: Create and push multi-arch manifest (Admin)
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin
+          IMAGE: ${{ needs.resolve-tag.outputs.admin_image }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           docker buildx imagetools create \
@@ -310,7 +319,7 @@ jobs:
 
       - name: Inspect merged manifest
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin
+          IMAGE: ${{ needs.resolve-tag.outputs.admin_image }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           docker buildx imagetools inspect "${IMAGE}:${TAG}"
@@ -354,14 +363,9 @@ jobs:
           script: |
             set -e
 
-            IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
-            IMAGE="${IMAGE_NAME_LOWER}:${{ needs.resolve-tag.outputs.tag }}"
-
-            WEB_IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ github.repository }}/newsiq-web" | tr '[:upper:]' '[:lower:]')
-            WEB_IMAGE="${WEB_IMAGE_NAME_LOWER}:${{ needs.resolve-tag.outputs.tag }}"
-
-            ADMIN_IMAGE_NAME_LOWER=$(echo "${{ env.REGISTRY }}/${{ github.repository }}/newsiq-admin" | tr '[:upper:]' '[:lower:]')
-            ADMIN_IMAGE="${ADMIN_IMAGE_NAME_LOWER}:${{ needs.resolve-tag.outputs.tag }}"
+            IMAGE="${{ needs.resolve-tag.outputs.api_image }}:${{ needs.resolve-tag.outputs.tag }}"
+            WEB_IMAGE="${{ needs.resolve-tag.outputs.web_image }}:${{ needs.resolve-tag.outputs.tag }}"
+            ADMIN_IMAGE="${{ needs.resolve-tag.outputs.admin_image }}:${{ needs.resolve-tag.outputs.tag }}"
 
             DEPLOY_DIR=$(echo "${{ secrets.DEPLOY_DIR || '/opt/newsiq' }}" | xargs)
 
