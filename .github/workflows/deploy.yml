@@ -442,7 +442,11 @@ jobs:
             # Verify DNS works now
             DB_HOST=$(grep "^DATABASE_DIRECT_URL" .env.production | head -1 | sed -e 's/.*@//' -e 's/[:/].*//')
             echo "DB Host: [$DB_HOST]"
-            getent hosts "$DB_HOST" && echo "DNS OK" || { echo "FATAL: DNS still broken after fix"; exit 1; }
+            if [ "$DB_HOST" != "host.docker.internal" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "127.0.0.1" ]; then
+              getent hosts "$DB_HOST" && echo "DNS OK" || { echo "FATAL: DNS still broken after fix"; exit 1; }
+            else
+              echo "Local/Docker host detected, skipping DNS check"
+            fi
 
             # Show masked DB URLs for debugging
             grep -E "^DATABASE" .env.production | sed 's/:[^@]*@/:***@/g'
