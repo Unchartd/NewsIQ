@@ -219,8 +219,21 @@ class EventValidationService:
 
         # 5. Publisher Trust
         trust_weight = self.stage_a_weights.get("publisher_trust", 10)
-        # Assuming source tier logic (1 is best, 5 is worst)
-        tier = getattr(article.source, "trust_tier", 5) if hasattr(article, "source") else 5
+        # Safely determine source trust tier without triggering synchronous lazy-loading
+        from sqlalchemy import inspect
+        from sqlalchemy.exc import NoInspectionAvailable
+
+        tier = 5
+        try:
+            insp = inspect(article)
+            if insp is not None and "source" not in insp.unloaded:
+                tier = getattr(article.source, "trust_tier", 5)
+        except NoInspectionAvailable:
+            # Fallback if article is not a SQLAlchemy model (e.g. DTO, mock)
+            src_val = getattr(article, "source", None)
+            if src_val and hasattr(src_val, "trust_tier"):
+                tier = getattr(src_val, "trust_tier", 5)
+
         if tier <= 3:
             trust_score = trust_weight
         elif tier == 4:

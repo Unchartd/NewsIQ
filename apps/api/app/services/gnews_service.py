@@ -667,7 +667,8 @@ class GNewsService:
                         trust_weight = weight
                         break
 
-            domain = self._get_base_domain(url)
+            source_url = art.get("gnews_source_url") or url
+            domain = self._get_base_domain(source_url)
             for pub_key, weight in settings.DISCOVERY_TRUSTED_PUBLISHERS.items():
                 if pub_key.lower().strip() in domain:
                     trust_weight = max(trust_weight, weight)

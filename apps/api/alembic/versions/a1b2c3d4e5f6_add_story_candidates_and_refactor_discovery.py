@@ -37,7 +37,9 @@ def upgrade() -> None:
         sa.Column("query_hash", sa.String(length=64), nullable=False),
         sa.Column("date_bucket", sa.String(length=10), nullable=False),
         sa.Column("headline", sa.Text(), nullable=False),
-        sa.Column("discovery_provider", sa.String(length=50), nullable=False, server_default="google_rss"),
+        sa.Column(
+            "discovery_provider", sa.String(length=50), nullable=False, server_default="google_rss"
+        ),
         sa.Column("status", sa.String(length=30), nullable=False, server_default="collecting"),
         sa.Column("priority", sa.Integer(), nullable=False, server_default="50"),
         sa.Column("priority_reason", sa.String(length=100), nullable=True),
@@ -68,12 +70,16 @@ def upgrade() -> None:
     op.add_column("discovery_tasks", sa.Column("story_candidate_id", sa.UUID(), nullable=True))
     op.create_foreign_key(
         "fk_discovery_tasks_story_candidate_id",
-        "discovery_tasks", "story_candidates",
-        ["story_candidate_id"], ["id"], ondelete="SET NULL",
+        "discovery_tasks",
+        "story_candidates",
+        ["story_candidate_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.create_index(
         op.f("ix_discovery_tasks_story_candidate_id"),
-        "discovery_tasks", ["story_candidate_id"],
+        "discovery_tasks",
+        ["story_candidate_id"],
     )
 
     # 3. Make discovery_tasks.article_id nullable (legacy compat)
@@ -81,21 +87,29 @@ def upgrade() -> None:
     op.alter_column("discovery_tasks", "article_id", nullable=True)
     op.create_foreign_key(
         "fk_discovery_tasks_article_id",
-        "discovery_tasks", "articles",
-        ["article_id"], ["id"], ondelete="SET NULL",
+        "discovery_tasks",
+        "articles",
+        ["article_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
 
     # 4. Add story_candidate_id to crawl_tasks
     op.add_column("crawl_tasks", sa.Column("story_candidate_id", sa.UUID(), nullable=True))
     op.create_foreign_key(
         "fk_crawl_tasks_story_candidate_id",
-        "crawl_tasks", "story_candidates",
-        ["story_candidate_id"], ["id"], ondelete="SET NULL",
+        "crawl_tasks",
+        "story_candidates",
+        ["story_candidate_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.create_index("idx_crawl_tasks_story_candidate", "crawl_tasks", ["story_candidate_id"])
 
     # 5. Add tier column to crawl_tasks
-    op.add_column("crawl_tasks", sa.Column("tier", sa.Integer(), nullable=False, server_default="3"))
+    op.add_column(
+        "crawl_tasks", sa.Column("tier", sa.Integer(), nullable=False, server_default="3")
+    )
     op.create_index("idx_crawl_tasks_tier", "crawl_tasks", ["tier"])
 
 
@@ -111,12 +125,17 @@ def downgrade() -> None:
     op.alter_column("discovery_tasks", "article_id", nullable=False)
     op.create_foreign_key(
         "discovery_tasks_article_id_fkey",
-        "discovery_tasks", "articles",
-        ["article_id"], ["id"], ondelete="CASCADE",
+        "discovery_tasks",
+        "articles",
+        ["article_id"],
+        ["id"],
+        ondelete="CASCADE",
     )
 
     op.drop_index(op.f("ix_discovery_tasks_story_candidate_id"), table_name="discovery_tasks")
-    op.drop_constraint("fk_discovery_tasks_story_candidate_id", "discovery_tasks", type_="foreignkey")
+    op.drop_constraint(
+        "fk_discovery_tasks_story_candidate_id", "discovery_tasks", type_="foreignkey"
+    )
     op.drop_column("discovery_tasks", "story_candidate_id")
 
     op.drop_index(op.f("ix_story_candidates_story_id"), table_name="story_candidates")

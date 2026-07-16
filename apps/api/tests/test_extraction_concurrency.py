@@ -123,9 +123,10 @@ async def test_tavily_batch_concurrency_and_leader_election():
         mock_cache._redis = mock_redis
 
         # Configure batch settings for fast testing: batch size 3, timeout 0.5s
-        with patch("app.core.config.settings.TAVILY_BATCH_SIZE", 3), \
-             patch("app.core.config.settings.TAVILY_BATCH_TIMEOUT_SECONDS", 0.5):
-
+        with (
+            patch("app.core.config.settings.TAVILY_BATCH_SIZE", 3),
+            patch("app.core.config.settings.TAVILY_BATCH_TIMEOUT_SECONDS", 0.5),
+        ):
             # Spawn 6 concurrent requests
             urls = [f"https://example.com/art-{i}" for i in range(6)]
             exec_ids = [f"exec-{i}" for i in range(6)]

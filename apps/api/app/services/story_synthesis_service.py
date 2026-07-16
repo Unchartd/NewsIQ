@@ -775,7 +775,6 @@ class StorySynthesisOrchestrator:
                 story_id=story.id,
                 source_id=uuid.UUID(cov_entry["source_id"]),
                 focus_area=cov_entry["focus_area"],
-                created_at=_now(),
             )
             session.add(cov)
 
@@ -787,7 +786,6 @@ class StorySynthesisOrchestrator:
                 unique_information=diff_entry["unique_information"],
                 missing_information=diff_entry["missing_information"],
                 contradictions=diff_entry["contradictions"],
-                created_at=_now(),
             )
             session.add(diff)
 

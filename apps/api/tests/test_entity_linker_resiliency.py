@@ -20,9 +20,10 @@ async def test_wikidata_multi_resiliency_timeout():
         # Access the underlying retrying controller of the decorated function
         orig_retry = entity_linker._query_wikidata_multi.retry
 
-        with patch.object(orig_retry, "stop", stop_after_attempt(3)), \
-             patch.object(orig_retry, "wait", wait_none()):
-
+        with (
+            patch.object(orig_retry, "stop", stop_after_attempt(3)),
+            patch.object(orig_retry, "wait", wait_none()),
+        ):
             results = await entity_linker._query_wikidata_multi("test query")
 
             # Assertions
@@ -37,9 +38,7 @@ async def test_wikidata_single_resiliency_http_error():
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-        message="500 Internal Server Error",
-        request=MagicMock(),
-        response=mock_response
+        message="500 Internal Server Error", request=MagicMock(), response=mock_response
     )
 
     mock_get = AsyncMock(return_value=mock_response)
@@ -50,11 +49,12 @@ async def test_wikidata_single_resiliency_http_error():
         orig_multi_retry = entity_linker._query_wikidata_multi.retry
         orig_single_retry = entity_linker._query_wikidata.retry
 
-        with patch.object(orig_multi_retry, "stop", stop_after_attempt(3)), \
-             patch.object(orig_multi_retry, "wait", wait_none()), \
-             patch.object(orig_single_retry, "stop", stop_after_attempt(3)), \
-             patch.object(orig_single_retry, "wait", wait_none()):
-
+        with (
+            patch.object(orig_multi_retry, "stop", stop_after_attempt(3)),
+            patch.object(orig_multi_retry, "wait", wait_none()),
+            patch.object(orig_single_retry, "stop", stop_after_attempt(3)),
+            patch.object(orig_single_retry, "wait", wait_none()),
+        ):
             result = await entity_linker._query_wikidata("test query")
 
             # Assertions
