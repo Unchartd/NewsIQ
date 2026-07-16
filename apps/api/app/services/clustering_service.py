@@ -908,6 +908,7 @@ class ClusteringService:
             logger.error("Gemini cluster verification agent failed: %s", e)
             metadata["gemini"]["decision"] = "ERROR"
             metadata["gemini"]["error"] = str(e)
+            gemini_ver = None
         metadata["gemini"]["latency_ms"] = (_now() - start_g).total_seconds() * 1000.0
 
         if high_stakes and settings.OPENAI_API_KEY and gemini_ver is not None:
