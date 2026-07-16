@@ -458,6 +458,7 @@ jobs:
             docker run --rm \
               --dns 8.8.8.8 \
               --dns 1.1.1.1 \
+              --add-host host.docker.internal:host-gateway \
               --env-file .env.production \
               "$IMAGE" \
               alembic upgrade head
