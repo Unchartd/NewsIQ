@@ -51,6 +51,7 @@ engine = create_async_engine(
     # Increase DB_POOL_SIZE/DB_MAX_OVERFLOW in config for paid plans.
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
     # pool_pre_ping — CRITICAL for serverless PostgreSQL.
     # Without this, a recycled connection that was dropped by Neon's
     # compute suspend will cause a cryptic asyncpg error on first use.

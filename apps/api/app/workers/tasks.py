@@ -152,10 +152,16 @@ async def is_pipeline_paused() -> bool:
     try:
         from app.services.cache_service import cache_service
 
+        # Fail-safe: if cache service cannot ping Redis, assume pipeline is paused
+        if not await cache_service.ping():
+            logger.warning("Cache is unreachable. Pipeline is failing safe (auto-paused).")
+            return True
+
         is_paused = await cache_service.get("pipeline_paused")
         return bool(is_paused)
-    except Exception:
-        return False
+    except Exception as exc:
+        logger.warning("Error checking pipeline pause status: %s. Failing safe (auto-paused).", exc)
+        return True
 
 
 @celery_app.task(name="app.workers.tasks.ingest_news_task")
