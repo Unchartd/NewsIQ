@@ -609,6 +609,7 @@ async def get_stage_run_details(
     rca_report = None
     if stage_run.status == "failed" or stage_run.error:
         from app.services.rca_classifier import RootCauseAnalysisService
+
         rca = RootCauseAnalysisService.classify_error(
             error_msg=stage_run.error,
             error_type=stage_run.error_type,
@@ -719,16 +720,22 @@ async def stream_pipeline_status(
         try:
             while True:
                 response = await r.xread(
-                    {"newsiq:pipeline:stream": current_id},
-                    count=10,
-                    block=1000
+                    {"newsiq:pipeline:stream": current_id}, count=10, block=1000
                 )
                 if response:
                     for stream_name, entries in response:
                         for entry_id, entry_data in entries:
-                            current_id = entry_id.decode("utf-8") if isinstance(entry_id, bytes) else entry_id
+                            current_id = (
+                                entry_id.decode("utf-8")
+                                if isinstance(entry_id, bytes)
+                                else entry_id
+                            )
                             event_data = entry_data.get(b"event", b"{}")
-                            decoded = event_data.decode("utf-8") if isinstance(event_data, bytes) else event_data
+                            decoded = (
+                                event_data.decode("utf-8")
+                                if isinstance(event_data, bytes)
+                                else event_data
+                            )
                             yield f"id: {current_id}\ndata: {decoded}\n\n"
                 else:
                     yield ": ping\n\n"
@@ -833,16 +840,22 @@ async def compare_pipeline_runs(
     # Resolve run B (run of same type closest to 24h prior, or second latest)
     if not run_id_b:
         from sqlalchemy import literal
+
         target_time = run_a.started_at - timedelta(hours=24)
         stmt_b = (
             select(PipelineRunModel)
             .where(
                 and_(
                     PipelineRunModel.pipeline_type == run_a.pipeline_type,
-                    PipelineRunModel.id != run_a.id
+                    PipelineRunModel.id != run_a.id,
                 )
             )
-            .order_by(func.abs(func.extract("epoch", PipelineRunModel.started_at) - func.extract("epoch", literal(target_time))).asc())
+            .order_by(
+                func.abs(
+                    func.extract("epoch", PipelineRunModel.started_at)
+                    - func.extract("epoch", literal(target_time))
+                ).asc()
+            )
         )
         res_b = await db.execute(stmt_b.limit(1))
         run_b = res_b.scalar_one_or_none()
@@ -864,7 +877,7 @@ async def compare_pipeline_runs(
         # Fetch total tokens
         stmt_tokens = select(
             func.sum(LLMTraceModel.input_tokens).label("input"),
-            func.sum(LLMTraceModel.output_tokens).label("output")
+            func.sum(LLMTraceModel.output_tokens).label("output"),
         ).where(LLMTraceModel.run_id == run.id)
         tokens_res = await db.execute(stmt_tokens)
         tokens_row = tokens_res.one()
@@ -940,18 +953,22 @@ async def compare_pipeline_runs(
     # Compute differences
     diffs = {}
     if details_a and details_b:
+
         def calculate_diff(key: str, val_a: float, val_b: float):
             diff = val_a - val_b
             percent = (diff / val_b * 100) if val_b > 0 else 0.0
-            return {
-                "diff": diff,
-                "percent": round(percent, 2)
-            }
+            return {"diff": diff, "percent": round(percent, 2)}
 
-        diffs["total_latency_ms"] = calculate_diff("latency", details_a["total_latency_ms"], details_b["total_latency_ms"])
+        diffs["total_latency_ms"] = calculate_diff(
+            "latency", details_a["total_latency_ms"], details_b["total_latency_ms"]
+        )
         diffs["cost_usd"] = calculate_diff("cost", details_a["cost_usd"], details_b["cost_usd"])
-        diffs["total_tokens"] = calculate_diff("tokens", details_a["total_tokens"], details_b["total_tokens"])
-        diffs["success_count"] = calculate_diff("success_count", details_a["success_count"], details_b["success_count"])
+        diffs["total_tokens"] = calculate_diff(
+            "tokens", details_a["total_tokens"], details_b["total_tokens"]
+        )
+        diffs["success_count"] = calculate_diff(
+            "success_count", details_a["success_count"], details_b["success_count"]
+        )
 
         # Stage-by-stage diffs
         stage_diffs = {}
@@ -961,8 +978,12 @@ async def compare_pipeline_runs(
             stg_b = details_b["stages"].get(stage_name)
             if stg_a and stg_b:
                 stage_diffs[stage_name] = {
-                    "latency_ms": calculate_diff("latency", stg_a["latency_ms"], stg_b["latency_ms"]),
-                    "output_count": calculate_diff("output", stg_a["output_count"], stg_b["output_count"])
+                    "latency_ms": calculate_diff(
+                        "latency", stg_a["latency_ms"], stg_b["latency_ms"]
+                    ),
+                    "output_count": calculate_diff(
+                        "output", stg_a["output_count"], stg_b["output_count"]
+                    ),
                 }
         diffs["stages"] = stage_diffs
 
@@ -989,11 +1010,15 @@ async def trigger_manual_purge(
             "message": f"Purge and redaction task (retention={retention_days}d, redact={redact_days}d) triggered in the background."
         }
     else:
-        stats = purge_observability_data_task(retention_days=retention_days, redact_days=redact_days)
+        stats = purge_observability_data_task(
+            retention_days=retention_days, redact_days=redact_days
+        )
         return {
             "message": "Manual purge and redaction completed successfully.",
             "stats": stats,
         }
+
+
 @router.post("/pipeline/runs/{run_id}/export-otel")
 async def trigger_run_export_otel(
     run_id: uuid.UUID,
@@ -1007,8 +1032,16 @@ async def trigger_run_export_otel(
     if not run:
         raise HTTPException(status_code=404, detail="Pipeline run not found.")
 
-    stages = (await db.execute(select(StageRunModel).where(StageRunModel.run_id == run_id))).scalars().all()
-    llm_traces = (await db.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == run_id))).scalars().all()
+    stages = (
+        (await db.execute(select(StageRunModel).where(StageRunModel.run_id == run_id)))
+        .scalars()
+        .all()
+    )
+    llm_traces = (
+        (await db.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == run_id)))
+        .scalars()
+        .all()
+    )
 
     exporter = OTelTraceExporter()
     success = await exporter.export_run(run, list(stages), list(llm_traces))
@@ -1016,7 +1049,9 @@ async def trigger_run_export_otel(
     if success:
         return {"message": "Pipeline run exported successfully to OTLP collector."}
     else:
-        raise HTTPException(status_code=502, detail="Failed to export trace data to OTLP collector.")
+        raise HTTPException(
+            status_code=502, detail="Failed to export trace data to OTLP collector."
+        )
 
 
 @router.get("/articles/{article_id}/trace")
@@ -1139,6 +1174,7 @@ async def merge_clusters(
     await db.flush()
 
     from app.services.story_evolution_service import record_story_evolution
+
     await record_story_evolution(
         db=db,
         story_id=body.target_id,
@@ -1250,6 +1286,7 @@ async def split_cluster(
     )
 
     from app.services.story_evolution_service import record_story_evolution
+
     child_ids = [uuid.uuid4() for _ in sub_clusters]
 
     await record_story_evolution(
@@ -1800,6 +1837,7 @@ async def get_story_evolution(
 ):
     """Retrieve the cluster mutation timeline (Story Evolution) for a story (admin only)."""
     from app.models.observability_models import StoryEvolutionModel
+
     stmt = (
         select(StoryEvolutionModel)
         .where(StoryEvolutionModel.story_id == story_id)

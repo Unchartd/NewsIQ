@@ -72,7 +72,9 @@ async def emit_pipeline_event(event: dict[str, Any]) -> None:
         logger.warning("Failed to emit pipeline event: %s", exc)
 
 
-def save_artifact(name: str, payload: Any, tier: int, run_id: str, span_id: str, success: bool = True) -> str | None:
+def save_artifact(
+    name: str, payload: Any, tier: int, run_id: str, span_id: str, success: bool = True
+) -> str | None:
     """Save an execution artifact to disk according to tiered policies.
 
     Tiers:
@@ -93,7 +95,9 @@ def save_artifact(name: str, payload: Any, tier: int, run_id: str, span_id: str,
 
     try:
         # Create artifacts directory
-        artifacts_dir = os.path.join(settings.LOCAL_STORAGE_PATH, "observability_artifacts", run_id, span_id)
+        artifacts_dir = os.path.join(
+            settings.LOCAL_STORAGE_PATH, "observability_artifacts", run_id, span_id
+        )
         os.makedirs(artifacts_dir, exist_ok=True)
 
         filename = f"{name}.json" if not isinstance(payload, (str, bytes)) else f"{name}.txt"
@@ -306,18 +310,26 @@ class PipelineRun:
 
     def _get_git_sha(self) -> str:
         import subprocess
+
         try:
-            return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("utf-8").strip()
+            return (
+                subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+                .decode("utf-8")
+                .strip()
+            )
         except Exception:
             return "unknown"
 
     def _get_alembic_revision(self) -> str:
         import os
+
         try:
             # Check directory relative to current cwd or project layout
             for path in ["alembic/versions", "apps/api/alembic/versions"]:
                 if os.path.exists(path):
-                    files = [f for f in os.listdir(path) if f.endswith(".py") and not f.startswith("__")]
+                    files = [
+                        f for f in os.listdir(path) if f.endswith(".py") and not f.startswith("__")
+                    ]
                     if files:
                         files.sort(key=lambda x: os.path.getmtime(os.path.join(path, x)))
                         return files[-1].split("_")[0]
@@ -412,6 +424,7 @@ class PipelineRun:
             if settings.OTEL_EXPORTER_ENABLED:
                 try:
                     from app.workers.tasks import export_run_to_otel_task
+
                     export_run_to_otel_task.delay(run_id=str(self.id))
                 except Exception as e:
                     logger.debug(f"Failed to dispatch OTel export Celery task: {e}")
@@ -697,10 +710,12 @@ class StageSpan:
 
 # ── Pipeline Trace Collector & Stage Trace ───────────────────────────────────
 
+
 def _get_system_resources() -> dict[str, float]:
     res = {"cpu_percent": 0.0, "memory_mb": 0.0}
     try:
         import psutil
+
         res["cpu_percent"] = psutil.cpu_percent()
         res["memory_mb"] = psutil.Process().memory_info().rss / (1024 * 1024)
     except Exception:
@@ -711,6 +726,7 @@ def _get_system_resources() -> dict[str, float]:
 def _get_db_pool_status() -> int:
     try:
         from app.core.database import engine
+
         pool = engine.pool
         if hasattr(pool, "checkedout") and callable(pool.checkedout):
             return int(pool.checkedout())
@@ -724,6 +740,7 @@ async def _get_redis_status() -> int:
         import redis.asyncio as aioredis
 
         from app.core.config import settings
+
         r = aioredis.from_url(settings.REDIS_URL)
         info = await r.info("clients")
         clients = int(info.get("connected_clients", 0))
@@ -736,7 +753,9 @@ async def _get_redis_status() -> int:
 class StageTrace:
     """OTel-aligned context manager for tracking metrics, lineage, resources, and artifacts in a stage."""
 
-    def __init__(self, stage_name: str, story_id: str | None = None, article_id: str | None = None) -> None:
+    def __init__(
+        self, stage_name: str, story_id: str | None = None, article_id: str | None = None
+    ) -> None:
         self.stage = stage_name
         self.span_id = str(uuid.uuid4())
         self.run_id = run_id_ctx.get("")
@@ -771,6 +790,7 @@ class StageTrace:
 
     async def _resource_sampling_loop(self, interval_seconds: float = 5.0) -> None:
         import asyncio
+
         try:
             while self.status == "RUNNING":
                 await asyncio.sleep(interval_seconds)
@@ -798,6 +818,7 @@ class StageTrace:
 
         # Start background resource sampling loop
         import asyncio
+
         self._sampling_task = asyncio.create_task(self._resource_sampling_loop(5.0))
 
         # Emit StageStarted event
@@ -860,7 +881,7 @@ class StageTrace:
                 sampled[k] = {
                     "total_count": count,
                     "sample": sample,
-                    "checksum": self._compute_checksum(v)
+                    "checksum": self._compute_checksum(v),
                 }
             else:
                 sampled[k] = str(v.id) if hasattr(v, "id") else str(v)
@@ -879,10 +900,7 @@ class StageTrace:
                     first_10 = [str(x.id) if hasattr(x, "id") else str(x) for x in v[:10]]
                     last_10 = [str(x.id) if hasattr(x, "id") else str(x) for x in v[-10:]]
                     sample = first_10 + ["..."] + last_10
-                sampled[k] = {
-                    "total_count": count,
-                    "sample": sample
-                }
+                sampled[k] = {"total_count": count, "sample": sample}
             else:
                 sampled[k] = str(v.id) if hasattr(v, "id") else str(v)
         self.output_data.update(sampled)
@@ -897,13 +915,15 @@ class StageTrace:
 
     def lineage(self, node_id: str, node_type: str, transition: str) -> None:
         """Record data lineage transition logs."""
-        self.lineage_data.append({
-            "node_id": node_id,
-            "type": node_type,
-            "transition": transition,
-            "created_at": datetime.now(UTC).isoformat() + "Z",
-            "produced_by": self.stage
-        })
+        self.lineage_data.append(
+            {
+                "node_id": node_id,
+                "type": node_type,
+                "transition": transition,
+                "created_at": datetime.now(UTC).isoformat() + "Z",
+                "produced_by": self.stage,
+            }
+        )
 
     def artifact(self, name: str, payload: Any, tier: int = 1) -> None:
         """Save tiered large execution payloads to filesystem."""
@@ -913,7 +933,7 @@ class StageTrace:
             tier=tier,
             run_id=self.run_id,
             span_id=self.span_id,
-            success=(self.status != "FAILED")
+            success=(self.status != "FAILED"),
         )
         if path:
             self.artifacts_data[name] = path
@@ -941,10 +961,7 @@ class StageTrace:
             "warnings": self.warnings,
             "errors": self.errors + ([error] if error else []),
             "lineage": self.lineage_data,
-            "resources": {
-                "start": self.resources_start,
-                "end": self.resources_end
-            }
+            "resources": {"start": self.resources_start, "end": self.resources_end},
         }
         await emit_pipeline_event(event)
 
@@ -954,6 +971,7 @@ class StageTrace:
 
     def _compute_checksum(self, data: Any) -> str:
         import hashlib
+
         try:
             return hashlib.sha256(str(data).encode("utf-8")).hexdigest()
         except Exception:
@@ -976,10 +994,7 @@ class StageTrace:
                 "errors": self.errors,
                 "lineage": self.lineage_data,
                 "artifacts": self.artifacts_data,
-                "resources": {
-                    "start": self.resources_start,
-                    "end": self.resources_end
-                }
+                "resources": {"start": self.resources_start, "end": self.resources_end},
             }
 
             if not stage_run:
@@ -997,7 +1012,7 @@ class StageTrace:
                     error_type="Exception" if self.errors else None,
                     story_id=_to_uuid(self.story_id),
                     article_id=_to_uuid(self.article_id),
-                    metadata_payload=metadata_payload
+                    metadata_payload=metadata_payload,
                 )
                 session.add(stage_run)
             else:
@@ -1015,7 +1030,9 @@ class PipelineTraceCollector:
     """Centralized manager to spawn instrumented stage contexts."""
 
     @classmethod
-    def stage(cls, name: str, story_id: str | None = None, article_id: str | None = None) -> StageTrace:
+    def stage(
+        cls, name: str, story_id: str | None = None, article_id: str | None = None
+    ) -> StageTrace:
         return StageTrace(name, story_id=story_id, article_id=article_id)
 
 
@@ -1253,23 +1270,25 @@ async def _persist_llm_call(call: LLMCallData) -> None:
 
         # Decide whether to save prompt text based on settings & status
         save_prompts = (
-            call.status == "error" or
-            settings.DEBUG or
-            getattr(call, "sample_prompt", False)
+            call.status == "error" or settings.DEBUG or getattr(call, "sample_prompt", False)
         )
 
         trace = LLMTraceModel(
             id=uuid.UUID(call.call_id),
             run_id=uuid.UUID(call.run_id) if call.run_id else None,
             stage_run_id=uuid.UUID(call.stage_run_id) if call.stage_run_id else None,
-            parent_llm_trace_id=uuid.UUID(call.parent_llm_trace_id) if call.parent_llm_trace_id else None,
+            parent_llm_trace_id=uuid.UUID(call.parent_llm_trace_id)
+            if call.parent_llm_trace_id
+            else None,
             trace_id=uuid.UUID(call.trace_id) if call.trace_id else None,
             provider=call.provider,
             model=call.model,
             stage=call.stage,
             system_prompt=call.system_prompt if save_prompts else None,
             user_prompt=call.user_prompt if save_prompts else None,
-            response_text=call.response_text[:50000] if (save_prompts or call.status == "error") else None,
+            response_text=call.response_text[:50000]
+            if (save_prompts or call.status == "error")
+            else None,
             input_tokens=call.input_tokens,
             output_tokens=call.output_tokens,
             total_tokens=call.total_tokens,

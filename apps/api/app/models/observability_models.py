@@ -644,9 +644,15 @@ class StoryEvolutionModel(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
-    story_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
-    event_type: Mapped[str] = mapped_column(String(50), index=True)  # created, article_merged, split, merged, promoted
-    article_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), index=True, nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(50), index=True
+    )  # created, article_merged, split, merged, promoted
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), index=True, nullable=True
+    )
     parent_story_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     child_story_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     before_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

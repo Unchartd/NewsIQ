@@ -723,6 +723,7 @@ class ClusteringService:
             await self.compute_trending_score(story, session)
 
             from app.services.story_evolution_service import record_story_evolution
+
             await record_story_evolution(
                 db=session,
                 story_id=story_id,
@@ -1897,6 +1898,7 @@ class ClusteringService:
                         await self.compute_trending_score(story, session)
 
                     from app.services.story_evolution_service import record_story_evolution
+
                     await record_story_evolution(
                         db=session,
                         story_id=story_id,

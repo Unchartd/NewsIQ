@@ -210,6 +210,7 @@ class DiscoveryManager:
                 item.state = DiscoveryState.CLUSTER_CREATED
 
             from app.services.story_evolution_service import record_story_evolution
+
             await record_story_evolution(
                 db=session,
                 story_id=new_story.id,

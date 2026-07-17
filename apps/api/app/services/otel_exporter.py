@@ -36,8 +36,7 @@ class OTelTraceExporter:
             "startTimeUnixNano": str(int(start_time.timestamp() * 1e9)),
             "endTimeUnixNano": str(int(end_time.timestamp() * 1e9)),
             "attributes": [
-                {"key": k, "value": self._to_otel_value(v)}
-                for k, v in (attributes or {}).items()
+                {"key": k, "value": self._to_otel_value(v)} for k, v in (attributes or {}).items()
             ],
             "status": {"code": status_code},
         }
@@ -137,7 +136,9 @@ class OTelTraceExporter:
                     "llm.cost_usd": llm.cost_usd or 0.0,
                     "llm.latency_ms": llm.latency_ms or 0.0,
                 }
-                parent_id = str(llm.parent_llm_trace_id) if llm.parent_llm_trace_id else stage_span_id
+                parent_id = (
+                    str(llm.parent_llm_trace_id) if llm.parent_llm_trace_id else stage_span_id
+                )
 
                 spans.append(
                     self._to_otel_span(
@@ -158,7 +159,10 @@ class OTelTraceExporter:
                 {
                     "resource": {
                         "attributes": [
-                            {"key": "service.name", "value": {"stringValue": "newsiq-pipeline-processor"}}
+                            {
+                                "key": "service.name",
+                                "value": {"stringValue": "newsiq-pipeline-processor"},
+                            }
                         ]
                     },
                     "scopeSpans": [

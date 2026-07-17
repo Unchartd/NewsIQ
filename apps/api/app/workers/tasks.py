@@ -396,11 +396,15 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                     stage.metric("success_count", success_count)
                     stage.metric("failed_count", failed_count)
 
-                    stage.artifact("embedding_metrics", {
-                        "total": len(pending_articles),
-                        "success": success_count,
-                        "failed": failed_count,
-                    }, tier=1)
+                    stage.artifact(
+                        "embedding_metrics",
+                        {
+                            "total": len(pending_articles),
+                            "success": success_count,
+                            "failed": failed_count,
+                        },
+                        tier=1,
+                    )
 
                     logger.info(
                         "Embedding batch complete",
@@ -570,13 +574,15 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             success_count += 1
                             stage.lineage(str(article.id), "ARTICLE", "EVENTS_EXTRACTED")
 
-                            extracted_events_summary.append({
-                                "article_id": str(article.id),
-                                "primary_event": pe.event_type,
-                                "actors": pe.actors,
-                                "targets": pe.targets,
-                                "confidence": pe.confidence,
-                            })
+                            extracted_events_summary.append(
+                                {
+                                    "article_id": str(article.id),
+                                    "primary_event": pe.event_type,
+                                    "actors": pe.actors,
+                                    "targets": pe.targets,
+                                    "confidence": pe.confidence,
+                                }
+                            )
 
                             # Try real-time incremental merge into similar story
                             from app.services.clustering_service import clustering_service
@@ -641,7 +647,11 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     "Failed to record event extraction failure: %s", rec_err
                                 )
 
-                    stage.output(success_count=success_count, failed_count=failed_count, merged_count=merged_count)
+                    stage.output(
+                        success_count=success_count,
+                        failed_count=failed_count,
+                        merged_count=merged_count,
+                    )
                     stage.metric("batch_size", len(articles))
                     stage.metric("success_count", success_count)
                     stage.metric("failed_count", failed_count)
@@ -2028,7 +2038,9 @@ def discovery_grouping_task() -> None:
 
 
 @celery_app.task(name="app.workers.tasks.purge_observability_data_task")
-def purge_observability_data_task(retention_days: int = 30, redact_days: int = 14) -> dict[str, int]:
+def purge_observability_data_task(
+    retention_days: int = 30, redact_days: int = 14
+) -> dict[str, int]:
     """Purge and redact old observability telemetry to enforce retention policies and reduce DB bloat."""
     logger.info("Celery task: Running daily purge/redaction of observability data.")
 
@@ -2066,6 +2078,7 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
             # 1. PURGE telemetry older than retention_days (30 days)
             # Delete runs (cascades to stage_runs)
             from typing import Any as TAny
+
             stmt_runs = delete(PipelineRunModel).where(PipelineRunModel.started_at < cutoff_purge)
             res_runs: TAny = await session.execute(stmt_runs)
             stats["runs_purged"] = res_runs.rowcount
@@ -2076,12 +2089,16 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
             stats["llm_traces_purged"] = res_llm.rowcount
 
             # Delete queue metrics
-            stmt_queue = delete(QueueMetricsModel).where(QueueMetricsModel.captured_at < cutoff_purge)
+            stmt_queue = delete(QueueMetricsModel).where(
+                QueueMetricsModel.captured_at < cutoff_purge
+            )
             res_queue: TAny = await session.execute(stmt_queue)
             stats["queue_metrics_purged"] = res_queue.rowcount
 
             # Delete retry history
-            stmt_retry = delete(RetryHistoryModel).where(RetryHistoryModel.created_at < cutoff_purge)
+            stmt_retry = delete(RetryHistoryModel).where(
+                RetryHistoryModel.created_at < cutoff_purge
+            )
             res_retry: TAny = await session.execute(stmt_retry)
             stats["retry_history_purged"] = res_retry.rowcount
 
@@ -2091,7 +2108,9 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
             stats["error_logs_purged"] = res_error.rowcount
 
             # Delete story evolutions
-            stmt_evo = delete(StoryEvolutionModel).where(StoryEvolutionModel.created_at < cutoff_purge)
+            stmt_evo = delete(StoryEvolutionModel).where(
+                StoryEvolutionModel.created_at < cutoff_purge
+            )
             res_evo: TAny = await session.execute(stmt_evo)
             stats["story_evolutions_purged"] = res_evo.rowcount
 
@@ -2099,7 +2118,10 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
             # Redact pipeline runs
             stmt_redact_runs = (
                 update(PipelineRunModel)
-                .where(PipelineRunModel.started_at < cutoff_redact, PipelineRunModel.started_at >= cutoff_purge)
+                .where(
+                    PipelineRunModel.started_at < cutoff_redact,
+                    PipelineRunModel.started_at >= cutoff_purge,
+                )
                 .values(metadata_payload=None)
             )
             res_redact_runs: TAny = await session.execute(stmt_redact_runs)
@@ -2108,7 +2130,10 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
             # Redact stage runs
             stmt_redact_stages = (
                 update(StageRunModel)
-                .where(StageRunModel.started_at < cutoff_redact, StageRunModel.started_at >= cutoff_purge)
+                .where(
+                    StageRunModel.started_at < cutoff_redact,
+                    StageRunModel.started_at >= cutoff_purge,
+                )
                 .values(metadata_payload=None)
             )
             res_redact_stages: TAny = await session.execute(stmt_redact_stages)
@@ -2117,7 +2142,10 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
             # Redact LLM traces prompts and responses
             stmt_redact_llm = (
                 update(LLMTraceModel)
-                .where(LLMTraceModel.created_at < cutoff_redact, LLMTraceModel.created_at >= cutoff_purge)
+                .where(
+                    LLMTraceModel.created_at < cutoff_redact,
+                    LLMTraceModel.created_at >= cutoff_purge,
+                )
                 .values(
                     system_prompt="[REDACTED (Retention Policy)]",
                     user_prompt="[REDACTED (Retention Policy)]",
@@ -2129,10 +2157,7 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
 
             await session.commit()
 
-        logger.info(
-            "Purge/Redaction completed successfully.",
-            extra={"purge_stats": stats}
-        )
+        logger.info("Purge/Redaction completed successfully.", extra={"purge_stats": stats})
         return stats
 
     return run_async(_run())
@@ -2156,8 +2181,16 @@ def export_run_to_otel_task(run_id: str) -> bool:
             run = await session.get(PipelineRunModel, u_id)
             if not run:
                 return False
-            stages = (await session.execute(select(StageRunModel).where(StageRunModel.run_id == u_id))).scalars().all()
-            llm_traces = (await session.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == u_id))).scalars().all()
+            stages = (
+                (await session.execute(select(StageRunModel).where(StageRunModel.run_id == u_id)))
+                .scalars()
+                .all()
+            )
+            llm_traces = (
+                (await session.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == u_id)))
+                .scalars()
+                .all()
+            )
 
             exporter = OTelTraceExporter()
             return await exporter.export_run(run, list(stages), list(llm_traces))

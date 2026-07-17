@@ -80,6 +80,7 @@ class StoryLifecycleManager:
         await db.flush()
 
         from app.services.story_evolution_service import record_story_evolution
+
         await record_story_evolution(
             db=db,
             story_id=story.id,
