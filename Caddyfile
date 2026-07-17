@@ -21,3 +21,8 @@ admin.newsiq.online {
 newsiq.online, www.newsiq.online {
     reverse_proxy web-prod:3000
 }
+
+# Database Dashboard
+db.newsiq.online {
+    reverse_proxy newsiq-cloudbeaver:8978
+}
