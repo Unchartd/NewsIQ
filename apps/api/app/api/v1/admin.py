@@ -832,6 +832,7 @@ async def compare_pipeline_runs(
 
     # Resolve run B (run of same type closest to 24h prior, or second latest)
     if not run_id_b:
+        from sqlalchemy import literal
         target_time = run_a.started_at - timedelta(hours=24)
         stmt_b = (
             select(PipelineRunModel)
@@ -841,7 +842,7 @@ async def compare_pipeline_runs(
                     PipelineRunModel.id != run_a.id
                 )
             )
-            .order_by(func.abs(func.extract("epoch", PipelineRunModel.started_at) - func.extract("epoch", target_time)).asc())
+            .order_by(func.abs(func.extract("epoch", PipelineRunModel.started_at) - func.extract("epoch", literal(target_time))).asc())
         )
         res_b = await db.execute(stmt_b.limit(1))
         run_b = res_b.scalar_one_or_none()

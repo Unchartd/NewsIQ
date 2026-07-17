@@ -1,11 +1,14 @@
 """Service utility to record story cluster mutation events (Story Evolution)."""
 
-from typing import Any
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.observability_models import StoryEvolutionModel
+
 from app.core.trace import run_id_ctx
+from app.models.observability_models import StoryEvolutionModel
+
 
 async def record_story_evolution(
     db: AsyncSession,

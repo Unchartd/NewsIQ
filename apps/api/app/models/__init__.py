@@ -50,8 +50,8 @@ from app.models.observability_models import (
     QueueMetricsModel,
     RetryHistoryModel,
     StageRunModel,
-    TokenUsageModel,
     StoryEvolutionModel,
+    TokenUsageModel,
 )
 
 __all__ = [

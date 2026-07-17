@@ -15,11 +15,11 @@ automatically inherits the trace context via structlog bindings.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import traceback
 import uuid
-import asyncio
 from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
@@ -711,7 +711,10 @@ def _get_system_resources() -> dict[str, float]:
 def _get_db_pool_status() -> int:
     try:
         from app.core.database import engine
-        return engine.pool.checkedout()
+        pool = engine.pool
+        if hasattr(pool, "checkedout") and callable(pool.checkedout):
+            return int(pool.checkedout())
+        return 0
     except Exception:
         return 0
 
