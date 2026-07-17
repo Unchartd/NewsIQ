@@ -178,10 +178,10 @@ services:
     container_name: newsiq-cloudbeaver
     restart: unless-stopped
     profiles: [tools]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8978:8978"
-    depends_on:
-      - postgres
 
   # ────────────────────────────────────────────────────────────────────────────
   # Stateful compute services — always local (both dev + prod)
