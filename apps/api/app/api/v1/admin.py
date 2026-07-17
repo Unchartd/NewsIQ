@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select, text
@@ -606,6 +606,17 @@ async def get_stage_run_details(
         for t in llm_traces
     ]
 
+    rca_report = None
+    if stage_run.status == "failed" or stage_run.error:
+        from app.services.rca_classifier import RootCauseAnalysisService
+        rca = RootCauseAnalysisService.classify_error(
+            error_msg=stage_run.error,
+            error_type=stage_run.error_type,
+            metadata=stage_run.metadata_payload,
+        )
+        if rca:
+            rca_report = rca.model_dump()
+
     return {
         "id": str(stage_run.id),
         "run_id": str(stage_run.run_id),
@@ -624,6 +635,7 @@ async def get_stage_run_details(
         "article_id": str(stage_run.article_id) if stage_run.article_id else None,
         "metadata": stage_run.metadata_payload or {},
         "llm_traces": traces_payload,
+        "rca_report": rca_report,
     }
 
 
@@ -692,7 +704,6 @@ async def stream_pipeline_status(
     last_id: str = "$",
 ):
     """SSE endpoint streaming real-time pipeline status transitions from Redis Streams."""
-    from fastapi import Request
     import redis.asyncio as aioredis
     from app.core.config import settings
     import asyncio
@@ -978,6 +989,29 @@ async def trigger_manual_purge(
             "message": "Manual purge and redaction completed successfully.",
             "stats": stats,
         }
+@router.post("/pipeline/runs/{run_id}/export-otel")
+async def trigger_run_export_otel(
+    run_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually export a specific run's trace data to Jaeger/Tempo OTLP collector."""
+    from app.services.otel_exporter import OTelTraceExporter
+
+    run = await db.get(PipelineRunModel, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Pipeline run not found.")
+
+    stages = (await db.execute(select(StageRunModel).where(StageRunModel.run_id == run_id))).scalars().all()
+    llm_traces = (await db.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == run_id))).scalars().all()
+
+    exporter = OTelTraceExporter()
+    success = await exporter.export_run(run, list(stages), list(llm_traces))
+
+    if success:
+        return {"message": "Pipeline run exported successfully to OTLP collector."}
+    else:
+        raise HTTPException(status_code=502, detail="Failed to export trace data to OTLP collector.")
 
 
 @router.get("/articles/{article_id}/trace")

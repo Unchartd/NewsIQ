@@ -255,6 +255,10 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
 
+    # OpenTelemetry / Jaeger / Tempo Exporter
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4318/v1/traces"
+    OTEL_EXPORTER_ENABLED: bool = False
+
     # ── Error Tracking — Sentry ───────────────────────────────────────────────
     SENTRY_DSN: str | None = None
 

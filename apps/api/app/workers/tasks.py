@@ -2133,3 +2133,28 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
         return stats
 
     return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.export_run_to_otel_task")
+def export_run_to_otel_task(run_id: str) -> bool:
+    """Asynchronously export completed pipeline run data to Jaeger/Tempo."""
+    logger.info(f"Celery task: Exporting pipeline run {run_id} to OpenTelemetry...")
+
+    async def _run() -> bool:
+        import uuid
+        from sqlalchemy import select
+        from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel
+        from app.services.otel_exporter import OTelTraceExporter
+
+        u_id = uuid.UUID(run_id)
+        async with async_session_factory() as session:
+            run = await session.get(PipelineRunModel, u_id)
+            if not run:
+                return False
+            stages = (await session.execute(select(StageRunModel).where(StageRunModel.run_id == u_id))).scalars().all()
+            llm_traces = (await session.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == u_id))).scalars().all()
+
+            exporter = OTelTraceExporter()
+            return await exporter.export_run(run, list(stages), list(llm_traces))
+
+    return run_async(_run())

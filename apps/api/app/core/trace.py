@@ -404,6 +404,13 @@ class PipelineRun:
 
             await session.commit()
 
+            if settings.OTEL_EXPORTER_ENABLED:
+                try:
+                    from app.workers.tasks import export_run_to_otel_task
+                    export_run_to_otel_task.delay(run_id=str(self.id))
+                except Exception as e:
+                    logger.debug(f"Failed to dispatch OTel export Celery task: {e}")
+
 
 async def publish_pipeline_event(data: dict[str, Any]) -> None:
     """Broadcast pipeline status transitions to Redis using Streams."""

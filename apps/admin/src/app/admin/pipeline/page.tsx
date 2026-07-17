@@ -545,10 +545,26 @@ function InvestigationView({
         {selectedRunId ? (
           <>
             <div className="glass rounded-2xl p-5 border border-slate-850 space-y-4">
-              <h3 className="text-xs font-bold text-slate-200 flex items-center gap-2 uppercase tracking-wide">
-                <GitBranch className="w-4 h-4 text-slate-400" />
-                Environment Version Lock
-              </h3>
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xs font-bold text-slate-200 flex items-center gap-2 uppercase tracking-wide">
+                  <GitBranch className="w-4 h-4 text-slate-400" />
+                  Environment Version Lock
+                </h3>
+                <button
+                  onClick={async () => {
+                    try {
+                      await apiClient.post(`/admin/pipeline/runs/${selectedRunId}/export-otel`);
+                      toast.success("Successfully exported trace data to OTLP collector!");
+                    } catch (err: any) {
+                      toast.error("Failed to export trace: " + (err.response?.data?.detail || err.message));
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-primary/20 hover:bg-primary/30 border border-primary/30 rounded-lg text-[10px] font-bold text-primary flex items-center gap-1 transition-all"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Export Trace to OTel
+                </button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
                 <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 flex items-center justify-between">
                   <div className="space-y-0.5">
@@ -605,6 +621,29 @@ function InvestigationView({
                 </div>
               ) : stageDetails ? (
                 <>
+                  {/* RCA Failures Classifier Report */}
+                  {stageDetails.rca_report && (
+                    <div className="glass bg-red-950/10 border border-red-500/20 rounded-2xl p-5 space-y-3.5">
+                      <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider font-mono">
+                        <AlertTriangle className="w-4 h-4" />
+                        Root Cause Analysis: {stageDetails.rca_report.category}
+                        <span className="ml-auto bg-red-500/10 text-[9px] px-2 py-0.5 rounded border border-red-500/20">
+                          {(stageDetails.rca_report.confidence * 100).toFixed(0)}% Conf
+                        </span>
+                      </div>
+                      <div className="text-xs space-y-2">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wide">Diagnosis</span>
+                          <p className="text-slate-350 leading-relaxed">{stageDetails.rca_report.description}</p>
+                        </div>
+                        <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-900 space-y-1.5 mt-2">
+                          <span className="text-[10px] text-emerald-400 block uppercase font-bold tracking-wide font-mono">Remediation Guide</span>
+                          <p className="text-slate-300 leading-relaxed font-sans">{stageDetails.rca_report.remediation}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {stageDetails.metadata && Object.keys(stageDetails.metadata).length > 0 && (
                     <div className="glass rounded-2xl p-5 border border-slate-850 space-y-4">
                       <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wide">
