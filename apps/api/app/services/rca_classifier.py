@@ -1,5 +1,7 @@
 from typing import Any
+
 from pydantic import BaseModel
+
 
 class RCAReport(BaseModel):
     category: str
@@ -24,7 +26,7 @@ class RootCauseAnalysisService:
         meta = metadata or {}
 
         # Rule 1: LLM Rate Limits
-        if any(w in msg_lower for w in ["429", "rate limit", "quota exceeded", "ratelimiterror", "too many requests"]):
+        if any(w in msg_lower for w in ["429", "rate limit", "quota exceeded", "ratelimiterror", "too many requests"]) or "ratelimit" in type_lower:
             return RCAReport(
                 category="LLM_RATE_LIMIT",
                 confidence=0.95,
@@ -33,7 +35,7 @@ class RootCauseAnalysisService:
             )
 
         # Rule 2: LLM Context Window
-        if any(w in msg_lower for w in ["context length", "max tokens", "context window", "too long", "token limit"]):
+        if any(w in msg_lower for w in ["context length", "max tokens", "context window", "too long", "token limit"]) or "contextlength" in type_lower:
             return RCAReport(
                 category="LLM_CONTEXT_WINDOW_EXCEEDED",
                 confidence=0.90,
@@ -42,7 +44,7 @@ class RootCauseAnalysisService:
             )
 
         # Rule 3: Database Connection Pools / Timeout
-        if any(w in msg_lower for w in ["timeout", "connection pool", "operationalerror", "interfaceerror", "too many connections"]):
+        if any(w in msg_lower for w in ["timeout", "connection pool", "operationalerror", "interfaceerror", "too many connections"]) or "operationalerror" in type_lower:
             return RCAReport(
                 category="DATABASE_TIMEOUT",
                 confidence=0.85,
@@ -51,7 +53,7 @@ class RootCauseAnalysisService:
             )
 
         # Rule 4: Vector Database Unavailable
-        if any(w in msg_lower for w in ["qdrant", "connectionrefused", "vector db", "cannot connect to vector"]):
+        if any(w in msg_lower for w in ["qdrant", "connectionrefused", "vector db", "cannot connect to vector"]) or "connectionrefused" in type_lower:
             return RCAReport(
                 category="VECTOR_DB_UNAVAILABLE",
                 confidence=0.95,
@@ -61,7 +63,7 @@ class RootCauseAnalysisService:
 
         # Rule 5: Resource OOM (Out of Memory)
         memory_usage = meta.get("resource_usage", {}).get("memory_percent", 0.0)
-        if memory_usage > 95.0 or "memoryerror" in msg_lower or "oom" in msg_lower:
+        if memory_usage > 95.0 or "memoryerror" in msg_lower or "oom" in msg_lower or "memoryerror" in type_lower:
             return RCAReport(
                 category="OUT_OF_MEMORY",
                 confidence=0.90,

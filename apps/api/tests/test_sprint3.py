@@ -1,21 +1,13 @@
-import pytest
 import uuid
-from datetime import datetime, UTC, timedelta
 from unittest.mock import MagicMock, patch
-from sqlalchemy import select, delete, update
+
+import pytest
 
 from app.models.observability_models import (
     StoryEvolutionModel,
-    PipelineRunModel,
-    StageRunModel,
-    LLMTraceModel,
-    QueueMetricsModel,
-    RetryHistoryModel,
-    ErrorLogModel,
 )
 from app.services.story_evolution_service import record_story_evolution
 from app.workers.tasks import purge_observability_data_task
-from app.core.trace import run_id_ctx
 
 
 @pytest.mark.asyncio

@@ -19,8 +19,9 @@ import logging
 import time
 import traceback
 import uuid
+import asyncio
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -58,7 +59,9 @@ def get_next_sequence_number() -> int:
 async def emit_pipeline_event(event: dict[str, Any]) -> None:
     """Publish an observability event to a Redis Stream."""
     import json
+
     import redis.asyncio as aioredis
+
     from app.core.config import settings
 
     try:
@@ -83,8 +86,9 @@ def save_artifact(name: str, payload: Any, tier: int, run_id: str, span_id: str,
     if tier == 2 and success:
         return None
 
-    import os
     import json
+    import os
+
     from app.core.config import settings
 
     try:
@@ -324,9 +328,10 @@ class PipelineRun:
     async def _persist(self) -> None:
         """Persist/Upsert the PipelineRun and all StageRuns to the database."""
         import os
+
+        from app.core.config import settings
         from app.core.database import async_session_factory
         from app.models.observability_models import PipelineRunModel, StageRunModel
-        from app.core.config import settings
 
         async with async_session_factory() as session:
             stmt = select(PipelineRunModel).where(PipelineRunModel.id == _to_uuid(self.id))
@@ -714,6 +719,7 @@ def _get_db_pool_status() -> int:
 async def _get_redis_status() -> int:
     try:
         import redis.asyncio as aioredis
+
         from app.core.config import settings
         r = aioredis.from_url(settings.REDIS_URL)
         info = await r.info("clients")
@@ -741,23 +747,24 @@ class StageTrace:
 
         self.status = "RUNNING"
         self.started_at = datetime.now(UTC).replace(tzinfo=None)
-        self.completed_at = None
-        self.latency_ms = 0.0
-        self.retry_count = 0
-        self.errors = []
-        self.warnings = []
-        self.metrics_data = {}
-        self.input_data = {}
-        self.output_data = {}
-        self.artifacts_data = {}
-        self.lineage_data = []
-        self.resources_start = {}
-        self.resources_end = {}
-        self.resources_history = []
-        self._sampling_task = None
-        self._start_time = 0.0
-        self._span_token = None
-        self._stage_token = None
+        self.completed_at: datetime | None = None
+        self.latency_ms: float = 0.0
+        self.retry_count: int = 0
+        self.errors: list[Any] = []
+        self.warnings: list[str] = []
+        self.metrics_data: dict[str, Any] = {}
+        self.input_data: dict[str, Any] = {}
+        self.output_data: dict[str, Any] = {}
+        self.artifacts_data: dict[str, Any] = {}
+        self.lineage_data: list[Any] = []
+        self.resources_start: dict[str, Any] = {}
+        self.resources_end: dict[str, Any] = {}
+        self.resources_history: list[Any] = []
+        self.metadata: dict[str, Any] = {}
+        self._sampling_task: asyncio.Task[None] | None = None
+        self._start_time: float = 0.0
+        self._span_token: Token[str] | None = None
+        self._stage_token: Token[str] | None = None
 
     async def _resource_sampling_loop(self, interval_seconds: float = 5.0) -> None:
         import asyncio
@@ -766,7 +773,7 @@ class StageTrace:
                 await asyncio.sleep(interval_seconds)
                 if self.status != "RUNNING":
                     break
-                sample = _get_system_resources()
+                sample: dict[str, Any] = _get_system_resources()
                 sample["db_connections"] = _get_db_pool_status()
                 sample["redis_clients"] = await _get_redis_status()
                 sample["timestamp"] = datetime.now(UTC).replace(tzinfo=None).isoformat()
@@ -807,8 +814,10 @@ class StageTrace:
                 pass
 
         # Reset context variables
-        span_id_ctx.reset(self._span_token)
-        stage_ctx.reset(self._stage_token)
+        if self._span_token is not None:
+            span_id_ctx.reset(self._span_token)
+        if self._stage_token is not None:
+            stage_ctx.reset(self._stage_token)
 
         # Profile resource end snapshot
         self.resources_end = _get_system_resources()
@@ -834,7 +843,7 @@ class StageTrace:
 
     def input(self, **kwargs) -> None:
         """Add stage input snapshot with sampling limits."""
-        sampled = {}
+        sampled: dict[str, Any] = {}
         for k, v in kwargs.items():
             if isinstance(v, list):
                 count = len(v)
@@ -856,7 +865,7 @@ class StageTrace:
 
     def output(self, **kwargs) -> None:
         """Add stage output snapshot with sampling."""
-        sampled = {}
+        sampled: dict[str, Any] = {}
         for k, v in kwargs.items():
             if isinstance(v, list):
                 count = len(v)
@@ -1178,10 +1187,12 @@ async def track_llm_call(
 async def _persist_llm_call(call: LLMCallData) -> None:
     """Persist an LLM call record to the database."""
     import hashlib
+
     from sqlalchemy import func, select, update
+
+    from app.core.config import settings
     from app.core.database import async_session_factory
     from app.models.observability_models import LLMTraceModel, PromptVersionModel
-    from app.core.config import settings
 
     async with async_session_factory() as session:
         # Find active prompt version for this stage
@@ -1239,8 +1250,8 @@ async def _persist_llm_call(call: LLMCallData) -> None:
 
         # Decide whether to save prompt text based on settings & status
         save_prompts = (
-            call.status == "error" or 
-            settings.DEBUG or 
+            call.status == "error" or
+            settings.DEBUG or
             getattr(call, "sample_prompt", False)
         )
 

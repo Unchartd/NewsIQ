@@ -35,8 +35,8 @@ from app.core.database import async_session_factory, engine
 from app.core.trace import (
     PipelineRun,
     PipelineStage,
-    StageSpan,
     PipelineTraceCollector,
+    StageSpan,
     bind_article_context,
 )
 from app.models.models import Article, ArticleEntity, ArticleEvent
@@ -726,7 +726,7 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
 
             async with PipelineRun(
                 trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
-            ) as run:
+            ):
                 async with PipelineTraceCollector.stage(PipelineStage.CLUSTERING_BATCH) as stage:
                     async with async_session_factory() as session:
                         from app.services.clustering_service import clustering_service
@@ -2034,14 +2034,16 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
 
     async def _run() -> dict[str, int]:
         from datetime import UTC, datetime, timedelta
+
         from sqlalchemy import delete, update
+
         from app.models.observability_models import (
-            PipelineRunModel,
-            StageRunModel,
+            ErrorLogModel,
             LLMTraceModel,
+            PipelineRunModel,
             QueueMetricsModel,
             RetryHistoryModel,
-            ErrorLogModel,
+            StageRunModel,
             StoryEvolutionModel,
         )
 
@@ -2063,33 +2065,34 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
         async with async_session_factory() as session:
             # 1. PURGE telemetry older than retention_days (30 days)
             # Delete runs (cascades to stage_runs)
+            from typing import Any as TAny
             stmt_runs = delete(PipelineRunModel).where(PipelineRunModel.started_at < cutoff_purge)
-            res_runs = await session.execute(stmt_runs)
+            res_runs: TAny = await session.execute(stmt_runs)
             stats["runs_purged"] = res_runs.rowcount
 
             # Delete LLM traces
             stmt_llm = delete(LLMTraceModel).where(LLMTraceModel.created_at < cutoff_purge)
-            res_llm = await session.execute(stmt_llm)
+            res_llm: TAny = await session.execute(stmt_llm)
             stats["llm_traces_purged"] = res_llm.rowcount
 
             # Delete queue metrics
             stmt_queue = delete(QueueMetricsModel).where(QueueMetricsModel.captured_at < cutoff_purge)
-            res_queue = await session.execute(stmt_queue)
+            res_queue: TAny = await session.execute(stmt_queue)
             stats["queue_metrics_purged"] = res_queue.rowcount
 
             # Delete retry history
             stmt_retry = delete(RetryHistoryModel).where(RetryHistoryModel.created_at < cutoff_purge)
-            res_retry = await session.execute(stmt_retry)
+            res_retry: TAny = await session.execute(stmt_retry)
             stats["retry_history_purged"] = res_retry.rowcount
 
             # Delete error logs
             stmt_error = delete(ErrorLogModel).where(ErrorLogModel.created_at < cutoff_purge)
-            res_error = await session.execute(stmt_error)
+            res_error: TAny = await session.execute(stmt_error)
             stats["error_logs_purged"] = res_error.rowcount
 
             # Delete story evolutions
             stmt_evo = delete(StoryEvolutionModel).where(StoryEvolutionModel.created_at < cutoff_purge)
-            res_evo = await session.execute(stmt_evo)
+            res_evo: TAny = await session.execute(stmt_evo)
             stats["story_evolutions_purged"] = res_evo.rowcount
 
             # 2. REDACT heavy fields older than redact_days (14 days) but within retention_days
@@ -2099,7 +2102,7 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
                 .where(PipelineRunModel.started_at < cutoff_redact, PipelineRunModel.started_at >= cutoff_purge)
                 .values(metadata_payload=None)
             )
-            res_redact_runs = await session.execute(stmt_redact_runs)
+            res_redact_runs: TAny = await session.execute(stmt_redact_runs)
             stats["runs_redacted"] = res_redact_runs.rowcount
 
             # Redact stage runs
@@ -2108,7 +2111,7 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
                 .where(StageRunModel.started_at < cutoff_redact, StageRunModel.started_at >= cutoff_purge)
                 .values(metadata_payload=None)
             )
-            res_redact_stages = await session.execute(stmt_redact_stages)
+            res_redact_stages: TAny = await session.execute(stmt_redact_stages)
             stats["stages_redacted"] = res_redact_stages.rowcount
 
             # Redact LLM traces prompts and responses
@@ -2121,7 +2124,7 @@ def purge_observability_data_task(retention_days: int = 30, redact_days: int = 1
                     response_text="[REDACTED (Retention Policy)]",
                 )
             )
-            res_redact_llm = await session.execute(stmt_redact_llm)
+            res_redact_llm: TAny = await session.execute(stmt_redact_llm)
             stats["llm_traces_redacted"] = res_redact_llm.rowcount
 
             await session.commit()
@@ -2142,8 +2145,10 @@ def export_run_to_otel_task(run_id: str) -> bool:
 
     async def _run() -> bool:
         import uuid
+
         from sqlalchemy import select
-        from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel
+
+        from app.models.observability_models import LLMTraceModel, PipelineRunModel, StageRunModel
         from app.services.otel_exporter import OTelTraceExporter
 
         u_id = uuid.UUID(run_id)

@@ -1,9 +1,11 @@
-import uuid
-import httpx
 from datetime import datetime
 from typing import Any
+
+import httpx
+
 from app.core.config import settings
-from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel
+from app.models.observability_models import LLMTraceModel, PipelineRunModel, StageRunModel
+
 
 class OTelTraceExporter:
     """Exports historical pipeline runs to an OTLP/HTTP compliant collector (Jaeger/Tempo)."""

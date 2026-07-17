@@ -704,9 +704,11 @@ async def stream_pipeline_status(
     last_id: str = "$",
 ):
     """SSE endpoint streaming real-time pipeline status transitions from Redis Streams."""
-    import redis.asyncio as aioredis
-    from app.core.config import settings
     import asyncio
+
+    import redis.asyncio as aioredis
+
+    from app.core.config import settings
 
     header_last_id = request.headers.get("last-event-id")
     resolved_start_id = header_last_id or last_id
@@ -808,8 +810,10 @@ async def compare_pipeline_runs(
 ):
     """Compare performance metrics between two pipeline runs (admin only)."""
     from datetime import timedelta
-    from app.models.observability_models import PipelineRunModel, StageRunModel, LLMTraceModel
-    from sqlalchemy import select, func, and_
+
+    from sqlalchemy import and_, func, select
+
+    from app.models.observability_models import LLMTraceModel, PipelineRunModel, StageRunModel
 
     # Resolve run A (latest run of specified type)
     if not run_id_a:
@@ -878,7 +882,7 @@ async def compare_pipeline_runs(
 
         for stage in stages_list:
             meta = stage.metadata_payload or {}
-            
+
             # Map input / output counts for data lineage
             stage_in = 0
             stage_out = 0
@@ -888,7 +892,7 @@ async def compare_pipeline_runs(
                 stage_out = int(meta["success_count"])
             elif "stories_created" in meta:
                 stage_out = int(meta["stories_created"])
-            
+
             # For intermediate stages
             if "articles" in meta:
                 if isinstance(meta["articles"], list):
@@ -1482,11 +1486,13 @@ async def replay_failure(
             failure.resolution_notes = f"Auto-resolved by successful manual replay on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             await db.commit()
 
-            content = (
-                run_output.content.model_dump()
-                if hasattr(run_output.content, "model_dump")
-                else run_output.content
-            )
+            content = None
+            if run_output and getattr(run_output, "content", None) is not None:
+                content = (
+                    run_output.content.model_dump()
+                    if hasattr(run_output.content, "model_dump")
+                    else run_output.content
+                )
             return {
                 "success": True,
                 "message": f"Agent stage {failure.stage} replayed successfully.",
