@@ -35,6 +35,7 @@ from app.core.database import async_session_factory, engine
 from app.core.trace import (
     PipelineRun,
     PipelineStage,
+    PipelineTraceCollector,
     StageSpan,
     bind_article_context,
 )
@@ -152,10 +153,16 @@ async def is_pipeline_paused() -> bool:
     try:
         from app.services.cache_service import cache_service
 
+        # Fail-safe: if cache service cannot ping Redis, assume pipeline is paused
+        if not await cache_service.ping():
+            logger.warning("Cache is unreachable. Pipeline is failing safe (auto-paused).")
+            return True
+
         is_paused = await cache_service.get("pipeline_paused")
         return bool(is_paused)
-    except Exception:
-        return False
+    except Exception as exc:
+        logger.warning("Error checking pipeline pause status: %s. Failing safe (auto-paused).", exc)
+        return True
 
 
 @celery_app.task(name="app.workers.tasks.ingest_news_task")
@@ -171,7 +178,7 @@ def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> 
         async with PipelineRun(
             trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
-            async with StageSpan(run, stage=PipelineStage.INGESTION_RSS) as span:
+            async with PipelineTraceCollector.stage(PipelineStage.INGESTION_RSS) as stage:
                 async with async_session_factory() as session:
                     results = await ingestion_service.ingest_all_active_sources(session)
                     total_new = sum(results.values())
@@ -190,14 +197,15 @@ def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> 
                     except Exception as report_exc:
                         logger.error("Failed to generate discovery reports: %s", report_exc)
 
-                    span.set_metadata(
-                        {
-                            "articles_ingested": total_new,
-                            "sources_processed": len(results),
-                            "per_source": {str(k): v for k, v in results.items()},
-                            "discovery": discovery_report,
-                        }
-                    )
+                    # Standard event telemetry outputs
+                    stage.input(trigger_reason="Celery Ingestion Schedule")
+                    stage.output(results=results, total_new=total_new)
+                    stage.metric("articles_ingested", total_new)
+                    stage.metric("sources_processed", len(results))
+
+                    if discovery_report:
+                        stage.artifact("discovery_report", discovery_report, tier=1)
+
                     # We trigger embedding task if either new RSS articles OR discovered articles were persisted!
                     total_including_discovery = total_new + disc_persisted
                     if total_including_discovery > 0:
@@ -210,7 +218,7 @@ def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> 
                         )
                         process_pending_embeddings_task.delay(run.id, run.trace_id)
                     else:
-                        span.mark_skipped()
+                        stage.mark_skipped("no_new_articles")
                     return results
 
     return run_async(_run())
@@ -235,16 +243,14 @@ def ingest_gnews_task(run_id: str | None = None, trace_id: str | None = None) ->
         async with PipelineRun(
             trigger="celery_beat", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
-            async with StageSpan(run, stage=PipelineStage.INGESTION_GNEWS) as span:
+            async with PipelineTraceCollector.stage(PipelineStage.INGESTION_GNEWS) as stage:
                 async with async_session_factory() as session:
                     results = await gnews_service.ingest_all(session)
                     total_new = sum(results.values())
-                    span.set_metadata(
-                        {
-                            "articles_ingested": total_new,
-                            "categories_fetched": len(results),
-                        }
-                    )
+                    stage.input(trigger_reason="GNews Ingestion Schedule")
+                    stage.output(results=results, total_new=total_new)
+                    stage.metric("articles_ingested", total_new)
+                    stage.metric("categories_fetched", len(results))
                     if total_new > 0:
                         logger.info(
                             "GNews ingestion complete",
@@ -252,7 +258,7 @@ def ingest_gnews_task(run_id: str | None = None, trace_id: str | None = None) ->
                         )
                         process_pending_embeddings_task.delay(run.id, run.trace_id)
                     else:
-                        span.mark_skipped()
+                        stage.mark_skipped("no_new_articles")
                     return results
 
     return run_async(_run())
@@ -271,7 +277,7 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
         async with PipelineRun(
             trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
-            async with StageSpan(run, stage=PipelineStage.EMBEDDING) as span:
+            async with PipelineTraceCollector.stage(PipelineStage.EMBEDDING) as stage:
                 async with async_session_factory() as session:
                     # Fetch pending articles
                     stmt = select(Article).where(Article.embedding_status == "pending").limit(50)
@@ -280,8 +286,10 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
 
                     if not pending_articles:
                         logger.info("No pending articles to embed.")
-                        span.mark_skipped()
+                        stage.mark_skipped("no_pending_articles")
                         return 0
+
+                    stage.input(articles=pending_articles, model="text-embedding-004")
 
                     logger.info(
                         "Embedding batch started",
@@ -359,6 +367,7 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
 
                                 # Mark as completed in-memory — committed below
                                 article.embedding_status = "completed"
+                                stage.lineage(str(article.id), "ARTICLE", "EMBEDDED")
                                 success_count += 1
                             except Exception as e:
                                 logger.error(
@@ -382,12 +391,19 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                     # Single batch commit for all status updates
                     await session.commit()
 
-                    span.set_metadata(
+                    stage.output(success_count=success_count, failed_count=failed_count)
+                    stage.metric("batch_size", len(pending_articles))
+                    stage.metric("success_count", success_count)
+                    stage.metric("failed_count", failed_count)
+
+                    stage.artifact(
+                        "embedding_metrics",
                         {
-                            "batch_size": len(pending_articles),
-                            "success_count": success_count,
-                            "failed_count": failed_count,
-                        }
+                            "total": len(pending_articles),
+                            "success": success_count,
+                            "failed": failed_count,
+                        },
+                        tier=1,
                     )
 
                     logger.info(
@@ -432,7 +448,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
         async with PipelineRun(
             trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
-            async with StageSpan(run, stage=PipelineStage.EVENT_EXTRACTION) as span:
+            async with PipelineTraceCollector.stage(PipelineStage.EVENT_EXTRACTION) as stage:
                 async with async_session_factory() as session:
                     # Find articles that are embedded but not yet event-extracted
                     stmt = (
@@ -448,8 +464,10 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
 
                     if not articles:
                         logger.info("No articles pending event extraction.")
-                        span.mark_skipped()
+                        stage.mark_skipped("no_pending_articles")
                         return 0
+
+                    stage.input(articles=articles)
 
                     logger.info(
                         "Event extraction batch started",
@@ -458,6 +476,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     success_count = 0
                     failed_count = 0
                     merged_count = 0
+                    extracted_events_summary = []
 
                     for article in articles:
                         bind_article_context(str(article.id))
@@ -553,6 +572,17 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             article.event_extraction_status = "completed"
                             await session.commit()
                             success_count += 1
+                            stage.lineage(str(article.id), "ARTICLE", "EVENTS_EXTRACTED")
+
+                            extracted_events_summary.append(
+                                {
+                                    "article_id": str(article.id),
+                                    "primary_event": pe.event_type,
+                                    "actors": pe.actors,
+                                    "targets": pe.targets,
+                                    "confidence": pe.confidence,
+                                }
+                            )
 
                             # Try real-time incremental merge into similar story
                             from app.services.clustering_service import clustering_service
@@ -564,6 +594,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             )
                             if merged:
                                 merged_count += 1
+                                stage.lineage(str(article.id), "ARTICLE", "INCREMENTAL_MERGED")
 
                         except Exception as e:
                             from app.llm_gateway.request_manager import QuotaExhaustedError
@@ -616,14 +647,17 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     "Failed to record event extraction failure: %s", rec_err
                                 )
 
-                    span.set_metadata(
-                        {
-                            "batch_size": len(articles),
-                            "success_count": success_count,
-                            "failed_count": failed_count,
-                            "merged_count": merged_count,
-                        }
+                    stage.output(
+                        success_count=success_count,
+                        failed_count=failed_count,
+                        merged_count=merged_count,
                     )
+                    stage.metric("batch_size", len(articles))
+                    stage.metric("success_count", success_count)
+                    stage.metric("failed_count", failed_count)
+                    stage.metric("merged_count", merged_count)
+
+                    stage.artifact("events_summary", extracted_events_summary, tier=1)
 
                     logger.info(
                         "Event extraction batch complete",
@@ -702,29 +736,27 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
 
             async with PipelineRun(
                 trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
-            ) as run:
-                async with StageSpan(run, stage=PipelineStage.CLUSTERING_BATCH) as span:
+            ):
+                async with PipelineTraceCollector.stage(PipelineStage.CLUSTERING_BATCH) as stage:
                     async with async_session_factory() as session:
                         from app.services.clustering_service import clustering_service
 
                         try:
+                            stage.input(trigger_reason="Batch Clustering Triggered")
                             stories_created = await clustering_service.run_batch_clustering(session)
+                            stage.output(stories_created=stories_created)
+                            stage.metric("stories_created", stories_created)
                         except QuotaExhaustedError:
                             await _pause_pipeline_for_quota_cooldown("clustering")
                             logger.warning(
                                 "QuotaExhaustedError during clustering. Pipeline paused for %d seconds.",
                                 _QUOTA_COOLDOWN_SECONDS,
                             )
-                            span.mark_skipped()
+                            stage.mark_skipped("quota_exhausted")
                             return 0
 
-                        span.set_metadata(
-                            {
-                                "stories_created": stories_created,
-                            }
-                        )
                         if stories_created == 0:
-                            span.mark_skipped()
+                            stage.mark_skipped("no_new_stories_created")
                         logger.info(
                             "Batch clustering complete",
                             extra={"stories_created": stories_created},
@@ -2001,5 +2033,166 @@ def discovery_grouping_task() -> None:
             await discovery_manager.check_triggers_and_group(session, force=True)
             # 2. Promote READY clusters to CLUSTER_CREATED and create Story models
             await discovery_manager.promote_clusters(session)
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.purge_observability_data_task")
+def purge_observability_data_task(
+    retention_days: int = 30, redact_days: int = 14
+) -> dict[str, int]:
+    """Purge and redact old observability telemetry to enforce retention policies and reduce DB bloat."""
+    logger.info("Celery task: Running daily purge/redaction of observability data.")
+
+    async def _run() -> dict[str, int]:
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import delete, update
+
+        from app.models.observability_models import (
+            ErrorLogModel,
+            LLMTraceModel,
+            PipelineRunModel,
+            QueueMetricsModel,
+            RetryHistoryModel,
+            StageRunModel,
+            StoryEvolutionModel,
+        )
+
+        cutoff_purge = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=retention_days)
+        cutoff_redact = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=redact_days)
+
+        stats = {
+            "runs_purged": 0,
+            "llm_traces_purged": 0,
+            "queue_metrics_purged": 0,
+            "retry_history_purged": 0,
+            "error_logs_purged": 0,
+            "story_evolutions_purged": 0,
+            "runs_redacted": 0,
+            "stages_redacted": 0,
+            "llm_traces_redacted": 0,
+        }
+
+        async with async_session_factory() as session:
+            # 1. PURGE telemetry older than retention_days (30 days)
+            # Delete runs (cascades to stage_runs)
+            from typing import Any as TAny
+
+            stmt_runs = delete(PipelineRunModel).where(PipelineRunModel.started_at < cutoff_purge)
+            res_runs: TAny = await session.execute(stmt_runs)
+            stats["runs_purged"] = res_runs.rowcount
+
+            # Delete LLM traces
+            stmt_llm = delete(LLMTraceModel).where(LLMTraceModel.created_at < cutoff_purge)
+            res_llm: TAny = await session.execute(stmt_llm)
+            stats["llm_traces_purged"] = res_llm.rowcount
+
+            # Delete queue metrics
+            stmt_queue = delete(QueueMetricsModel).where(
+                QueueMetricsModel.captured_at < cutoff_purge
+            )
+            res_queue: TAny = await session.execute(stmt_queue)
+            stats["queue_metrics_purged"] = res_queue.rowcount
+
+            # Delete retry history
+            stmt_retry = delete(RetryHistoryModel).where(
+                RetryHistoryModel.created_at < cutoff_purge
+            )
+            res_retry: TAny = await session.execute(stmt_retry)
+            stats["retry_history_purged"] = res_retry.rowcount
+
+            # Delete error logs
+            stmt_error = delete(ErrorLogModel).where(ErrorLogModel.created_at < cutoff_purge)
+            res_error: TAny = await session.execute(stmt_error)
+            stats["error_logs_purged"] = res_error.rowcount
+
+            # Delete story evolutions
+            stmt_evo = delete(StoryEvolutionModel).where(
+                StoryEvolutionModel.created_at < cutoff_purge
+            )
+            res_evo: TAny = await session.execute(stmt_evo)
+            stats["story_evolutions_purged"] = res_evo.rowcount
+
+            # 2. REDACT heavy fields older than redact_days (14 days) but within retention_days
+            # Redact pipeline runs
+            stmt_redact_runs = (
+                update(PipelineRunModel)
+                .where(
+                    PipelineRunModel.started_at < cutoff_redact,
+                    PipelineRunModel.started_at >= cutoff_purge,
+                )
+                .values(metadata_payload=None)
+            )
+            res_redact_runs: TAny = await session.execute(stmt_redact_runs)
+            stats["runs_redacted"] = res_redact_runs.rowcount
+
+            # Redact stage runs
+            stmt_redact_stages = (
+                update(StageRunModel)
+                .where(
+                    StageRunModel.started_at < cutoff_redact,
+                    StageRunModel.started_at >= cutoff_purge,
+                )
+                .values(metadata_payload=None)
+            )
+            res_redact_stages: TAny = await session.execute(stmt_redact_stages)
+            stats["stages_redacted"] = res_redact_stages.rowcount
+
+            # Redact LLM traces prompts and responses
+            stmt_redact_llm = (
+                update(LLMTraceModel)
+                .where(
+                    LLMTraceModel.created_at < cutoff_redact,
+                    LLMTraceModel.created_at >= cutoff_purge,
+                )
+                .values(
+                    system_prompt="[REDACTED (Retention Policy)]",
+                    user_prompt="[REDACTED (Retention Policy)]",
+                    response_text="[REDACTED (Retention Policy)]",
+                )
+            )
+            res_redact_llm: TAny = await session.execute(stmt_redact_llm)
+            stats["llm_traces_redacted"] = res_redact_llm.rowcount
+
+            await session.commit()
+
+        logger.info("Purge/Redaction completed successfully.", extra={"purge_stats": stats})
+        return stats
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.export_run_to_otel_task")
+def export_run_to_otel_task(run_id: str) -> bool:
+    """Asynchronously export completed pipeline run data to Jaeger/Tempo."""
+    logger.info(f"Celery task: Exporting pipeline run {run_id} to OpenTelemetry...")
+
+    async def _run() -> bool:
+        import uuid
+
+        from sqlalchemy import select
+
+        from app.models.observability_models import LLMTraceModel, PipelineRunModel, StageRunModel
+        from app.services.otel_exporter import OTelTraceExporter
+
+        u_id = uuid.UUID(run_id)
+        async with async_session_factory() as session:
+            run = await session.get(PipelineRunModel, u_id)
+            if not run:
+                return False
+            stages = (
+                (await session.execute(select(StageRunModel).where(StageRunModel.run_id == u_id)))
+                .scalars()
+                .all()
+            )
+            llm_traces = (
+                (await session.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == u_id)))
+                .scalars()
+                .all()
+            )
+
+            exporter = OTelTraceExporter()
+            return await exporter.export_run(run, list(stages), list(llm_traces))
 
     return run_async(_run())

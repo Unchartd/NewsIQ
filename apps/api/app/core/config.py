@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 2
     DB_POOL_RECYCLE: int = 300  # Recycle connections every 5 min (serverless safety)
+    DB_POOL_TIMEOUT: int = 30  # Timeout for getting connection from pool in seconds
 
     # ── Redis — Upstash ───────────────────────────────────────────────────────
     # Upstash does not support multiple Redis DB indices.
@@ -253,6 +254,10 @@ class Settings(BaseSettings):
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+
+    # OpenTelemetry / Jaeger / Tempo Exporter
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4318/v1/traces"
+    OTEL_EXPORTER_ENABLED: bool = False
 
     # ── Error Tracking — Sentry ───────────────────────────────────────────────
     SENTRY_DSN: str | None = None

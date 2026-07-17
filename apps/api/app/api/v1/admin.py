@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select, text
@@ -317,6 +317,7 @@ async def pipeline_status(
             run_id=run.id,
             status=run.status,
             stages=stages,
+            metadata_payload=run.metadata_payload,
         )
     return await admin_service.get_pipeline_status(db)
 
@@ -556,6 +557,7 @@ async def list_pipeline_runs(
             "total_latency_ms": r.total_latency_ms,
             "error": r.error,
             "summary": _build_run_summary(stages_by_run[r.id]),
+            "metadata_payload": r.metadata_payload,
         }
         for r in runs
     ]
@@ -599,9 +601,22 @@ async def get_stage_run_details(
             "cost_usd": t.cost_usd,
             "status": t.status,
             "error": t.error,
+            "parent_llm_trace_id": str(t.parent_llm_trace_id) if t.parent_llm_trace_id else None,
         }
         for t in llm_traces
     ]
+
+    rca_report = None
+    if stage_run.status == "failed" or stage_run.error:
+        from app.services.rca_classifier import RootCauseAnalysisService
+
+        rca = RootCauseAnalysisService.classify_error(
+            error_msg=stage_run.error,
+            error_type=stage_run.error_type,
+            metadata=stage_run.metadata_payload,
+        )
+        if rca:
+            rca_report = rca.model_dump()
 
     return {
         "id": str(stage_run.id),
@@ -621,6 +636,7 @@ async def get_stage_run_details(
         "article_id": str(stage_run.article_id) if stage_run.article_id else None,
         "metadata": stage_run.metadata_payload or {},
         "llm_traces": traces_payload,
+        "rca_report": rca_report,
     }
 
 
@@ -684,24 +700,49 @@ async def stream_stage_run_logs(
 
 
 @router.get("/pipeline/stream")
-async def stream_pipeline_status():
-    """SSE endpoint streaming real-time pipeline status transitions."""
+async def stream_pipeline_status(
+    request: Request,
+    last_id: str = "$",
+):
+    """SSE endpoint streaming real-time pipeline status transitions from Redis Streams."""
+    import asyncio
 
     import redis.asyncio as aioredis
 
     from app.core.config import settings
 
+    header_last_id = request.headers.get("last-event-id")
+    resolved_start_id = header_last_id or last_id
+
     async def event_generator():
         r = aioredis.from_url(settings.REDIS_URL)
-        pubsub = r.pubsub()
-        await pubsub.subscribe("newsiq-pipeline-events")
+        current_id = resolved_start_id
         try:
             while True:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                if message:
-                    yield f"data: {message['data'].decode('utf-8') if isinstance(message['data'], bytes) else message['data']}\n\n"
+                response = await r.xread(
+                    {"newsiq:pipeline:stream": current_id}, count=10, block=1000
+                )
+                if response:
+                    for stream_name, entries in response:
+                        for entry_id, entry_data in entries:
+                            current_id = (
+                                entry_id.decode("utf-8")
+                                if isinstance(entry_id, bytes)
+                                else entry_id
+                            )
+                            event_data = entry_data.get(b"event", b"{}")
+                            decoded = (
+                                event_data.decode("utf-8")
+                                if isinstance(event_data, bytes)
+                                else event_data
+                            )
+                            yield f"id: {current_id}\ndata: {decoded}\n\n"
+                else:
+                    yield ": ping\n\n"
+                    await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            pass
         finally:
-            await pubsub.unsubscribe("newsiq-pipeline-events")
             await r.aclose()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -764,6 +805,253 @@ async def get_dashboard_metrics(
         }
 
     return json.loads(raw)
+
+
+@router.get("/pipeline/compare")
+async def compare_pipeline_runs(
+    run_id_a: uuid.UUID | None = None,
+    run_id_b: uuid.UUID | None = None,
+    pipeline_type: str | None = None,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compare performance metrics between two pipeline runs (admin only)."""
+    from datetime import timedelta
+
+    from sqlalchemy import and_, func, select
+
+    from app.models.observability_models import LLMTraceModel, PipelineRunModel, StageRunModel
+
+    # Resolve run A (latest run of specified type)
+    if not run_id_a:
+        stmt_a = select(PipelineRunModel).order_by(PipelineRunModel.started_at.desc())
+        if pipeline_type:
+            stmt_a = stmt_a.where(PipelineRunModel.pipeline_type == pipeline_type)
+        res_a = await db.execute(stmt_a.limit(1))
+        run_a = res_a.scalar_one_or_none()
+    else:
+        stmt_a = select(PipelineRunModel).where(PipelineRunModel.id == run_id_a)
+        res_a = await db.execute(stmt_a)
+        run_a = res_a.scalar_one_or_none()
+
+    if not run_a:
+        raise HTTPException(status_code=404, detail="Run A not found.")
+
+    # Resolve run B (run of same type closest to 24h prior, or second latest)
+    if not run_id_b:
+        from sqlalchemy import literal
+
+        target_time = run_a.started_at - timedelta(hours=24)
+        stmt_b = (
+            select(PipelineRunModel)
+            .where(
+                and_(
+                    PipelineRunModel.pipeline_type == run_a.pipeline_type,
+                    PipelineRunModel.id != run_a.id,
+                )
+            )
+            .order_by(
+                func.abs(
+                    func.extract("epoch", PipelineRunModel.started_at)
+                    - func.extract("epoch", literal(target_time))
+                ).asc()
+            )
+        )
+        res_b = await db.execute(stmt_b.limit(1))
+        run_b = res_b.scalar_one_or_none()
+    else:
+        stmt_b = select(PipelineRunModel).where(PipelineRunModel.id == run_id_b)
+        res_b = await db.execute(stmt_b)
+        run_b = res_b.scalar_one_or_none()
+
+    # Helper function to compile run stats
+    async def get_run_details(run: PipelineRunModel | None):
+        if not run:
+            return None
+
+        # Fetch total cost
+        stmt_cost = select(func.sum(LLMTraceModel.cost_usd)).where(LLMTraceModel.run_id == run.id)
+        cost_res = await db.execute(stmt_cost)
+        total_cost = float(cost_res.scalar_one_or_none() or 0.0)
+
+        # Fetch total tokens
+        stmt_tokens = select(
+            func.sum(LLMTraceModel.input_tokens).label("input"),
+            func.sum(LLMTraceModel.output_tokens).label("output"),
+        ).where(LLMTraceModel.run_id == run.id)
+        tokens_res = await db.execute(stmt_tokens)
+        tokens_row = tokens_res.one()
+        input_tok = int(tokens_row.input or 0)
+        output_tok = int(tokens_row.output or 0)
+        total_tok = input_tok + output_tok
+
+        # Fetch all stages
+        stmt_stages = select(StageRunModel).where(StageRunModel.run_id == run.id)
+        stages_res = await db.execute(stmt_stages)
+        stages_list = stages_res.scalars().all()
+
+        stages_map = {}
+        processed_count = 0
+        success_count = 0
+
+        for stage in stages_list:
+            meta = stage.metadata_payload or {}
+
+            # Map input / output counts for data lineage
+            stage_in = 0
+            stage_out = 0
+            if "total_new" in meta:
+                stage_out = int(meta["total_new"])
+            elif "success_count" in meta:
+                stage_out = int(meta["success_count"])
+            elif "stories_created" in meta:
+                stage_out = int(meta["stories_created"])
+
+            # For intermediate stages
+            if "articles" in meta:
+                if isinstance(meta["articles"], list):
+                    stage_in = len(meta["articles"])
+                elif isinstance(meta["articles"], int):
+                    stage_in = meta["articles"]
+                elif isinstance(meta["articles"], dict):
+                    stage_in = meta["articles"].get("count", 0)
+
+            # Sum total items processed by counting outputs
+            processed_count += stage_in
+            success_count += stage_out
+
+            stages_map[stage.stage] = {
+                "stage": stage.stage,
+                "status": stage.status,
+                "latency_ms": stage.latency_ms,
+                "retry_count": stage.retry_count,
+                "input_count": stage_in,
+                "output_count": stage_out,
+                "error": stage.error,
+            }
+
+        return {
+            "run_id": str(run.id),
+            "pipeline_type": run.pipeline_type,
+            "trigger": run.trigger,
+            "status": run.status,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "total_latency_ms": run.total_latency_ms,
+            "cost_usd": total_cost,
+            "input_tokens": input_tok,
+            "output_tokens": output_tok,
+            "total_tokens": total_tok,
+            "processed_count": processed_count,
+            "success_count": success_count,
+            "stages": stages_map,
+        }
+
+    details_a = await get_run_details(run_a)
+    details_b = await get_run_details(run_b)
+
+    # Compute differences
+    diffs = {}
+    if details_a and details_b:
+
+        def calculate_diff(key: str, val_a: float, val_b: float):
+            diff = val_a - val_b
+            percent = (diff / val_b * 100) if val_b > 0 else 0.0
+            return {"diff": diff, "percent": round(percent, 2)}
+
+        diffs["total_latency_ms"] = calculate_diff(
+            "latency", details_a["total_latency_ms"], details_b["total_latency_ms"]
+        )
+        diffs["cost_usd"] = calculate_diff("cost", details_a["cost_usd"], details_b["cost_usd"])
+        diffs["total_tokens"] = calculate_diff(
+            "tokens", details_a["total_tokens"], details_b["total_tokens"]
+        )
+        diffs["success_count"] = calculate_diff(
+            "success_count", details_a["success_count"], details_b["success_count"]
+        )
+
+        # Stage-by-stage diffs
+        stage_diffs = {}
+        all_stages = set(details_a["stages"].keys()) | set(details_b["stages"].keys())
+        for stage_name in all_stages:
+            stg_a = details_a["stages"].get(stage_name)
+            stg_b = details_b["stages"].get(stage_name)
+            if stg_a and stg_b:
+                stage_diffs[stage_name] = {
+                    "latency_ms": calculate_diff(
+                        "latency", stg_a["latency_ms"], stg_b["latency_ms"]
+                    ),
+                    "output_count": calculate_diff(
+                        "output", stg_a["output_count"], stg_b["output_count"]
+                    ),
+                }
+        diffs["stages"] = stage_diffs
+
+    return {
+        "run_a": details_a,
+        "run_b": details_b,
+        "diffs": diffs,
+    }
+
+
+@router.post("/pipeline/purge")
+async def trigger_manual_purge(
+    retention_days: int = 30,
+    redact_days: int = 14,
+    background: bool = True,
+    _admin: User = Depends(require_admin),
+):
+    """Manually trigger daily purge and metadata redaction task (admin only)."""
+    from app.workers.tasks import purge_observability_data_task
+
+    if background:
+        purge_observability_data_task.delay(retention_days=retention_days, redact_days=redact_days)
+        return {
+            "message": f"Purge and redaction task (retention={retention_days}d, redact={redact_days}d) triggered in the background."
+        }
+    else:
+        stats = purge_observability_data_task(
+            retention_days=retention_days, redact_days=redact_days
+        )
+        return {
+            "message": "Manual purge and redaction completed successfully.",
+            "stats": stats,
+        }
+
+
+@router.post("/pipeline/runs/{run_id}/export-otel")
+async def trigger_run_export_otel(
+    run_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually export a specific run's trace data to Jaeger/Tempo OTLP collector."""
+    from app.services.otel_exporter import OTelTraceExporter
+
+    run = await db.get(PipelineRunModel, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Pipeline run not found.")
+
+    stages = (
+        (await db.execute(select(StageRunModel).where(StageRunModel.run_id == run_id)))
+        .scalars()
+        .all()
+    )
+    llm_traces = (
+        (await db.execute(select(LLMTraceModel).where(LLMTraceModel.run_id == run_id)))
+        .scalars()
+        .all()
+    )
+
+    exporter = OTelTraceExporter()
+    success = await exporter.export_run(run, list(stages), list(llm_traces))
+
+    if success:
+        return {"message": "Pipeline run exported successfully to OTLP collector."}
+    else:
+        raise HTTPException(
+            status_code=502, detail="Failed to export trace data to OTLP collector."
+        )
 
 
 @router.get("/articles/{article_id}/trace")
@@ -885,6 +1173,23 @@ async def merge_clusters(
 
     await db.flush()
 
+    from app.services.story_evolution_service import record_story_evolution
+
+    await record_story_evolution(
+        db=db,
+        story_id=body.target_id,
+        event_type="merged",
+        parent_story_ids=[str(body.source_id)],
+        notes=f"Merged source story {body.source_id} into target story {body.target_id}.",
+    )
+    await record_story_evolution(
+        db=db,
+        story_id=body.source_id,
+        event_type="merged_away",
+        parent_story_ids=[str(body.target_id)],
+        notes=f"Merged away into target story {body.target_id}.",
+    )
+
     await admin_service.apply_review_action(
         story_id=body.target_id,
         action="merge",
@@ -980,13 +1285,27 @@ async def split_cluster(
         db=db,
     )
 
+    from app.services.story_evolution_service import record_story_evolution
+
+    child_ids = [uuid.uuid4() for _ in sub_clusters]
+
+    await record_story_evolution(
+        db=db,
+        story_id=story_id,
+        event_type="split",
+        child_story_ids=[str(cid) for cid in child_ids],
+        before_state={"article_count": len(all_articles)},
+        after_state={"sub_clusters_count": len(sub_clusters)},
+        notes=f"Split cluster {story_id} into {len(sub_clusters)} sub-clusters.",
+    )
+
     await db.delete(story)
     await db.commit()
 
     from app.models.models import StoryMetric
 
-    for art_list in sub_clusters:
-        new_story_id = uuid.uuid4()
+    for idx, art_list in enumerate(sub_clusters):
+        new_story_id = child_ids[idx]
         now = datetime.now(UTC).replace(tzinfo=None)
         new_story = Story(
             id=new_story_id,
@@ -1005,6 +1324,15 @@ async def split_cluster(
         metrics = StoryMetric(story_id=new_story_id, views=0, bookmarks=0, shares=0, clicks=0)
         db.add(metrics)
         await db.commit()
+
+        await record_story_evolution(
+            db=db,
+            story_id=new_story_id,
+            event_type="created",
+            parent_story_ids=[str(story_id)],
+            after_state={"article_count": len(art_list)},
+            notes=f"Created via split from parent story {story_id}.",
+        )
 
         try:
             await clustering_service.generate_story_content(new_story, art_list, db)
@@ -1196,11 +1524,13 @@ async def replay_failure(
             failure.resolution_notes = f"Auto-resolved by successful manual replay on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             await db.commit()
 
-            content = (
-                run_output.content.model_dump()
-                if hasattr(run_output.content, "model_dump")
-                else run_output.content
-            )
+            content = None
+            if run_output and getattr(run_output, "content", None) is not None:
+                content = (
+                    run_output.content.model_dump()
+                    if hasattr(run_output.content, "model_dump")
+                    else run_output.content
+                )
             return {
                 "success": True,
                 "message": f"Agent stage {failure.stage} replayed successfully.",
@@ -1496,6 +1826,40 @@ async def list_story_versions(
             "created_at": v.created_at,
         }
         for v in versions
+    ]
+
+
+@router.get("/pipeline/story/{story_id}/evolution")
+async def get_story_evolution(
+    story_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve the cluster mutation timeline (Story Evolution) for a story (admin only)."""
+    from app.models.observability_models import StoryEvolutionModel
+
+    stmt = (
+        select(StoryEvolutionModel)
+        .where(StoryEvolutionModel.story_id == story_id)
+        .order_by(StoryEvolutionModel.created_at.asc())
+    )
+    res = await db.execute(stmt)
+    evos = res.scalars().all()
+    return [
+        {
+            "id": str(e.id),
+            "run_id": str(e.run_id) if e.run_id else None,
+            "story_id": str(e.story_id) if e.story_id else None,
+            "event_type": e.event_type,
+            "article_id": str(e.article_id) if e.article_id else None,
+            "parent_story_ids": e.parent_story_ids,
+            "child_story_ids": e.child_story_ids,
+            "before_state": e.before_state,
+            "after_state": e.after_state,
+            "notes": e.notes,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in evos
     ]
 
 

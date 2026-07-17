@@ -89,5 +89,8 @@ async def test_manual_override(lifecycle_manager):
     assert story.lifecycle_state == StoryLifecycleState.STABLE
     assert story.version == 2
     assert "Manual Override" in story.transition_reason
-    db_session.add.assert_called_once_with(story)
-    db_session.flush.assert_called_once()
+    assert db_session.add.call_count == 2
+    db_session.add.assert_any_call(story)
+    from app.models.observability_models import StoryEvolutionModel
+    assert any(isinstance(c[0][0], StoryEvolutionModel) for c in db_session.add.call_args_list) is True
+    assert db_session.flush.call_count == 2

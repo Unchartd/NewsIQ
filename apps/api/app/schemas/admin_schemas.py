@@ -84,6 +84,7 @@ class PipelineStatusResponse(BaseModel):
     run_id: uuid.UUID | None = None
     status: str
     stages: list[PipelineStageStatusSchema]
+    metadata_payload: dict[str, Any] | None = None
 
 
 class PromptVersionSchema(BaseModel):

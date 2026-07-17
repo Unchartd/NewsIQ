@@ -722,6 +722,18 @@ class ClusteringService:
             )
             await self.compute_trending_score(story, session)
 
+            from app.services.story_evolution_service import record_story_evolution
+
+            await record_story_evolution(
+                db=session,
+                story_id=story_id,
+                event_type="article_merged",
+                article_id=article.id,
+                before_state={"article_count": len(all_articles) - 1},
+                after_state={"article_count": len(all_articles)},
+                notes=f"Article {article.id} incrementally merged into story.",
+            )
+
         return True
 
     def _compute_event_similarity_direct(self, evt1: ArticleEvent, evt2: ArticleEvent) -> float:
@@ -1884,6 +1896,16 @@ class ClusteringService:
                     else:
                         await self.generate_story_content(story, art_list, session)
                         await self.compute_trending_score(story, session)
+
+                    from app.services.story_evolution_service import record_story_evolution
+
+                    await record_story_evolution(
+                        db=session,
+                        story_id=story_id,
+                        event_type="created",
+                        after_state={"article_count": len(art_list)},
+                        notes=f"Created via batch clustering with {len(art_list)} articles.",
+                    )
 
                 stories_created += 1
             except Exception as e:

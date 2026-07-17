@@ -217,6 +217,7 @@ class AdminService:
             run_id=run.id,
             status=run.status,
             stages=stages,
+            metadata_payload=run.metadata_payload,
         )
 
     async def get_prompt_versions(

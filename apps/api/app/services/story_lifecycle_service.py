@@ -79,6 +79,17 @@ class StoryLifecycleManager:
         db.add(story)
         await db.flush()
 
+        from app.services.story_evolution_service import record_story_evolution
+
+        await record_story_evolution(
+            db=db,
+            story_id=story.id,
+            event_type="promoted",
+            before_state={"lifecycle_state": old_state},
+            after_state={"lifecycle_state": target_state},
+            notes=f"Transitioned from {old_state} to {target_state}. Reason: {reason}",
+        )
+
         logger.info(
             f"Story {story.id} transitioned from {old_state} to {target_state}. Reason: {reason}"
         )
