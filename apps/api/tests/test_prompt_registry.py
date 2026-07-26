@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.prompt_registry import prompt_registry
+from app.ai.prompts.registry import prompt_registry
 
 
 def test_prompt_registry_registered_stages():

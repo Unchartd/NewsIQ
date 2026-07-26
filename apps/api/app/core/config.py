@@ -232,6 +232,18 @@ class Settings(BaseSettings):
         "the verge": 0.8,
     }
 
+    # ── Pipeline Refactor Feature Flags & PairScore Weights ──────────────────
+    PRE_CRAWLER_DEDUP_ENABLED: bool = True
+    HYBRID_MICRO_CLUSTERING_ENABLED: bool = True
+    SHADOW_MODE_ENABLED: bool = False
+
+    PAIR_SCORE_EMBEDDING_WEIGHT: float = 0.45
+    PAIR_SCORE_EVENT_WEIGHT: float = 0.25
+    PAIR_SCORE_ENTITY_WEIGHT: float = 0.15
+    PAIR_SCORE_TEMPORAL_WEIGHT: float = 0.10
+    PAIR_SCORE_SOURCE_TYPE_WEIGHT: float = 0.05
+    PAIR_SCORE_THRESHOLD: float = 0.70
+
     # ── SMTP ─────────────────────────────────────────────────────────────────
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 1025
