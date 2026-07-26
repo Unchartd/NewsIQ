@@ -26,15 +26,19 @@ NewsIQ is a dense, multi-source AI comprehension engine built for professionals 
 
 NewsIQ is built as a modular monorepo, splitting concerns between Next.js frontends and an AI-native Python backend.
 
-### 🌐 System Pipeline Overview
+### 🌐 System Pipeline Overview (Canonical 50-Stage Architecture)
 
 ```
-[Pipeline A: Discovery] ➔ [Pipeline B: Event Intelligence] ➔ [Pipeline C: Story Synthesis]
+[Stages 00–13: Ingestion & Pre-Crawler Gate] ➔ [Stages 14–28: Crawl & Feature Extraction] ➔ [Stages 29–33: Micro-Clustering & Story Assignment] ➔ [Stages 34–41: Intelligence & Synthesis] ➔ [Stages 42–50: Persistence & API]
 ```
 
-1. **Pipeline A (Discovery & Ingestion)**: Manages RSS feeds crawling, HTML extraction, bloom filter deduplication, validation, and HDBSCAN event clustering.
-2. **Pipeline B (Event Intelligence)**: Evaluates event lifecycle stages, resolves canonical event identities, and links cross-article entities.
-3. **Pipeline C (Story Synthesis)**: Runs a 7-stage orchestrator (Knowledge Graph, Contradiction, Source Comparison, Timeline Compiler, Summary Generator, Feedback QA, and Publisher) storing immutable artifact snapshots.
+1. **Pre-Crawler Deduplication (Stages 00–13)**: Google News RSS discovery, URL decoding, parameter stripping (`utm_*`), SHA256 URL hashing, Redis Bloom Filter lookup, PostgreSQL duplicate check, and `PreCrawlerDecisionEngine` gatekeeper.
+2. **Crawl & Feature Extraction (Stages 14–28)**: Multi-provider HTML extraction (Trafilatura, Newspaper3k, Playwright), 768d Gemini vector embeddings, Qdrant upsert, SpaCy/LLM NER, Wikidata Entity Linking, and Event Extraction & Validation (Stage A/B).
+3. **Micro-Clustering & Story Assignment (Stages 29–33)**: Stage 29 `MicroClusterService` evaluating a 5-factor `PairScore` matrix, 48h story candidate search, Reflection Agent auditing on concise cluster summaries, and Judge Agent decision gate.
+4. **Intelligence & Story Synthesis (Stages 34–41)**: Timeline compilation, JSON Knowledge Graph construction, Contradiction detection, Publisher coverage matrix, Gemini multi-tier summary synthesis, and zero-hallucination fact-check reflection.
+5. **Persistence & API Serving (Stages 42–50)**: Single atomic PostgreSQL transaction commit, Stage 43 replay state snapshots, Meilisearch full-text indexing, Redis cache invalidation, and Pydantic REST API payload serialization (`GET /api/v1/stories/{id}`).
+
+> 📖 **Laboratory Notebook Reference**: See [`notebooks/Pipeline_XRay.ipynb`](file:///c:/Users/zakau/NewsIQ/notebooks/Pipeline_XRay.ipynb) and [`docs/NewsIQ_Full_Pipeline_Architecture.md`](file:///c:/Users/zakau/NewsIQ/docs/NewsIQ_Full_Pipeline_Architecture.md) for the complete 50-stage specification.
 
 ### Frontend App Ecosystem
 - **`apps/web`**: The main user-facing broadsheet portal. Next.js 16 (App Router), React 19, TailwindCSS v4, Zustand.
