@@ -367,11 +367,11 @@ async def seed():
                 # Update governance metadata for existing matching prompt
                 existing.prompt_uri = manifest.prompt_uri
                 existing.schema_version = manifest.schema_version
-                existing.preferred_model = (
-                    manifest.routing.model if manifest.routing else None
-                )
+                existing.preferred_model = manifest.routing.model if manifest.routing else None
                 existing.lifecycle_state = (
-                    manifest.lifecycle_state if hasattr(manifest, "lifecycle_state") else "production"
+                    manifest.lifecycle_state
+                    if hasattr(manifest, "lifecycle_state")
+                    else "production"
                 )
                 existing.parent_uri = None
                 session.add(existing)

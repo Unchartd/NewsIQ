@@ -63,18 +63,30 @@ class MicroClusterService:
 
         # 2. Event Extraction Overlap
         ev1 = {
-            getattr(e, "event_type", "event") if not isinstance(e, dict) else e.get("event_type", "event")
+            getattr(e, "event_type", "event")
+            if not isinstance(e, dict)
+            else e.get("event_type", "event")
             for e in art1.get("extracted_events", [])
         }
         ev2 = {
-            getattr(e, "event_type", "event") if not isinstance(e, dict) else e.get("event_type", "event")
+            getattr(e, "event_type", "event")
+            if not isinstance(e, dict)
+            else e.get("event_type", "event")
             for e in art2.get("extracted_events", [])
         }
         e_sim = self.jaccard_sim(ev1, ev2)
 
         # 3. Canonical Entity Overlap
-        ent1 = {e.get("value", "").lower() for e in art1.get("extracted_entities", []) if isinstance(e, dict) and e.get("value")}
-        ent2 = {e.get("value", "").lower() for e in art2.get("extracted_entities", []) if isinstance(e, dict) and e.get("value")}
+        ent1 = {
+            e.get("value", "").lower()
+            for e in art1.get("extracted_entities", [])
+            if isinstance(e, dict) and e.get("value")
+        }
+        ent2 = {
+            e.get("value", "").lower()
+            for e in art2.get("extracted_entities", [])
+            if isinstance(e, dict) and e.get("value")
+        }
         ent_sim = self.jaccard_sim(ent1, ent2)
 
         # 4. Temporal Proximity Decay
@@ -107,9 +119,7 @@ class MicroClusterService:
 
         return score, breakdown
 
-    def partition_micro_clusters(
-        self, articles: list[dict[str, Any]]
-    ) -> list[MicroCluster]:
+    def partition_micro_clusters(self, articles: list[dict[str, Any]]) -> list[MicroCluster]:
         """Partition candidate articles into micro-clusters using PairScore matrix.
 
         Returns a list of MicroCluster objects containing centroid vectors,
@@ -152,9 +162,7 @@ class MicroClusterService:
 
             # Calculate Centroid Vector
             member_vectors = [m["embedding_vector"] for m in members if m.get("embedding_vector")]
-            centroid = (
-                np.mean(member_vectors, axis=0).tolist() if member_vectors else []
-            )
+            centroid = np.mean(member_vectors, axis=0).tolist() if member_vectors else []
 
             # Representative article: first article or highest quality source
             rep_article = members[0]
