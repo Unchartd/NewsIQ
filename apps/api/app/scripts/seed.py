@@ -247,7 +247,7 @@ SOURCES = [
         "name": "ANI News",
         "slug": "ani-news",
         "website_url": "https://www.aninews.in",
-        "rss_url": "https://www.aninews.in/rss/feed/",
+        "rss_url": "https://aninews.in/rss/feed/category/national.xml",
         "country_code": "IN",
     },
 ]
@@ -311,7 +311,7 @@ async def seed():
         raw_manifests = loader.load_all()
         compiled_manifests = compiler.compile_all(raw_manifests)
 
-        for manifest in compiled_manifests:
+        for manifest in compiled_manifests.values():
             sys_p = manifest.system or ""
             user_p = manifest.template or ""
             combined = f"stage:{manifest.stage}\nsys:{sys_p}\nuser:{user_p}"
@@ -352,11 +352,11 @@ async def seed():
                     created_at=datetime.utcnow(),
                     prompt_uri=manifest.prompt_uri,
                     schema_version=manifest.schema_version,
-                    preferred_model=manifest.routing.preferred_model if manifest.routing else None,
-                    lifecycle_state=manifest.lifecycle.state
-                    if manifest.lifecycle
+                    preferred_model=manifest.routing.model if manifest.routing else None,
+                    lifecycle_state=manifest.lifecycle_state
+                    if hasattr(manifest, "lifecycle_state")
                     else "production",
-                    parent_uri=manifest.lineage.parent_uri if manifest.lineage else None,
+                    parent_uri=None,
                     deprecated_at=None,
                     deprecated_reason=None,
                     superseded_by=None,
@@ -368,12 +368,12 @@ async def seed():
                 existing.prompt_uri = manifest.prompt_uri
                 existing.schema_version = manifest.schema_version
                 existing.preferred_model = (
-                    manifest.routing.preferred_model if manifest.routing else None
+                    manifest.routing.model if manifest.routing else None
                 )
                 existing.lifecycle_state = (
-                    manifest.lifecycle.state if manifest.lifecycle else "production"
+                    manifest.lifecycle_state if hasattr(manifest, "lifecycle_state") else "production"
                 )
-                existing.parent_uri = manifest.lineage.parent_uri if manifest.lineage else None
+                existing.parent_uri = None
                 session.add(existing)
                 print(f"  ⏭️  Prompt Template already exists (metadata updated): {manifest.stage}")
 

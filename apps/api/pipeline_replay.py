@@ -16,7 +16,7 @@ from app.models.models import (
     DiscoveryQueue,
     StoryArticle,
 )
-from app.services.pipeline_coordinator import pipeline_coordinator
+from app.services.clustering_service import clustering_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -245,8 +245,10 @@ async def replay_pipeline(
                 logger.error("Extraction failed for %s: %s", art.id, e)
                 continue
 
-            # Step 3: Pipeline Coordinator (Stage A -> Stage B -> Reflection / Merge / Discovery)
-            is_merged = await pipeline_coordinator.process_article(session, art.id)
+            # Step 3: Incremental Story Matching (Stage A -> Stage B -> Reflection / Merge)
+            is_merged = await clustering_service.add_article_to_existing_story_if_similar(
+                art.id, session
+            )
             if is_merged:
                 merged_count += 1
             else:

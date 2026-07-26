@@ -1262,16 +1262,21 @@ def dispatch_story_candidate_task(
             await session.flush()
 
             # 12. Create CrawlTasks in tier order (Tier-1 created and dispatched first)
-            from app.core.fingerprint import compute_fingerprints
+            from app.ingestion.pre_crawler_engine import pre_crawler_engine
 
             created_crawl_task_ids = []
             for url in tiered_urls:
-                url_canonical = (
-                    gnews_service.canonicalize_url(url)
-                    if hasattr(gnews_service, "canonicalize_url")
-                    else url
-                )
-                url_hash = compute_fingerprints(url_canonical, "", "")["url_hash"]
+                decision = await pre_crawler_engine.evaluate_url(url, session)
+                if not decision.should_crawl:
+                    logger.info(
+                        "[PreCrawler] Skipping CrawlTask for '%s' — %s",
+                        decision.canonical_url,
+                        decision.duplicate_reason,
+                    )
+                    continue
+
+                url_canonical = decision.canonical_url
+                url_hash = decision.url_hash
                 tier = _get_tier(url_canonical)
 
                 new_crawl_task = CrawlTask(
@@ -1510,22 +1515,25 @@ def discovery_search_task(
                 logger.warning("Failed to resolve discovery URLs concurrently: %s", resolve_exc)
                 resolved_urls = discovered_urls
 
-            from app.core.fingerprint import compute_fingerprints
+            from app.ingestion.pre_crawler_engine import pre_crawler_engine
 
             created_crawl_task_ids = []
 
             for url in resolved_urls:
-                url_canonical = (
-                    gnews_service.canonicalize_url(url)
-                    if hasattr(gnews_service, "canonicalize_url")
-                    else url
-                )
-                url_hash = compute_fingerprints(url_canonical, "", "")["url_hash"]
+                decision = await pre_crawler_engine.evaluate_url(url, session)
+                if not decision.should_crawl:
+                    logger.info(
+                        "[PreCrawler] Skipping Discovery CrawlTask for '%s' — %s",
+                        decision.canonical_url,
+                        decision.duplicate_reason,
+                    )
+                    continue
+
+                url_canonical = decision.canonical_url
+                url_hash = decision.url_hash
 
                 new_crawl_task = CrawlTask(
                     discovery_task_id=task.id,
-                    # Propagate story_candidate_id if this DiscoveryTask was created
-                    # by the legacy Article-First path that later got a story_candidate.
                     story_candidate_id=task.story_candidate_id,
                     url=url_canonical,
                     url_hash=url_hash,
