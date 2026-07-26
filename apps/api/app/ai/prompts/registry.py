@@ -102,6 +102,14 @@ class PromptRegistry:
         """Clear loaded prompt template cache."""
         self._cache.clear()
 
+    def list_stages(self) -> list[str]:
+        """Return all registered YAML prompt stage names in the prompts directory."""
+        stages = []
+        for fname in os.listdir(self.prompts_dir):
+            if fname.endswith(".yaml"):
+                stages.append(fname.replace(".yaml", ""))
+        return sorted(stages)
+
 
 # Singleton
 prompt_registry = PromptRegistry()

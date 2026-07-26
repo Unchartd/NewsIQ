@@ -205,19 +205,19 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "source_comparison": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-2.5-pro",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "deepseek.v3.2",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
             "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-pro",
+            "model": "deepseek-ai/deepseek-v4-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -242,25 +242,25 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
     },
-    # summary_generation: called by ai_service.summarize_story_from_kg() — routes to Pro for quality
+    # summary_generation: called by ai_service.summarize_story_from_kg()
     "summary_generation": {
         "primary": {
             "provider": "gemini",
-            "model": "gemini-2.5-pro",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
-            "timeout": 60.0,
+            "timeout": 45.0,
         },
         "fallback": {
             "provider": "bedrock",
-            "model": "deepseek.v3.2",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
-            "timeout": 60.0,
+            "timeout": 45.0,
         },
         "lastFallback": {
             "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-pro",
+            "model": "deepseek-ai/deepseek-v4-flash",
             "temperature": 0.1,
-            "timeout": 60.0,
+            "timeout": 45.0,
         },
     },
     # contradiction_detection: alias of contradiction_analysis — used by agent fallback path
