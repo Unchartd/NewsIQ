@@ -4,10 +4,9 @@ Evaluates candidate article URLs prior to crawler execution to eliminate
 redundant HTTP downloads.
 """
 
-from dataclasses import dataclass
 import hashlib
 import logging
-from typing import Any
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select

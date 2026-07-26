@@ -4,9 +4,10 @@ Partitions candidate articles into micro-clusters after Event Extraction
 to prevent story pollution and topic drift.
 """
 
-from dataclasses import dataclass, field
 import logging
+from dataclasses import dataclass, field
 from typing import Any
+
 import numpy as np
 
 from app.core.config import settings

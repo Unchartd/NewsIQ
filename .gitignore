@@ -56,4 +56,5 @@ apps/api/extract_pdfs.py
 extract_pdfs.py
 apps/api/scratch_*.py
 apps/api/search_admin_endpoints.py
+scratch/
 
