@@ -185,7 +185,8 @@ def test_discovery_crawl_task_sets_url_hash_on_article():
     # No URL duplicate, no content duplicate → returns None both times
     mock_scalar = MagicMock()
     mock_scalar.scalar_one_or_none.side_effect = [
-        mock_crawl_task,  # CrawlTask lookup
+        mock_crawl_task,  # Initial CrawlTask lookup
+        mock_crawl_task,  # CrawlTask re-fetch post-crawl
         None,  # URL dup check
         None,  # Content hash dup check
     ]
