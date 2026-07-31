@@ -1802,9 +1802,7 @@ def discovery_crawl_task(
                 async with async_session_factory() as recovery_session:
                     from app.models.models import CrawlTask as CrawlTaskModel
 
-                    stmt = select(CrawlTaskModel).where(
-                        CrawlTaskModel.id == crawl_task_id
-                    )
+                    stmt = select(CrawlTaskModel).where(CrawlTaskModel.id == crawl_task_id)
                     res = await recovery_session.execute(stmt)
                     ct = res.scalar_one_or_none()
                     if ct:
