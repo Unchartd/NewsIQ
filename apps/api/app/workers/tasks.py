@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_session_factory, engine
 from app.core.trace import (
@@ -1784,7 +1785,32 @@ def discovery_crawl_task(
                 created_at=datetime.now(UTC).replace(tzinfo=None),
             )
             session.add(new_article)
-            await session.flush()
+            try:
+                await session.flush()
+            except IntegrityError:
+                # Race condition: another concurrent crawl worker already
+                # persisted this URL between our SELECT check and INSERT.
+                # Roll back the failed INSERT and treat as a duplicate.
+                await session.rollback()
+                logger.info(
+                    "Race-condition duplicate detected for CrawlTask %s (url=%s). "
+                    "Marking as DUPLICATE_URL.",
+                    crawl_task_id_str,
+                    crawl_task.url,
+                )
+                # Re-fetch the crawl_task in a clean session state
+                async with async_session_factory() as recovery_session:
+                    from app.models.models import CrawlTask as CrawlTaskModel
+
+                    stmt = select(CrawlTaskModel).where(CrawlTaskModel.id == crawl_task_id)
+                    res = await recovery_session.execute(stmt)
+                    ct = res.scalar_one_or_none()
+                    if ct:
+                        ct.status = CrawlTaskState.SUCCESS
+                        ct.outcome = "DUPLICATE_URL"
+                        ct.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                        await recovery_session.commit()
+                return
 
             crawl_task.status = CrawlTaskState.SUCCESS
             crawl_task.outcome = "SUCCESS"
@@ -2034,7 +2060,15 @@ def discovery_grouping_task() -> None:
     logger.info("Celery task: Running discovery grouping and promotion.")
 
     async def _run():
-        from app.services.pipeline_coordinator import discovery_manager
+        try:
+            from app.services.pipeline_coordinator import discovery_manager
+        except ImportError:
+            logger.warning(
+                "discovery_grouping_task skipped: app.services.pipeline_coordinator "
+                "module not found. Disable this task in celery_app.py or implement "
+                "the module."
+            )
+            return
 
         async with async_session_factory() as session:
             # 1. Group pending items to READY state

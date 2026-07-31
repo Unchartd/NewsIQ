@@ -40,11 +40,10 @@ class Settings(BaseSettings):
     DATABASE_DIRECT_URL: str = Field(default="")  # Falls back to DATABASE_URL if empty
     DATABASE_SSL: bool = False  # Set to True in production (Neon requires SSL)
 
-    # SQLAlchemy pool settings — tuned for Neon free tier (max 5 connections)
-    # Scale up for paid Neon plans or self-hosted PostgreSQL
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 2
-    DB_POOL_RECYCLE: int = 300  # Recycle connections every 5 min (serverless safety)
+    # SQLAlchemy pool settings — tuned for self-hosted PostgreSQL / multi-container scale
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 5
+    DB_POOL_RECYCLE: int = 300  # Recycle connections every 5 min (serverless / timeout safety)
     DB_POOL_TIMEOUT: int = 30  # Timeout for getting connection from pool in seconds
 
     # ── Redis — Upstash ───────────────────────────────────────────────────────
