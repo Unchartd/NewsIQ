@@ -1639,10 +1639,12 @@ def discovery_crawl_task(
                 await session.commit()
                 return
 
-            # 4. Update status to CRAWLING
+            # 4. Update status to CRAWLING & commit transaction before long network request
+            target_url = crawl_task.url
+            discovery_task_id = crawl_task.discovery_task_id
             crawl_task.status = CrawlTaskState.CRAWLING
             crawl_task.crawl_started_at = datetime.now(UTC).replace(tzinfo=None)
-            await session.flush()
+            await session.commit()
 
             # BUG-04: Use atomic INCR instead of non-atomic SET to prevent concurrent
             # workers from losing increments (read-modify-write race condition).
@@ -1657,10 +1659,10 @@ def discovery_crawl_task(
             except Exception as e:
                 logger.warning("Failed to increment download budget counter: %s", e)
 
-            # 5. Execute HTTP crawl
+            # 5. Execute HTTP crawl (Network I/O runs without holding open DB transaction)
             crawled: dict[str, Any] = {}
             try:
-                crawled_res = await crawler_service.crawl_article(crawl_task.url)
+                crawled_res = await crawler_service.crawl_article(target_url)
                 if crawled_res:
                     crawled = crawled_res
                 if not crawled or not crawled.get("success") or not crawled.get("content"):
@@ -1679,7 +1681,7 @@ def discovery_crawl_task(
             except Exception as e:
                 logger.warning(
                     "Failed to crawl URL %s for CrawlTask %s: %s",
-                    crawl_task.url,
+                    target_url,
                     crawl_task_id_str,
                     e,
                 )
@@ -1691,6 +1693,13 @@ def discovery_crawl_task(
                 from app.core.metrics import newsiq_discovery_crawls_failed
 
                 newsiq_discovery_crawls_failed.labels(reason=failure_reason).inc()
+
+                # Re-fetch CrawlTask in fresh transaction
+                refetch_stmt = select(CrawlTask).where(CrawlTask.id == crawl_task_id)
+                refetch_res = await session.execute(refetch_stmt)
+                crawl_task = refetch_res.scalar_one_or_none()
+                if not crawl_task:
+                    return
 
                 crawl_task.retry_count += 1
                 if crawl_task.retry_count < settings.DISCOVERY_MAX_RETRIES:
@@ -1705,11 +1714,16 @@ def discovery_crawl_task(
                     crawl_task.outcome = failure_reason
                     crawl_task.last_error = f"Crawl failed (max retries exceeded): {failure_reason} (method: {diagnostics.get('fetch_method')}, code: {diagnostics.get('status_code')})"
                 await session.commit()
-                await _check_discovery_task_completion(crawl_task.discovery_task_id, session)
+                await _check_discovery_task_completion(discovery_task_id, session)
                 await session.commit()
                 return
 
-            # 6. Database checks (sequential)
+            # 6. Re-fetch CrawlTask for post-crawl database operations
+            refetch_stmt = select(CrawlTask).where(CrawlTask.id == crawl_task_id)
+            refetch_res = await session.execute(refetch_stmt)
+            crawl_task = refetch_res.scalar_one_or_none()
+            if not crawl_task:
+                return
             dup_stmt = select(Article).where(Article.url == crawl_task.url)
             dup_res = await session.execute(dup_stmt)
             if dup_res.scalar_one_or_none():
