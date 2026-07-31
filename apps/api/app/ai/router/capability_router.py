@@ -103,7 +103,7 @@ class CapabilityRouter:
         gemini_env = settings.GEMINI_API_KEY_SYNTH or settings.GEMINI_API_KEY or ""
         for k in [k.strip() for k in gemini_env.split(",") if k.strip()]:
             gemini_keys.append(
-                APIKey(key=k, provider="gemini", requests_per_minute=15, requests_per_day=1500)
+                APIKey(key=k, provider="gemini", requests_per_minute=15, requests_per_day=500)
             )
         self.pools["gemini"] = gemini_keys
 
@@ -248,7 +248,7 @@ class CapabilityRouter:
             "reasoning-heavy": "gemini-2.5-pro",
             "synthesis-balanced": "gemini-2.5-flash",
             "verification": "gemini-3.1-flash-lite",
-            "embedding": "text-embedding-004",
+            "embedding": "gemini-embedding-001",
         }
         resolved_model = CAPABILITY_TO_MODEL.get(model, model)
 

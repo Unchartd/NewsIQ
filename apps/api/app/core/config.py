@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     AWS_BEDROCK_BASE_URL: str = "https://bedrock-mantle.us-east-1.api.aws/v1"
     AWS_BEDROCK_API_KEY: str = ""
-    EMBEDDING_MODEL: str = "gemini-embedding-2"
+    EMBEDDING_MODEL: str = "gemini-embedding-001"
     SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────

@@ -290,7 +290,7 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                         stage.mark_skipped("no_pending_articles")
                         return 0
 
-                    stage.input(articles=pending_articles, model="text-embedding-004")
+                    stage.input(articles=pending_articles, model="gemini-embedding-001")
 
                     logger.info(
                         "Embedding batch started",
