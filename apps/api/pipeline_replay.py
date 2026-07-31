@@ -258,7 +258,6 @@ async def replay_pipeline(
 
         # Step 4: Run batch clustering (Trigger HDBSCAN)
         logger.info("Triggering HDBSCAN batch clustering for Discovery Queue...")
-        from app.services.clustering_service import clustering_service
 
         cluster_start = time.perf_counter()
         await clustering_service._run_batch_clustering_locked(session)

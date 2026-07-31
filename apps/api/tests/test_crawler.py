@@ -100,7 +100,6 @@ def test_extract_custom_cleaner():
 @pytest.mark.asyncio
 async def test_crawl_article_fallback_chain():
     """Test the fallback logic when primary extractors fail."""
-    url = "https://example.com/fallback-test"
     sample_html = "<html><body><p>Substantial text that is not captured by newspaper but will be captured by secondary fallback, let's write at least 150 characters here to make it pass the length requirements.</p></body></html>"
 
     with patch(
