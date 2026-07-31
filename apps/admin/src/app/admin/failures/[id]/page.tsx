@@ -4,6 +4,7 @@ import { useState, use } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
+import { formatLocalDateTime } from "@/lib/date-utils";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -173,7 +174,7 @@ export default function FailureDetailPage({ params }: { params: Promise<{ id: st
             {failure.exception}
           </h1>
           <p className="text-slate-500 text-xs mt-1.5">
-            Occurred on: <span className="text-slate-400">{new Date(failure.timestamp).toLocaleString()}</span>
+            Occurred on: <span className="text-slate-400">{formatLocalDateTime(failure.timestamp)}</span>
           </p>
         </div>
 
