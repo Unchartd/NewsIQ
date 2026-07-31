@@ -221,9 +221,10 @@ async def test_pipeline_trace_collector_lifecycle():
 @pytest.mark.asyncio
 async def test_save_artifact_tier_policy():
     """Verify save_artifact respects Tier 1, 2, and 3 policies."""
-    from app.core.trace import save_artifact
-    import tempfile
     import os
+    import tempfile
+
+    from app.core.trace import save_artifact
 
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch("app.core.config.settings.LOCAL_STORAGE_PATH", tmpdir):
@@ -232,16 +233,22 @@ async def test_save_artifact_tier_policy():
             assert res is None
 
             # Tier 2: Save on failure only. Success = True -> Should not save.
-            res = save_artifact("html", "<html></html>", tier=2, run_id="run_1", span_id="span_1", success=True)
+            res = save_artifact(
+                "html", "<html></html>", tier=2, run_id="run_1", span_id="span_1", success=True
+            )
             assert res is None
 
             # Tier 2: Save on failure only. Success = False -> Should save.
-            res = save_artifact("html", "<html></html>", tier=2, run_id="run_1", span_id="span_1", success=False)
+            res = save_artifact(
+                "html", "<html></html>", tier=2, run_id="run_1", span_id="span_1", success=False
+            )
             assert res is not None
             assert os.path.exists(os.path.join(tmpdir, res))
 
             # Tier 1: Always save.
-            res = save_artifact("matrix", {"similarity": 0.8}, tier=1, run_id="run_1", span_id="span_1")
+            res = save_artifact(
+                "matrix", {"similarity": 0.8}, tier=1, run_id="run_1", span_id="span_1"
+            )
             assert res is not None
             assert os.path.exists(os.path.join(tmpdir, res))
 
@@ -255,7 +262,7 @@ async def test_llm_trace_parent_relationship():
 
     with (
         patch("app.core.trace._persist_llm_call", AsyncMock()) as mock_persist,
-        patch("app.core.trace.langfuse_client") as mock_lf,
+        patch("app.core.trace.langfuse_client"),
     ):
         async with track_llm_call(
             provider="gemini", model="gemini-2.5-flash", stage="summary"
@@ -278,4 +285,3 @@ async def test_llm_trace_parent_relationship():
         # Second call completed (parent)
         assert calls[1][0][0].call_id == parent_call.call_id
         assert calls[1][0][0].parent_llm_trace_id == ""
-

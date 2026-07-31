@@ -14,7 +14,7 @@ def test_rca_classifier_rate_limits():
     """Verify that error messages with rate limit cues classify to LLM_RATE_LIMIT."""
     report = RootCauseAnalysisService.classify_error(
         error_msg="RateLimitError: 429 Too Many Requests on model gemini-2.5-flash",
-        error_type="RateLimitError"
+        error_type="RateLimitError",
     )
     assert report is not None
     assert report.category == "LLM_RATE_LIMIT"
@@ -26,7 +26,7 @@ def test_rca_classifier_context_window():
     """Verify that token limits error classify to LLM_CONTEXT_WINDOW_EXCEEDED."""
     report = RootCauseAnalysisService.classify_error(
         error_msg="context length exceeded limit of 1048576 tokens",
-        error_type="ContextLengthExceeded"
+        error_type="ContextLengthExceeded",
     )
     assert report is not None
     assert report.category == "LLM_CONTEXT_WINDOW_EXCEEDED"
@@ -37,7 +37,7 @@ def test_rca_classifier_db_timeout():
     """Verify database OperationalError maps to DATABASE_TIMEOUT."""
     report = RootCauseAnalysisService.classify_error(
         error_msg="sqlalchemy.exc.OperationalError: asyncpg connection pool timeout",
-        error_type="OperationalError"
+        error_type="OperationalError",
     )
     assert report is not None
     assert report.category == "DATABASE_TIMEOUT"
@@ -47,7 +47,7 @@ def test_rca_classifier_vector_db():
     """Verify vector DB connection failures map to VECTOR_DB_UNAVAILABLE."""
     report = RootCauseAnalysisService.classify_error(
         error_msg="Qdrant connection refused on grpc://localhost:6334",
-        error_type="ConnectionRefusedError"
+        error_type="ConnectionRefusedError",
     )
     assert report is not None
     assert report.category == "VECTOR_DB_UNAVAILABLE"
@@ -58,7 +58,7 @@ def test_rca_classifier_oom():
     report = RootCauseAnalysisService.classify_error(
         error_msg="Process killed by OOM killer (MemoryError)",
         error_type="MemoryError",
-        metadata={"resource_usage": {"memory_percent": 98.5}}
+        metadata={"resource_usage": {"memory_percent": 98.5}},
     )
     assert report is not None
     assert report.category == "OUT_OF_MEMORY"
@@ -80,7 +80,7 @@ async def test_otel_exporter_payload():
             "total_tokens": 15000,
             "success_count": 12,
             "failure_count": 0,
-        }
+        },
     )
 
     stage = StageRunModel(
@@ -165,6 +165,8 @@ async def test_manual_export_endpoint(mock_db_session):
 
     mock_db_session.execute.side_effect = [mock_result_stages, mock_result_llm]
 
-    with patch("app.services.otel_exporter.OTelTraceExporter.export_run", AsyncMock(return_value=True)):
+    with patch(
+        "app.services.otel_exporter.OTelTraceExporter.export_run", AsyncMock(return_value=True)
+    ):
         response = await trigger_run_export_otel(run_id=run_id, db=mock_db_session)
         assert response["message"] == "Pipeline run exported successfully to OTLP collector."

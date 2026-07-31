@@ -1824,7 +1824,9 @@ def discovery_crawl_task(
                         ct.outcome = "DUPLICATE_URL"
                         ct.completed_at = datetime.now(UTC).replace(tzinfo=None)
                         await recovery_session.commit()
-                        await _check_discovery_task_completion(ct.discovery_task_id, recovery_session)
+                        await _check_discovery_task_completion(
+                            ct.discovery_task_id, recovery_session
+                        )
                         await recovery_session.commit()
                 return
 
