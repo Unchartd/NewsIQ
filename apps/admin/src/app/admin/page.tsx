@@ -17,6 +17,7 @@ import {
   Database,
   ShieldAlert,
   Server,
+  Tag,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -221,20 +222,33 @@ export default function DashboardHome() {
       {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">System Overview</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-foreground">System Overview</h1>
+            <span className="px-2.5 py-0.5 text-xs font-mono font-bold bg-primary/10 text-primary border border-primary/20 rounded-lg">
+              {metrics?.version || "v1.27.0"}
+            </span>
+          </div>
           <p className="text-slate-500 text-sm mt-1">
             Real-time AI pipeline observability and health metrics
           </p>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-border text-xs">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              sseStatus === "connected"
-                ? "bg-emerald-500 animate-pulse"
-                : "bg-slate-650"
-            }`}
-          />
-          <span className="text-slate-400 font-mono capitalize">{sseStatus}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-border text-xs">
+            <Tag className="w-3.5 h-3.5 text-primary" />
+            <span className="text-slate-300 font-mono font-semibold">
+              Release: {metrics?.version || "v1.27.0"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-border text-xs">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                sseStatus === "connected"
+                  ? "bg-emerald-500 animate-pulse"
+                  : "bg-slate-650"
+              }`}
+            />
+            <span className="text-slate-400 font-mono capitalize">{sseStatus}</span>
+          </div>
         </div>
       </div>
 

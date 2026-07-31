@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.core.config import settings
 from app.services.pipeline_cache import PipelineCache
 
 
@@ -29,7 +30,10 @@ def test_pipeline_cache_key():
         content_hash="abc123hash",
         temperature=0.1,
     )
-    assert key == "llm_cache:event_extraction:gemini-2.5-flash-lite:v2:1.0.0:0.10:abc123hash"
+    assert (
+        key
+        == f"llm_cache:event_extraction:gemini-2.5-flash-lite:v2:{settings.PIPELINE_VERSION}:0.10:abc123hash"
+    )
 
 
 @pytest.mark.asyncio
@@ -47,7 +51,7 @@ async def test_pipeline_cache_get_hit(mock_cache_get):
     )
     assert res == {"key": "val"}
     mock_cache_get.assert_called_once_with(
-        "llm_cache:event_extraction:gemini-2.5-flash-lite:v2:1.0.0:0.10:abc123hash"
+        f"llm_cache:event_extraction:gemini-2.5-flash-lite:v2:{settings.PIPELINE_VERSION}:0.10:abc123hash"
     )
 
 
@@ -82,7 +86,7 @@ async def test_pipeline_cache_set(mock_cache_set):
     )
     # verify it called set with 30-day (2592000s) cleanup TTL
     mock_cache_set.assert_called_once_with(
-        "llm_cache:event_extraction:gemini-2.5-flash-lite:v2:1.0.0:0.10:abc123hash",
+        f"llm_cache:event_extraction:gemini-2.5-flash-lite:v2:{settings.PIPELINE_VERSION}:0.10:abc123hash",
         {"key": "val"},
         ttl=2592000,
     )

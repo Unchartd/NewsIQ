@@ -111,7 +111,7 @@ class Settings(BaseSettings):
     SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────
-    PIPELINE_VERSION: str = "1.0.0"
+    PIPELINE_VERSION: str = "1.27.0"
     PIPELINE_CACHE_ENABLED: bool = True
     REFLECTION_AGENT_TIMEOUT_SECONDS: float = 5.0
     ENTITY_LINKING_MODE: str = "hybrid"  # hybrid | deterministic | llm
