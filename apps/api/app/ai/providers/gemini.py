@@ -198,7 +198,7 @@ class GeminiProvider(AIProvider):
 
     async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         try:
-            model_name = model or "text-embedding-004"
+            model_name = model or "gemini-embedding-001"
             client = google_genai.Client(api_key=api_key.key)
             config: dict[str, Any] = {"task_type": "RETRIEVAL_DOCUMENT"}
             if "embedding-2" in model_name:

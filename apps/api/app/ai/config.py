@@ -18,8 +18,7 @@ class CapabilityRoute(TypedDict):
     lastFallback: ProviderModelRoute
 
 
-# Model fallback chains (configuration-driven instead of hardcoded)
-# Scoped strictly to Gemini, AWS Bedrock, NVIDIA NIM, and OpenRouter.
+# Model fallback chains — configured strictly for Gemini API (15 RPM / 500 RPD for Flash, 100 RPM / 1500 RPD for Embeddings)
 MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
     "gemini-3.1-flash-lite": [
         {
@@ -29,50 +28,42 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "timeout": 30.0,
         },
         {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
-        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
     "gemini-2.5-flash": [
         {"provider": "gemini", "model": "gemini-2.5-flash", "temperature": 0.1, "timeout": 30.0},
         {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
-        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
     "gemini-2.5-pro": [
         {"provider": "gemini", "model": "gemini-2.5-pro", "temperature": 0.1, "timeout": 45.0},
+        {"provider": "gemini", "model": "gemini-2.5-flash", "temperature": 0.1, "timeout": 30.0},
         {
-            "provider": "bedrock",
-            "model": "deepseek.v3.2",
+            "provider": "gemini",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
-            "timeout": 45.0,
+            "timeout": 30.0,
         },
-        {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-pro",
-            "temperature": 0.1,
-            "timeout": 45.0,
-        },
-        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
     "gemini-2.5-flash-lite": [
         {
@@ -82,55 +73,57 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "timeout": 30.0,
         },
         {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
-        {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
-            "temperature": 0.1,
-            "timeout": 30.0,
-        },
-        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
-    ],
-    "deepseek-ai/deepseek-v4-flash": [
         {
             "provider": "gemini",
             "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
-        {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
-            "temperature": 0.1,
-            "timeout": 30.0,
-        },
-        {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
-            "temperature": 0.1,
-            "timeout": 30.0,
-        },
-        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
-    "deepseek-ai/deepseek-v4-pro": [
-        {"provider": "gemini", "model": "gemini-2.5-pro", "temperature": 0.1, "timeout": 45.0},
+    "gemini-embedding-001": [
         {
-            "provider": "bedrock",
-            "model": "deepseek.v3.2",
-            "temperature": 0.1,
-            "timeout": 45.0,
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
+            "temperature": 0.0,
+            "timeout": 15.0,
         },
         {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-pro",
-            "temperature": 0.1,
-            "timeout": 45.0,
+            "provider": "gemini",
+            "model": "text-embedding-004",
+            "temperature": 0.0,
+            "timeout": 15.0,
         },
-        {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
+        {
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+    ],
+    "text-embedding-004": [
+        {
+            "provider": "gemini",
+            "model": "text-embedding-004",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "gemini",
+            "model": "text-embedding-004",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
     ],
     "mock": [
         {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
@@ -138,8 +131,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
 }
 
 
-# Capability-based routing configuration
-# fallback tree: first gemini then amazon bedrock, then Nvidia
+# Capability-based routing configuration — All pipeline capabilities strictly mapped to Gemini API
 CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "event_extraction": {
         "primary": {
@@ -149,14 +141,14 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -169,14 +161,14 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -189,19 +181,18 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
     },
-    # ── Pro Capabilities ────────────────────────────────────────────────────
     "source_comparison": {
         "primary": {
             "provider": "gemini",
@@ -210,14 +201,14 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -230,19 +221,18 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
     },
-    # summary_generation: called by ai_service.summarize_story_from_kg()
     "summary_generation": {
         "primary": {
             "provider": "gemini",
@@ -251,19 +241,18 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 45.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 45.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 45.0,
         },
     },
-    # contradiction_detection: alias of contradiction_analysis — used by agent fallback path
     "contradiction_detection": {
         "primary": {
             "provider": "gemini",
@@ -272,19 +261,18 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
     },
-    # entity_linking: used by entity_linker._disambiguate_with_llm()
     "entity_linking": {
         "primary": {
             "provider": "gemini",
@@ -293,35 +281,35 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 15.0,
         },
         "fallback": {
-            "provider": "bedrock",
-            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
             "temperature": 0.1,
             "timeout": 15.0,
         },
         "lastFallback": {
-            "provider": "nvidia",
-            "model": "deepseek-ai/deepseek-v4-flash",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash-lite",
             "temperature": 0.1,
             "timeout": 15.0,
         },
     },
-    # ── Embedding ───────────────────────────────────────────────────────────
+    # ── Embedding Capability ──────────────────────────────────────────────────
     "embedding": {
         "primary": {
             "provider": "gemini",
-            "model": settings.EMBEDDING_MODEL,
+            "model": settings.EMBEDDING_MODEL or "gemini-embedding-001",
             "temperature": 0.0,
             "timeout": 15.0,
         },
         "fallback": {
-            "provider": "nvidia",
-            "model": "nvidia/nv-embed-v1",
+            "provider": "gemini",
+            "model": "text-embedding-004",
             "temperature": 0.0,
             "timeout": 15.0,
         },
         "lastFallback": {
-            "provider": "bedrock",
-            "model": "amazon.titan-embed-text-v2:0",
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
             "temperature": 0.0,
             "timeout": 15.0,
         },
