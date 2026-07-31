@@ -1366,7 +1366,13 @@ def serialize_failure(f: PipelineFailureModel) -> dict[str, Any]:
         "errorCode": f.error_code,
         "retryCount": f.retry_count,
         "latency": f.latency,
-        "timestamp": f.timestamp.isoformat() if f.timestamp else None,
+        "timestamp": (
+            f"{f.timestamp.isoformat()}Z"
+            if f.timestamp
+            and not f.timestamp.isoformat().endswith("Z")
+            and "+" not in f.timestamp.isoformat()[-6:]
+            else (f.timestamp.isoformat() if f.timestamp else None)
+        ),
         "resolved": f.resolved,
         "resolutionNotes": f.resolution_notes,
     }

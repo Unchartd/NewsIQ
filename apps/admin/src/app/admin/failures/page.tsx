@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import apiClient from "@/lib/api-client";
+import { formatLocalDateTime } from "@/lib/date-utils";
 import { AlertOctagon, Search, ArrowRight, Eye, RefreshCw, CheckCircle2 } from "lucide-react";
 
 interface FailureItem {
@@ -226,7 +227,7 @@ export default function FailureCenterPage() {
                     className="hover:bg-white/2 transition-colors duration-150"
                   >
                     <td className="py-4 px-5 font-mono text-slate-400 whitespace-nowrap">
-                      {new Date(failure.timestamp).toLocaleString()}
+                      {formatLocalDateTime(failure.timestamp)}
                     </td>
                     <td className="py-4 px-4 font-semibold text-slate-200 capitalize whitespace-nowrap">
                       {failure.stage.replace("_", " ")}
