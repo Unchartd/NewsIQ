@@ -5,7 +5,12 @@ from unittest.mock import patch
 import pytest
 
 from app.services.crawler_service import crawler_service
-from app.services.extraction_provider import LocalCrawlerProvider
+from app.services.extraction_provider import (
+    ExtractionDiagnostics,
+    ExtractionFailure,
+    ExtractionResult,
+    LocalCrawlerProvider,
+)
 
 
 def test_extract_newspaper():
@@ -116,7 +121,7 @@ async def test_crawl_article_fallback_chain():
                 },
             ),
         ):
-            result = await crawler_service.crawl_article(url)
+            result = await crawler_service.crawl_article("https://example.com/fallback-test-1")
             assert result is not None
             assert result["success"] is True
             assert result["extractor"] == "trafilatura"
@@ -139,7 +144,7 @@ async def test_crawl_article_fallback_chain():
                 },
             ),
         ):
-            result = await crawler_service.crawl_article(url)
+            result = await crawler_service.crawl_article("https://example.com/fallback-test-2")
             assert result is not None
             assert result["success"] is True
             assert result["extractor"] == "readability-lxml"
@@ -166,7 +171,7 @@ async def test_crawl_article_fallback_chain():
                 },
             ),
         ):
-            result = await crawler_service.crawl_article(url)
+            result = await crawler_service.crawl_article("https://example.com/fallback-test-3")
             assert result is not None
             assert result["success"] is True
             assert result["extractor"] == "custom-bs4"
@@ -189,8 +194,30 @@ async def test_crawl_article_fallback_chain():
                 "app.services.extraction_provider.LocalCrawlerProvider._extract_custom_cleaner",
                 return_value=None,
             ),
+            patch(
+                "app.services.extraction_provider.FirecrawlProvider.extract",
+                return_value=ExtractionResult(
+                    success=False,
+                    provider="firecrawl",
+                    failure=ExtractionFailure.PARSER_FAILED,
+                    url="https://example.com/fallback-test-4",
+                    title=None,
+                    content="",
+                    author=None,
+                    image_url=None,
+                    published_at=None,
+                    diagnostics=ExtractionDiagnostics(
+                        provider="firecrawl",
+                        attempts=1,
+                        status_code=None,
+                        bot_detected=False,
+                        latency_ms=10.0,
+                        notes=[],
+                    ),
+                ),
+            ),
         ):
-            result = await crawler_service.crawl_article(url)
+            result = await crawler_service.crawl_article("https://example.com/fallback-test-4")
             assert result is not None
             assert result["success"] is False
             assert result["diagnostics"]["failure_reason"] == "EXTRACTION_FAILED"

@@ -20,7 +20,12 @@ class URLBloomFilter:
     KEY_SET = "newsiq:set:url"
 
     def __init__(self, cache_service: CacheService):
-        self.redis = cache_service._redis
+        # Store the CacheService reference — NOT the resolved Redis client.
+        # CacheService._redis is a property that creates a per-event-loop
+        # Redis client.  Capturing it eagerly at import time (before any loop
+        # exists) returns None or a client bound to the parent process's loop,
+        # which breaks in Celery prefork children that each run a fresh loop.
+        self._cache_service = cache_service
         self.use_bloom = True
         self.metrics = {
             "hit_count": 0,
@@ -28,6 +33,11 @@ class URLBloomFilter:
             "false_positives": 0,
             "fallback_used": False,
         }
+
+    @property
+    def redis(self):  # noqa: ANN201
+        """Lazily resolve the Redis client for the current event loop."""
+        return self._cache_service._redis
 
     async def add(self, url_hash: str) -> bool:
         """
