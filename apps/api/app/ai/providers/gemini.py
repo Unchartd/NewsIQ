@@ -179,7 +179,12 @@ class GeminiProvider(AIProvider):
             return HealthStatus(
                 healthy=True,
                 latency_ms=latency_ms,
-                supported_models=["gemini-2.5-flash", "gemini-2.5-pro", "text-embedding-004"],
+                supported_models=[
+                    "gemini-3.1-flash-lite",
+                    "gemini-3.5-flash-lite",
+                    "gemini-embedding-001",
+                    "gemini-embedding-2",
+                ],
             )
         except Exception as e:
             latency_ms = (time.perf_counter() - t0) * 1000

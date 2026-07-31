@@ -26,7 +26,7 @@ class PromptTemplate:
         route = CAPABILITY_ROUTING.get(self.stage)
         if route and "primary" in route:
             return route["primary"]["model"]
-        return "gemini-2.5-flash"
+        return "gemini-3.1-flash-lite"
 
     def system_message(self) -> dict[str, str]:
         """Return the system message dict for LLM API calls."""

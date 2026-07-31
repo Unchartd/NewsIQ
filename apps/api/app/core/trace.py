@@ -1072,7 +1072,7 @@ LLM_PRICING: dict[str, dict[str, float]] = {
     "gemini-2.5-flash-lite": {"input": 0.075, "output": 0.30},
     "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
     "gemini-2.0-flash-lite": {"input": 0.075, "output": 0.30},
-    "text-embedding-004": {"input": 0.00, "output": 0.00},  # Free
+    "gemini-embedding-2": {"input": 0.00, "output": 0.00},  # Free
     "gemini-embedding-001": {"input": 0.00, "output": 0.00},  # Free
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "text-embedding-3-small": {"input": 0.02, "output": 0.00},

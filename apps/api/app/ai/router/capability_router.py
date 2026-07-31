@@ -245,8 +245,8 @@ class CapabilityRouter:
         # Resolve abstract capability identifiers if passed (Phase 9)
         CAPABILITY_TO_MODEL = {
             "extraction-speed": "gemini-3.1-flash-lite",
-            "reasoning-heavy": "gemini-2.5-pro",
-            "synthesis-balanced": "gemini-2.5-flash",
+            "reasoning-heavy": "gemini-3.5-flash-lite",
+            "synthesis-balanced": "gemini-3.5-flash-lite",
             "verification": "gemini-3.1-flash-lite",
             "embedding": "gemini-embedding-001",
         }

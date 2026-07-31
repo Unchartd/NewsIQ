@@ -42,10 +42,10 @@ logger = logging.getLogger(__name__)
 # Cost pricing per million tokens
 PRICING_TABLE = {
     # Gemini
-    "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
-    "gemini-2.5-pro": {"input": 1.25, "output": 5.00},
     "gemini-3.1-flash-lite": {"input": 0.075, "output": 0.30},
-    "text-embedding-004": {"input": 0.025, "output": 0.0},
+    "gemini-3.5-flash-lite": {"input": 0.075, "output": 0.30},
+    "gemini-embedding-001": {"input": 0.025, "output": 0.0},
+    "gemini-embedding-2": {"input": 0.025, "output": 0.0},
     # NVIDIA DeepSeek V4 Flash / Pro (Enterprise estimates or flat free)
     "deepseek-ai/deepseek-v4-flash": {"input": 0.14, "output": 0.28},
     "deepseek-ai/deepseek-v4-pro": {"input": 0.55, "output": 2.19},
