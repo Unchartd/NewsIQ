@@ -1,10 +1,11 @@
 """Unit tests for PreCrawlerDecisionEngine and MicroClusterService."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.ingestion.pre_crawler_engine import PreCrawlerDecisionEngine, PreCrawlerDecision
-from app.services.micro_cluster_service import MicroClusterService, MicroCluster
+import pytest
+
+from app.ingestion.pre_crawler_engine import PreCrawlerDecision, PreCrawlerDecisionEngine
+from app.services.micro_cluster_service import MicroCluster, MicroClusterService
 
 
 @pytest.mark.asyncio
@@ -15,9 +16,13 @@ async def test_pre_crawler_decision_engine_new_url():
     mock_res.scalar_one_or_none.return_value = None
     mock_session.execute.return_value = mock_res
 
-    with patch("app.ingestion.pre_crawler_engine.url_bloom_filter.exists", new_callable=AsyncMock) as mock_bloom:
+    with patch(
+        "app.ingestion.pre_crawler_engine.url_bloom_filter.exists", new_callable=AsyncMock
+    ) as mock_bloom:
         mock_bloom.return_value = False
-        decision = await engine.evaluate_url("https://www.cnbc.com/2026/07/08/apple-test.html", mock_session)
+        decision = await engine.evaluate_url(
+            "https://www.cnbc.com/2026/07/08/apple-test.html", mock_session
+        )
 
         assert isinstance(decision, PreCrawlerDecision)
         assert decision.should_crawl is True

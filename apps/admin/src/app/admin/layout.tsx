@@ -90,9 +90,14 @@ export default function DashboardLayout({
           </svg>
         </div>
         <div>
-          <p className="text-sm font-bold text-foreground leading-none">
-            NewsIQ
-          </p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-bold text-foreground leading-none">
+              NewsIQ
+            </p>
+            <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-primary/10 text-primary border border-primary/20 rounded">
+              v1.27.0
+            </span>
+          </div>
           <p className="text-[10px] text-slate-500 mt-0.5 font-mono">Admin Console</p>
         </div>
       </div>

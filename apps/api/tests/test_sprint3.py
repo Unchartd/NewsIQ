@@ -50,16 +50,21 @@ async def test_purge_observability_data_task(mock_db_session):
     class MockSessionFactory:
         def __init__(self, session):
             self.session = session
+
         def __call__(self):
             return self
+
         async def __aenter__(self):
             return self.session
+
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             pass
 
     # Patch run_async to return the coroutine directly, and patch the session factory
-    with patch("app.workers.tasks.run_async", lambda coro: coro), \
-         patch("app.workers.tasks.async_session_factory", MockSessionFactory(mock_db_session)):
+    with (
+        patch("app.workers.tasks.run_async", lambda coro: coro),
+        patch("app.workers.tasks.async_session_factory", MockSessionFactory(mock_db_session)),
+    ):
         coro = purge_observability_data_task(retention_days=30, redact_days=14)
         stats = await coro
 

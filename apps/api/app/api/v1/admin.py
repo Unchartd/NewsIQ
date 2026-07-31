@@ -804,7 +804,9 @@ async def get_dashboard_metrics(
             "last_updated": None,
         }
 
-    return json.loads(raw)
+    data = json.loads(raw)
+    data["version"] = f"v{settings.PIPELINE_VERSION}"
+    return data
 
 
 @router.get("/pipeline/compare")
