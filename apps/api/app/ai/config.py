@@ -18,7 +18,7 @@ class CapabilityRoute(TypedDict):
     lastFallback: ProviderModelRoute
 
 
-# Model fallback chains — configured strictly for Gemini API (15 RPM / 500 RPD for Flash, 100 RPM / 1500 RPD for Embeddings)
+# Model fallback chains — configured strictly for Gemini API (gemini-3.1-flash-lite & gemini-3.5-flash-lite)
 MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
     "gemini-3.1-flash-lite": [
         {
@@ -29,19 +29,24 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
     ],
-    "gemini-2.5-flash": [
-        {"provider": "gemini", "model": "gemini-2.5-flash", "temperature": 0.1, "timeout": 30.0},
+    "gemini-3.5-flash-lite": [
+        {
+            "provider": "gemini",
+            "model": "gemini-3.5-flash-lite",
+            "temperature": 0.1,
+            "timeout": 30.0,
+        },
         {
             "provider": "gemini",
             "model": "gemini-3.1-flash-lite",
@@ -50,37 +55,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
-            "temperature": 0.1,
-            "timeout": 30.0,
-        },
-    ],
-    "gemini-2.5-pro": [
-        {"provider": "gemini", "model": "gemini-2.5-pro", "temperature": 0.1, "timeout": 45.0},
-        {"provider": "gemini", "model": "gemini-2.5-flash", "temperature": 0.1, "timeout": 30.0},
-        {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
-            "temperature": 0.1,
-            "timeout": 30.0,
-        },
-    ],
-    "gemini-2.5-flash-lite": [
-        {
-            "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
-            "temperature": 0.1,
-            "timeout": 30.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-2.5-flash",
-            "temperature": 0.1,
-            "timeout": 30.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -94,7 +69,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "provider": "gemini",
-            "model": "text-embedding-004",
+            "model": "gemini-embedding-2",
             "temperature": 0.0,
             "timeout": 15.0,
         },
@@ -105,10 +80,10 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "timeout": 15.0,
         },
     ],
-    "text-embedding-004": [
+    "gemini-embedding-2": [
         {
             "provider": "gemini",
-            "model": "text-embedding-004",
+            "model": "gemini-embedding-2",
             "temperature": 0.0,
             "timeout": 15.0,
         },
@@ -120,7 +95,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "provider": "gemini",
-            "model": "text-embedding-004",
+            "model": "gemini-embedding-2",
             "temperature": 0.0,
             "timeout": 15.0,
         },
@@ -131,7 +106,7 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
 }
 
 
-# Capability-based routing configuration — All pipeline capabilities strictly mapped to Gemini API
+# Capability-based routing configuration — strictly gemini-3.1-flash-lite & gemini-3.5-flash-lite
 CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "event_extraction": {
         "primary": {
@@ -142,13 +117,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -162,13 +137,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -182,13 +157,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -202,13 +177,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -222,13 +197,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -242,13 +217,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 45.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 45.0,
         },
@@ -262,13 +237,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -282,13 +257,13 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "temperature": 0.1,
             "timeout": 15.0,
         },
         "lastFallback": {
             "provider": "gemini",
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.1-flash-lite",
             "temperature": 0.1,
             "timeout": 15.0,
         },
@@ -303,7 +278,7 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
         "fallback": {
             "provider": "gemini",
-            "model": "text-embedding-004",
+            "model": "gemini-embedding-2",
             "temperature": 0.0,
             "timeout": 15.0,
         },

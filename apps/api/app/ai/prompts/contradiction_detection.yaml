@@ -25,10 +25,9 @@ template: |
   Determine if this is a true factual contradiction.
 
 routing:
-  preferred_model: "gemini-2.5-flash"
+  preferred_model: "gemini-3.1-flash-lite"
   fallback_models:
-    - "qwen.qwen3-vl-235b-a22b-instruct"
-    - "deepseek-ai/deepseek-v4-flash"
+    - "gemini-3.5-flash-lite"
   temperature: 0.1
   max_tokens: 1024
   timeout_seconds: 30.0
