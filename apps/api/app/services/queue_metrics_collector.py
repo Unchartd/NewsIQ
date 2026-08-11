@@ -22,20 +22,41 @@ async def collect_queue_metrics() -> None:
 
     Updates the Prometheus gauge and records the snapshot in the Postgres database.
     """
-    # 1. Query Redis directly for waiting jobs across all queues
+    # 1. Query Redis directly for waiting jobs across all queues.
+    #    The client MUST be closed in a finally block: this task runs every 30s,
+    #    and the previous version leaked the connection whenever a query raised.
+    #    That made Redis saturation self-accelerating — the more exhausted Redis
+    #    was, the more often this failed, and each failure stranded another pool.
+    waiting_celery = waiting_search = waiting_crawl = waiting = 0
+    r = None
     try:
-        r = aioredis.from_url(settings.CELERY_BROKER_URL)
+        r = aioredis.from_url(
+            settings.CELERY_BROKER_URL, max_connections=settings.REDIS_MAX_CONNECTIONS
+        )
         waiting_celery = await r.llen("celery")
         waiting_search = await r.llen("discovery_search")
         waiting_crawl = await r.llen("discovery_crawl")
         waiting = waiting_celery + waiting_search + waiting_crawl
-        await r.aclose()
     except Exception as e:
         logger.warning(f"Failed to query Redis broker: {e}")
-        waiting_celery = 0
-        waiting_search = 0
-        waiting_crawl = 0
-        waiting = 0
+    finally:
+        if r is not None:
+            try:
+                await r.aclose()
+            except Exception as close_err:
+                logger.debug("Failed to close broker Redis client: %s", close_err)
+
+    # Surface per-loop client-pool counts so a recurrence of the leak is visible
+    # before it exhausts Redis, rather than after the pipeline has silently stopped.
+    try:
+        from app.core.metrics import newsiq_loop_client_pools
+        from app.services.cache_service import cache_service
+        from app.services.vector_service import vector_service
+
+        newsiq_loop_client_pools.labels(service="cache").set(cache_service.pool_count)
+        newsiq_loop_client_pools.labels(service="vector").set(vector_service.pool_count)
+    except Exception as e:
+        logger.debug("Failed to record loop client pool counts: %s", e)
 
     # 2. Query Celery control inspect in executor (since it blocks on networking)
     def inspect_celery() -> tuple[int, int]:

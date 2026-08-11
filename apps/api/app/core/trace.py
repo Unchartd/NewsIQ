@@ -60,14 +60,15 @@ async def emit_pipeline_event(event: dict[str, Any]) -> None:
     """Publish an observability event to a Redis Stream."""
     import json
 
-    import redis.asyncio as aioredis
+    from app.services.cache_service import redis_client
 
-    from app.core.config import settings
-
+    # This runs on every stage span, so an unclosed client here leaks fast.
+    # redis_client() closes in a finally block even when xadd raises.
     try:
-        r = aioredis.from_url(settings.REDIS_URL)
-        await r.xadd("newsiq:pipeline:stream", {"event": json.dumps(event, default=str)})
-        await r.aclose()
+        async with redis_client() as r:
+            if r is None:
+                return
+            await r.xadd("newsiq:pipeline:stream", {"event": json.dumps(event, default=str)})
     except Exception as exc:
         logger.warning("Failed to emit pipeline event: %s", exc)
 
@@ -737,15 +738,13 @@ def _get_db_pool_status() -> int:
 
 async def _get_redis_status() -> int:
     try:
-        import redis.asyncio as aioredis
+        from app.services.cache_service import redis_client
 
-        from app.core.config import settings
-
-        r = aioredis.from_url(settings.REDIS_URL)
-        info = await r.info("clients")
-        clients = int(info.get("connected_clients", 0))
-        await r.aclose()
-        return clients
+        async with redis_client() as r:
+            if r is None:
+                return 0
+            info = await r.info("clients")
+            return int(info.get("connected_clients", 0))
     except Exception:
         return 0
 

@@ -1,13 +1,16 @@
 """Qdrant vector database service for article embeddings.
 
 Collection: "articles"
-Dimensions: 3072 (gemini-embedding-001)
+Dimensions: 768 (EMBEDDING_DIM)
 Distance:   Cosine
 
-On startup the service checks the live collection config. If the dimension
-does not match EMBEDDING_DIM (e.g. old 768-dim or 1536-dim collection exists),
-the collection is recreated automatically. This is safe because the real article
-data is in PostgreSQL — Qdrant only stores the vectors.
+Qdrant normalizes vectors on write when the distance is Cosine, so vectors read
+back from here are unit length regardless of what the provider supplied.
+
+On startup the service checks the live collection config. If the dimension does
+not match EMBEDDING_DIM, the collection is dropped and recreated. This is safe
+because the authoritative article data is in PostgreSQL — Qdrant only stores
+the vectors — but it does mean every article must be re-embedded afterwards.
 """
 
 import asyncio
@@ -30,7 +33,9 @@ class VectorService:
     """Async Qdrant client wrapper with collection lifecycle management."""
 
     def __init__(self) -> None:
-        self._clients: dict[int, AsyncQdrantClient] = {}
+        # Keyed by id(loop); stores the loop itself so a recycled address
+        # cannot hand back a client bound to a dead loop.
+        self._clients: dict[int, tuple[Any, AsyncQdrantClient]] = {}
         self._collection_ready = False
         self._mock_client: AsyncQdrantClient | None = None
 
@@ -39,19 +44,28 @@ class VectorService:
         if self._mock_client is not None:
             return self._mock_client
         try:
-            loop = asyncio.get_running_loop()
+            loop: Any = asyncio.get_running_loop()
             loop_id = id(loop)
         except RuntimeError:
-            loop_id = 0
+            loop, loop_id = None, 0
 
-        if loop_id not in self._clients:
-            self._clients[loop_id] = AsyncQdrantClient(
-                host=settings.QDRANT_HOST,
-                port=settings.QDRANT_PORT,
-                timeout=30,
-            )
-        return self._clients[loop_id]
+        entry = self._clients.get(loop_id)
+        if entry is not None:
+            cached_loop, cached_client = entry
+            if cached_loop is loop:
+                return cached_client
+            self._clients.pop(loop_id, None)
 
+        client = AsyncQdrantClient(
+            host=settings.QDRANT_HOST,
+            port=settings.QDRANT_PORT,
+            timeout=30,
+        )
+        self._clients[loop_id] = (loop, client)
+        return client
+
+    # Setter/deleter must stay directly adjacent to the getter — an intervening
+    # definition breaks the property association (mypy: "Name already defined").
     @client.setter
     def client(self, value: AsyncQdrantClient) -> None:
         self._mock_client = value
@@ -60,9 +74,37 @@ class VectorService:
     def client(self) -> None:
         self._mock_client = None
 
+    async def close_current_loop(self) -> None:
+        """Close and forget the Qdrant client bound to the running event loop.
+
+        Celery's run_async() creates a loop per task; without this every task
+        strands an HTTP connection pool. Must be awaited inside the loop being
+        torn down. Never raises.
+        """
+        if self._mock_client is not None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        entry = self._clients.pop(id(loop), None)
+        if entry is None:
+            return
+        try:
+            await entry[1].close()
+        except Exception as e:
+            logger.debug("VectorService: error closing Qdrant client: %s", e)
+        # Collection readiness is per-client, not global — re-check on the next client.
+        self._collection_ready = False
+
+    @property
+    def pool_count(self) -> int:
+        """Number of live per-loop clients. Exposed for leak monitoring."""
+        return len(self._clients)
+
     async def close(self) -> None:
         """Close all initialized Qdrant clients to prevent socket leaks."""
-        for client in self._clients.values():
+        for _, client in list(self._clients.values()):
             try:
                 await client.close()
             except Exception as e:
