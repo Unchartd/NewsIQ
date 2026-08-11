@@ -556,12 +556,11 @@ class AdminService:
         ).scalar_one() or 0
 
         # Query Redis for queue sizes
-        import redis.asyncio as aioredis
+        from app.services.cache_service import redis_client, redis_llen
 
         try:
-            r = aioredis.from_url(settings.CELERY_BROKER_URL)
-            waiting = await r.llen("celery")
-            await r.aclose()
+            async with redis_client(settings.CELERY_BROKER_URL) as r:
+                waiting = await redis_llen(r, "celery")
         except Exception:
             waiting = 0
 
@@ -579,7 +578,6 @@ class AdminService:
         import json
         from datetime import UTC, datetime, timedelta
 
-        import redis.asyncio as aioredis
         from sqlalchemy import case, func, select, text
 
         from app.core.config import settings
@@ -616,10 +614,11 @@ class AdminService:
         ]
 
         # 2. Queue Size
+        from app.services.cache_service import redis_client, redis_llen
+
         try:
-            r_broker = aioredis.from_url(settings.CELERY_BROKER_URL)
-            queue_size = await r_broker.llen("celery")
-            await r_broker.aclose()
+            async with redis_client(settings.CELERY_BROKER_URL) as r_broker:
+                queue_size = await redis_llen(r_broker, "celery")
         except Exception:
             queue_size = 0
 
@@ -903,11 +902,13 @@ class AdminService:
             "last_updated": now.isoformat(),
         }
 
-        # Save to Redis
+        # Save to Redis. This ran every minute in production and failed every
+        # minute once Redis saturated — each failure previously stranded a
+        # connection, feeding the exhaustion it was reporting on.
         try:
-            r_cache = aioredis.from_url(settings.REDIS_URL)
-            await r_cache.set("newsiq:pipeline:dashboard_metrics", json.dumps(metrics))
-            await r_cache.aclose()
+            async with redis_client(settings.REDIS_URL) as r_cache:
+                if r_cache is not None:
+                    await r_cache.set("newsiq:pipeline:dashboard_metrics", json.dumps(metrics))
         except Exception as cache_err:
             logger.error("Failed to save dashboard metrics to Redis: %s", cache_err)
 

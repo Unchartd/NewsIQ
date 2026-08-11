@@ -32,6 +32,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import settings
 from app.core.database import async_session_factory, engine
 from app.core.trace import (
     PipelineRun,
@@ -72,6 +73,22 @@ async def _pause_pipeline_for_quota_cooldown(stage: str) -> None:
         )
     except Exception as cache_err:
         logger.error("Failed to set pipeline_paused flag: %s", cache_err)
+
+
+async def _release_loop_bound_clients() -> None:
+    """Close the Redis and Qdrant clients bound to the running event loop.
+
+    Runs inside the loop being torn down so each service can identify its own
+    client via asyncio.get_running_loop(). Never raises.
+    """
+    from app.services.cache_service import cache_service
+    from app.services.vector_service import vector_service
+
+    await asyncio.gather(
+        cache_service.close_current_loop(),
+        vector_service.close_current_loop(),
+        return_exceptions=True,
+    )
 
 
 def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
@@ -125,6 +142,18 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
     try:
         return loop.run_until_complete(coro)
     finally:
+        # 2a. Release per-loop Redis/Qdrant clients BEFORE the loop closes.
+        #     Both services keep one client per event loop because their
+        #     connections are loop-bound. Since we create a loop per task,
+        #     skipping this strands a connection pool on every invocation —
+        #     which is what exhausted Redis maxclients in production and
+        #     silently halted the pipeline via the is_pipeline_paused()
+        #     fail-safe. Must run inside the loop being torn down.
+        try:
+            loop.run_until_complete(_release_loop_bound_clients())
+        except Exception as e:
+            logger.debug("Failed to release per-loop clients: %s", e)
+
         # Measure and record task worker execution latency
         try:
             if current_task and current_task.name:
@@ -150,19 +179,52 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
         asyncio.set_event_loop(None)
 
 
+def _record_pause_state(reason: str) -> None:
+    """Publish why the pipeline is (or is not) running so it can be alerted on.
+
+    reason is one of: "running", "explicitly_paused", "cache_unreachable", "error".
+
+    This exists because a Redis outage silently halted the entire pipeline for
+    ~9 days: the fail-safe below returned True, every AI task no-opped and
+    reported success, and nothing but a warning-level log distinguished
+    "deliberately paused" from "infrastructure is down".
+    """
+    try:
+        from app.core.metrics import newsiq_pipeline_paused
+
+        for candidate in ("running", "explicitly_paused", "cache_unreachable", "error"):
+            newsiq_pipeline_paused.labels(reason=candidate).set(1 if candidate == reason else 0)
+    except Exception as e:
+        logger.debug("Failed to record pipeline pause state: %s", e)
+
+
 async def is_pipeline_paused() -> bool:
     try:
         from app.services.cache_service import cache_service
 
-        # Fail-safe: if cache service cannot ping Redis, assume pipeline is paused
+        # Fail-safe: if cache service cannot ping Redis, assume pipeline is paused.
+        # This is deliberate — running AI stages without cache/locks risks duplicate
+        # work and cost — but it MUST be loud, because it stops everything.
         if not await cache_service.ping():
-            logger.warning("Cache is unreachable. Pipeline is failing safe (auto-paused).")
+            logger.error(
+                "Cache is unreachable — pipeline is failing safe (auto-paused). "
+                "This halts ingestion, embedding, event extraction and clustering. "
+                "Check Redis availability and connection-pool count (%d live pools).",
+                cache_service.pool_count,
+            )
+            _record_pause_state("cache_unreachable")
             return True
 
         is_paused = await cache_service.get("pipeline_paused")
-        return bool(is_paused)
+        if is_paused:
+            _record_pause_state("explicitly_paused")
+            return True
+
+        _record_pause_state("running")
+        return False
     except Exception as exc:
-        logger.warning("Error checking pipeline pause status: %s. Failing safe (auto-paused).", exc)
+        logger.error("Error checking pipeline pause status: %s. Failing safe (auto-paused).", exc)
+        _record_pause_state("error")
         return True
 
 
@@ -201,7 +263,17 @@ def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> 
                     # Standard event telemetry outputs
                     stage.input(trigger_reason="Celery Ingestion Schedule")
                     stage.output(results=results, total_new=total_new)
-                    stage.metric("articles_ingested", total_new)
+                    # With STORY_FIRST_ENABLED (the default) RSS ingestion creates
+                    # StoryCandidates, not Articles — articles are persisted later
+                    # by discovery_crawl_task. Labelling this "articles_ingested"
+                    # made the dashboard report a number that had nothing to do
+                    # with articles.
+                    stage.metric(
+                        "story_candidates_created"
+                        if settings.STORY_FIRST_ENABLED
+                        else "articles_ingested",
+                        total_new,
+                    )
                     stage.metric("sources_processed", len(results))
 
                     if discovery_report:
@@ -357,6 +429,14 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
                                     "published_at": article.published_at.isoformat()
                                     if article.published_at
                                     else None,
+                                    # Provenance: which model produced this vector.
+                                    # Without it, a failover to a different
+                                    # embedding model leaves incompatible vectors
+                                    # in the collection with no way to identify
+                                    # or selectively re-embed them afterwards.
+                                    "embedding_model": settings.EMBEDDING_MODEL
+                                    or "gemini-embedding-001",
+                                    "embedding_dim": len(vector),
                                 }
 
                                 # Upsert to Qdrant
@@ -477,6 +557,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     success_count = 0
                     failed_count = 0
                     merged_count = 0
+                    clustering_failed_count = 0
                     extracted_events_summary = []
 
                     for article in articles:
@@ -585,17 +666,68 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 }
                             )
 
-                            # Try real-time incremental merge into similar story
+                            # Try real-time incremental merge into similar story.
+                            #
+                            # This is a SEPARATE failure domain from event extraction.
+                            # Event extraction is already committed above; if clustering
+                            # raises, that is a clustering fault and must not roll the
+                            # article's status back to "failed" — "failed" is terminal
+                            # (the selector above only picks up pending/NULL), so doing
+                            # so would permanently exclude a successfully-extracted
+                            # article from the pipeline and misattribute the error to
+                            # the wrong stage.
                             from app.services.clustering_service import clustering_service
 
-                            merged = (
-                                await clustering_service.add_article_to_existing_story_if_similar(
-                                    article.id, session
+                            try:
+                                # PipelineStage.CLUSTERING_INCREMENTAL was declared
+                                # but never opened, so the incremental merge path was
+                                # invisible to run/stage telemetry — across 15 941
+                                # production articles it recorded nothing at all.
+                                async with StageSpan(
+                                    stage=PipelineStage.CLUSTERING_INCREMENTAL,
+                                    article_id=str(article.id),
+                                ) as merge_span:
+                                    merged = await clustering_service.add_article_to_existing_story_if_similar(
+                                        article.id, session
+                                    )
+                                    merge_span.set_metadata(
+                                        {
+                                            "inputs": {"article_id": str(article.id)},
+                                            "outputs": {"merged": bool(merged)},
+                                        }
+                                    )
+                                if merged:
+                                    merged_count += 1
+                                    stage.lineage(str(article.id), "ARTICLE", "INCREMENTAL_MERGED")
+                            except Exception as cluster_err:
+                                clustering_failed_count += 1
+                                logger.error(
+                                    "Incremental clustering failed (event extraction is unaffected)",
+                                    extra={
+                                        "article_id": str(article.id),
+                                        "error": str(cluster_err),
+                                    },
+                                    exc_info=True,
                                 )
-                            )
-                            if merged:
-                                merged_count += 1
-                                stage.lineage(str(article.id), "ARTICLE", "INCREMENTAL_MERGED")
+                                # Discard the partial clustering work; keep the committed
+                                # extraction result intact.
+                                try:
+                                    await session.rollback()
+                                except Exception as rb_err:
+                                    logger.warning(
+                                        "Rollback after clustering failure failed: %s", rb_err
+                                    )
+                                try:
+                                    from app.core.failure_recorder import record_pipeline_failure
+
+                                    await record_pipeline_failure(
+                                        stage=PipelineStage.CLUSTERING_INCREMENTAL,
+                                        exception=cluster_err,
+                                        article_id=article.id,
+                                        input_payload={"article_id": str(article.id)},
+                                    )
+                                except Exception as rec_err:
+                                    logger.error("Failed to record clustering failure: %s", rec_err)
 
                         except Exception as e:
                             from app.llm_gateway.request_manager import QuotaExhaustedError
@@ -652,11 +784,14 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                         success_count=success_count,
                         failed_count=failed_count,
                         merged_count=merged_count,
+                        clustering_failed_count=clustering_failed_count,
                     )
                     stage.metric("batch_size", len(articles))
                     stage.metric("success_count", success_count)
                     stage.metric("failed_count", failed_count)
                     stage.metric("merged_count", merged_count)
+                    # Distinct from failed_count: extraction succeeded, clustering did not.
+                    stage.metric("clustering_failed_count", clustering_failed_count)
 
                     stage.artifact("events_summary", extracted_events_summary, tier=1)
 
@@ -873,26 +1008,53 @@ def recover_stuck_embeddings_task() -> int:
     logger.info("Celery task: Running stuck embedding recovery.")
 
     async def _run():
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
-        from sqlalchemy import update
+        from sqlalchemy import or_, update
 
         from app.models.models import Article
 
-        cutoff = datetime.utcnow() - timedelta(minutes=30)
+        # Recover anything that has been mid-flight for too long. The previous
+        # version compared against `crawled_at`, which is when the article was
+        # fetched, not when processing started — an article crawled minutes ago
+        # but stuck in "processing" was never recovered, and there was no
+        # recovery for event extraction at all (production held 53 articles
+        # stranded in event_extraction_status='processing').
+        #
+        # Using created_at OR crawled_at keeps discovery-path articles (which
+        # set both) and any row missing crawled_at within scope.
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
+        recovered = 0
+
         async with async_session_factory() as session:
-            stmt = (
+            emb = await session.execute(
                 update(Article)
-                .where(Article.embedding_status == "processing")
-                .where(Article.crawled_at < cutoff)
+                .where(
+                    Article.embedding_status == "processing",
+                    or_(Article.crawled_at < cutoff, Article.created_at < cutoff),
+                )
                 .values(embedding_status="pending")
             )
-            result = await session.execute(stmt)
+            evt = await session.execute(
+                update(Article)
+                .where(
+                    Article.event_extraction_status == "processing",
+                    or_(Article.crawled_at < cutoff, Article.created_at < cutoff),
+                )
+                .values(event_extraction_status="pending")
+            )
             await session.commit()
-            rowcount = result.rowcount
-            if rowcount > 0:
-                logger.warning("Recovered %d stuck embedding tasks.", rowcount)
-            return rowcount
+
+            recovered = (emb.rowcount or 0) + (evt.rowcount or 0)
+            if recovered > 0:
+                logger.warning(
+                    "Recovered stuck articles",
+                    extra={
+                        "embedding_recovered": emb.rowcount or 0,
+                        "event_extraction_recovered": evt.rowcount or 0,
+                    },
+                )
+            return recovered
 
     return run_async(_run())
 

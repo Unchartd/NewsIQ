@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # TLS is automatic: if URL starts with "rediss://", SSL is enabled.
     #
     REDIS_URL: str = Field(default="redis://localhost:6379/0")
+    # Upper bound on connections held by a single Redis connection pool.
+    # Each event loop gets its own pool (see CacheService), so this caps the
+    # blast radius if a pool is ever stranded before close_current_loop() runs.
+    REDIS_MAX_CONNECTIONS: int = 32
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/1")
     CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/2")
 

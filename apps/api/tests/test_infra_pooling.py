@@ -40,8 +40,10 @@ async def test_vector_service_client_cleanup():
     mock_client2 = MagicMock()
     mock_client2.close = AsyncMock()
 
-    vector_svc._clients[111] = mock_client1
-    vector_svc._clients[222] = mock_client2
+    # Entries are (loop, client) tuples: the loop is stored so a recycled
+    # id() cannot hand back a client bound to an already-closed loop.
+    vector_svc._clients[111] = (MagicMock(name="loop1"), mock_client1)
+    vector_svc._clients[222] = (MagicMock(name="loop2"), mock_client2)
     vector_svc._collection_ready = True
 
     # Call close

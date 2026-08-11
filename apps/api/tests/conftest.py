@@ -17,10 +17,79 @@ async def _mock_rate_limit_dispatch(self, request, call_next):
 
 RateLimitMiddleware.dispatch = _mock_rate_limit_dispatch
 
-# Bypass CacheService._redis globally during tests to disable Redis connection attempts
-from app.services.cache_service import CacheService
+# Replace real Redis with an in-memory fake during tests.
+#
+# Patch the *factory*, not CacheService._redis. Nulling the property deletes
+# the per-loop client lifecycle from the class, so no test could exercise it —
+# which is how the connection leak that exhausted Redis in production (BUG-27)
+# stayed invisible to the suite.
+#
+# A working fake (rather than None) also matters for correctness: several
+# gates now fail CLOSED when the cache is unreachable — notably the per-story
+# synthesis cost gate, since spend is tracked only in Redis and proceeding
+# blind would mean unmetered LLM spend. With no cache at all, those gates would
+# refuse everything and the tests would exercise nothing.
+import fnmatch as _fnmatch
 
-CacheService._redis = None
+import app.services.cache_service as _cache_mod
+
+
+class _FakeRedis:
+    """Minimal async Redis stand-in covering the operations this app uses."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, object] = {}
+
+    async def get(self, key):
+        return self._store.get(key)
+
+    async def set(self, key, value, ex=None, nx=False, xx=False):
+        exists = key in self._store
+        if (nx and exists) or (xx and not exists):
+            return None
+        self._store[key] = value
+        return True
+
+    async def delete(self, *keys):
+        for k in keys:
+            self._store.pop(k, None)
+        return len(keys)
+
+    async def scan_iter(self, match="*"):
+        for k in [k for k in self._store if _fnmatch.fnmatch(k, match)]:
+            yield k
+
+    async def ping(self):
+        return True
+
+    async def incr(self, key):
+        self._store[key] = int(self._store.get(key, 0)) + 1
+        return self._store[key]
+
+    async def incrbyfloat(self, key, amount):
+        self._store[key] = float(self._store.get(key, 0.0)) + float(amount)
+        return self._store[key]
+
+    async def expire(self, key, ttl):
+        return True
+
+    async def llen(self, key):
+        return 0
+
+    async def xadd(self, *args, **kwargs):
+        return "0-0"
+
+    async def info(self, section=None):
+        return {"connected_clients": 1}
+
+    async def aclose(self):
+        return None
+
+    async def close(self):
+        return None
+
+
+_cache_mod._make_redis_client = lambda url: _FakeRedis()
 
 # Mock ExtractionManager._update_domain_policy globally to prevent DB connection attempts
 from unittest.mock import AsyncMock, MagicMock, patch

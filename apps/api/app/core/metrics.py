@@ -389,3 +389,62 @@ newsiq_stage_b_pass_total = Counter(
     "Total number of Stage B checks that passed or borderline passed.",
     ["outcome"],
 )
+
+# ── Pipeline availability ─────────────────────────────────────────────────────
+# One-hot gauge: exactly one reason label is 1 at any time.
+# Alert on newsiq_pipeline_paused{reason="cache_unreachable"} == 1 for > 15m —
+# that state silently halts ingestion, embedding, extraction and clustering
+# while every Celery task continues to report success.
+newsiq_pipeline_paused = Gauge(
+    "newsiq_pipeline_paused",
+    "Pipeline availability state (1 = active reason). "
+    "reason: running | explicitly_paused | cache_unreachable | error.",
+    ["reason"],
+)
+
+# Live per-event-loop client pools. These should stay in the low tens; sustained
+# growth means loop-bound clients are being stranded (see CacheService docstring).
+newsiq_loop_client_pools = Gauge(
+    "newsiq_loop_client_pools",
+    "Number of live per-event-loop client pools held by a service.",
+    ["service"],
+)
+
+
+# ── Clustering funnel ─────────────────────────────────────────────────────────
+# These exist because the pipeline silently produced zero stories for 41 days
+# while every task reported success. Each one makes a specific past failure
+# visible as a number rather than an absence.
+
+# Would have exposed BUG-01: the batch clustering input query matched zero rows
+# because its source table had no producer. Distinguishes "queue starved" from
+# "nothing new to do", which mark_skipped() conflated.
+newsiq_clustering_eligible_articles = Gauge(
+    "newsiq_clustering_eligible_articles",
+    "Articles eligible for batch clustering on the last run.",
+)
+
+# Would have exposed BUG-03: all stories were stuck in a lifecycle state that
+# candidate retrieval excluded, so this was structurally always 0.
+newsiq_clustering_candidates = Histogram(
+    "newsiq_clustering_candidates",
+    "Candidate stories retrieved per article during incremental merge.",
+    buckets=(0, 1, 2, 3, 5, 10, 20),
+)
+
+# Would have exposed BUG-02: with no story centroid, Stage B cosine was pinned
+# at exactly 0.0 for every article ever processed. A histogram flatlined in the
+# bottom bucket is unmistakable; a missing metric is not.
+newsiq_clustering_similarity = Histogram(
+    "newsiq_clustering_similarity",
+    "Stage B cosine similarity between an article and a candidate story.",
+    buckets=(0.0, 0.1, 0.3, 0.5, 0.6, 0.67, 0.72, 0.8, 0.9, 0.95, 1.0),
+)
+
+# Story size distribution. Production ran at 462 one-article stories and zero
+# with three or more — the signature of clustering that never merges.
+newsiq_story_article_count = Histogram(
+    "newsiq_story_article_count",
+    "Number of articles in a story at creation or merge time.",
+    buckets=(1, 2, 3, 5, 10, 25, 50),
+)

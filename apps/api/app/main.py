@@ -86,6 +86,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Failed to close VectorService on shutdown: %s", e)
 
+    # Close Redis client pools
+    try:
+        from app.services.cache_service import cache_service
+
+        await cache_service.close()
+    except Exception as e:
+        logger.warning("Failed to close CacheService on shutdown: %s", e)
+
 
 app = FastAPI(
     title=settings.APP_NAME,
