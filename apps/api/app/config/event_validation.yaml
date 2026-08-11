@@ -19,6 +19,25 @@ stage_b:
 reflection:
   threshold: 0.55
 
+# Thresholds used by batch clustering when splitting an HDBSCAN cluster into
+# sub-clusters by multi-signal event similarity. Previously hardcoded at the
+# call sites, so tuning them meant editing clustering_service.py.
+#
+# combined_sim = event_similarity (max 0.90) + 0.10 * entity_overlap
+batch_clustering:
+  # >= auto_merge: merge without consulting the verification agents.
+  auto_merge: 0.90
+  # >= agent_review (and < auto_merge): ask the verification agents to decide.
+  agent_review: 0.70
+  # Used only when the verification agents are entirely unavailable, so the
+  # decision falls back to a bare similarity threshold.
+  deterministic_fallback: 0.80
+
+agents:
+  # Second-opinion verification model for high-stakes categories. Runs only
+  # when OPENAI_API_KEY is configured.
+  openai_verification_model: "gpt-4o-mini"
+
 discovery:
   expiration_hours:
     breaking_news: 6

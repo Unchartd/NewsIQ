@@ -217,22 +217,50 @@ class StorySynthesisOrchestrator:
         return artifact.id
 
     async def check_budget_limit(self, story_id: uuid.UUID) -> bool:
-        """Check if the per-story daily synthesis budget ($0.10) has been exceeded in Redis."""
-        if not cache_service.is_active:
-            return True  # Bypass check if Redis is down
+        """Check if the per-story daily synthesis budget ($0.10) has been exceeded.
 
+        Fails CLOSED. Spend is tracked exclusively in Redis, so when Redis is
+        unreachable there is no way to know what has already been spent —
+        proceeding would run unmetered LLM synthesis for every story, for as
+        long as the outage lasts. The previous behaviour returned True in that
+        case, which silently removed all cost control at exactly the moment it
+        could do the most damage.
+        """
         from datetime import date
+
+        if not cache_service.is_active:
+            logger.error(
+                "Synthesis budget check unavailable (Redis inactive) — refusing synthesis "
+                "for story %s rather than spending unmetered.",
+                story_id,
+            )
+            return False
 
         day_str = date.today().isoformat()
         key = f"newsiq:budget:story:{story_id}:{day_str}"
 
         try:
             val = await cache_service.get_raw(key)
-            if val is not None and float(val) >= 0.10:
-                logger.warning("Daily synthesis budget ($0.10) exceeded for story %s.", story_id)
-                return False
         except Exception as e:
-            logger.warning("Failed to check story budget in Redis: %s", e)
+            logger.error(
+                "Failed to read synthesis budget for story %s (%s) — refusing synthesis.",
+                story_id,
+                e,
+            )
+            return False
+
+        if val is not None:
+            try:
+                if float(val) >= 0.10:
+                    logger.warning(
+                        "Daily synthesis budget ($0.10) exceeded for story %s.", story_id
+                    )
+                    return False
+            except (TypeError, ValueError):
+                logger.error(
+                    "Corrupt budget value %r for story %s — refusing synthesis.", val, story_id
+                )
+                return False
 
         return True
 

@@ -18,9 +18,23 @@ try:
         nlp = spacy.load("en_core_web_sm")
     except OSError:
         nlp = None
-        logging.warning("spaCy installed but en_core_web_sm not found. Falling back to simple NER.")
+        # ERROR, not warning: the fallback below is a capitalization heuristic,
+        # not NER. It feeds both the Stage A entity/location scores AND the SQL
+        # candidate-retrieval entity filter, so a missing model quietly degrades
+        # clustering recall across the board with no other symptom. Install the
+        # model with: python -m spacy download en_core_web_sm
+        logging.error(
+            "spaCy is installed but the en_core_web_sm model is missing. "
+            "Entity extraction is falling back to a capitalization heuristic, "
+            "which degrades Stage A scoring and candidate retrieval. "
+            "Install it with: python -m spacy download en_core_web_sm"
+        )
 except ImportError:
     nlp = None
+    logging.error(
+        "spaCy is not installed — entity extraction is running on a "
+        "capitalization heuristic, degrading clustering recall."
+    )
 
 try:
     from app.core.metrics import (
@@ -64,9 +78,13 @@ class StoryAnchor:
     top_locations: set[str]
     category: str | None
     event_type: str | None
+    # Mean of the story's member-article embeddings, unit-normalized.
+    # Populated from Story.story_embedding; Stage B compares incoming article
+    # vectors against this.
     centroid_vector: list[float] | None = None
+    # Canonical entity IDs (as strings) attached to the story. Must come from
+    # the same identifier space as the article side of the Stage B comparison.
     entity_graph_ids: set[str] = None
-    anchor_vector: list[float] | None = None
 
 
 class EventValidationService:
@@ -234,35 +252,23 @@ class EventValidationService:
             if src_val and hasattr(src_val, "trust_tier"):
                 tier = getattr(src_val, "trust_tier", 5)
 
-        if tier <= 3:
-            trust_score = trust_weight
-        elif tier == 4:
-            trust_score = trust_weight * 0.5
-        else:
-            trust_score = 0
+        # Trust tier 1 (most trusted) -> full weight, tier 5 -> 20% of weight.
+        # Note: `article.source` is usually unloaded, so tier defaults to 5 and
+        # this contributes a near-constant. Eager-load Source in the candidate
+        # query if publisher trust should actually discriminate.
+        trust_fraction = max(0.0, 1.0 - ((tier - 1) * 0.2))
+        trust_score = trust_weight * trust_fraction
         score += trust_score
+
+        final_score = score
+
+        # Merge, don't rebuild. The previous version replaced `details` wholesale
+        # at this point, discarding `shared_entities` — the single most useful
+        # field for diagnosing why a candidate was rejected — from every
+        # persisted clustering trace.
         details["publisher_trust_score"] = trust_score
         details["tier"] = tier
-        trust_score = max(0.0, 100.0 - ((tier - 1) * 20.0))
-
-        # Weighted Score
-        w = self.stage_a_weights
-        final_score = (
-            ent_score
-            + loc_score
-            + time_score
-            + title_score
-            + (trust_score * (w.get("publisher_trust", 10) / 100.0))
-        )
-
-        details = {
-            "entity_overlap_score": ent_score,
-            "location_overlap_score": loc_score,
-            "time_proximity_score": time_score,
-            "title_similarity_score": title_score,
-            "publisher_trust_score": trust_score,
-            "tier": tier,
-        }
+        details["final_score"] = final_score
 
         pass_thresh = self.stage_a_thresh.get("pass", 60)
         maybe_thresh = self.stage_a_thresh.get("maybe", 45)

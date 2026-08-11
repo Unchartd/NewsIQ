@@ -7,6 +7,7 @@ from typing import Any
 from openai import APIError, APITimeoutError, AsyncOpenAI
 from pydantic import BaseModel
 
+from app.ai.embedding_utils import EMBEDDING_DIM, l2_normalize
 from app.ai.errors import (
     AuthenticationError,
     ProviderUnavailableError,
@@ -155,8 +156,13 @@ class OpenRouterProvider(AIProvider):
         try:
             model_name = model or "openai/text-embedding-3-small"
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
-            response = await client.embeddings.create(input=[text], model=model_name)
+            # Ask the API for the target size rather than slicing: OpenAI
+            # embedding models support Matryoshka truncation server-side, and
+            # the result still needs re-normalizing to unit length.
+            response = await client.embeddings.create(
+                input=[text], model=model_name, dimensions=EMBEDDING_DIM
+            )
             raw = response.data[0].embedding
-            return raw[:768]
+            return l2_normalize(list(raw)[:EMBEDDING_DIM])
         except Exception as e:
             raise self._handle_exception(e)

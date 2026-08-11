@@ -7,6 +7,7 @@ from typing import Any
 from openai import APIError, APITimeoutError, AsyncOpenAI
 from pydantic import BaseModel
 
+from app.ai.embedding_utils import EMBEDDING_DIM, l2_normalize
 from app.ai.errors import (
     AuthenticationError,
     ProviderUnavailableError,
@@ -157,7 +158,19 @@ class NvidiaProvider(AIProvider):
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
             # For NVIDIA, we use their default/configured embed model, or fallback
             response = await client.embeddings.create(input=[text], model=model_name)
-            raw = response.data[0].embedding
-            return raw[:768]
+            raw = list(response.data[0].embedding)
+            # Refuse rather than truncate. All vectors share one Qdrant
+            # collection, so emitting a vector from a different embedding space
+            # silently poisons similarity for every article it is compared
+            # against — and nothing records which model produced which point.
+            # Truncating a non-Matryoshka model does not make it compatible.
+            if len(raw) != EMBEDDING_DIM:
+                raise ValueError(
+                    f"NVIDIA model '{model_name}' returned {len(raw)} dimensions, "
+                    f"but the pipeline requires {EMBEDDING_DIM}. Configure a model that "
+                    "emits this dimensionality natively rather than truncating, which "
+                    "would mix incompatible embedding spaces in the shared collection."
+                )
+            return l2_normalize(raw)
         except Exception as e:
             raise self._handle_exception(e)

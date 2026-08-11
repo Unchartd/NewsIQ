@@ -4,6 +4,14 @@ from pydantic import BaseModel, Field
 from app.agents.base_agent import get_default_model, run_agent_with_observability
 
 
+class ReflectionUnavailableError(RuntimeError):
+    """The reflection agent produced no usable verdict.
+
+    Raised instead of returning a fabricated "no hallucinations" result, so an
+    LLM failure cannot be mistaken for a passed fact-check.
+    """
+
+
 class ReflectionSchema(BaseModel):
     has_hallucinations: bool = Field(
         ...,
@@ -85,17 +93,20 @@ async def reflect_on_summary(
 
             data = json.loads(run_output.content)
             return ReflectionSchema.model_validate(data)
-        except Exception:
+        except Exception as parse_err:
             if hasattr(run_output, "parsed") and isinstance(run_output.parsed, ReflectionSchema):
                 return run_output.parsed
+            raise ReflectionUnavailableError(
+                f"Reflection output was not valid ReflectionSchema JSON: {parse_err}"
+            ) from parse_err
 
-    # Return a fallback ReflectionSchema
-    return ReflectionSchema(
-        has_hallucinations=False,
-        invented_facts=[],
-        omitted_critical_facts=[],
-        contradicts_graph=False,
-        explanation=str(run_output.content)
-        if run_output.content
-        else "No reflection content generated.",
+    # Fail CLOSED. This previously returned a synthesized
+    # has_hallucinations=False / contradicts_graph=False result, so an empty or
+    # malformed model response became an affirmative clean bill of health and
+    # the fact-check stage silently stopped checking anything. An unusable
+    # response is an absence of verification, not a passing verification —
+    # callers must decide how to handle that.
+    raise ReflectionUnavailableError(
+        "Reflection agent returned no usable output "
+        f"(content type: {type(run_output.content).__name__})."
     )
