@@ -7,6 +7,7 @@ from typing import Any
 from openai import APIError, APITimeoutError, AsyncOpenAI
 from pydantic import BaseModel
 
+from app.ai.embedding_utils import EMBEDDING_DIM, l2_normalize
 from app.ai.errors import (
     AuthenticationError,
     ProviderUnavailableError,
@@ -160,7 +161,16 @@ class BedrockProvider(AIProvider):
             model_name = model or "amazon.titan-embed-text-v2:0"
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
             response = await client.embeddings.create(input=[text], model=model_name)
-            raw = response.data[0].embedding
-            return raw[:768]
+            raw = list(response.data[0].embedding)
+            # Refuse rather than truncate — see the NVIDIA provider for the
+            # reasoning. Mixing embedding spaces in one collection is silent and
+            # unrecoverable without model provenance on every point.
+            if len(raw) != EMBEDDING_DIM:
+                raise ValueError(
+                    f"Bedrock model '{model_name}' returned {len(raw)} dimensions, "
+                    f"but the pipeline requires {EMBEDDING_DIM}. Titan models accept a "
+                    "dimensions parameter — configure it rather than truncating."
+                )
+            return l2_normalize(raw)
         except Exception as e:
             raise self._handle_exception(e)

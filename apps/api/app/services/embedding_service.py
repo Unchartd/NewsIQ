@@ -4,12 +4,13 @@ import asyncio
 import hashlib
 import logging
 
+# Canonical embedding dimension for the entire pipeline. Defined in
+# app.ai.embedding_utils so provider modules can share it without importing
+# from app.services; re-exported here for existing callers.
+from app.ai.embedding_utils import EMBEDDING_DIM as EMBEDDING_DIM
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-# Canonical embedding dimension for the entire pipeline.
-EMBEDDING_DIM = 768
 
 
 class EmbeddingService:

@@ -93,6 +93,9 @@ async def run_startup_validation() -> StartupReport:
     meili_status = await _check_meilisearch()
     report.services.append(meili_status)
 
+    # ── 6b. spaCy NER model (non-critical, but silently degrades clustering) ──
+    report.services.append(await _check_ner_model())
+
     # ── 7. Storage (non-critical: operations skip if unconfigured) ─────────────
     storage_status = await _check_storage()
     report.services.append(storage_status)
@@ -162,6 +165,31 @@ async def _check_qdrant() -> ServiceStatus:
         return ServiceStatus(name="Qdrant", status="ok", critical=False)
     except Exception as e:
         return ServiceStatus(name="Qdrant", status="degraded", detail=str(e)[:80], critical=False)
+
+
+async def _check_ner_model() -> ServiceStatus:
+    """Report whether the spaCy NER model is actually loaded.
+
+    When it is missing, entity extraction silently degrades to a capitalization
+    heuristic that feeds both Stage A scoring and SQL candidate retrieval —
+    clustering recall drops with no error anywhere. Surfacing it in the startup
+    report makes a broken image obvious at boot instead of invisible in prod.
+    """
+    try:
+        from app.services.event_validation_service import nlp
+
+        if nlp is None:
+            return ServiceStatus(
+                name="spaCy NER",
+                status="degraded",
+                detail="en_core_web_sm missing — entity extraction using fallback heuristic",
+                critical=False,
+            )
+        return ServiceStatus(name="spaCy NER", status="ok", critical=False)
+    except Exception as e:
+        return ServiceStatus(
+            name="spaCy NER", status="degraded", detail=str(e)[:80], critical=False
+        )
 
 
 async def _check_meilisearch() -> ServiceStatus:

@@ -1,8 +1,13 @@
 # NewsIQ Canonical Architecture & Technical Reference: Section 3 — Story Clustering & Story Synthesis
 
-> [!IMPORTANT]
-> **Production Status: Audited & Verified**
-> This document serves as the canonical reference for the **Story Clustering & Story Synthesis** phase of the NewsIQ pipeline. It reflects the exact implemented behavior in the codebase.
+> [!WARNING]
+> **Partially superseded — 2026-08-12.**
+> This document did **not** reflect implemented behaviour. It described a `DiscoveryQueue` staging table whose producer (`discovery_manager.py`) had been deleted, so the flow it documents could not run; production created zero stories for 41 days while this page described the pipeline as "Audited & Verified".
+>
+> Corrections applied below, in context. For the full analysis see
+> [`docs/audit/clustering_synthesis_audit_2026-08-12.md`](../audit/clustering_synthesis_audit_2026-08-12.md).
+>
+> **What actually happens now:** batch clustering selects eligible articles directly from the `articles` table — embedding + event extraction complete, not already in `story_articles`, newer than 72h. There is no `DiscoveryQueue`, no grouping step, and no promotion step. Treat any mention of them below as historical.
 
 ---
 
@@ -126,7 +131,7 @@ sequenceDiagram
         CS->>DB: INSERT StoryArticle link & update Story
         Note over CS: Trigger Synthesis (3 - 8 seconds)
     else Article Not Merged
-        CS->>DB: INSERT DiscoveryQueue (state = READY)
+        Note over CS: (historical) unmatched articles were enqueued here.<br/>No longer applies - batch clustering reads the articles table.
         Note over CS: Batch Clustering will handle it
     end
     deactivate CS
@@ -135,7 +140,7 @@ sequenceDiagram
     Worker->>CS: run_batch_clustering()
     activate CS
     CS->>DB: Acquire global advisory lock (GLOBAL_CLUSTERING_LOCK_ID = 888888888)
-    CS->>DB: Fetch READY articles from DiscoveryQueue (limit 200)
+    CS->>DB: Fetch eligible articles (embedded + event-extracted,<br/>not in story_articles, < 72h, limit 200)
     DB-->>CS: Return unclustered articles
     CS->>Qdrant: Retrieve vectors for all batch articles
     Qdrant-->>CS: Return vectors
@@ -245,8 +250,8 @@ The **Discovery Queue** manages the queueing, execution, and state transitions o
   - `READY`: The article has its embedding and events extracted, is not linked to any story, and is ready for batch clustering.
   - `GROUPING`: The article is currently being processed by the HDBSCAN batch clustering task under `GLOBAL_CLUSTERING_LOCK_ID`.
   - `CLUSTER_CREATED`: The article has been successfully clustered and assigned to a story.
-* **Idempotency & Replay Protection**: To prevent duplicate processing during worker retries, `discovery_manager.py` verifies if an `article_id` is already linked to a story or has an active `DiscoveryQueue` row before enqueuing.
-* **Queue Expiration**: Articles in the `DiscoveryQueue` that fail to form a cluster or join a story after a configurable TTL (default: 72 hours) are marked as expired. They remain archived for historical analysis but are excluded from future active batch clustering iterations.
+* **Idempotency & Replay Protection**: Membership in `story_articles` is the single source of truth for "already clustered". The eligibility query tests it with `NOT EXISTS`, so there is no separate queue state that can drift out of sync.
+* **Age Bound**: Articles older than 72 hours are excluded from batch clustering by the eligibility query itself. Nothing is marked expired; the row simply stops matching.
 
 ### 3.4 Qdrant Vector Usage
 * **Collection**: `"articles"`
@@ -394,10 +399,10 @@ If a lock cannot be acquired or a transaction fails, the worker logs a warning a
 
 # 9. Batch Clustering
 
-Batch Clustering runs periodically via the Celery task `cluster_news_task` to process articles in the `DiscoveryQueue` that are in a `READY` state.
+Batch Clustering runs periodically via the Celery task `cluster_news_task`. It selects eligible articles **directly from the `articles` table** - `embedding_status='completed'`, `event_extraction_status='completed'`, not present in `story_articles`, created within the last 72 hours. The `DiscoveryQueue` staging table is no longer part of the pipeline.
 
 ```text
-[DiscoveryQueue READY] (Limit 200)
+[Eligible: embedded + extracted + unclustered + <72h] (Limit 200)
         │
         ▼
 [Fetch Vectors from Qdrant]

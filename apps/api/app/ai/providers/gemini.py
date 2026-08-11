@@ -8,6 +8,8 @@ from google import genai as google_genai
 from google.genai import types
 from pydantic import BaseModel
 
+from app.ai.embedding_utils import EMBEDDING_DIM
+from app.ai.embedding_utils import l2_normalize as _l2_normalize
 from app.ai.errors import (
     AuthenticationError,
     ProviderUnavailableError,
@@ -205,9 +207,15 @@ class GeminiProvider(AIProvider):
         try:
             model_name = model or "gemini-embedding-001"
             client = google_genai.Client(api_key=api_key.key)
-            config: dict[str, Any] = {"task_type": "RETRIEVAL_DOCUMENT"}
-            if "embedding-2" in model_name:
-                config["output_dimensionality"] = 768
+            # Request the target dimensionality from the API for EVERY embedding
+            # model, not just gemini-embedding-2. gemini-embedding-001 defaults
+            # to 3072; the old code left it unset for that model and then sliced
+            # the first 768 floats, discarding 75% of the representation and
+            # leaving a non-unit vector (measured norms ~0.58, varying per text).
+            config: dict[str, Any] = {
+                "task_type": "RETRIEVAL_DOCUMENT",
+                "output_dimensionality": EMBEDDING_DIM,
+            }
             response = await client.aio.models.embed_content(
                 model=model_name,
                 contents=text,
@@ -216,8 +224,12 @@ class GeminiProvider(AIProvider):
             if response.embeddings:
                 raw_val = response.embeddings[0].values
                 if raw_val is not None:
-                    # Target dimension is 768
-                    return raw_val[:768]
+                    # Truncated (non-native-dimension) outputs are not unit-norm
+                    # and Google's guidance is to re-normalize them. Qdrant does
+                    # this internally for cosine distance, so the stored vectors
+                    # looked fine — but any consumer reading the value directly
+                    # (e.g. the Redis embedding cache) received a non-unit vector.
+                    return _l2_normalize(list(raw_val)[:EMBEDDING_DIM])
             raise ValueError(f"No embeddings returned from Gemini API for model {model_name}")
         except Exception as e:
             raise self._handle_exception(e)
