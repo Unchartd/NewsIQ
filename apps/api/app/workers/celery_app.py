@@ -108,12 +108,17 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.cluster_news_task",
         "schedule": crontab(minute="*/10"),
     },
-    # Discovery grouping — DISABLED: app.services.pipeline_coordinator does not
-    # exist yet.  Re-enable once the module is implemented.
-    # "discovery-grouping-every-10-minutes": {
-    #     "task": "app.workers.tasks.discovery_grouping_task",
-    #     "schedule": crontab(minute="*/10"),
-    # },
+    # Recover articles stranded mid-flight in embedding or event extraction.
+    # The task existed but was never scheduled, so "processing" was effectively
+    # a terminal state — production accumulated 53 permanently stuck articles.
+    "recover-stuck-articles-every-15-minutes": {
+        "task": "app.workers.tasks.recover_stuck_embeddings_task",
+        "schedule": crontab(minute="*/15"),
+    },
+    # NOTE: there is no discovery-grouping task any more. Batch clustering now
+    # selects eligible articles directly from the articles table (embedded +
+    # event-extracted + not yet in a story), so the discovery_queue staging
+    # table and its grouping/promotion step are no longer part of the pipeline.
     # Event extraction — runs every 10 minutes to extract structured events from articles
     "extract-events-every-10-minutes": {
         "task": "app.workers.tasks.extract_events_task",
