@@ -1693,6 +1693,16 @@ class ClusteringService:
                     GLOBAL_CLUSTERING_LOCK_ID,
                 )
                 return 0
+
+            # End the implicit transaction that executing the lock query opened.
+            # Session-level advisory locks survive COMMIT — only disconnect or an
+            # explicit unlock releases them — but an OPEN transaction idling for
+            # the duration of clustering (minutes of LLM calls) gets the backend
+            # killed by idle_in_transaction_session_timeout (30s in production).
+            # That kill both crashed the run with "connection is closed" AND
+            # silently released the lock mid-run, letting a concurrent run start.
+            await lock_conn.commit()
+
             try:
                 return await self._run_batch_clustering_locked(session, max_age_hours)
             finally:
@@ -1855,6 +1865,16 @@ class ClusteringService:
                     if art_id not in art_ent_map:
                         art_ent_map[art_id] = set()
                     art_ent_map[art_id].add(ent_id)
+
+                # All batch reads are done. Close the read transaction before the
+                # verification loop below: _verify_merge_with_agents makes
+                # sequential LLM calls (minutes in aggregate) during which an open
+                # transaction would sit idle and be killed by Postgres's
+                # idle_in_transaction_session_timeout (30s in production), failing
+                # every later statement with "connection is closed". Loaded ORM
+                # objects stay usable because the session factory sets
+                # expire_on_commit=False.
+                await session.commit()
 
                 # Verify and split clusters using multi-signal similarity + entity overlap
                 clustering_audit: list[dict] = []

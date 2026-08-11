@@ -584,6 +584,14 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                         stage.mark_skipped("no_pending_articles")
                         return 0
 
+                    # Close the read transaction before the per-article loop: the
+                    # first thing each iteration does is an LLM extraction call,
+                    # and an open transaction idling through gateway retries gets
+                    # the backend killed by idle_in_transaction_session_timeout
+                    # (30s in production). expire_on_commit=False keeps the loaded
+                    # Article objects usable.
+                    await session.commit()
+
                     stage.input(articles=articles)
 
                     logger.info(
