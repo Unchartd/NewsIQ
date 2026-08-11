@@ -145,3 +145,53 @@ async def test_committed_lock_survives_idle_and_keeps_advisory_lock():
                 await dead_conn.execute(text("SELECT 1"))
     finally:
         await engine.dispose()
+
+
+# ── Rollback-expiry cascade (the 94-failure incident) ────────────────────────
+
+
+def test_persist_loop_reads_no_orm_attributes():
+    """The per-cluster persist loop must consume plain snapshots, not ORM objects.
+
+    session.rollback() expires every loaded object regardless of
+    expire_on_commit=False. The failure handlers in this loop must roll back,
+    so one failed cluster turned every later art.published_at access into a
+    synchronous lazy refresh inside async code: one synthesis failure became
+    94 MissingGreenlet cascade failures and stranded 181 of 200 articles.
+    """
+    src = inspect.getsource(clustering_service._run_batch_clustering_locked)
+    assert "cluster_specs" in src, "per-cluster data must be snapshotted before the loop"
+    assert "(a.id, a.published_at)" in src, "snapshot must capture the fields the loop needs"
+    loop_start = src.index("for spec in cluster_specs:")
+    loop_src = src[loop_start:]
+    assert "art_list" not in loop_src, (
+        "the persist loop must not touch batch ORM objects — they may be expired"
+    )
+    assert "select(Article).where(Article.id.in_(cluster_article_ids))" in loop_src, (
+        "synthesis must re-fetch fresh Article rows instead of reusing expired ones"
+    )
+
+
+def test_generate_story_content_does_not_lazy_load_category():
+    """story.category on a freshly built Story emits sync IO → MissingGreenlet.
+
+    synthesize_story sets story.category_id just before this code runs, so the
+    relationship access stops being a no-op and performs a real lazy load.
+    This was the first domino of the cascade above.
+    """
+    src = inspect.getsource(clustering_service.generate_story_content)
+    assert "if story.category:" not in src and "story.category.slug" not in src, (
+        "resolve the slug via an explicit Category query on story.category_id"
+    )
+    assert "story.category_id" in src
+
+
+def test_lock_connection_disables_idle_session_timeout():
+    """Production also kills plainly idle sessions (idle_session_timeout=1min).
+
+    Observed as 'Failed to release pg_advisory_unlock: connection is closed'
+    on any clustering run longer than a minute — the concurrency guard
+    silently vanished for the rest of the run.
+    """
+    src = inspect.getsource(clustering_service.run_batch_clustering)
+    assert "SET idle_session_timeout = 0" in src

@@ -276,9 +276,22 @@ class ClusteringService:
             story_override=story,
         )
 
+        # Resolve the category slug by explicit query, never via story.category.
+        # `story` here is a freshly constructed object whose relationship was
+        # never loaded, and synthesize_story has just SET story.category_id —
+        # so attribute access emits a synchronous lazy-load inside an async
+        # context and raises MissingGreenlet. In production that single raise
+        # triggered a session.rollback(), which expires ALL loaded ORM objects
+        # (regardless of expire_on_commit=False), and every later cluster in
+        # the batch then failed the same way — 94 cascade failures from one.
         cat_slug = "world"
-        if story.category:
-            cat_slug = story.category.slug
+        if story.category_id is not None:
+            cat_res = await session.execute(
+                select(Category).where(Category.id == story.category_id)
+            )
+            cat_obj = cat_res.scalar_one_or_none()
+            if cat_obj:
+                cat_slug = cat_obj.slug
 
         if commit:
             await session.commit()
@@ -1683,6 +1696,15 @@ class ClusteringService:
         GLOBAL_CLUSTERING_LOCK_ID = 888888888
 
         async with engine.connect() as lock_conn:
+            # This connection idles (outside any transaction, see the commit
+            # below) for the entire clustering run. Production also sets
+            # idle_session_timeout = 1min, which kills plainly idle sessions —
+            # observed as "Failed to release pg_advisory_unlock: connection is
+            # closed" on any run longer than a minute, silently dropping the
+            # concurrency guard for the remainder. Disable that timeout for
+            # this session only; the lock's lifetime should equal the run's.
+            await lock_conn.execute(text("SET idle_session_timeout = 0"))
+
             acquired = await lock_conn.execute(
                 text("SELECT pg_try_advisory_lock(:lock_id)"),
                 {"lock_id": GLOBAL_CLUSTERING_LOCK_ID},
@@ -2027,10 +2049,24 @@ class ClusteringService:
         # but synthesis is deferred until more articles join via incremental merge.
         _MIN_SYNTHESIS_ARTICLES = 2
 
-        for art_list in verified_clusters:
-            logger.info("Creating story for cluster with %d articles.", len(art_list))
+        # Snapshot the per-cluster data as plain values BEFORE the loop.
+        #
+        # Any session.rollback() — and the failure handlers below must roll
+        # back — expires every ORM object in the session, regardless of
+        # expire_on_commit=False. After that, touching art.published_at on the
+        # next iteration triggers a synchronous lazy refresh inside an async
+        # context and raises MissingGreenlet. In production one synthesis
+        # failure expired the batch this way and the remaining 94 clusters all
+        # failed on their first attribute access. Plain tuples cannot expire.
+        cluster_specs: list[list[tuple[uuid.UUID, datetime | None]]] = [
+            [(a.id, a.published_at) for a in art_list] for art_list in verified_clusters
+        ]
+
+        for spec in cluster_specs:
+            cluster_article_ids = [aid for aid, _ in spec]
+            logger.info("Creating story for cluster with %d articles.", len(spec))
             newsiq_discovery_clusters_total.inc()
-            newsiq_story_article_count.observe(len(art_list))
+            newsiq_story_article_count.observe(len(spec))
 
             story_id = uuid.uuid4()
 
@@ -2050,9 +2086,7 @@ class ClusteringService:
                         # Set explicitly rather than relying on the column default,
                         # because candidate retrieval filters on this value.
                         lifecycle_state=StoryLifecycleState.EMERGING,
-                        first_seen_at=min(
-                            (a.published_at for a in art_list if a.published_at), default=now
-                        ),
+                        first_seen_at=min((pub for _, pub in spec if pub is not None), default=now),
                         trend_score=1.0,
                         created_at=now,
                         updated_at=now,
@@ -2064,7 +2098,7 @@ class ClusteringService:
                     # story can never match an incoming article, so it would sit
                     # at its initial size forever.
                     await self.refresh_story_centroid(
-                        story, session, article_ids=[a.id for a in art_list]
+                        story, session, article_ids=cluster_article_ids
                     )
 
                     # Initialize metrics
@@ -2076,8 +2110,8 @@ class ClusteringService:
                     # Link articles. Membership in story_articles is now the sole
                     # record of "clustered" — there is no parallel queue state to
                     # keep in sync, and therefore no way for the two to diverge.
-                    for art in art_list:
-                        session.add(StoryArticle(story_id=story_id, article_id=art.id))
+                    for aid in cluster_article_ids:
+                        session.add(StoryArticle(story_id=story_id, article_id=aid))
 
                     from app.services.story_evolution_service import record_story_evolution
 
@@ -2085,8 +2119,8 @@ class ClusteringService:
                         db=session,
                         story_id=story_id,
                         event_type="created",
-                        after_state={"article_count": len(art_list)},
-                        notes=f"Created via batch clustering with {len(art_list)} articles.",
+                        after_state={"article_count": len(spec)},
+                        notes=f"Created via batch clustering with {len(spec)} articles.",
                     )
 
                 # Make the cluster durable before the slow LLM work starts, so a
@@ -2106,7 +2140,7 @@ class ClusteringService:
                         stage=PipelineStage.CLUSTERING_BATCH,
                         exception=e,
                         story_id=story_id,
-                        input_payload={"article_count": len(art_list)},
+                        input_payload={"article_count": len(spec)},
                     )
                 except Exception as rec_err:
                     logger.error(
@@ -2119,17 +2153,25 @@ class ClusteringService:
             # and its article links are already durable, so a failure here leaves
             # an unsynthesised story rather than losing the cluster. This is the
             # same state single-article clusters are deliberately left in.
-            if len(art_list) < _MIN_SYNTHESIS_ARTICLES:
+            if len(spec) < _MIN_SYNTHESIS_ARTICLES:
                 logger.info(
                     "Cluster for story %s has only %d article(s) — deferring synthesis "
                     "until more articles join via incremental merge.",
                     story_id,
-                    len(art_list),
+                    len(spec),
                 )
                 continue
 
             try:
-                await self.generate_story_content(story, art_list, session)
+                # Re-fetch fresh Article instances for synthesis rather than
+                # reusing the batch objects: a rollback in ANY earlier iteration
+                # expired those, and synthesis reads title/description/content.
+                fresh_res = await session.execute(
+                    select(Article).where(Article.id.in_(cluster_article_ids))
+                )
+                fresh_articles = list(fresh_res.scalars().all())
+
+                await self.generate_story_content(story, fresh_articles, session)
                 await self.compute_trending_score(story, session)
             except Exception as e:
                 synthesis_failed += 1
@@ -2149,7 +2191,7 @@ class ClusteringService:
                         stage="story_synthesis",
                         exception=e,
                         story_id=story_id,
-                        input_payload={"article_count": len(art_list)},
+                        input_payload={"article_count": len(spec)},
                     )
                 except Exception as rec_err:
                     logger.error(
