@@ -75,6 +75,23 @@ async def _pause_pipeline_for_quota_cooldown(stage: str) -> None:
         logger.error("Failed to set pipeline_paused flag: %s", cache_err)
 
 
+def _article_age_cutoff() -> datetime:
+    """Oldest article creation time the processing pipeline will act on.
+
+    Embedding, event extraction and clustering all bound eligibility by this
+    same value so an earlier stage never pays to process an article a later
+    stage will discard. Returns a naive UTC datetime, matching how article
+    timestamps are stored.
+    """
+    from datetime import timedelta
+
+    from app.core.config import settings
+
+    return datetime.now(UTC).replace(tzinfo=None) - timedelta(
+        hours=settings.PIPELINE_MAX_ARTICLE_AGE_HOURS
+    )
+
+
 async def _release_loop_bound_clients() -> None:
     """Close the Redis and Qdrant clients bound to the running event loop.
 
@@ -352,8 +369,22 @@ def process_pending_embeddings_task(run_id: str | None = None, trace_id: str | N
         ) as run:
             async with PipelineTraceCollector.stage(PipelineStage.EMBEDDING) as stage:
                 async with async_session_factory() as session:
-                    # Fetch pending articles
-                    stmt = select(Article).where(Article.embedding_status == "pending").limit(50)
+                    # Fetch pending articles.
+                    #
+                    # Bounded by the same age window clustering uses. Without
+                    # this, embedding paid to vectorise articles that clustering
+                    # would then refuse as too old — 11,343 of them after the
+                    # 2026-08 outage, enough to hit Gemini rate limits for no
+                    # downstream benefit.
+                    embed_cutoff = _article_age_cutoff()
+                    stmt = (
+                        select(Article)
+                        .where(
+                            Article.embedding_status == "pending",
+                            Article.created_at >= embed_cutoff,
+                        )
+                        .limit(50)
+                    )
                     result = await session.execute(stmt)
                     pending_articles = result.scalars().all()
 
@@ -532,11 +563,16 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
             async with PipelineTraceCollector.stage(PipelineStage.EVENT_EXTRACTION) as stage:
                 async with async_session_factory() as session:
                     # Find articles that are embedded but not yet event-extracted
+                    # Same age bound as embedding and clustering. Event
+                    # extraction is the most expensive stage per article (one
+                    # LLM call each), so processing articles clustering will
+                    # reject is the costliest version of this mistake.
                     stmt = (
                         select(Article)
                         .where(
                             Article.embedding_status == "completed",
                             Article.event_extraction_status.in_(["pending", None]),
+                            Article.created_at >= _article_age_cutoff(),
                         )
                         .limit(20)
                     )
@@ -1055,6 +1091,67 @@ def recover_stuck_embeddings_task() -> int:
                     },
                 )
             return recovered
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.retire_stale_unprocessed_articles_task")
+def retire_stale_unprocessed_articles_task() -> int:
+    """Mark articles too old to ever be processed as 'skipped'.
+
+    Once an article falls outside PIPELINE_MAX_ARTICLE_AGE_HOURS it can never
+    be embedded, extracted or clustered. Leaving it 'pending' makes the queue
+    permanently overstate real backlog — after the 2026-08 outage that was
+    11,343 rows that no dashboard could distinguish from genuine work waiting.
+
+    'skipped' is terminal and deliberately distinct from 'failed': nothing went
+    wrong, the article simply aged out while the pipeline was down.
+    """
+    logger.info("Celery task: Retiring stale unprocessed articles.")
+
+    async def _run() -> int:
+        from sqlalchemy import or_, update
+
+        from app.models.models import Article
+
+        cutoff = _article_age_cutoff()
+
+        async with async_session_factory() as session:
+            emb = await session.execute(
+                update(Article)
+                .where(
+                    Article.embedding_status.in_(["pending", None]),
+                    Article.created_at < cutoff,
+                )
+                .values(embedding_status="skipped")
+            )
+            evt = await session.execute(
+                update(Article)
+                .where(
+                    or_(
+                        Article.event_extraction_status.in_(["pending", None]),
+                        Article.event_extraction_status.is_(None),
+                    ),
+                    Article.embedding_status != "completed",
+                    Article.created_at < cutoff,
+                )
+                .values(event_extraction_status="skipped")
+            )
+            await session.commit()
+
+            emb_retired = getattr(emb, "rowcount", 0) or 0
+            evt_retired = getattr(evt, "rowcount", 0) or 0
+            retired = emb_retired + evt_retired
+            if retired > 0:
+                logger.info(
+                    "Retired stale unprocessed articles",
+                    extra={
+                        "embedding_retired": emb_retired,
+                        "event_extraction_retired": evt_retired,
+                        "age_cutoff": cutoff.isoformat(),
+                    },
+                )
+            return retired
 
     return run_async(_run())
 
