@@ -160,6 +160,35 @@ def mock_db_session():
 
 
 @pytest.fixture(autouse=True)
+def mock_clustering_lock_connection():
+    """Provide a fake dedicated connection for the global clustering advisory lock.
+
+    run_batch_clustering takes pg_try_advisory_lock on its own connection from
+    the engine — it cannot use the session, because AsyncSession returns its
+    connection to the pool on every commit, which strands a session-scoped
+    advisory lock on a pooled connection and permanently blocks later runs.
+    Tests drive a fully mocked session, so the engine must be stubbed too or
+    they attempt a real asyncpg connect and fail across event loops.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    lock_conn = AsyncMock()
+    acquired = MagicMock()
+    acquired.scalar.return_value = True
+    lock_conn.execute = AsyncMock(return_value=acquired)
+
+    connect_cm = AsyncMock()
+    connect_cm.__aenter__ = AsyncMock(return_value=lock_conn)
+    connect_cm.__aexit__ = AsyncMock(return_value=None)
+
+    fake_engine = MagicMock()
+    fake_engine.connect = MagicMock(return_value=connect_cm)
+
+    with patch("app.services.clustering_service.engine", fake_engine):
+        yield lock_conn
+
+
+@pytest.fixture(autouse=True)
 def mock_trace_persistence():
     """Disable database and redis persistence/events for PipelineRun and StageSpan in tests."""
     with (

@@ -12,10 +12,15 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.database import engine
 from app.core.metrics import (
+    newsiq_clustering_candidates,
+    newsiq_clustering_eligible_articles,
+    newsiq_clustering_similarity,
     newsiq_discovery_clusters_total,
     newsiq_reflection_requests_total,
     newsiq_stage_a_validation_total,
+    newsiq_story_article_count,
 )
 from app.core.trace import PipelineStage, StageSpan
 from app.models.models import (
@@ -29,6 +34,7 @@ from app.models.models import (
     StoryContradiction,
     StoryDifference,
     StoryEntity,
+    StoryLifecycleState,
     StoryMetric,
     StorySourceCoverage,
     StoryTag,
@@ -50,13 +56,25 @@ from app.services.vector_service import vector_service
 
 logger = logging.getLogger(__name__)
 
-SIMILARITY_THRESHOLD = 0.80  # Cosine similarity threshold for real-time merge
-
-# Load config for reflection threshold
+# Load tunable thresholds from config rather than hardcoding them at call sites.
 config_path = os.path.join(os.path.dirname(__file__), "..", "config", "event_validation.yaml")
 with open(config_path) as f:
     config = yaml.safe_load(f)
+
 REFLECTION_THRESHOLD = config.get("reflection", {}).get("threshold", 0.55)
+
+_batch_cfg = config.get("batch_clustering", {})
+# Merge two sub-clusters outright above this combined similarity.
+AUTO_MERGE_THRESHOLD = _batch_cfg.get("auto_merge", 0.90)
+# Between agent_review and auto_merge, defer to the verification agents.
+AGENT_REVIEW_THRESHOLD = _batch_cfg.get("agent_review", 0.70)
+# Applied only when the agents are unreachable and the decision degrades to a
+# bare threshold comparison.
+DETERMINISTIC_FALLBACK_THRESHOLD = _batch_cfg.get("deterministic_fallback", 0.80)
+
+_OPENAI_VERIFICATION_MODEL = config.get("agents", {}).get(
+    "openai_verification_model", "gpt-4o-mini"
+)
 
 
 def _now() -> datetime:
@@ -710,6 +728,13 @@ class ClusteringService:
                 story_id,
                 len(all_articles),
             )
+
+            # Keep the Stage B anchor current — a stale centroid makes the story
+            # progressively harder to match as it grows.
+            await self.refresh_story_centroid(
+                story, session, article_ids=[a.id for a in all_articles]
+            )
+            newsiq_story_article_count.observe(len(all_articles))
             # Delegate to StorySynthesisOrchestrator
             from app.services.story_synthesis_service import story_synthesis_orchestrator
 
@@ -735,6 +760,61 @@ class ClusteringService:
             )
 
         return True
+
+    async def refresh_story_centroid(
+        self, story: Story, session: AsyncSession, article_ids: list[uuid.UUID] | None = None
+    ) -> list[float] | None:
+        """Recompute story.story_embedding as the unit-norm mean of member vectors.
+
+        This is the anchor Stage B compares incoming articles against. Vectors
+        are read back from Qdrant, which normalizes on write for cosine
+        distance, so the inputs are unit vectors and the mean is meaningful.
+        The result is re-normalized because the mean of unit vectors is not.
+
+        Returns the new centroid, or None if no member vectors were available
+        (in which case the stored value is left untouched rather than being
+        clobbered with a degenerate vector).
+        """
+        if article_ids is None:
+            res = await session.execute(
+                select(StoryArticle.article_id).where(StoryArticle.story_id == story.id)
+            )
+            article_ids = list(res.scalars().all())
+
+        if not article_ids:
+            return None
+
+        try:
+            vectors_by_id = await vector_service.retrieve_vectors([str(a) for a in article_ids])
+        except Exception as e:
+            logger.warning("Failed to fetch vectors for story %s centroid: %s", story.id, e)
+            return None
+
+        vectors = [v for v in vectors_by_id.values() if v]
+        if not vectors:
+            logger.warning(
+                "No vectors found in Qdrant for story %s (%d articles) — centroid not updated.",
+                story.id,
+                len(article_ids),
+            )
+            return None
+
+        matrix = np.asarray(vectors, dtype=np.float64)
+        centroid = matrix.mean(axis=0)
+        norm = float(np.linalg.norm(centroid))
+        if norm == 0.0:
+            logger.warning("Degenerate (zero) centroid for story %s — not updated.", story.id)
+            return None
+
+        unit_centroid: list[float] = (centroid / norm).tolist()
+        story.story_embedding = unit_centroid
+        logger.debug(
+            "Refreshed centroid for story %s from %d/%d member vectors.",
+            story.id,
+            len(vectors),
+            len(article_ids),
+        )
+        return unit_centroid
 
     def _compute_event_similarity_direct(self, evt1: ArticleEvent, evt2: ArticleEvent) -> float:
         """Directly compare two ArticleEvent objects and compute similarity score."""
@@ -795,60 +875,6 @@ class ClusteringService:
             # Entity overlap (10%) is added externally when available
         )
 
-    async def compute_story_similarity(
-        self, article_event: ArticleEvent, story: Story, session: AsyncSession
-    ) -> float:
-        """Compute the average similarity between a new event and all events inside a story (including entity overlap)."""
-        # Fetch events of all articles in the story
-        stmt = (
-            select(ArticleEvent)
-            .join(StoryArticle, StoryArticle.article_id == ArticleEvent.article_id)
-            .where(StoryArticle.story_id == story.id)
-        )
-        res = await session.execute(stmt)
-        story_events = list(res.scalars().all())
-
-        if not story_events:
-            return 1.0  # Default to match if story has no events yet
-
-        total_sim = 0.0
-        for sevt in story_events:
-            total_sim += self._compute_event_similarity_direct(article_event, sevt)
-
-        avg_sim = total_sim / len(story_events)
-
-        # Entity overlap (10%)
-        art_ent_stmt = select(ArticleEntity.canonical_entity_id).where(
-            ArticleEntity.article_id == article_event.article_id,
-            ArticleEntity.canonical_entity_id.isnot(None),
-        )
-        art_ent_res = await session.execute(art_ent_stmt)
-        art_entity_ids = set(row[0] for row in art_ent_res.all())
-
-        stmt_story_art = select(StoryArticle.article_id).where(StoryArticle.story_id == story.id)
-        res_story_art = await session.execute(stmt_story_art)
-        story_article_ids = list(res_story_art.scalars().all())
-
-        total_entity_sim = 0.0
-        if story_article_ids:
-            for sub_art_id in story_article_ids:
-                if art_entity_ids:
-                    sub_ent_stmt = select(ArticleEntity.canonical_entity_id).where(
-                        ArticleEntity.article_id == sub_art_id,
-                        ArticleEntity.canonical_entity_id.isnot(None),
-                    )
-                    sub_ent_res = await session.execute(sub_ent_stmt)
-                    sub_entity_ids = set(row[0] for row in sub_ent_res.all())
-                    if sub_entity_ids or art_entity_ids:
-                        union = art_entity_ids | sub_entity_ids
-                        intersection = art_entity_ids & sub_entity_ids
-                        total_entity_sim += len(intersection) / len(union) if union else 0.0
-
-        avg_entity_sim = (
-            total_entity_sim / len(story_events) if (story_events and art_entity_ids) else 0.0
-        )
-        return avg_sim + (0.10 * avg_entity_sim)
-
     async def _verify_merge_with_agents(
         self,
         article_a: Article,
@@ -869,24 +895,34 @@ class ClusteringService:
         if metadata is None:
             metadata = {}
 
+        # Report the model that is actually used, not a hardcoded guess. These
+        # strings are persisted into clustering traces, and the previous literals
+        # ("gemini-2.5-flash", "gpt-4o") never matched reality — the agents
+        # resolve their model from settings.SUMMARIZATION_MODEL via
+        # get_default_model(), so every stored trace named a model that had not
+        # run. An audit trail that lies is worse than no audit trail.
+        _agent_model = settings.SUMMARIZATION_MODEL or "gemini-2.5-flash-lite"
+
         metadata["triggered"] = True
         metadata["gemini"] = {
             "decision": None,
             "latency_ms": 0.0,
             "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "model": _agent_model,
         }
         metadata["openai"] = {
             "decision": None,
             "latency_ms": 0.0,
             "provider": "openai",
-            "model": "gpt-4o-mini",
+            "model": _OPENAI_VERIFICATION_MODEL,
         }
         metadata["judge"] = {
             "decision": None,
             "latency_ms": 0.0,
-            "provider": "openai",
-            "model": "gpt-4o",
+            # judge_agent uses get_default_model() like the others — it is not
+            # an OpenAI agent, despite what the old hardcoded metadata claimed.
+            "provider": "gateway",
+            "model": _agent_model,
         }
         metadata["fallback"] = {"reason": None, "used": None}
 
@@ -942,7 +978,7 @@ class ClusteringService:
 
                 openai_agent = Agent(
                     name="OpenAI Verification Agent",
-                    model=OpenAIChat(id="gpt-4o-mini"),
+                    model=OpenAIChat(id=_OPENAI_VERIFICATION_MODEL),
                     instructions=cluster_verification_agent.instructions,
                     output_schema=cluster_verification_agent.output_schema,
                 )
@@ -1084,7 +1120,7 @@ class ClusteringService:
         metadata["fallback"]["reason"] = "gemini_unavailable"
         metadata["fallback"]["used"] = "deterministic_threshold"
 
-        should_merge_det = similarity_score >= 0.80
+        should_merge_det = similarity_score >= DETERMINISTIC_FALLBACK_THRESHOLD
         return should_merge_det
 
     async def add_article_to_existing_story_if_similar(
@@ -1122,18 +1158,27 @@ class ClusteringService:
             select(Story)
             .options(selectinload(Story.category), selectinload(Story.entities))
             .where(
-                Story.lifecycle_state.in_(["developing", "monitoring", "stable"]),
+                # "emerging" MUST be included. Stories are created in that state,
+                # and lifecycle_rules only promotes emerging -> developing once a
+                # story has >= 3 articles. Excluding it meant a new story could
+                # never be a merge candidate, so it could never reach 3 articles,
+                # so it could never leave "emerging" — a closed loop. In
+                # production this left 476/476 stories stuck at "emerging" with
+                # 462 of them holding exactly one article.
+                Story.lifecycle_state.in_(
+                    [
+                        StoryLifecycleState.EMERGING,
+                        StoryLifecycleState.DEVELOPING,
+                        StoryLifecycleState.MONITORING,
+                        StoryLifecycleState.STABLE,
+                    ]
+                ),
                 Story.updated_at >= time_window,
                 ~Story.id.in_(
                     select(StoryArticle.story_id).where(StoryArticle.article_id == article.id)
                 ),
             )
         )
-
-        # Filter by category if article has one (Optional, but helps recall)
-        # Assuming article category might not be resolved yet, but if it is:
-        # if hasattr(article, 'category_id') and article.category_id:
-        #     recent_stories_stmt = recent_stories_stmt.where(Story.category_id == article.category_id)
 
         # Boost by entity overlap (if extracted entities exist)
         if extracted_ents:
@@ -1151,7 +1196,14 @@ class ClusteringService:
         recent_stories_res = await session.execute(recent_stories_stmt)
         candidates = recent_stories_res.scalars().all()
 
+        newsiq_clustering_candidates.observe(len(candidates))
+
         if not candidates:
+            logger.info(
+                "Article %s: no candidate stories in the last 72h "
+                "(lifecycle in emerging/developing/monitoring/stable).",
+                article_id,
+            )
             return False
 
         stage_a_passed_candidates = []
@@ -1171,6 +1223,23 @@ class ClusteringService:
                 else set()
             )
 
+            # Stage B compares this set against the article's canonical entity IDs,
+            # so it must be built from the SAME identifier space. It previously read
+            # knowledge_graph["nodes"], which is a list[dict] — `set()` over it raises
+            # TypeError: unhashable type: 'dict' for any story that has a graph, and
+            # for stories without one it silently produced an empty set that could
+            # never intersect anything. StoryEntity.canonical_entity_id is the
+            # identifier the article side actually uses.
+            story_canonical_entity_ids = (
+                {
+                    str(e.canonical_entity_id)
+                    for e in story.entities
+                    if e.canonical_entity_id is not None
+                }
+                if story.entities
+                else set()
+            )
+
             anchor = StoryAnchor(
                 story_id=str(story.id),
                 headline=story.headline or "",
@@ -1181,9 +1250,7 @@ class ClusteringService:
                 category=story.category.slug if story.category else None,
                 event_type=getattr(story, "event_type", None),
                 centroid_vector=getattr(story, "story_embedding", None),
-                entity_graph_ids=set(story.knowledge_graph.get("nodes", []))
-                if story.knowledge_graph
-                else set(),
+                entity_graph_ids=story_canonical_entity_ids,
             )
 
             start_time_a = _now()
@@ -1261,12 +1328,16 @@ class ClusteringService:
         event_res = await session.execute(event_stmt)
         article_event = event_res.scalar_one_or_none()
 
-        # We also need canonical entity ids for stage B
-        article_canonical_entity_ids = set()
-        if article_event and article_event.actors:
-            article_canonical_entity_ids.update(article_event.actors)
-        if article_event and article_event.targets:
-            article_canonical_entity_ids.update(article_event.targets)
+        # Canonical entity IDs for Stage B's entity-overlap test.
+        # These were previously taken from event.actors/targets, which are raw
+        # display names ("Narendra Modi") — type-disjoint from the story side, so
+        # the intersection was always empty and the entity signal never fired.
+        art_ent_stmt = select(ArticleEntity.canonical_entity_id).where(
+            ArticleEntity.article_id == article_id,
+            ArticleEntity.canonical_entity_id.isnot(None),
+        )
+        art_ent_res = await session.execute(art_ent_stmt)
+        article_canonical_entity_ids = {str(row[0]) for row in art_ent_res.all()}
 
         # Sort stage_a_passed_candidates by Stage A score descending and take Top 3
         stage_a_passed_candidates.sort(key=lambda x: x[2].score, reverse=True)
@@ -1318,6 +1389,9 @@ class ClusteringService:
             from app.core.metrics import newsiq_stage_b_pass_total
 
             newsiq_stage_b_pass_total.labels(outcome=decision_b.outcome.value).inc()
+            # decision_b.score is the cosine. Pinned at exactly 0.0 means the
+            # story anchor has no centroid — the shape BUG-02 had in production.
+            newsiq_clustering_similarity.observe(decision_b.score)
 
             story_id = story.id
             if decision_b.outcome == ValidationOutcome.PASS:
@@ -1588,49 +1662,103 @@ class ClusteringService:
         return False
 
     async def run_batch_clustering(self, session: AsyncSession) -> int:
-        """Run HDBSCAN clustering on unclustered articles."""
+        """Run HDBSCAN clustering on unclustered articles.
+
+        Concurrency is guarded by a Postgres advisory lock held on a DEDICATED
+        connection. It cannot live on `session`: pg_advisory_lock is
+        session-scoped (per database connection), and AsyncSession returns its
+        connection to the pool on every commit — so the lock would be stranded
+        on a pooled connection while the matching pg_advisory_unlock ran on a
+        different one and silently returned false, permanently blocking every
+        later run. Holding it on a connection we own for the whole call, and
+        closing that connection in a context manager, makes release
+        unconditional: Postgres drops all advisory locks when the owning
+        connection closes, even if the process dies.
+
+        pg_try_advisory_lock (non-blocking) is used so a concurrent run skips
+        rather than piling up waiters on a 10-minute Celery task.
+        """
         GLOBAL_CLUSTERING_LOCK_ID = 888888888
-        await session.execute(text(f"SELECT pg_advisory_lock({GLOBAL_CLUSTERING_LOCK_ID})"))
-        try:
-            return await self._run_batch_clustering_locked(session)
-        finally:
-            try:
-                await session.rollback()
-            except Exception as e:
-                logger.warning("Failed to rollback session in finally block: %s", e)
-            try:
-                await session.execute(
-                    text(f"SELECT pg_advisory_unlock({GLOBAL_CLUSTERING_LOCK_ID})")
+
+        async with engine.connect() as lock_conn:
+            acquired = await lock_conn.execute(
+                text("SELECT pg_try_advisory_lock(:lock_id)"),
+                {"lock_id": GLOBAL_CLUSTERING_LOCK_ID},
+            )
+            if not acquired.scalar():
+                logger.info(
+                    "run_batch_clustering: advisory lock %d already held — skipping this run.",
+                    GLOBAL_CLUSTERING_LOCK_ID,
                 )
-            except Exception as e:
-                logger.warning("Failed to release pg_advisory_unlock in finally block: %s", e)
+                return 0
+            try:
+                return await self._run_batch_clustering_locked(session)
+            finally:
+                try:
+                    await session.rollback()
+                except Exception as e:
+                    logger.warning("Failed to rollback session in finally block: %s", e)
+                try:
+                    await lock_conn.execute(
+                        text("SELECT pg_advisory_unlock(:lock_id)"),
+                        {"lock_id": GLOBAL_CLUSTERING_LOCK_ID},
+                    )
+                except Exception as e:
+                    logger.warning("Failed to release pg_advisory_unlock: %s", e)
 
     async def _run_batch_clustering_locked(self, session: AsyncSession) -> int:
         """Internal method running batch clustering under global lock."""
         # Ensure all canonical categories exist
         await self._ensure_all_categories(session)
 
-        # Select articles from DiscoveryQueue that are READY
+        # ── Eligible-article selection ────────────────────────────────────────
+        # Select fully-processed articles that are not yet part of any story.
+        #
+        # This previously read `articles JOIN discovery_queue WHERE state =
+        # 'discovery_ready'`. Nothing has written to discovery_queue since its
+        # producer (discovery_manager.py) was deleted in commit 44ffae4, so the
+        # join matched zero rows on every run and batch clustering — the only
+        # automated story creator — returned 0 forever. In production the table
+        # held 0 rows against 15 941 articles.
+        #
+        # Reading the articles table directly removes the dependency on that
+        # orphaned queue entirely. NOT EXISTS against story_articles is the
+        # authoritative "unclustered" test and needs no separate state machine
+        # to be kept in sync.
         _BATCH_LIMIT = 200
+        _MAX_ARTICLE_AGE_HOURS = 72
 
-        from app.models.models import DiscoveryQueue, DiscoveryState
+        from datetime import timedelta
+
+        age_cutoff = _now() - timedelta(hours=_MAX_ARTICLE_AGE_HOURS)
 
         stmt = (
-            select(Article, DiscoveryQueue)
-            .join(DiscoveryQueue, Article.id == DiscoveryQueue.article_id)
-            .where(DiscoveryQueue.state == DiscoveryState.READY)
+            select(Article)
+            .where(
+                Article.embedding_status == "completed",
+                Article.event_extraction_status == "completed",
+                Article.created_at >= age_cutoff,
+                ~select(StoryArticle.article_id)
+                .where(StoryArticle.article_id == Article.id)
+                .exists(),
+            )
             .order_by(Article.published_at.desc().nulls_last())
             .limit(_BATCH_LIMIT)
         )
         res = await session.execute(stmt)
-        rows = res.all()
+        unclustered_articles = list(res.scalars().all())
 
-        if len(rows) < 1:
-            logger.info("No unclustered articles to run batch clustering.")
+        # Record before the early return, so "starved" is distinguishable from
+        # "never ran" — the ambiguity that hid BUG-01 for 41 days.
+        newsiq_clustering_eligible_articles.set(len(unclustered_articles))
+
+        if not unclustered_articles:
+            logger.info(
+                "Batch clustering: no eligible articles "
+                "(embedded + event-extracted, unclustered, newer than %dh).",
+                _MAX_ARTICLE_AGE_HOURS,
+            )
             return 0
-
-        unclustered_articles = [r[0] for r in rows]
-        dq_items = {r[0].id: r[1] for r in rows}
 
         logger.info(
             "Running batch clustering on %d unclustered articles.", len(unclustered_articles)
@@ -1760,9 +1888,9 @@ class ClusteringService:
                                 combined_sim = avg_sim + (0.10 * avg_entity_sim)
 
                                 should_merge = False
-                                if combined_sim >= 0.90:
+                                if combined_sim >= AUTO_MERGE_THRESHOLD:
                                     should_merge = True
-                                elif combined_sim >= 0.70:
+                                elif combined_sim >= AGENT_REVIEW_THRESHOLD:
                                     sub_evt = art_evt_map.get(sub[0].id)
                                     if sub_evt:
                                         should_merge = await self._verify_merge_with_agents(
@@ -1805,46 +1933,64 @@ class ClusteringService:
                         verified_clusters.append(sub)
 
         # ── Step 3: Fingerprint-based pre-grouping ───────────────────────────
-        # Articles sharing identical event_fingerprint describe the same event.
-        # Merge them into the same cluster if they ended up in different ones.
-        fingerprint_map: dict[str, int] = {}  # fingerprint → cluster index
-        merged_clusters: list[list[Article]] = []
-        for cluster in verified_clusters:
-            # Get fingerprints for articles in this cluster
-            cluster_fps: set[str] = set()
-            for art in cluster:
-                fp_stmt = select(ArticleEvent.event_fingerprint).where(
-                    ArticleEvent.article_id == art.id,
-                    ArticleEvent.is_primary == True,  # noqa: E712
+        # Articles sharing an identical event_fingerprint describe the same
+        # event, so clusters that share any fingerprint must end up as one.
+        #
+        # This is a transitive relation and needs union-find. The previous
+        # implementation took only the FIRST matching cluster index: when a
+        # cluster bridged two already-registered groups it merged into one of
+        # them, left the other unmerged, and then re-pointed the bridging
+        # fingerprints at the winner — leaving fingerprint_map inconsistent
+        # with actual membership and silently producing duplicate stories for
+        # the same event.
+        #
+        # Fingerprints are fetched in one batch query rather than one per
+        # article inside a nested loop (previously up to 200 round-trips).
+        all_cluster_article_ids = [art.id for cluster in verified_clusters for art in cluster]
+        fp_by_article: dict[uuid.UUID, str] = {}
+        if all_cluster_article_ids:
+            fp_rows = await session.execute(
+                select(ArticleEvent.article_id, ArticleEvent.event_fingerprint).where(
+                    ArticleEvent.article_id.in_(all_cluster_article_ids),
+                    ArticleEvent.is_primary.is_(True),
                     ArticleEvent.event_fingerprint.isnot(None),
                 )
-                fp_res = await session.execute(fp_stmt)
-                fp = fp_res.scalars().first()
-                if fp:
-                    cluster_fps.add(fp)
+            )
+            for art_id, fp in fp_rows.all():
+                fp_by_article.setdefault(art_id, fp)
 
-            # Check if any fingerprint already has a cluster
-            target_idx: int | None = None
-            for fp in cluster_fps:
-                if fp in fingerprint_map:
-                    target_idx = fingerprint_map[fp]
-                    break
+        parent: dict[int, int] = {i: i for i in range(len(verified_clusters))}
 
-            if target_idx is not None:
-                # Merge into existing cluster
-                merged_clusters[target_idx].extend(cluster)
-                for fp in cluster_fps:
-                    fingerprint_map[fp] = target_idx
-            else:
-                # New cluster
-                idx = len(merged_clusters)
-                merged_clusters.append(cluster)
-                for fp in cluster_fps:
-                    fingerprint_map[fp] = idx
+        def _find(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]  # path compression
+                i = parent[i]
+            return i
 
-        verified_clusters = merged_clusters
+        def _union(a: int, b: int) -> None:
+            ra, rb = _find(a), _find(b)
+            if ra != rb:
+                parent[max(ra, rb)] = min(ra, rb)
+
+        fingerprint_owner: dict[str, int] = {}
+        for idx, cluster in enumerate(verified_clusters):
+            for art in cluster:
+                fp = fp_by_article.get(art.id)
+                if not fp:
+                    continue
+                if fp in fingerprint_owner:
+                    _union(fingerprint_owner[fp], idx)
+                else:
+                    fingerprint_owner[fp] = idx
+
+        grouped: dict[int, list[Article]] = {}
+        for idx, cluster in enumerate(verified_clusters):
+            grouped.setdefault(_find(idx), []).extend(cluster)
+
+        verified_clusters = list(grouped.values())
 
         stories_created = 0
+        synthesis_failed = 0
         # Minimum number of articles required to run full LLM synthesis.
         # Single-article clusters are still persisted (so the article is tracked)
         # but synthesis is deferred until more articles join via incremental merge.
@@ -1853,14 +1999,26 @@ class ClusteringService:
         for art_list in verified_clusters:
             logger.info("Creating story for cluster with %d articles.", len(art_list))
             newsiq_discovery_clusters_total.inc()
+            newsiq_story_article_count.observe(len(art_list))
 
             story_id = uuid.uuid4()
+
+            # ── Step A: persist the cluster atomically ────────────────────────
+            # Only fast, purely transactional work belongs inside the savepoint.
+            # Synthesis must NOT run here: it issues its own session.commit()
+            # calls, and committing while a SAVEPOINT is open raises
+            # "InvalidRequestError: Can't operate on closed transaction inside
+            # context manager", which the handler below then swallowed — leaving
+            # a half-committed story behind while reporting zero stories created.
             try:
                 async with session.begin_nested():
                     now = _now()
                     story = Story(
                         id=story_id,
                         story_status="pending",
+                        # Set explicitly rather than relying on the column default,
+                        # because candidate retrieval filters on this value.
+                        lifecycle_state=StoryLifecycleState.EMERGING,
                         first_seen_at=min(
                             (a.published_at for a in art_list if a.published_at), default=now
                         ),
@@ -1871,31 +2029,24 @@ class ClusteringService:
                     )
                     session.add(story)
 
+                    # Seed the Stage B anchor at creation. Without a centroid the
+                    # story can never match an incoming article, so it would sit
+                    # at its initial size forever.
+                    await self.refresh_story_centroid(
+                        story, session, article_ids=[a.id for a in art_list]
+                    )
+
                     # Initialize metrics
                     metrics = StoryMetric(
                         story_id=story_id, views=0, bookmarks=0, shares=0, clicks=0
                     )
                     session.add(metrics)
 
-                    # Link articles and update DiscoveryQueue state
+                    # Link articles. Membership in story_articles is now the sole
+                    # record of "clustered" — there is no parallel queue state to
+                    # keep in sync, and therefore no way for the two to diverge.
                     for art in art_list:
-                        link = StoryArticle(story_id=story_id, article_id=art.id)
-                        session.add(link)
-                        if art.id in dq_items:
-                            dq_items[art.id].state = DiscoveryState.CLUSTER_CREATED
-
-                    # Populate story summaries, timeline, differences, and category
-                    # Only run synthesis if the cluster meets the minimum quality threshold.
-                    if len(art_list) < _MIN_SYNTHESIS_ARTICLES:
-                        logger.info(
-                            "Cluster for story %s has only %d article(s) — deferring synthesis "
-                            "until more articles join via incremental merge.",
-                            story_id,
-                            len(art_list),
-                        )
-                    else:
-                        await self.generate_story_content(story, art_list, session)
-                        await self.compute_trending_score(story, session)
+                        session.add(StoryArticle(story_id=story_id, article_id=art.id))
 
                     from app.services.story_evolution_service import record_story_evolution
 
@@ -1907,9 +2058,59 @@ class ClusteringService:
                         notes=f"Created via batch clustering with {len(art_list)} articles.",
                     )
 
+                # Make the cluster durable before the slow LLM work starts, so a
+                # synthesis failure can never cost us the grouping decision.
+                await session.commit()
                 stories_created += 1
             except Exception as e:
-                logger.error("Failed to process story cluster %s: %s", story_id, e)
+                logger.error("Failed to persist story cluster %s: %s", story_id, e)
+                try:
+                    await session.rollback()
+                except Exception as rb_err:
+                    logger.warning("Rollback after cluster persist failure failed: %s", rb_err)
+                try:
+                    from app.core.failure_recorder import record_pipeline_failure
+
+                    await record_pipeline_failure(
+                        stage=PipelineStage.CLUSTERING_BATCH,
+                        exception=e,
+                        story_id=story_id,
+                        input_payload={"article_count": len(art_list)},
+                    )
+                except Exception as rec_err:
+                    logger.error(
+                        "Failed to record pipeline failure for story %s: %s", story_id, rec_err
+                    )
+                continue
+
+            # ── Step B: synthesis, outside any savepoint ──────────────────────
+            # Runs in its own transaction(s) and is safely retryable: the story
+            # and its article links are already durable, so a failure here leaves
+            # an unsynthesised story rather than losing the cluster. This is the
+            # same state single-article clusters are deliberately left in.
+            if len(art_list) < _MIN_SYNTHESIS_ARTICLES:
+                logger.info(
+                    "Cluster for story %s has only %d article(s) — deferring synthesis "
+                    "until more articles join via incremental merge.",
+                    story_id,
+                    len(art_list),
+                )
+                continue
+
+            try:
+                await self.generate_story_content(story, art_list, session)
+                await self.compute_trending_score(story, session)
+            except Exception as e:
+                synthesis_failed += 1
+                logger.error(
+                    "Synthesis failed for story %s (cluster is persisted and retryable): %s",
+                    story_id,
+                    e,
+                )
+                try:
+                    await session.rollback()
+                except Exception as rb_err:
+                    logger.warning("Rollback after synthesis failure failed: %s", rb_err)
                 try:
                     from app.core.failure_recorder import record_pipeline_failure
 
@@ -1925,6 +2126,16 @@ class ClusteringService:
                     )
 
         await session.commit()
+
+        logger.info(
+            "Batch clustering finished",
+            extra={
+                "eligible_articles": len(unclustered_articles),
+                "clusters_formed": len(verified_clusters),
+                "stories_created": stories_created,
+                "synthesis_failed": synthesis_failed,
+            },
+        )
         return stories_created
 
     async def compute_trending_score(self, story: Story, session: AsyncSession) -> float:

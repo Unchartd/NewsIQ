@@ -341,6 +341,13 @@ class Story(Base):
     updated_at: Mapped[datetime | None] = mapped_column(default=_now, onupdate=_now)
     knowledge_graph: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Centroid of the story's member-article embeddings (768-dim, unit norm).
+    # Stage B compares an incoming article's vector against this. Without it,
+    # StoryAnchor.centroid_vector was always None, cosine similarity was always
+    # 0.0, and no article could ever pass or even reach borderline — clustering
+    # was mathematically incapable of merging anything.
+    story_embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
     # Lifecycle State
     lifecycle_state: Mapped[str] = mapped_column(
         String(30), default=StoryLifecycleState.EMERGING, index=True
