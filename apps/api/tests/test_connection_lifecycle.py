@@ -97,9 +97,16 @@ async def test_redis_client_helper_closes_on_exception(monkeypatch):
     client.aclose = AsyncMock()
     monkeypatch.setattr(cache_mod, "_make_redis_client", lambda _u: client)
 
-    with pytest.raises(RuntimeError):
+    # Catch explicitly rather than with pytest.raises: static analysis cannot
+    # see that pytest.raises suppresses the exception, and reports everything
+    # after the block as unreachable.
+    raised = False
+    try:
         async with redis_client("redis://localhost:6379/0") as r:
             assert r is client
             raise RuntimeError("simulated Redis failure")
+    except RuntimeError:
+        raised = True
 
+    assert raised, "the simulated failure should propagate to the caller"
     client.aclose.assert_awaited_once()

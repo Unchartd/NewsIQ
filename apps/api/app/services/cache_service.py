@@ -95,7 +95,7 @@ async def redis_llen(client: aioredis.Redis | None, key: str) -> int:
     """
     if client is None:
         return 0
-    return int(await cast("Awaitable[int]", client.llen(key)))
+    return int(await cast(Awaitable[int], client.llen(key)))
 
 
 class CacheService:
