@@ -1661,7 +1661,9 @@ class ClusteringService:
 
         return False
 
-    async def run_batch_clustering(self, session: AsyncSession) -> int:
+    async def run_batch_clustering(
+        self, session: AsyncSession, max_age_hours: int | None = None
+    ) -> int:
         """Run HDBSCAN clustering on unclustered articles.
 
         Concurrency is guarded by a Postgres advisory lock held on a DEDICATED
@@ -1692,7 +1694,7 @@ class ClusteringService:
                 )
                 return 0
             try:
-                return await self._run_batch_clustering_locked(session)
+                return await self._run_batch_clustering_locked(session, max_age_hours)
             finally:
                 try:
                     await session.rollback()
@@ -1706,7 +1708,9 @@ class ClusteringService:
                 except Exception as e:
                     logger.warning("Failed to release pg_advisory_unlock: %s", e)
 
-    async def _run_batch_clustering_locked(self, session: AsyncSession) -> int:
+    async def _run_batch_clustering_locked(
+        self, session: AsyncSession, max_age_hours: int | None = None
+    ) -> int:
         """Internal method running batch clustering under global lock."""
         # Ensure all canonical categories exist
         await self._ensure_all_categories(session)
@@ -1726,11 +1730,18 @@ class ClusteringService:
         # authoritative "unclustered" test and needs no separate state machine
         # to be kept in sync.
         _BATCH_LIMIT = 200
-        _MAX_ARTICLE_AGE_HOURS = 72
 
         from datetime import timedelta
 
-        age_cutoff = _now() - timedelta(hours=_MAX_ARTICLE_AGE_HOURS)
+        from app.core.config import settings
+
+        # Shared with embedding and event extraction so the three stages agree
+        # on eligibility. max_age_hours overrides it for one-off backfills of
+        # articles that were processed before the bound existed.
+        age_hours = (
+            max_age_hours if max_age_hours is not None else settings.PIPELINE_MAX_ARTICLE_AGE_HOURS
+        )
+        age_cutoff = _now() - timedelta(hours=age_hours)
 
         stmt = (
             select(Article)
@@ -1756,7 +1767,7 @@ class ClusteringService:
             logger.info(
                 "Batch clustering: no eligible articles "
                 "(embedded + event-extracted, unclustered, newer than %dh).",
-                _MAX_ARTICLE_AGE_HOURS,
+                age_hours,
             )
             return 0
 

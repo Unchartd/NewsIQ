@@ -57,6 +57,21 @@ class Settings(BaseSettings):
     # Each event loop gets its own pool (see CacheService), so this caps the
     # blast radius if a pool is ever stranded before close_current_loop() runs.
     REDIS_MAX_CONNECTIONS: int = 32
+
+    # Maximum age of an article that the processing pipeline will act on.
+    #
+    # ONE setting deliberately shared by embedding, event extraction and
+    # clustering. If these stages disagree about what is eligible, the earlier
+    # ones pay to process articles the later ones will refuse — which is
+    # exactly what happened: clustering bounded eligibility at 72h while
+    # embedding and extraction had no bound at all, so 11,343 stale articles
+    # were queued to consume embedding quota and LLM extraction spend before
+    # becoming instantly ineligible to cluster.
+    #
+    # Raising this widens the clustering window too, which is usually what you
+    # want. For a one-off backfill of already-processed articles, prefer the
+    # explicit max_age_hours argument to run_batch_clustering().
+    PIPELINE_MAX_ARTICLE_AGE_HOURS: int = 72
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/1")
     CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/2")
 

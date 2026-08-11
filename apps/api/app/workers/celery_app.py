@@ -115,6 +115,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.recover_stuck_embeddings_task",
         "schedule": crontab(minute="*/15"),
     },
+    # Retire articles that aged out of the processing window while pending, so
+    # the queue reflects real backlog instead of permanently unprocessable rows.
+    "retire-stale-articles-hourly": {
+        "task": "app.workers.tasks.retire_stale_unprocessed_articles_task",
+        "schedule": crontab(minute="20"),
+    },
     # NOTE: there is no discovery-grouping task any more. Batch clustering now
     # selects eligible articles directly from the articles table (embedded +
     # event-extracted + not yet in a story), so the discovery_queue staging
