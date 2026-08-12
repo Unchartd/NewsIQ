@@ -1,4 +1,4 @@
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
 from app.core.config import settings
 
@@ -67,32 +67,8 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "temperature": 0.0,
             "timeout": 15.0,
         },
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-2",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-001",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
     ],
     "gemini-embedding-2": [
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-2",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-001",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
         {
             "provider": "gemini",
             "model": "gemini-embedding-2",
@@ -103,24 +79,16 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
     "mock": [
         {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
-    # ── OpenRouter embedding model chains ────────────────────────────────────
-    # Each model falls back to the cheapest native-768 model then to Gemini.
+    # ── Embedding model chains ──────────────────────────────────────────────
+    # SINGLE-MODEL ONLY. These chains previously fell back mpnet -> qwen3 ->
+    # gemini, i.e. across three mutually incomparable vector spaces. Measured:
+    # the same sentence scores cosine 0.02 across two of them, while different
+    # paraphrases within one model score 0.84-0.92 (Stage B matches at ~0.67).
+    # Retrying the SAME model is redundancy; switching models is corruption.
     "sentence-transformers/all-mpnet-base-v2": [
         {
             "provider": "openrouter",
             "model": "sentence-transformers/all-mpnet-base-v2",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "openrouter",
-            "model": "qwen/qwen3-embedding-8b",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-001",
             "temperature": 0.0,
             "timeout": 15.0,
         },
@@ -132,38 +100,6 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "temperature": 0.0,
             "timeout": 15.0,
         },
-        {
-            "provider": "openrouter",
-            "model": "sentence-transformers/all-mpnet-base-v2",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-001",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-    ],
-    "baai/bge-m3": [
-        {
-            "provider": "openrouter",
-            "model": "baai/bge-m3",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "openrouter",
-            "model": "sentence-transformers/all-mpnet-base-v2",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-001",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
     ],
     "openai/text-embedding-3-small": [
         {
@@ -172,23 +108,26 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "temperature": 0.0,
             "timeout": 15.0,
         },
-        {
-            "provider": "openrouter",
-            "model": "sentence-transformers/all-mpnet-base-v2",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-embedding-001",
-            "temperature": 0.0,
-            "timeout": 15.0,
-        },
     ],
+    # baai/bge-m3 and mistralai/mistral-embed are deliberately absent: they emit
+    # 1024 dims and ignore the `dimensions` parameter (verified live), so they
+    # cannot serve this pipeline without invalid truncation.
 }
 
 
 # Capability-based routing configuration — strictly gemini-3.1-flash-lite & gemini-3.5-flash-lite
+_VALID_PROVIDERS: tuple[str, ...] = ("nvidia", "gemini", "openrouter", "mock", "bedrock")
+
+if settings.EMBEDDING_PROVIDER not in _VALID_PROVIDERS:
+    raise ValueError(
+        f"EMBEDDING_PROVIDER={settings.EMBEDDING_PROVIDER!r} is not one of {_VALID_PROVIDERS}. "
+        "Failing at import: an unroutable embedding provider would surface later as "
+        "every article silently failing to embed."
+    )
+# Validated above, so the cast is safe and mypy gets the Literal it needs.
+EMBEDDING_PROVIDER: ProviderType = cast(ProviderType, settings.EMBEDDING_PROVIDER)
+
+
 CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "event_extraction": {
         "primary": {
@@ -383,28 +322,38 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
     },
     # ── Embedding Capability ──────────────────────────────────────────────────
-    # Primary and first fallback run on OpenRouter (cost-optimised, native-768
-    # or variable-dim models). Gemini is kept as an emergency last-resort so
-    # the vector space stays consistent if OpenRouter is unreachable.
+    # ALL THREE TIERS MUST NAME THE SAME MODEL.
+    #
+    # Unlike chat, embeddings are not interchangeable across models: every
+    # article vector shares one Qdrant collection and is compared by cosine
+    # similarity. Measured on candidate models, the SAME sentence embedded by
+    # all-mpnet-base-v2 vs qwen3-embedding-8b scores cosine 0.02, while two
+    # DIFFERENT paraphrases within one model score 0.84-0.92 — Stage B matches
+    # at ~0.67. A cross-model "fallback" therefore yields articles that can
+    # never cluster, and looks exactly like success.
+    #
+    # ai_gateway.embeddings() skips any tier naming a different model, and
+    # test_embedding_space_integrity.py fails the build if these diverge. The
+    # tiers exist for retry across providers/keys serving the SAME model.
+    #
+    # Changing settings.EMBEDDING_MODEL invalidates the entire existing corpus
+    # and requires a re-embed — see app/scripts/reembed_corpus.py.
     "embedding": {
         "primary": {
-            # $0.005/M — native 768-dim, no truncation required
-            "provider": "openrouter",
-            "model": "sentence-transformers/all-mpnet-base-v2",
+            "provider": EMBEDDING_PROVIDER,
+            "model": settings.EMBEDDING_MODEL,
             "temperature": 0.0,
             "timeout": 15.0,
         },
         "fallback": {
-            # $0.01/M — best multilingual quality, supports dimensions param
-            "provider": "openrouter",
-            "model": "qwen/qwen3-embedding-8b",
+            "provider": EMBEDDING_PROVIDER,
+            "model": settings.EMBEDDING_MODEL,
             "temperature": 0.0,
             "timeout": 15.0,
         },
         "lastFallback": {
-            # Emergency safety-net — independent failure domain from OpenRouter
-            "provider": "gemini",
-            "model": "gemini-embedding-001",
+            "provider": EMBEDDING_PROVIDER,
+            "model": settings.EMBEDDING_MODEL,
             "temperature": 0.0,
             "timeout": 15.0,
         },

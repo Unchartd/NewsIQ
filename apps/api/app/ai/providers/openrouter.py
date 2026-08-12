@@ -19,15 +19,21 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# OpenRouter embedding models that output a fixed dimensionality higher than
-# EMBEDDING_DIM and do NOT accept a `dimensions` request parameter.
-# For these, we omit the param, take the raw vector, slice to EMBEDDING_DIM,
-# then re-normalise — identical to how the Gemini provider handles its native
-# 3072-dim output when the pipeline only needs 768.
-OPENROUTER_FIXED_DIM_MODELS: frozenset[str] = frozenset({
-    "baai/bge-m3",             # 1024-dim native output
-    "mistralai/mistral-embed", # 1024-dim native output
-})
+# OpenRouter embedding models that emit a fixed dimensionality and do NOT
+# honour a `dimensions` request parameter (verified live: bge-m3 returns 1024
+# whether or not the param is sent).
+#
+# These are NOT usable by this pipeline. Slicing a non-Matryoshka vector to 768
+# does not produce a valid lower-dimensional representation — it produces a
+# different, meaningless space, which then shares one Qdrant collection with
+# everything else. The NVIDIA and Bedrock providers refuse dimension mismatches
+# for exactly this reason; OpenRouter must behave identically.
+OPENROUTER_FIXED_DIM_MODELS: frozenset[str] = frozenset(
+    {
+        "baai/bge-m3",  # 1024-dim native, ignores `dimensions`
+        "mistralai/mistral-embed",  # 1024-dim native, ignores `dimensions`
+    }
+)
 
 
 class OpenRouterProvider(AIProvider):
@@ -165,28 +171,40 @@ class OpenRouterProvider(AIProvider):
     async def embeddings(self, text: str, api_key: APIKey, model: str | None = None) -> list[float]:
         """Generate a 768-dim embedding vector via OpenRouter.
 
-        Routing behaviour by model family:
-        - Native-768 / variable-dim (all-mpnet-base-v2, qwen3-embedding-8b,
-          text-embedding-3-small): ``dimensions=EMBEDDING_DIM`` is sent so the
-          API truncates via Matryoshka / server-side projection before returning.
-        - Fixed-dim > 768 (bge-m3, mistral-embed): the ``dimensions`` param is
-          rejected by the API, so we omit it, slice the raw vector to
-          EMBEDDING_DIM, and re-normalise to unit length.
+        ``dimensions=EMBEDDING_DIM`` is requested so the model projects
+        server-side (verified live: all-mpnet-base-v2, qwen3-embedding-8b and
+        text-embedding-3-small all honour it and return 768). The result is
+        re-normalised because a projected vector is not guaranteed unit length.
+
+        Models that ignore the parameter are refused rather than truncated —
+        see OPENROUTER_FIXED_DIM_MODELS.
         """
+        model_name = model or "sentence-transformers/all-mpnet-base-v2"
+
+        if model_name in OPENROUTER_FIXED_DIM_MODELS:
+            raise ValueError(
+                f"OpenRouter model '{model_name}' emits a fixed dimensionality that "
+                f"is not {EMBEDDING_DIM} and ignores the `dimensions` parameter. "
+                "Refusing: slicing a non-Matryoshka vector yields a different, "
+                "meaningless space that would share one Qdrant collection with "
+                "every other article. Configure a model that natively supports "
+                f"{EMBEDDING_DIM} dimensions."
+            )
+
         try:
-            model_name = model or "sentence-transformers/all-mpnet-base-v2"
             client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
-
-            if model_name in OPENROUTER_FIXED_DIM_MODELS:
-                # Fixed-dim model: omit dimensions param, truncate, re-normalise.
-                response = await client.embeddings.create(input=[text], model=model_name)
-            else:
-                # Variable-dim / Matryoshka model: request target size server-side.
-                response = await client.embeddings.create(
-                    input=[text], model=model_name, dimensions=EMBEDDING_DIM
-                )
-
-            raw = list(response.data[0].embedding)[:EMBEDDING_DIM]
-            return l2_normalize(raw)
+            response = await client.embeddings.create(
+                input=[text], model=model_name, dimensions=EMBEDDING_DIM
+            )
+            raw = list(response.data[0].embedding)
         except Exception as e:
             raise self._handle_exception(e)
+
+        # Defence in depth: a model silently returning another size must not be
+        # written into the shared collection.
+        if len(raw) != EMBEDDING_DIM:
+            raise ValueError(
+                f"OpenRouter model '{model_name}' returned {len(raw)} dimensions, "
+                f"expected {EMBEDDING_DIM}."
+            )
+        return l2_normalize(raw)

@@ -37,6 +37,9 @@ class VectorService:
         # cannot hand back a client bound to a dead loop.
         self._clients: dict[int, tuple[Any, AsyncQdrantClient]] = {}
         self._collection_ready = False
+        # One-shot per process: the collection's embedding model cannot change
+        # under us without a redeploy or an explicit re-embed.
+        self._space_checked = False
         self._mock_client: AsyncQdrantClient | None = None
 
     @property
@@ -178,6 +181,58 @@ class VectorService:
 
     # ── Write operations ──────────────────────────────────────────────────────
 
+    async def _assert_embedding_space(self, payload: dict[str, Any]) -> None:
+        """Refuse to mix embedding models within the shared collection.
+
+        Vectors from different models are not comparable — the same sentence
+        scores cosine 0.02 across two candidate models versus 0.84-0.92 for
+        different paraphrases within one model, while Stage B matches at ~0.67.
+        Writing a second model's vectors into this collection therefore
+        silently produces articles that can never cluster.
+
+        The check samples one existing point's recorded model. Mismatch raises
+        rather than warns: a poisoned collection is only recoverable by a full
+        re-embed (app/scripts/reembed_corpus.py), so it must not start.
+        """
+        incoming = payload.get("embedding_model")
+        if not incoming or self._space_checked:
+            return
+
+        # Query points that actually CARRY provenance. Sampling arbitrary points
+        # is not enough: vectors written before `embedding_model` was recorded
+        # have no such field, and a sample of those would let a model switch
+        # through silently — which is how a first version of this guard passed
+        # its source-level test while failing against a real collection.
+        try:
+            points, _ = await self.client.scroll(
+                collection_name=COLLECTION_NAME,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="embedding_model",
+                            match=models.MatchExcept(**{"except": [incoming]}),
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception as exc:  # collection missing, or filter unsupported
+            logger.debug("Embedding-space check skipped: %s", exc)
+            self._space_checked = True
+            return
+
+        self._space_checked = True
+        if points:
+            existing = (points[0].payload or {}).get("embedding_model")
+            raise ValueError(
+                f"Refusing to write '{incoming}' vectors into a collection that already "
+                f"contains '{existing}' vectors. Mixing embedding models makes cosine "
+                "similarity meaningless and silently breaks clustering. Re-embed the "
+                "corpus first: python -m app.scripts.reembed_corpus"
+            )
+
     async def upsert_article(
         self,
         article_id: uuid.UUID,
@@ -186,6 +241,7 @@ class VectorService:
     ) -> None:
         """Insert or update a single article embedding with metadata."""
         await self.init_collection()
+        await self._assert_embedding_space(payload)
         try:
             await self.client.upsert(
                 collection_name=COLLECTION_NAME,

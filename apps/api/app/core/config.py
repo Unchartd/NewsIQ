@@ -141,12 +141,25 @@ class Settings(BaseSettings):
     # Quota exhaustion must FAIL (QuotaExhaustedError -> pipeline cooldown),
     # not fabricate. Test runs are allowed independently of this flag.
     LLM_ALLOW_MOCK: bool = False
-    # Primary embedding model served through OpenRouter.  Also used by
-    # EmbeddingService._cache_key() to namespace Redis keys per model so that
-    # switching models automatically invalidates stale cache entries.
-    # The Gemini safety-net slot always uses "gemini-embedding-001" regardless
-    # of this value — see capability_router.py for that guard.
-    EMBEDDING_MODEL: str = "sentence-transformers/all-mpnet-base-v2"
+    # The pipeline's ONE embedding model. Every tier of the embedding
+    # capability uses it (see CAPABILITY_ROUTING) because vectors from
+    # different models are not comparable — the same sentence scores cosine
+    # 0.02 across two of the candidate models, versus 0.84-0.92 for different
+    # paraphrases within one model.
+    #
+    # CHANGING THIS INVALIDATES THE ENTIRE QDRANT CORPUS. New articles land in
+    # a different space from existing ones and can never match an existing
+    # story. VectorService refuses to write into a collection embedded with a
+    # different model; run app/scripts/reembed_corpus.py to migrate.
+    #
+    # Also namespaces the Redis embedding cache so a switch cannot serve
+    # vectors from the previous model.
+    #
+    # Cost reference (per 1M tokens): gemini-embedding-001 $0.025,
+    # openai/text-embedding-3-small $0.02, qwen/qwen3-embedding-8b $0.01,
+    # sentence-transformers/all-mpnet-base-v2 $0.005.
+    EMBEDDING_PROVIDER: str = "gemini"
+    EMBEDDING_MODEL: str = "gemini-embedding-001"
     SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────

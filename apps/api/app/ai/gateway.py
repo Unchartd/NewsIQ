@@ -1216,19 +1216,60 @@ class AIGateway:
         return results
 
     async def embeddings(self, text: str, capability: str = "embedding") -> list[float]:
-        """Generate text embeddings using the routing configuration."""
+        """Generate a text embedding, never mixing embedding spaces.
+
+        Embeddings are NOT interchangeable across models the way chat
+        completions are. Every article vector lands in one shared Qdrant
+        collection and is compared by cosine similarity, so a vector from a
+        different model is not "slightly worse" — it is noise. Measured on the
+        models proposed for this chain, the SAME sentence embedded by
+        all-mpnet-base-v2 vs qwen3-embedding-8b scores cosine 0.02, while two
+        DIFFERENT paraphrases within one model score 0.84-0.92. Stage B's
+        match threshold is ~0.67.
+
+        Falling back to another model would therefore silently produce
+        articles that can never cluster — indistinguishable from success. So
+        the chain may only span providers serving the SAME model; entries
+        naming a different model are skipped, and if none remain the call
+        fails so the article is retried later with its embedding_status intact.
+        """
         chain = capability_router.get_route(capability)
-        last_err = None
+        if not chain:
+            raise AIGatewayError("No embedding route configured.")
+
+        # The first entry defines the pipeline's embedding space for this call.
+        expected_model = chain[0][2].get("model")
+        last_err: Exception | None = None
+        attempted = 0
 
         for client, api_key, route_cfg in chain:
-            provider_name = route_cfg["provider"]
+            route_model = route_cfg.get("model")
+            if route_model != expected_model:
+                logger.debug(
+                    "Skipping embedding fallback %s/%s: different model from primary "
+                    "%s (mixing embedding spaces corrupts clustering).",
+                    route_cfg.get("provider"),
+                    route_model,
+                    expected_model,
+                )
+                continue
+
+            attempted += 1
             try:
-                return await client.embeddings(text, api_key, model=route_cfg.get("model"))
+                return await client.embeddings(text, api_key, model=route_model)
             except Exception as e:
-                logger.warning("Embedding failed for provider %s: %s", provider_name, e)
+                logger.warning(
+                    "Embedding failed for provider %s (model %s): %s",
+                    route_cfg.get("provider"),
+                    route_model,
+                    e,
+                )
                 last_err = e
 
-        raise AIGatewayError(f"All embedding providers failed. Last error: {last_err}")
+        raise AIGatewayError(
+            f"All {attempted} same-model embedding provider(s) failed for "
+            f"'{expected_model}'. Last error: {last_err}"
+        )
 
     def count_tokens(self, text: str, capability: str = "summary") -> int:
         """Count tokens of the text locally using the primary provider tokenizer."""
