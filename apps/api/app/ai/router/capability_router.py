@@ -196,9 +196,12 @@ class CapabilityRouter:
             cfg = route_config[level].copy()
             provider = cfg["provider"]
 
-            # Dynamically override embedding model if settings specify a preferred one
-            if capability == "embedding" and provider == "gemini" and settings.EMBEDDING_MODEL:
-                cfg["model"] = settings.EMBEDDING_MODEL
+            # Dynamically fix the Gemini safety-net slot to its own model ID.
+            # The primary and fallback now run on OpenRouter; this guard prevents
+            # the Gemini slot from accidentally inheriting an OpenRouter model name
+            # if settings.EMBEDDING_MODEL is updated.
+            if capability == "embedding" and provider == "gemini":
+                cfg["model"] = "gemini-embedding-001"
 
             tracker = self.health_trackers[provider]
 
@@ -224,8 +227,8 @@ class CapabilityRouter:
             for level in levels:
                 cfg = route_config[level].copy()
                 provider = cfg["provider"]
-                if capability == "embedding" and provider == "gemini" and settings.EMBEDDING_MODEL:
-                    cfg["model"] = settings.EMBEDDING_MODEL
+                if capability == "embedding" and provider == "gemini":
+                    cfg["model"] = "gemini-embedding-001"
 
                 key = self._select_key(provider)
                 if not key:
@@ -248,7 +251,8 @@ class CapabilityRouter:
             "reasoning-heavy": "gemini-3.5-flash-lite",
             "synthesis-balanced": "gemini-3.5-flash-lite",
             "verification": "gemini-3.1-flash-lite",
-            "embedding": "gemini-embedding-001",
+            # Resolves to the OpenRouter primary embedding model
+            "embedding": "sentence-transformers/all-mpnet-base-v2",
         }
         resolved_model = CAPABILITY_TO_MODEL.get(model, model)
 
