@@ -158,8 +158,17 @@ class Settings(BaseSettings):
     # Cost reference (per 1M tokens): gemini-embedding-001 $0.025,
     # openai/text-embedding-3-small $0.02, qwen/qwen3-embedding-8b $0.01,
     # sentence-transformers/all-mpnet-base-v2 $0.005.
-    EMBEDDING_PROVIDER: str = "gemini"
-    EMBEDDING_MODEL: str = "gemini-embedding-001"
+    # Benchmarked on 30 real production articles (title->body retrieval):
+    #   qwen/qwen3-embedding-8b        recall@1 96.7%  MRR 0.983  margin +0.320
+    #   openai/text-embedding-3-small  recall@1 96.7%  MRR 0.978  margin +0.303
+    #   all-mpnet-base-v2              recall@1 93.3%  MRR 0.957  margin +0.281
+    #   (margin = correct-title similarity minus best wrong-title similarity,
+    #    i.e. the headroom Stage B's threshold actually works with)
+    # qwen3 also costs $0.01/M against Gemini's $0.025/M and, being a different
+    # provider, removes embedding from the Gemini quota that repeatedly
+    # rate-limited the pipeline.
+    EMBEDDING_PROVIDER: str = "openrouter"
+    EMBEDDING_MODEL: str = "qwen/qwen3-embedding-8b"
     SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────
