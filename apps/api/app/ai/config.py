@@ -155,6 +155,28 @@ if settings.EMBEDDING_PROVIDER not in _VALID_PROVIDERS:
 # Validated above, so the cast is safe and mypy gets the Literal it needs.
 EMBEDDING_PROVIDER: ProviderType = cast(ProviderType, settings.EMBEDDING_PROVIDER)
 
+# The provider and model are two halves of one decision. Setting only one — e.g.
+# switching EMBEDDING_MODEL to an OpenRouter model while EMBEDDING_PROVIDER is
+# still "gemini" — would POST an OpenRouter model name to Google and 404 every
+# embedding, which is exactly how the Bedrock chat models silently failed for
+# days. Fail at import instead, while the mistake is still cheap.
+_MODEL_PREFIX_OWNER = {
+    "gemini-": "gemini",
+    "qwen/": "openrouter",
+    "openai/": "openrouter",
+    "sentence-transformers/": "openrouter",
+    "baai/": "openrouter",
+    "mistralai/": "openrouter",
+}
+for _prefix, _owner in _MODEL_PREFIX_OWNER.items():
+    if settings.EMBEDDING_MODEL.startswith(_prefix) and EMBEDDING_PROVIDER != _owner:
+        raise ValueError(
+            f"EMBEDDING_MODEL={settings.EMBEDDING_MODEL!r} belongs to provider "
+            f"{_owner!r}, but EMBEDDING_PROVIDER={EMBEDDING_PROVIDER!r}. Set both "
+            "together — a mismatched pair sends the model name to the wrong API "
+            "and fails every embedding."
+        )
+
 
 CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
     "event_extraction": {

@@ -120,3 +120,33 @@ def test_upsert_runs_the_embedding_space_check():
     assert "reembed_corpus" in inspect.getsource(VectorService._assert_embedding_space), (
         "the error must name the migration path"
     )
+
+
+def test_provider_and_model_must_agree():
+    """A mismatched pair sends the model name to the wrong API.
+
+    Setting only EMBEDDING_MODEL (leaving EMBEDDING_PROVIDER on gemini) would
+    POST an OpenRouter model name to Google and 404 every embedding — the same
+    silent failure the Bedrock chat models suffered for days. app/ai/config.py
+    raises at import instead, while the mistake is still cheap.
+    """
+    import importlib
+    import inspect
+
+    # importlib, not `import ... as`: the module is already imported
+    # module-style at the top of this file for CAPABILITY_ROUTING.
+    src = inspect.getsource(importlib.import_module("app.ai.config"))
+    assert "_MODEL_PREFIX_OWNER" in src
+    assert "belongs to provider" in src, "the mismatch must fail loudly at import"
+
+
+def test_configured_embedding_model_is_registered_and_owned_by_its_provider():
+    from app.ai.config import EMBEDDING_PROVIDER, MODEL_FALLBACKS
+    from app.core.config import settings
+
+    model = settings.EMBEDDING_MODEL
+    assert model in MODEL_FALLBACKS, f"{model} is not registered for routing"
+    for cfg in MODEL_FALLBACKS[model]:
+        assert cfg["provider"] == EMBEDDING_PROVIDER, (
+            f"{model} routes to {cfg['provider']} but EMBEDDING_PROVIDER is {EMBEDDING_PROVIDER}"
+        )

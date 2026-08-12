@@ -55,7 +55,16 @@ x-api-env: &api-env
   NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
   AWS_BEDROCK_BASE_URL: ${AWS_BEDROCK_BASE_URL:-}
   AWS_BEDROCK_API_KEY: ${AWS_BEDROCK_API_KEY:-}
-  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-2}
+  # OPENROUTER_API_KEY was set in .env.production but never listed here, so it
+  # never reached any container and the OpenRouter key pool was always empty —
+  # every OpenRouter route silently had no key to select.
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
+  # Embedding provider and model must be set together: they define the single
+  # vector space of the Qdrant corpus. Changing either requires a re-embed
+  # (app/scripts/reembed_corpus.py) — VectorService refuses to mix models.
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-gemini}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-001}
   SUMMARIZATION_MODEL: ${SUMMARIZATION_MODEL:-gemini-2.5-flash}
   NEWSAPI_KEY: ${NEWSAPI_KEY:-}
   GNEWS_API_KEY: ${GNEWS_API_KEY:-}
