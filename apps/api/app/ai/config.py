@@ -122,8 +122,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -142,8 +146,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -162,8 +170,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -182,8 +194,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -202,8 +218,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -222,8 +242,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 45.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 45.0,
         },
@@ -242,8 +266,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 30.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 30.0,
         },
@@ -262,8 +290,12 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
             "timeout": 15.0,
         },
         "lastFallback": {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            # Cross-provider tier: when Gemini quota is exhausted, every
+            # all-Gemini chain fails as one. Bedrock (OpenAI-compatible
+            # Mantle endpoint) gives this capability a genuinely
+            # independent failure domain.
+            "provider": "bedrock",
+            "model": settings.AWS_BEDROCK_CHAT_MODEL,
             "temperature": 0.1,
             "timeout": 15.0,
         },
