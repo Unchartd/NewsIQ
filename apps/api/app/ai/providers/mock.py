@@ -144,10 +144,23 @@ class MockProvider(AIProvider):
             error=None,
         )
 
+    @staticmethod
+    def _refuse_outside_policy() -> None:
+        from app.ai.mock_policy import mock_allowed
+
+        if not mock_allowed():
+            raise RuntimeError(
+                "MockProvider invoked outside a test run without LLM_ALLOW_MOCK. "
+                "Refusing to fabricate data — a real-provider failure must fail, "
+                "not silently succeed with template output."
+            )
+
     async def generate(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
+        self._refuse_outside_policy()
         return self._generate_mock_output(request)
 
     async def stream(self, request: GatewayRequest, api_key: APIKey) -> AsyncGenerator[str, None]:
+        self._refuse_outside_policy()
         response = self._generate_mock_output(request)
         yield response.content
 

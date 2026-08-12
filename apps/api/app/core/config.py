@@ -132,6 +132,15 @@ class Settings(BaseSettings):
     # embedding models — embedding routes must stay on Gemini, which is also
     # required for vector-space consistency in the shared Qdrant collection.
     AWS_BEDROCK_CHAT_MODEL: str = "qwen.qwen3-vl-235b-a22b-instruct"
+
+    # Allow the mock LLM provider to serve requests. NEVER enable in production:
+    # the mock fabricates plausible-looking output (template events, entities,
+    # summaries) which downstream code persists as real data. A historic
+    # incident wrote 6,584 identical fabricated events (86% of the event table)
+    # that later fused hundreds of unrelated articles into single stories.
+    # Quota exhaustion must FAIL (QuotaExhaustedError -> pipeline cooldown),
+    # not fabricate. Test runs are allowed independently of this flag.
+    LLM_ALLOW_MOCK: bool = False
     EMBEDDING_MODEL: str = "gemini-embedding-001"
     SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 

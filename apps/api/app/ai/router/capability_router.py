@@ -1,12 +1,12 @@
 import asyncio
 import logging
-import sys
 from datetime import datetime, timedelta
 from typing import Any
 
 from app.ai.config import CAPABILITY_ROUTING, ProviderModelRoute, ProviderType
 from app.ai.interfaces import AIProvider, APIKey
 from app.ai.metrics.telemetry import newsiq_ai_gateway_circuit_state
+from app.ai.mock_policy import in_test_run
 from app.ai.providers.bedrock import BedrockProvider
 from app.ai.providers.gemini import GeminiProvider
 from app.ai.providers.mock import MockProvider
@@ -167,12 +167,12 @@ class CapabilityRouter:
 
     def get_route(self, capability: str) -> list[tuple[AIProvider, APIKey, ProviderModelRoute]]:
         """Return the prioritized list of (client, key, route_config) for a capability."""
-        # Detect testing environment
-        is_testing = "pytest" in sys.modules or any(
-            "pytest" in arg or "unittest" in arg for arg in sys.argv
-        )
+        # Serve mock only under the explicit shared policy (test run or
+        # settings opt-in) — see app/ai/mock_policy.py for why this must never
+        # be a heuristic.
+        from app.ai.mock_policy import mock_allowed
 
-        if is_testing:
+        if mock_allowed() and in_test_run():
             mock_key = self._select_key("mock")
             assert mock_key is not None
             mock_route = ProviderModelRoute(
@@ -252,12 +252,12 @@ class CapabilityRouter:
         }
         resolved_model = CAPABILITY_TO_MODEL.get(model, model)
 
-        # Detect testing environment
-        is_testing = "pytest" in sys.modules or any(
-            "pytest" in arg or "unittest" in arg for arg in sys.argv
-        )
+        # Serve mock only under the explicit shared policy (test run or
+        # settings opt-in) — see app/ai/mock_policy.py for why this must never
+        # be a heuristic.
+        from app.ai.mock_policy import mock_allowed
 
-        if is_testing:
+        if mock_allowed() and in_test_run():
             mock_key = self._select_key("mock")
             assert mock_key is not None
             mock_route = {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0}
