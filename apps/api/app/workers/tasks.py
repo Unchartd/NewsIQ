@@ -1968,8 +1968,30 @@ def discovery_crawl_task(
                 if not crawl_task:
                     return
 
+                # Some failures cannot be cured by waiting. Retrying them burns
+                # the retry budget and, for 402, hammers a provider that has
+                # already said the account is out of credit — production logged
+                # 166 such crawls retried to exhaustion in 24h, plus 199 on 429
+                # from the same provider.
+                status_code = diagnostics.get("status_code")
+                terminal_reasons = {"HTTP_404", "HTTP_403", "LOW_QUALITY_CONTENT"}
+                is_terminal = (
+                    failure_reason in terminal_reasons
+                    # 402 Payment Required: billing state, not a transient fault.
+                    or status_code == 402
+                    or status_code == 404
+                )
+
                 crawl_task.retry_count += 1
-                if crawl_task.retry_count < settings.DISCOVERY_MAX_RETRIES:
+                if is_terminal:
+                    crawl_task.status = CrawlTaskState.FAILED
+                    crawl_task.outcome = failure_reason
+                    crawl_task.last_error = (
+                        f"Crawl failed permanently: {failure_reason} "
+                        f"(method: {diagnostics.get('fetch_method')}, code: {status_code}) "
+                        "— not retried"
+                    )
+                elif crawl_task.retry_count < settings.DISCOVERY_MAX_RETRIES:
                     crawl_task.status = CrawlTaskState.RETRYING
                     crawl_task.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(
                         minutes=2**crawl_task.retry_count

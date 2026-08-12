@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from app.core.config import settings
 from app.services.cache_service import cache_service
+from app.services.content_quality import assess_article_content
 from app.services.extraction.types import (
     ExtractionFailure,
     ExtractionResult,
@@ -28,6 +29,45 @@ class ExtractionManager:
         self.local_provider = LocalCrawlerProvider()
         self.tavily_provider = TavilyExtractProvider()
         self.firecrawl_provider = FirecrawlProvider()
+
+    @staticmethod
+    def _reject_if_low_quality(res, provider: str, url: str) -> bool:
+        """Demote a "successful" extraction that returned page furniture.
+
+        Every extractor treated any non-empty string as success, and the
+        last-resort BeautifulSoup cleaner returns the whole page's text. When
+        the article body could not be located the pipeline therefore stored
+        navigation menus and cookie-consent walls as article content — 24% of
+        production articles, averaging 31.9k characters. Those get embedded, so
+        they cluster by site template instead of topic.
+
+        Returns True if the result was rejected (caller should fall through to
+        the next provider).
+        """
+        if not res.success:
+            return False
+        content = res.content if isinstance(res.content, str) else None
+        ok, reason = assess_article_content(content, title=res.title)
+        if ok:
+            return False
+
+        logger.warning(
+            "Rejecting %s extraction for %s: content looks like page furniture (%s, %d chars)",
+            provider,
+            url,
+            reason,
+            len(content or ""),
+        )
+        try:
+            from app.core.metrics import newsiq_crawler_low_quality_total
+
+            newsiq_crawler_low_quality_total.labels(provider=provider, reason=reason).inc()
+        except Exception:  # metrics must never break extraction
+            pass
+        res.success = False
+        res.failure = ExtractionFailure.LOW_QUALITY_CONTENT
+        res.diagnostics.notes.append(f"rejected: low-quality content ({reason})")
+        return True
 
     async def crawl_article(self, url: str) -> dict[str, Any]:
         """Orchestrate article extraction across local, Tavily, and Firecrawl providers."""
@@ -97,6 +137,8 @@ class ExtractionManager:
             content_length=content_len,
         )
 
+        self._reject_if_low_quality(local_res, "local", url)
+
         if local_res.success:
             logger.info("Local extraction succeeded for: %s", url)
             newsiq_crawler_provider_success_total.labels(provider="local").inc()
@@ -146,6 +188,8 @@ class ExtractionManager:
             content_length=tavily_content_len,
         )
 
+        self._reject_if_low_quality(tavily_res, "tavily", url)
+
         if tavily_res.success:
             logger.info("Tavily extraction succeeded for: %s", url)
             newsiq_crawler_provider_success_total.labels(provider="tavily").inc()
@@ -189,6 +233,8 @@ class ExtractionManager:
             latency_ms=firecrawl_res.diagnostics.latency_ms,
             content_length=firecrawl_content_len,
         )
+
+        self._reject_if_low_quality(firecrawl_res, "firecrawl", url)
 
         if firecrawl_res.success:
             logger.info("Firecrawl extraction succeeded for: %s", url)
