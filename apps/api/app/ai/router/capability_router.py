@@ -268,16 +268,28 @@ class CapabilityRouter:
 
         routes = MODEL_FALLBACKS.get(resolved_model)
         if not routes:
-            # If not configured, fall back to openrouter or gemini if we can guess,
-            # or try to run model as-is on Gemini / OpenRouter. Default to gemini.
-            logger.warning(
-                "get_model_route: model '%s' resolved to '%s' not in MODEL_FALLBACKS, using default.",
+            # Do NOT invent a Gemini route for an unregistered model.
+            #
+            # This branch used to default any unknown name to provider="gemini",
+            # which meant a model belonging to another provider was POSTed to
+            # Google's API. Production ran for days sending
+            # "qwen.qwen3-vl-235b-a22b-instruct" and "deepseek-ai/deepseek-v4-flash"
+            # (a name that exists nowhere) to Gemini, taking a 404 on every
+            # fallback tier of every prompt-driven stage — so there was no
+            # cross-provider redundancy precisely when Gemini was rate-limited,
+            # and the logs blamed Gemini for a routing bug.
+            #
+            # Returning an empty chain makes the caller fall through to its next
+            # manifest model and surfaces a clear error, instead of guaranteeing
+            # a misleading 404.
+            logger.error(
+                "get_model_route: model '%s' (resolved '%s') is not registered in "
+                "MODEL_FALLBACKS. Refusing to guess a provider — register it so it "
+                "routes to the provider that can actually serve it.",
                 model,
                 resolved_model,
             )
-            routes = [
-                {"provider": "gemini", "model": resolved_model, "temperature": 0.1, "timeout": 30.0}
-            ]
+            return []
 
         chain = []
         for cfg in routes:

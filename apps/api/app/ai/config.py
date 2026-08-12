@@ -79,6 +79,34 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
     "mock": [
         {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
+    # ── Bedrock (Mantle) chat models ────────────────────────────────────────
+    # These MUST be registered here, not only in CAPABILITY_ROUTING and the
+    # prompt manifests. generate_stage() — the path every prompt-driven stage
+    # actually takes — resolves manifest model names through MODEL_FALLBACKS,
+    # and an unregistered name previously fell through to a default that sent
+    # it to Gemini. Production was therefore POSTing
+    # "qwen.qwen3-vl-235b-a22b-instruct" to Google and getting 404s on every
+    # fallback tier, so the pipeline had no cross-provider redundancy at all
+    # while Gemini was rate-limited.
+    "qwen.qwen3-vl-235b-a22b-instruct": [
+        {
+            "provider": "bedrock",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
+            "temperature": 0.1,
+            "timeout": 30.0,
+        },
+    ],
+    "deepseek.v3.2": [
+        {"provider": "bedrock", "model": "deepseek.v3.2", "temperature": 0.1, "timeout": 30.0},
+    ],
+    "qwen.qwen3-235b-a22b-2507": [
+        {
+            "provider": "bedrock",
+            "model": "qwen.qwen3-235b-a22b-2507",
+            "temperature": 0.1,
+            "timeout": 30.0,
+        },
+    ],
     # ── Embedding model chains ──────────────────────────────────────────────
     # SINGLE-MODEL ONLY. These chains previously fell back mpnet -> qwen3 ->
     # gemini, i.e. across three mutually incomparable vector spaces. Measured:
