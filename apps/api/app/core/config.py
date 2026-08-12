@@ -126,6 +126,12 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     AWS_BEDROCK_BASE_URL: str = "https://bedrock-mantle.us-east-1.api.aws/v1"
     AWS_BEDROCK_API_KEY: str = ""
+    # Chat model used when Bedrock serves as the last-fallback tier. Verified
+    # invocable on the account (chat + JSON mode). NOTE: the endpoint lists
+    # anthropic.* models but this account cannot invoke them, and it offers NO
+    # embedding models — embedding routes must stay on Gemini, which is also
+    # required for vector-space consistency in the shared Qdrant collection.
+    AWS_BEDROCK_CHAT_MODEL: str = "qwen.qwen3-vl-235b-a22b-instruct"
     EMBEDDING_MODEL: str = "gemini-embedding-001"
     SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
