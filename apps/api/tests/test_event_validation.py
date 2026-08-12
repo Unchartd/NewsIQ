@@ -73,12 +73,16 @@ def test_stage_a_validation_maybe(mock_story_anchor):
         source_tier=2,
     )
 
-    # We might need to mock weights to guarantee a MAYBE, or just check the score
     decision = event_validation_service.validate_stage_a(article, mock_story_anchor)
-    # It might fail or maybe depending on strict weights.
-    # Time proximity = 15, Trust = 10 -> Total 25 -> FAIL.
-    # To get a MAYBE (>=45), we need some entity or title overlap.
-    assert 25.0 <= decision.score <= 30.0
+
+    # An unrelated article must still FAIL — that is the assertion that matters.
+    #
+    # The score band was 25-30 when a missing entity overlap scored a hard 0.
+    # That asymmetry (neutral when the STORY had no entities, zero when the
+    # ARTICLE had none) is what pinned every real candidate at 44.5 against a
+    # 45 threshold, so entity absence is now neutral on both sides and this
+    # case lands in the mid-40s. Still below the bar, which is the point.
+    assert 40.0 <= decision.score < 45.0
     assert decision.outcome == ValidationOutcome.FAIL
 
 

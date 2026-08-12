@@ -150,29 +150,44 @@ class EventValidationService:
             return 0.0
         return dot / (norm_a * norm_b)
 
-    def validate_stage_a(self, article: Any, anchor: StoryAnchor) -> DecisionLog:
+    def validate_stage_a(
+        self, article: Any, anchor: StoryAnchor, article_entities: set[str] | None = None
+    ) -> DecisionLog:
         """
         Stage A - Pre-Embedding validation.
         Zero API calls. Fully deterministic. Fast.
+
+        article_entities: the article's already-extracted entity values, if the
+        caller has them. Far better signal than scraping the title: the title
+        heuristic sees only what spaCy finds in one short headline, whereas the
+        pipeline has already run a full LLM extraction over the body.
         """
         start_time = datetime.now()
         details = {}
         score = 0.0
 
         # 1. Entity Overlap (Max weight)
+        # Union the stored entities with title-derived ones for maximum recall;
+        # either source alone misses matches the other would catch.
         article_title_entities = self._extract_entities(article.title)
+        if article_entities:
+            article_title_entities = article_title_entities | {
+                e.lower() for e in article_entities if e
+            }
         shared_entities = article_title_entities.intersection(anchor.primary_entities)
         ent_weight = self.stage_a_weights.get("entity_overlap", 35)
 
-        if not article_title_entities and not anchor.primary_entities:
-            # Case 3: Both have 0 entities
+        if not article_title_entities or not anchor.primary_entities:
+            # One side has no extractable entities.
+            #
+            # Neutral, NOT zero. This used to score 0 when the article side was
+            # empty while the story had entities, which punished the article for
+            # the extractor's weakness on short headlines rather than for being
+            # unrelated. Absence of extractable entities is uninformative — it is
+            # not evidence against a match — and the 17.5-point swing it caused
+            # was decisive: with a 45 threshold, candidates that would otherwise
+            # score 43-60 were forced below the line.
             ent_score = ent_weight * 0.5
-        elif not anchor.primary_entities:
-            # Case 2: Story has 0 entities, Article has entities
-            ent_score = ent_weight * 0.5
-        elif not article_title_entities:
-            # Case 1: Article has 0 entities, Story has entities
-            ent_score = 0.0
         else:
             # Normal case: both have entities
             ent_score = (
