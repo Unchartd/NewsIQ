@@ -407,9 +407,31 @@ jobs:
               sed -i 's|^CELERY_BROKER_URL=.*|CELERY_BROKER_URL=redis://redis:6379/1|g' .env.production
               sed -i 's|^CELERY_RESULT_BACKEND=.*|CELERY_RESULT_BACKEND=redis://redis:6379/2|g' .env.production
 
-              # Always enforce gemini-embedding-001 for EMBEDDING_MODEL to prevent quota failures
-              echo "INFO: Enforcing gemini-embedding-001 for EMBEDDING_MODEL..."
-              sed -i 's|^EMBEDDING_MODEL=.*|EMBEDDING_MODEL=gemini-embedding-001|g' .env.production
+              # EMBEDDING_MODEL is deliberately NOT enforced here.
+              #
+              # This step used to pin it to gemini-embedding-001 on every
+              # deploy. That silently reverted any model change and, once
+              # EMBEDDING_PROVIDER was set independently, produced a
+              # provider/model mismatch that crash-looped every container.
+              # The model is chosen in .env.production (and defaults in
+              # app/core/config.py); changing it requires a corpus re-embed,
+              # so a deploy must never change it behind the operator's back.
+              #
+              # Guard instead: refuse to deploy a mismatched pair, since that
+              # configuration cannot embed anything.
+              EMB_PROVIDER=$(grep -E '^EMBEDDING_PROVIDER=' .env.production | cut -d= -f2- || true)
+              EMB_MODEL=$(grep -E '^EMBEDDING_MODEL=' .env.production | cut -d= -f2- || true)
+              case "$EMB_MODEL" in
+                gemini-*) EXPECTED=gemini ;;
+                qwen/*|openai/*|sentence-transformers/*|baai/*|mistralai/*) EXPECTED=openrouter ;;
+                *) EXPECTED="$EMB_PROVIDER" ;;
+              esac
+              if [ -n "$EMB_PROVIDER" ] && [ "$EMB_PROVIDER" != "$EXPECTED" ]; then
+                echo "FATAL: EMBEDDING_MODEL=$EMB_MODEL belongs to provider $EXPECTED,"
+                echo "       but EMBEDDING_PROVIDER=$EMB_PROVIDER. Fix .env.production."
+                exit 1
+              fi
+              echo "INFO: embedding config = ${EMB_PROVIDER:-<default>}/${EMB_MODEL:-<default>}"
             else
               echo "FATAL: .env.production not found in $(pwd)!"
               exit 1

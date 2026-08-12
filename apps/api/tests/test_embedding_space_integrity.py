@@ -128,7 +128,7 @@ def test_provider_and_model_must_agree():
     Setting only EMBEDDING_MODEL (leaving EMBEDDING_PROVIDER on gemini) would
     POST an OpenRouter model name to Google and 404 every embedding — the same
     silent failure the Bedrock chat models suffered for days. app/ai/config.py
-    raises at import instead, while the mistake is still cheap.
+    detects it and disables embeddings, loudly, without killing the process.
     """
     import importlib
     import inspect
@@ -137,7 +137,16 @@ def test_provider_and_model_must_agree():
     # module-style at the top of this file for CAPABILITY_ROUTING.
     src = inspect.getsource(importlib.import_module("app.ai.config"))
     assert "_MODEL_PREFIX_OWNER" in src
-    assert "belongs to provider" in src, "the mismatch must fail loudly at import"
+    assert "belongs to provider" in src, "the mismatch must be detected"
+
+    # ...but NOT by raising at import. An earlier version did, and a single
+    # mistyped env var crash-looped every container — API, worker, beat and web
+    # — taking the whole site down twice. The blast radius of a bad embedding
+    # setting must be embeddings, not the product.
+    assert "raise ValueError" not in src, (
+        "embedding config errors must not raise at import; gate them at the "
+        "point of use so the application stays up"
+    )
 
 
 def test_configured_embedding_model_is_registered_and_owned_by_its_provider():
@@ -150,3 +159,25 @@ def test_configured_embedding_model_is_registered_and_owned_by_its_provider():
         assert cfg["provider"] == EMBEDDING_PROVIDER, (
             f"{model} routes to {cfg['provider']} but EMBEDDING_PROVIDER is {EMBEDDING_PROVIDER}"
         )
+
+
+def test_bad_embedding_config_disables_embeddings_without_crashing_the_app():
+    """A misconfiguration must degrade one capability, not the process.
+
+    Regression for a self-inflicted outage: an import-time `raise` for a
+    provider/model mismatch crash-looped every container. Production went down
+    twice before the guard was moved to the point of use.
+    """
+    import importlib
+
+    cfg = importlib.import_module("app.ai.config")
+
+    # The module must import and expose a routable provider regardless.
+    assert cfg.EMBEDDING_PROVIDER in ("nvidia", "gemini", "openrouter", "mock", "bedrock")
+    assert hasattr(cfg, "EMBEDDING_CONFIG_ERROR")
+
+    # And the gateway must refuse embeddings when the config is bad.
+    src = inspect.getsource(importlib.import_module("app.ai.gateway").AIGateway.embeddings)
+    assert "EMBEDDING_CONFIG_ERROR" in src, (
+        "embeddings must be gated at the point of use, not at import"
+    )
