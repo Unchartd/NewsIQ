@@ -777,7 +777,25 @@ class MockProvider(BaseLLMProvider):
         )
 
     async def execute(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
+
+        from app.ai.mock_policy import mock_allowed
+
+        if not mock_allowed():
+            raise RuntimeError(
+                "MockProvider invoked outside a test run without LLM_ALLOW_MOCK. "
+                "Refusing to fabricate data — a real-provider failure must fail, "
+                "not silently succeed with template output."
+            )
         return self._generate_mock_output(request)
 
     def execute_sync(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
+
+        from app.ai.mock_policy import mock_allowed
+
+        if not mock_allowed():
+            raise RuntimeError(
+                "MockProvider invoked outside a test run without LLM_ALLOW_MOCK. "
+                "Refusing to fabricate data — a real-provider failure must fail, "
+                "not silently succeed with template output."
+            )
         return self._generate_mock_output(request)

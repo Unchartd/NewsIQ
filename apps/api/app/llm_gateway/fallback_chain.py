@@ -171,13 +171,14 @@ class FallbackChain:
                 {"provider": "mock", "model": "mock"},
             ]
 
-        # Filter out 'mock' provider in production pipelines (not running under test frameworks)
-        import sys
+        # Strip the mock provider unless mock output is explicitly permitted.
+        # This gate previously relied on pytest-detection heuristics; a policy
+        # this consequential (mock SUCCEEDS where real providers fail, so its
+        # presence converts quota exhaustion into silently fabricated data)
+        # must not hinge on which modules happen to be imported.
+        from app.ai.mock_policy import mock_allowed
 
-        is_testing = "pytest" in sys.modules or any(
-            "pytest" in arg or "unittest" in arg for arg in sys.argv
-        )
-        if not is_testing:
+        if not mock_allowed():
             chain = [item for item in chain if item["provider"] != "mock"]
 
         return chain

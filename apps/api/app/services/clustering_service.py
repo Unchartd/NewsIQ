@@ -2002,15 +2002,47 @@ class ClusteringService:
         all_cluster_article_ids = [art.id for cluster in verified_clusters for art in cluster]
         fp_by_article: dict[uuid.UUID, str] = {}
         if all_cluster_article_ids:
+            # Degeneracy guard #1: a fingerprint without an event_time is not
+            # specific enough to assert "same real-world event". Template or
+            # low-quality extractions (production carried 6,584 identical
+            # 'POLICY/Officials/Public interest' events from a mock-provider
+            # incident) hash to ONE fingerprint, and transitive union-find then
+            # fuses every article sharing it — observed as single stories with
+            # 88 and 193 unrelated articles.
             fp_rows = await session.execute(
                 select(ArticleEvent.article_id, ArticleEvent.event_fingerprint).where(
                     ArticleEvent.article_id.in_(all_cluster_article_ids),
                     ArticleEvent.is_primary.is_(True),
                     ArticleEvent.event_fingerprint.isnot(None),
+                    ArticleEvent.event_time.isnot(None),
                 )
             )
             for art_id, fp in fp_rows.all():
                 fp_by_article.setdefault(art_id, fp)
+
+            # Degeneracy guard #2: frequency cap. Even a dated fingerprint that
+            # covers an implausible share of one batch is a template artifact,
+            # not a real event — no single event is 15%+ of a random 200-article
+            # batch. Genuinely popular events still cluster via HDBSCAN + the
+            # pairwise event-similarity verifier; they don't need this shortcut.
+            _FINGERPRINT_MAX_GROUP = 30
+            from collections import Counter
+
+            fp_counts = Counter(fp_by_article.values())
+            degenerate = {fp for fp, n in fp_counts.items() if n > _FINGERPRINT_MAX_GROUP}
+            if degenerate:
+                logger.error(
+                    "Skipping %d degenerate event fingerprint(s) covering %d articles "
+                    "in one batch (max plausible group is %d). This indicates template "
+                    "or fabricated event extractions — investigate the events, do not "
+                    "raise the cap.",
+                    len(degenerate),
+                    sum(n for fp, n in fp_counts.items() if fp in degenerate),
+                    _FINGERPRINT_MAX_GROUP,
+                )
+                fp_by_article = {
+                    aid: fp for aid, fp in fp_by_article.items() if fp not in degenerate
+                }
 
         parent: dict[int, int] = {i: i for i in range(len(verified_clusters))}
 
