@@ -1233,6 +1233,13 @@ class AIGateway:
         naming a different model are skipped, and if none remain the call
         fails so the article is retried later with its embedding_status intact.
         """
+        # Refuse here rather than at import. A bad embedding setting must fail
+        # embeddings, not crash-loop every container and take the product down.
+        from app.ai.config import EMBEDDING_CONFIG_ERROR
+
+        if EMBEDDING_CONFIG_ERROR:
+            raise AIGatewayError(f"Embedding configuration invalid: {EMBEDDING_CONFIG_ERROR}")
+
         chain = capability_router.get_route(capability)
         if not chain:
             raise AIGatewayError("No embedding route configured.")

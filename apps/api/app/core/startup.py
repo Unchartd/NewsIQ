@@ -96,6 +96,9 @@ async def run_startup_validation() -> StartupReport:
     # ── 6b. spaCy NER model (non-critical, but silently degrades clustering) ──
     report.services.append(await _check_ner_model())
 
+    # ── 6c. Embedding configuration (non-critical: disables embeddings only) ──
+    report.services.append(await _check_embedding_config())
+
     # ── 7. Storage (non-critical: operations skip if unconfigured) ─────────────
     storage_status = await _check_storage()
     report.services.append(storage_status)
@@ -165,6 +168,37 @@ async def _check_qdrant() -> ServiceStatus:
         return ServiceStatus(name="Qdrant", status="ok", critical=False)
     except Exception as e:
         return ServiceStatus(name="Qdrant", status="degraded", detail=str(e)[:80], critical=False)
+
+
+async def _check_embedding_config() -> ServiceStatus:
+    """Surface an embedding provider/model mismatch at boot.
+
+    Non-critical on purpose: a bad embedding setting disables embeddings, but
+    the API must keep serving. An earlier version raised at import and
+    crash-looped every container, which took the whole site down for a
+    single-capability misconfiguration.
+    """
+    try:
+        from app.ai.config import EMBEDDING_CONFIG_ERROR
+        from app.core.config import settings
+
+        if EMBEDDING_CONFIG_ERROR:
+            return ServiceStatus(
+                name="Embeddings",
+                status="degraded",
+                detail=f"DISABLED — {EMBEDDING_CONFIG_ERROR}"[:120],
+                critical=False,
+            )
+        return ServiceStatus(
+            name="Embeddings",
+            status="ok",
+            detail=f"{settings.EMBEDDING_PROVIDER}/{settings.EMBEDDING_MODEL}"[:80],
+            critical=False,
+        )
+    except Exception as e:
+        return ServiceStatus(
+            name="Embeddings", status="degraded", detail=str(e)[:80], critical=False
+        )
 
 
 async def _check_ner_model() -> ServiceStatus:

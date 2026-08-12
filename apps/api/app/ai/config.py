@@ -1,6 +1,9 @@
+import logging
 from typing import Any, Literal, TypedDict, cast
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 ProviderType = Literal["nvidia", "gemini", "openrouter", "mock", "bedrock"]
 
@@ -146,20 +149,10 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
 # Capability-based routing configuration — strictly gemini-3.1-flash-lite & gemini-3.5-flash-lite
 _VALID_PROVIDERS: tuple[str, ...] = ("nvidia", "gemini", "openrouter", "mock", "bedrock")
 
-if settings.EMBEDDING_PROVIDER not in _VALID_PROVIDERS:
-    raise ValueError(
-        f"EMBEDDING_PROVIDER={settings.EMBEDDING_PROVIDER!r} is not one of {_VALID_PROVIDERS}. "
-        "Failing at import: an unroutable embedding provider would surface later as "
-        "every article silently failing to embed."
-    )
-# Validated above, so the cast is safe and mypy gets the Literal it needs.
-EMBEDDING_PROVIDER: ProviderType = cast(ProviderType, settings.EMBEDDING_PROVIDER)
-
-# The provider and model are two halves of one decision. Setting only one — e.g.
+# Provider and model are two halves of one decision. Setting only one — e.g.
 # switching EMBEDDING_MODEL to an OpenRouter model while EMBEDDING_PROVIDER is
-# still "gemini" — would POST an OpenRouter model name to Google and 404 every
-# embedding, which is exactly how the Bedrock chat models silently failed for
-# days. Fail at import instead, while the mistake is still cheap.
+# still "gemini" — would POST the model name to the wrong API and 404 every
+# embedding, exactly how the Bedrock chat models silently failed for days.
 _MODEL_PREFIX_OWNER = {
     "gemini-": "gemini",
     "qwen/": "openrouter",
@@ -168,14 +161,49 @@ _MODEL_PREFIX_OWNER = {
     "baai/": "openrouter",
     "mistralai/": "openrouter",
 }
-for _prefix, _owner in _MODEL_PREFIX_OWNER.items():
-    if settings.EMBEDDING_MODEL.startswith(_prefix) and EMBEDDING_PROVIDER != _owner:
-        raise ValueError(
-            f"EMBEDDING_MODEL={settings.EMBEDDING_MODEL!r} belongs to provider "
-            f"{_owner!r}, but EMBEDDING_PROVIDER={EMBEDDING_PROVIDER!r}. Set both "
-            "together — a mismatched pair sends the model name to the wrong API "
-            "and fails every embedding."
+
+
+def _validate_embedding_config() -> str | None:
+    """Return a description of any embedding misconfiguration, else None.
+
+    Deliberately NOT fatal. An earlier version raised at import, which meant a
+    single mistyped env var crash-looped every container — API, worker, beat
+    and web — and took the whole site down twice. The blast radius of a bad
+    embedding setting must be embeddings, not the product.
+
+    ai_gateway.embeddings() refuses with this message, so the failure is loud
+    and precise at the point of use while everything else keeps serving.
+    """
+    if settings.EMBEDDING_PROVIDER not in _VALID_PROVIDERS:
+        return (
+            f"EMBEDDING_PROVIDER={settings.EMBEDDING_PROVIDER!r} is not one of {_VALID_PROVIDERS}."
         )
+    for prefix, owner in _MODEL_PREFIX_OWNER.items():
+        if settings.EMBEDDING_MODEL.startswith(prefix) and settings.EMBEDDING_PROVIDER != owner:
+            return (
+                f"EMBEDDING_MODEL={settings.EMBEDDING_MODEL!r} belongs to provider "
+                f"{owner!r}, but EMBEDDING_PROVIDER={settings.EMBEDDING_PROVIDER!r}. "
+                "Set both together."
+            )
+    return None
+
+
+EMBEDDING_CONFIG_ERROR: str | None = _validate_embedding_config()
+
+if EMBEDDING_CONFIG_ERROR:
+    logger.error(
+        "Embedding configuration is invalid — embeddings are DISABLED until fixed: %s "
+        "Articles will accumulate at embedding_status='pending' and clustering will "
+        "not advance. The rest of the application is unaffected.",
+        EMBEDDING_CONFIG_ERROR,
+    )
+
+# Fall back to a routable provider so module import (and therefore the whole
+# app) still succeeds; embeddings themselves are gated by EMBEDDING_CONFIG_ERROR.
+_EFFECTIVE_PROVIDER = (
+    settings.EMBEDDING_PROVIDER if settings.EMBEDDING_PROVIDER in _VALID_PROVIDERS else "gemini"
+)
+EMBEDDING_PROVIDER: ProviderType = cast(ProviderType, _EFFECTIVE_PROVIDER)
 
 
 CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
