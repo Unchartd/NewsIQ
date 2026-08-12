@@ -21,7 +21,7 @@ import json
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.services.event_taxonomy import canonicalize_event_type
 
@@ -89,8 +89,44 @@ class ExtractedArticleEntity(BaseModel):
     )
 
 
+# Fields that identify an object as an event rather than the response wrapper.
+_EVENT_FIELDS = frozenset(
+    {"event_type", "actors", "targets", "objects", "location", "event_time", "numbers"}
+)
+
+
 class ArticleEventResponse(BaseModel):
     """Response schema for per-article event + entity extraction."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_flat_event(cls, data: Any) -> Any:
+        """Accept a response that puts the primary event's fields at the top level.
+
+        Some models return the event unwrapped — {"event_type": "ACCIDENT",
+        "actors": [...], ...} — instead of {"primary_event": {...}}. The data is
+        all there, just one level up, so lifting it is normalisation rather than
+        invention: nothing is added that the model did not say.
+
+        Deliberately narrow. It only lifts when the payload actually looks like
+        an event (an event_type, or several event fields). A response with no
+        usable event still fails validation, because the alternative — quietly
+        substituting an empty OTHER event — is how 6,584 fabricated events
+        reached production once already.
+        """
+        if not isinstance(data, dict) or "primary_event" in data:
+            return data
+
+        present = _EVENT_FIELDS & data.keys()
+        if "event_type" not in data and len(present) < 3:
+            return data
+
+        lifted = {k: v for k, v in data.items() if k not in ("secondary_events", "entities")}
+        return {
+            "primary_event": lifted,
+            "secondary_events": data.get("secondary_events", []),
+            "entities": data.get("entities", []),
+        }
 
     primary_event: ExtractedEvent = Field(description="The main event described in the article")
     secondary_events: list[ExtractedEvent] = Field(
@@ -207,6 +243,16 @@ class EventService:
         primary = data.get("primary_event", {})
         if not isinstance(primary, dict):
             primary = {}
+        if not primary:
+            # Previously this fell through and produced an empty "OTHER" event
+            # with no actors, targets or time — a fabricated record indistinguishable
+            # from a real extraction, and exactly the shape that let 6,584 template
+            # events into production. An article with no extractable event must
+            # fail so it is retried or skipped, not invented.
+            raise ValueError(
+                "Event extraction response contained no primary_event and no "
+                "top-level event fields; refusing to synthesise an empty event."
+            )
 
         # Canonicalize event type using taxonomy
         raw_type = primary.get("event_type", "OTHER")
