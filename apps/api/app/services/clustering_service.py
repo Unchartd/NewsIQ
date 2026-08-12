@@ -747,6 +747,9 @@ class ClusteringService:
             await self.refresh_story_centroid(
                 story, session, article_ids=[a.id for a in all_articles]
             )
+            # Fold the new article's entities into the anchor as well, so the
+            # story becomes easier to match as it accumulates evidence.
+            await self.seed_story_anchor(story, [article.id], session)
             newsiq_story_article_count.observe(len(all_articles))
             # Delegate to StorySynthesisOrchestrator
             from app.services.story_synthesis_service import story_synthesis_orchestrator
@@ -828,6 +831,87 @@ class ClusteringService:
             len(article_ids),
         )
         return unit_centroid
+
+    async def seed_story_anchor(
+        self, story: Story, article_ids: list[uuid.UUID], session: AsyncSession
+    ) -> None:
+        """Give a story a usable identity from its own articles, without an LLM.
+
+        Stage A scores a candidate on entity overlap (35), location (20), time
+        (15), title similarity (20) and publisher trust (10), rejecting below
+        45. The title and entity components both read from the STORY: its
+        headline and its story_entities rows.
+
+        Those were only ever written by generate_story_content, which is
+        deliberately skipped for single-article clusters — so 103 of 104
+        production stories had headline NULL and exactly 1 had any entities.
+        Stage A therefore scored every candidate with title 0/20 and a neutral
+        17.5/35 for entities, making the arithmetic ceiling:
+
+            entities 17.5 + location 10 + time 15 + title 0 + trust 2 = 44.5
+
+        against a threshold of 45. Every candidate failed by half a point,
+        Stage B never executed once across 809 traces, and a story could never
+        reach the 2 articles that would have earned it a headline — a closed
+        loop, structurally identical to the "emerging" lifecycle deadlock.
+
+        Identity is cheap and needs no model: a story's headline can be its
+        representative article's title, and its entities are already extracted
+        per article. Synthesis still overwrites the headline with a better one
+        later; this only makes the story matchable in the meantime.
+        """
+        if not article_ids:
+            return
+
+        # Headline: seed only — never clobber a synthesised one.
+        if not story.headline:
+            res = await session.execute(
+                select(Article.title)
+                .where(Article.id.in_(article_ids), Article.title.isnot(None))
+                .order_by(Article.published_at.desc().nulls_last())
+                .limit(1)
+            )
+            title = res.scalars().first()
+            if title:
+                story.headline = title[:500]
+
+        # Entities: copy from the member articles' already-extracted rows.
+        existing_res = await session.execute(
+            select(StoryEntity.entity_value).where(StoryEntity.story_id == story.id)
+        )
+        existing = {v.lower() for v in existing_res.scalars().all() if v}
+
+        art_ents = await session.execute(
+            select(
+                ArticleEntity.entity_type,
+                ArticleEntity.entity_value,
+                ArticleEntity.canonical_entity_id,
+            ).where(ArticleEntity.article_id.in_(article_ids))
+        )
+        added = 0
+        for etype, value, canonical_id in art_ents.all():
+            if not value or value.lower() in existing:
+                continue
+            existing.add(value.lower())
+            session.add(
+                StoryEntity(
+                    id=uuid.uuid4(),
+                    story_id=story.id,
+                    canonical_entity_id=canonical_id,
+                    entity_type=etype,
+                    entity_value=value,
+                )
+            )
+            added += 1
+            if added >= 25:  # enough to match on; keeps the row count sane
+                break
+
+        logger.debug(
+            "Seeded anchor for story %s: headline=%s, +%d entities",
+            story.id,
+            bool(story.headline),
+            added,
+        )
 
     def _compute_event_similarity_direct(self, evt1: ArticleEvent, evt2: ArticleEvent) -> float:
         """Directly compare two ArticleEvent objects and compute similarity score."""
@@ -1164,6 +1248,14 @@ class ClusteringService:
 
         extracted_ents = EventValidationService()._extract_entities(article.title)
 
+        # The article's LLM-extracted entities. Stage A previously saw only what
+        # spaCy could find in the headline; these come from a full pass over the
+        # body and are a far stronger signal for the entity-overlap component.
+        art_ent_rows = await session.execute(
+            select(ArticleEntity.entity_value).where(ArticleEntity.article_id == article.id)
+        )
+        article_entity_values = {v for v in art_ent_rows.scalars().all() if v}
+
         # 3. Build query
         from sqlalchemy import exists, or_, text
 
@@ -1267,7 +1359,9 @@ class ClusteringService:
             )
 
             start_time_a = _now()
-            decision = event_validation_service.validate_stage_a(article, anchor)
+            decision = event_validation_service.validate_stage_a(
+                article, anchor, article_entities=article_entity_values
+            )
             latency_a = (_now() - start_time_a).total_seconds() * 1000.0
 
             # Expose Stage A Prom Counter
@@ -2132,6 +2226,12 @@ class ClusteringService:
                     await self.refresh_story_centroid(
                         story, session, article_ids=cluster_article_ids
                     )
+
+                    # Seed the Stage A anchor too. A centroid alone is not enough:
+                    # Stage A gates on headline/entity overlap BEFORE the vector
+                    # comparison runs, so a story with no headline and no entities
+                    # is unmatchable no matter how good its centroid is.
+                    await self.seed_story_anchor(story, cluster_article_ids, session)
 
                     # Initialize metrics
                     metrics = StoryMetric(
