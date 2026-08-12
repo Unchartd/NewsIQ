@@ -16,6 +16,9 @@ class ExtractionFailure(StrEnum):
     BOT_BLOCKED = "BOT_BLOCKED"
     EMPTY_HTML = "EMPTY_HTML"
     PARSER_FAILED = "PARSER_FAILED"
+    # Extraction returned text, but it was page furniture (nav, consent
+    # wall, link farm) rather than an article. See content_quality.py.
+    LOW_QUALITY_CONTENT = "LOW_QUALITY_CONTENT"
     PAYWALL = "PAYWALL"
     JS_REQUIRED = "JS_REQUIRED"
     UNKNOWN = "UNKNOWN"

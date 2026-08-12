@@ -448,3 +448,15 @@ newsiq_story_article_count = Histogram(
     "Number of articles in a story at creation or merge time.",
     buckets=(1, 2, 3, 5, 10, 25, 50),
 )
+
+
+# Extractions that returned text but were rejected as page furniture rather
+# than an article (navigation dumps, consent walls, link farms). Before this
+# gate existed, 24% of production articles were chrome — embedded and clustered
+# as if they were news. A rising rate here means a site changed its markup or a
+# provider started returning full-page output.
+newsiq_crawler_low_quality_total = Counter(
+    "newsiq_crawler_low_quality_total",
+    "Extractions rejected because the content was not article prose.",
+    ["provider", "reason"],
+)

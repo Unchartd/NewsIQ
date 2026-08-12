@@ -115,7 +115,7 @@ async def test_crawl_article_fallback_chain():
             patch(
                 "app.services.extraction_provider.LocalCrawlerProvider._extract_trafilatura",
                 return_value={
-                    "content": "Content extracted from Trafilatura fallback that has plenty of characters to pass constraints.",
+                    "content": "Content extracted from Trafilatura fallback that has plenty of characters to pass constraints. Officials confirmed the decision on Tuesday after a lengthy review. The department said the measures would take effect next month and that further guidance would follow. Local representatives welcomed the move, while some groups asked for a longer transition period. A spokesperson said the policy would be reassessed after six months of operation.",
                     "title": "Trafilatura Title",
                 },
             ),
@@ -138,7 +138,7 @@ async def test_crawl_article_fallback_chain():
             patch(
                 "app.services.extraction_provider.LocalCrawlerProvider._extract_readability",
                 return_value={
-                    "content": "Content extracted from Readability fallback that has plenty of characters to pass constraints.",
+                    "content": "Content extracted from Readability fallback that has plenty of characters to pass constraints. Officials confirmed the decision on Tuesday after a lengthy review. The department said the measures would take effect next month and that further guidance would follow. Local representatives welcomed the move, while some groups asked for a longer transition period. A spokesperson said the policy would be reassessed after six months of operation.",
                     "title": "Readability Title",
                 },
             ),
@@ -165,7 +165,7 @@ async def test_crawl_article_fallback_chain():
             patch(
                 "app.services.extraction_provider.LocalCrawlerProvider._extract_custom_cleaner",
                 return_value={
-                    "content": "Content extracted from Custom BS4 fallback that has plenty of characters to pass constraints.",
+                    "content": "Content extracted from Custom BS4 fallback that has plenty of characters to pass constraints. Officials confirmed the decision on Tuesday after a lengthy review. The department said the measures would take effect next month and that further guidance would follow. Local representatives welcomed the move, while some groups asked for a longer transition period. A spokesperson said the policy would be reassessed after six months of operation.",
                     "title": "Custom Title",
                 },
             ),
