@@ -140,10 +140,19 @@ async def run(execute: bool, batch_size: int, limit: int | None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", help="Apply (default: dry run).")
+    # Accepted explicitly as well as implied by omitting --execute: the docs and
+    # release notes reference --dry-run, and an operator typing it on a
+    # migration this destructive should get a dry run, not an argparse error.
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report scope and exit without writing (the default).",
+    )
     parser.add_argument("--batch-size", type=int, default=50)
     parser.add_argument("--limit", type=int, default=None, help="Stop after N articles.")
     args = parser.parse_args()
-    asyncio.run(run(args.execute, args.batch_size, args.limit))
+    execute = args.execute and not args.dry_run
+    asyncio.run(run(execute, args.batch_size, args.limit))
 
 
 if __name__ == "__main__":
