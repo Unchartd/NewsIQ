@@ -141,7 +141,12 @@ class Settings(BaseSettings):
     # Quota exhaustion must FAIL (QuotaExhaustedError -> pipeline cooldown),
     # not fabricate. Test runs are allowed independently of this flag.
     LLM_ALLOW_MOCK: bool = False
-    EMBEDDING_MODEL: str = "gemini-embedding-001"
+    # Primary embedding model served through OpenRouter.  Also used by
+    # EmbeddingService._cache_key() to namespace Redis keys per model so that
+    # switching models automatically invalidates stale cache entries.
+    # The Gemini safety-net slot always uses "gemini-embedding-001" regardless
+    # of this value — see capability_router.py for that guard.
+    EMBEDDING_MODEL: str = "sentence-transformers/all-mpnet-base-v2"
     SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────

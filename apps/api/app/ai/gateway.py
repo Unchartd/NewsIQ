@@ -54,6 +54,11 @@ PRICING_TABLE = {
     "deepseek/deepseek-chat": {"input": 0.14, "output": 0.28},
     "qwen/qwen-2.5-72b-instruct": {"input": 0.40, "output": 0.40},
     "nomic/nomic-embed-text-v1.5": {"input": 0.0, "output": 0.0},
+    # OpenRouter embedding models
+    "sentence-transformers/all-mpnet-base-v2": {"input": 0.005, "output": 0.0},
+    "qwen/qwen3-embedding-8b": {"input": 0.01, "output": 0.0},
+    "baai/bge-m3": {"input": 0.01, "output": 0.0},
+    "openai/text-embedding-3-small": {"input": 0.02, "output": 0.0},
 }
 
 

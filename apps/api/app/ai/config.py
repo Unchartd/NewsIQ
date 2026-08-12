@@ -103,6 +103,88 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
     "mock": [
         {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
+    # ── OpenRouter embedding model chains ────────────────────────────────────
+    # Each model falls back to the cheapest native-768 model then to Gemini.
+    "sentence-transformers/all-mpnet-base-v2": [
+        {
+            "provider": "openrouter",
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "openrouter",
+            "model": "qwen/qwen3-embedding-8b",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+    ],
+    "qwen/qwen3-embedding-8b": [
+        {
+            "provider": "openrouter",
+            "model": "qwen/qwen3-embedding-8b",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "openrouter",
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+    ],
+    "baai/bge-m3": [
+        {
+            "provider": "openrouter",
+            "model": "baai/bge-m3",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "openrouter",
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+    ],
+    "openai/text-embedding-3-small": [
+        {
+            "provider": "openrouter",
+            "model": "openai/text-embedding-3-small",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "openrouter",
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-embedding-001",
+            "temperature": 0.0,
+            "timeout": 15.0,
+        },
+    ],
 }
 
 
@@ -301,20 +383,26 @@ CAPABILITY_ROUTING: dict[str, CapabilityRoute] = {
         },
     },
     # ── Embedding Capability ──────────────────────────────────────────────────
+    # Primary and first fallback run on OpenRouter (cost-optimised, native-768
+    # or variable-dim models). Gemini is kept as an emergency last-resort so
+    # the vector space stays consistent if OpenRouter is unreachable.
     "embedding": {
         "primary": {
-            "provider": "gemini",
-            "model": settings.EMBEDDING_MODEL or "gemini-embedding-001",
+            # $0.005/M — native 768-dim, no truncation required
+            "provider": "openrouter",
+            "model": "sentence-transformers/all-mpnet-base-v2",
             "temperature": 0.0,
             "timeout": 15.0,
         },
         "fallback": {
-            "provider": "gemini",
-            "model": "gemini-embedding-2",
+            # $0.01/M — best multilingual quality, supports dimensions param
+            "provider": "openrouter",
+            "model": "qwen/qwen3-embedding-8b",
             "temperature": 0.0,
             "timeout": 15.0,
         },
         "lastFallback": {
+            # Emergency safety-net — independent failure domain from OpenRouter
             "provider": "gemini",
             "model": "gemini-embedding-001",
             "temperature": 0.0,
