@@ -794,8 +794,50 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     "error": str(e),
                                 },
                             )
-                            article.event_extraction_status = "failed"
-                            await session.commit()
+                            # Roll back FIRST. If the failure was a DB-level one
+                            # (a killed connection, a failed flush), the session
+                            # is poisoned and every later statement raises
+                            # "transaction has been rolled back". Committing
+                            # without rolling back therefore raises again from
+                            # inside the handler, escapes the per-article try,
+                            # and destroys the remaining articles in the batch —
+                            # observed as a whole 20-article run producing
+                            # nothing after one connection died mid-loop.
+                            try:
+                                await session.rollback()
+                            except Exception as rb_err:
+                                logger.warning(
+                                    "Rollback before recording extraction failure failed: %s",
+                                    rb_err,
+                                )
+                            try:
+                                article.event_extraction_status = "failed"
+                                await session.commit()
+                            except Exception as status_err:
+                                # The article stays 'processing' and is recovered
+                                # by recover_stuck_embeddings_task rather than
+                                # taking the rest of the batch down with it.
+                                logger.error(
+                                    "Could not record failed status for article %s: %s",
+                                    article.id,
+                                    status_err,
+                                )
+                                try:
+                                    await session.rollback()
+                                except Exception as final_rb_err:
+                                    # Last-resort cleanup: if even the rollback
+                                    # fails the connection is already gone, so
+                                    # there is nothing further to try here.
+                                    # Logged rather than swallowed so a session
+                                    # that never recovers is visible instead of
+                                    # showing up later as an unexplained batch
+                                    # of articles stuck in 'processing'.
+                                    logger.warning(
+                                        "Session unrecoverable after failed status write "
+                                        "for article %s: %s",
+                                        article.id,
+                                        final_rb_err,
+                                    )
                             failed_count += 1
 
                             # Record Pipeline Failure
