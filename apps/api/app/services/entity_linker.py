@@ -535,6 +535,25 @@ class EntityLinker:
                 raise
 
         # ── 3. Resolve via Wikidata (hybrid confidence-gated approach) ────────────
+        #
+        # End the read transaction FIRST. Everything below is network I/O — a
+        # Wikidata HTTP round-trip and, on low confidence, an LLM disambiguation
+        # call — and the SELECTs above have already opened a transaction on this
+        # session. Holding it across those calls leaves the backend idle in
+        # transaction for seconds at a time, repeated for up to 20 entities per
+        # article, and Postgres kills it at idle_in_transaction_session_timeout
+        # (30s in production).
+        #
+        # The symptom is not a timeout error but a cascade: the connection dies
+        # mid-loop and every later statement fails with "cannot call
+        # PreparedStatement.fetch(): the underlying connection is closed",
+        # followed by "transaction has been rolled back" for the rest of the
+        # batch — which is how a whole 20-article extraction run was lost.
+        try:
+            await session.commit()
+        except Exception as commit_exc:  # pragma: no cover - defensive
+            logger.debug("Pre-resolution commit failed: %s", commit_exc)
+
         logger.info("Resolving new entity: %s (%s)", clean_name, entity_type)
 
         linking_mode = getattr(settings, "ENTITY_LINKING_MODE", "hybrid").lower()
