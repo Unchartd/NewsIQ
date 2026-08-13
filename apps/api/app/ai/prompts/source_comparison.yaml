@@ -26,9 +26,9 @@ template: |
   Synthesize a clean analysis.
 
 routing:
-  preferred_model: "gemini-3.1-flash-lite"
+  preferred_model: "gemini-3.5-flash-lite"
   fallback_models:
-    - "gemini-3.5-flash-lite"
+    - "gemini-3.1-flash-lite"
   temperature: 0.1
   max_tokens: 2048
   timeout_seconds: 30.0
