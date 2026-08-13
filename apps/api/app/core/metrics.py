@@ -462,6 +462,37 @@ newsiq_crawler_low_quality_total = Counter(
 )
 
 
+# A paid provider disabled because its account, not the URL, is the problem —
+# Firecrawl answering HTTP 402 to every call, for instance. This firing at all
+# means a tier is down; it previously took a log dive to notice, because
+# non-200 responses were unlogged and the cost metric only fired on success.
+newsiq_crawler_provider_circuit_open_total = Counter(
+    "newsiq_crawler_provider_circuit_open_total",
+    "Times a paid extraction provider was circuit-broken.",
+    ["provider", "reason"],
+)
+
+
+# Local crawler deliberately skipped because the domain has never yielded to
+# it. Each increment is roughly 105s of timeouts avoided; a sudden drop means
+# domains started answering locally again.
+newsiq_crawler_local_skipped_total = Counter(
+    "newsiq_crawler_local_skipped_total",
+    "Local crawl attempts skipped by domain routing.",
+    ["domain"],
+)
+
+
+# Requests delayed to honour the per-domain minimum interval. Rising values are
+# healthy — it is the politeness budget being spent rather than a publisher
+# being hammered.
+newsiq_crawler_domain_pacing_waits_total = Counter(
+    "newsiq_crawler_domain_pacing_waits_total",
+    "Crawl requests that waited for a per-domain pacing slot.",
+    ["outcome"],
+)
+
+
 # Duplicate stories awaiting/receiving reconciliation. A persistently non-zero
 # "found" means clustering is still splitting events at creation time and the
 # reconciler is only papering over it — the merge rate is the symptom, the

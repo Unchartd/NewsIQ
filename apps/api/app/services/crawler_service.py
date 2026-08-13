@@ -22,6 +22,7 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 
@@ -134,17 +135,12 @@ _BOT_BLOCK_SIGNALS: tuple[str, ...] = (
     "challenge-platform",
     "cf-browser-verification",
     "__cf_chl",
-    "ray id",
     "cf_clearance",
     # ── Generic bot/security walls ────────────────────────────────────────────
     "ddos protection",
-    "security check",
     "bot detection",
     "robot check",
     "attention required",
-    "access denied",
-    "enable javascript",
-    "please enable js",
     "verify you are human",
     "human verification",
     "press & hold",
@@ -157,6 +153,22 @@ _BOT_BLOCK_SIGNALS: tuple[str, ...] = (
     "incapsula",
     "kasada",
     "akamai bot",
+)
+
+# Signals that only mean "blocked" on a page too short to be an article.
+#
+# These previously sat in the list above and were substring-matched against the
+# whole page. "enable javascript" is in the <noscript> block of a large share of
+# legitimate news sites; "subscribe to continue" and "sign in to read" sit in
+# the nav or footer of articles that are perfectly free to read; "access denied"
+# and "ray id" appear in ordinary reporting. Every false positive pushed a page
+# that had fetched successfully into a *paid* extraction provider.
+_WEAK_BLOCK_SIGNALS: tuple[str, ...] = (
+    "security check",
+    "access denied",
+    "enable javascript",
+    "please enable js",
+    "ray id",
     # ── Paywalls that return HTTP 200 with a wall page ────────────────────────
     "subscribe to continue",
     "subscription required",
@@ -165,10 +177,16 @@ _BOT_BLOCK_SIGNALS: tuple[str, ...] = (
     "this article is for subscribers",
 )
 
+# A real challenge page is short. Above this, a weak signal is far more likely
+# to be page furniture on a genuine article than an actual wall.
+_WEAK_SIGNAL_MAX_LENGTH: int = 12_000
+
 # Minimum byte length of a real article page.
 # Challenge pages from Cloudflare / DataDome / PerimeterX are almost always
 # short (~800–1 800 bytes). Legitimate articles are rarely under 2 000 bytes.
 _MIN_REAL_PAGE_LENGTH: int = 2_000
+
+_NOSCRIPT_RE = re.compile(r"<noscript[^>]*>.*?</noscript>", re.IGNORECASE | re.DOTALL)
 
 
 class CrawlerService:
@@ -199,8 +217,19 @@ class CrawlerService:
         if len(stripped) < _MIN_REAL_PAGE_LENGTH:
             return True
 
-        lowered = stripped.lower()
-        return any(sig in lowered for sig in _BOT_BLOCK_SIGNALS)
+        # <noscript> is where sites put "please enable JavaScript" for readers
+        # who have it off. It is not a challenge, and scanning it produced false
+        # positives on ordinary articles.
+        lowered = _NOSCRIPT_RE.sub(" ", stripped).lower()
+
+        if any(sig in lowered for sig in _BOT_BLOCK_SIGNALS):
+            return True
+
+        # Ambiguous signals only count on a page short enough to be a wall.
+        if len(stripped) <= _WEAK_SIGNAL_MAX_LENGTH:
+            return any(sig in lowered for sig in _WEAK_BLOCK_SIGNALS)
+
+        return False
 
     # ------------------------------------------------------------------
     # Internal diagnostic helpers

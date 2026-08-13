@@ -279,10 +279,32 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str = ""
     FIRECRAWL_API_KEY: str = ""
     TAVILY_BATCH_SIZE: int = 5
-    TAVILY_BATCH_TIMEOUT_SECONDS: int = 2
+    # How long the batch leader waits for peers before flushing what it has.
+    # At the old 2s, 62% of batches carried a single URL and were billed a full
+    # 5-URL credit: 253 credits spent on 410 URLs where 82 would have done.
+    # Crawls arrive in discovery bursts (~0.3 URLs/s), so a window this size
+    # fills a batch during a burst while still bounding worst-case latency.
+    TAVILY_BATCH_TIMEOUT_SECONDS: int = 20
     EXTRACTION_RESULT_TTL_SECONDS: int = 600
     EXTRACTION_PROVIDER_TIMEOUT: int = 30
     CRAWLER_MAX_CONCURRENT_REQUESTS: int = 5
+    # Firecrawl bills monthly credits; HTTP 402 means the account is empty and
+    # no URL can succeed until it resets. Doubles as the re-probe interval, so
+    # a top-up recovers automatically.
+    FIRECRAWL_QUOTA_COOLDOWN_SECONDS: int = 6 * 3600
+
+    # ── Crawl politeness & domain routing ────────────────────────────────────
+    # Minimum gap between two requests to the same host, enforced in Redis so
+    # it holds across workers. Measured before this existed: 21.8% of
+    # consecutive crawls hit the same host, 12% within one second.
+    CRAWL_DOMAIN_MIN_INTERVAL_SECONDS: float = 3.0
+    CRAWL_DOMAIN_MAX_WAIT_SECONDS: float = 20.0
+    # Skip the local crawler on domains where it has demonstrably never worked.
+    CRAWL_DOMAIN_ROUTING_ENABLED: bool = True
+    CRAWL_SKIP_LOCAL_MIN_SAMPLES: int = 8
+    # Share of requests that try local anyway, so a domain that drops its bot
+    # wall is rediscovered instead of being routed to a paid provider forever.
+    CRAWL_LOCAL_REPROBE_RATE: float = 0.05
 
     # Discovery Candidate Scoring Weights
     DISCOVERY_FRESHNESS_WEIGHT: float = 0.20

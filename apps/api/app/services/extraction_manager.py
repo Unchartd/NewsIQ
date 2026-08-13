@@ -11,6 +11,11 @@ from urllib.parse import urlparse
 from app.core.config import settings
 from app.services.cache_service import cache_service
 from app.services.content_quality import assess_article_content
+from app.services.crawl_policy import (
+    domain_pacer,
+    provider_circuit,
+    should_skip_local,
+)
 from app.services.extraction.types import (
     ExtractionFailure,
     ExtractionResult,
@@ -73,6 +78,7 @@ class ExtractionManager:
         """Orchestrate article extraction across local, Tavily, and Firecrawl providers."""
         from app.core.metrics import (
             newsiq_crawler_attempts_total,
+            newsiq_crawler_domain_pacing_waits_total,
             newsiq_crawler_failure_reason_total,
             newsiq_crawler_fallback_count_v2,
             newsiq_crawler_fallback_rate,
@@ -115,54 +121,71 @@ class ExtractionManager:
                 logger.warning("Failed to check idempotency cache: %s", e)
 
         # 2. Attempt 1: Local Crawler
-        logger.info("Attempting local extraction for: %s", url)
-        newsiq_crawler_provider_attempts_total.labels(provider="local").inc()
-        newsiq_crawler_provider_attempts_total_v2.labels(provider="local", domain=domain).inc()
-        local_start = time.perf_counter()
+        #
+        # Skipped entirely on domains the policy table shows local has never
+        # extracted. Those articles used to burn three fetch attempts and up to
+        # 105s of timeouts before reaching a provider that works.
+        if await should_skip_local(domain):
+            newsiq_crawler_provider_attempts_total.labels(provider="local_skipped").inc()
+        else:
+            logger.info("Attempting local extraction for: %s", url)
+            newsiq_crawler_provider_attempts_total.labels(provider="local").inc()
+            newsiq_crawler_provider_attempts_total_v2.labels(provider="local", domain=domain).inc()
+            local_start = time.perf_counter()
 
-        local_res = await self.local_provider.extract(c_url, f"local_{url_hash}")
-        local_latency = time.perf_counter() - local_start
-        newsiq_crawler_provider_latency_seconds.labels(provider="local").observe(local_latency)
-        newsiq_crawler_provider_latency_seconds_v2.labels(provider="local", domain=domain).observe(
-            local_latency
-        )
+            # Politeness gate: hold the request until this host's minimum
+            # interval has elapsed. Only the local path is paced — Tavily and
+            # Firecrawl fetch from their own infrastructure, not ours.
+            paced = await domain_pacer.wait_turn(domain)
+            newsiq_crawler_domain_pacing_waits_total.labels(
+                outcome="paced" if paced else "gave_up"
+            ).inc()
 
-        # Persist metrics in DomainExtractionPolicy table
-        content_len = len(local_res.content) if local_res.content else 0
-        await self._update_domain_policy(
-            domain=domain,
-            provider="local",
-            success=local_res.success,
-            latency_ms=local_res.diagnostics.latency_ms,
-            content_length=content_len,
-        )
+            local_res = await self.local_provider.extract(c_url, f"local_{url_hash}")
+            local_latency = time.perf_counter() - local_start
+            newsiq_crawler_provider_latency_seconds.labels(provider="local").observe(local_latency)
+            newsiq_crawler_provider_latency_seconds_v2.labels(
+                provider="local", domain=domain
+            ).observe(local_latency)
 
-        self._reject_if_low_quality(local_res, "local", url)
-
-        if local_res.success:
-            logger.info("Local extraction succeeded for: %s", url)
-            newsiq_crawler_provider_success_total.labels(provider="local").inc()
-            newsiq_crawler_provider_success_total_v2.labels(provider="local", domain=domain).inc()
-            newsiq_crawler_local_success_rate.inc()
-            await self._set_idempotency_cache(idempotency_key, local_res)
-            return self._to_legacy_dict(local_res)
-
-        failure_reason = local_res.failure.value if local_res.failure else "unknown"
-        logger.warning("Local extraction failed for %s. Reason: %s", url, local_res.failure)
-        newsiq_crawler_provider_failure_total.labels(provider="local").inc()
-        newsiq_crawler_provider_failure_total_v2.labels(
-            provider="local", failure_reason=failure_reason, domain=domain
-        ).inc()
-        newsiq_crawler_failure_reason_total.labels(
-            provider="local", failure_reason=failure_reason, domain=domain
-        ).inc()
-
-        # Failure Classification: Stop immediately on 404 / Gone
-        if local_res.failure == ExtractionFailure.HTTP_404:
-            logger.warning(
-                "Permanent failure (404/Gone) detected for %s. Stopping extraction.", url
+            # Persist metrics in DomainExtractionPolicy table
+            content_len = len(local_res.content) if local_res.content else 0
+            await self._update_domain_policy(
+                domain=domain,
+                provider="local",
+                success=local_res.success,
+                latency_ms=local_res.diagnostics.latency_ms,
+                content_length=content_len,
             )
-            return self._to_legacy_dict(local_res)
+
+            self._reject_if_low_quality(local_res, "local", url)
+
+            if local_res.success:
+                logger.info("Local extraction succeeded for: %s", url)
+                newsiq_crawler_provider_success_total.labels(provider="local").inc()
+                newsiq_crawler_provider_success_total_v2.labels(
+                    provider="local", domain=domain
+                ).inc()
+                newsiq_crawler_local_success_rate.inc()
+                await self._set_idempotency_cache(idempotency_key, local_res)
+                return self._to_legacy_dict(local_res)
+
+            failure_reason = local_res.failure.value if local_res.failure else "unknown"
+            logger.warning("Local extraction failed for %s. Reason: %s", url, local_res.failure)
+            newsiq_crawler_provider_failure_total.labels(provider="local").inc()
+            newsiq_crawler_provider_failure_total_v2.labels(
+                provider="local", failure_reason=failure_reason, domain=domain
+            ).inc()
+            newsiq_crawler_failure_reason_total.labels(
+                provider="local", failure_reason=failure_reason, domain=domain
+            ).inc()
+
+            # Failure Classification: Stop immediately on 404 / Gone
+            if local_res.failure == ExtractionFailure.HTTP_404:
+                logger.warning(
+                    "Permanent failure (404/Gone) detected for %s. Stopping extraction.", url
+                )
+                return self._to_legacy_dict(local_res)
 
         # 3. Attempt 2: Tavily Extract (with Redis distributed batching)
         newsiq_crawler_fallback_rate.inc()
@@ -211,6 +234,16 @@ class ExtractionManager:
         ).inc()
 
         # 4. Attempt 3: Firecrawl Scrape (final synchronous fallback)
+        #
+        # Skipped while the circuit is open. Firecrawl bills monthly credits;
+        # when they run out it answers HTTP 402 to every request, so retrying
+        # per-URL burned 256 calls a day for zero extractions.
+        if await provider_circuit.is_open("firecrawl"):
+            logger.warning(
+                "Firecrawl circuit is open (out of credits); returning Tavily failure for %s", url
+            )
+            return self._to_legacy_dict(tavily_res)
+
         logger.info("Routing %s to Firecrawl Scrape", url)
         newsiq_crawler_provider_attempts_total.labels(provider="firecrawl").inc()
         newsiq_crawler_provider_attempts_total_v2.labels(provider="firecrawl", domain=domain).inc()
@@ -251,6 +284,16 @@ class ExtractionManager:
             return self._to_legacy_dict(firecrawl_res)
 
         failure_reason = firecrawl_res.failure.value if firecrawl_res.failure else "unknown"
+
+        # An empty account is not a property of this URL — trip the provider off
+        # so the remaining articles in the backlog skip it until credits reset.
+        if firecrawl_res.failure == ExtractionFailure.QUOTA_EXHAUSTED:
+            await provider_circuit.trip(
+                "firecrawl",
+                "quota_exhausted",
+                settings.FIRECRAWL_QUOTA_COOLDOWN_SECONDS,
+            )
+
         logger.error("All extraction providers failed for URL: %s", url)
         newsiq_crawler_provider_failure_total.labels(provider="firecrawl").inc()
         newsiq_crawler_provider_failure_total_v2.labels(
@@ -292,7 +335,15 @@ class ExtractionManager:
             # Push payload to Redis list
             await redis_client.rpush(buffer_key, payload_str)  # type: ignore[misc]
 
-            max_poll_time = (settings.TAVILY_BATCH_TIMEOUT_SECONDS or 2) + 5
+            # Followers must outlast the leader's whole cycle: the collection
+            # window plus the Tavily request itself. If a follower gives up
+            # while the leader is still mid-request it makes its own individual
+            # call, and the same URL is billed twice.
+            max_poll_time = (
+                (settings.TAVILY_BATCH_TIMEOUT_SECONDS or 2)
+                + (settings.EXTRACTION_PROVIDER_TIMEOUT or 30)
+                + 10
+            )
             poll_start = time.time()
 
             while time.time() - poll_start < max_poll_time:
@@ -307,15 +358,20 @@ class ExtractionManager:
                         return ExtractionResult.from_dict(json.loads(raw_res))
 
                 # Check B: Leadership Acquisition (if still pending)
-                # If leader lock is free, try to acquire it
-                is_leader = await redis_client.set(leader_key, "1", ex=5, nx=True)
+                # If leader lock is free, try to acquire it.
+                #
+                # The lock must outlive the batch window, otherwise it expires
+                # while the leader is still collecting and a second poller
+                # promotes itself and drains the same buffer — splitting one
+                # batch into two half-empty (but separately billed) requests.
+                batch_timeout = settings.TAVILY_BATCH_TIMEOUT_SECONDS or 2
+                batch_size = settings.TAVILY_BATCH_SIZE or 5
+                is_leader = await redis_client.set(leader_key, "1", ex=batch_timeout + 10, nx=True)
                 if is_leader:
                     logger.info("Acquired Tavily leader lock; orchestrating batch flush.")
                     try:
                         # Wait up to TAVILY_BATCH_TIMEOUT_SECONDS for others to arrive
                         start_wait = time.time()
-                        batch_timeout = settings.TAVILY_BATCH_TIMEOUT_SECONDS or 2
-                        batch_size = settings.TAVILY_BATCH_SIZE or 5
 
                         while time.time() - start_wait < batch_timeout:
                             length = await redis_client.llen(buffer_key)  # type: ignore[misc]
@@ -433,6 +489,9 @@ class ExtractionManager:
                         firecrawl_success_rate=1.0
                         if (provider == "firecrawl" and success)
                         else 0.0,
+                        local_attempts=1 if provider == "local" else 0,
+                        tavily_attempts=1 if provider == "tavily" else 0,
+                        firecrawl_attempts=1 if provider == "firecrawl" else 0,
                         average_latency=latency_ms,
                         average_content_length=float(content_length),
                         last_success_provider=provider if success else None,
@@ -445,16 +504,19 @@ class ExtractionManager:
                             policy.local_success_rate * (1.0 - alpha)
                             + (1.0 if success else 0.0) * alpha
                         )
+                        policy.local_attempts += 1
                     elif provider == "tavily":
                         policy.tavily_success_rate = (
                             policy.tavily_success_rate * (1.0 - alpha)
                             + (1.0 if success else 0.0) * alpha
                         )
+                        policy.tavily_attempts += 1
                     elif provider == "firecrawl":
                         policy.firecrawl_success_rate = (
                             policy.firecrawl_success_rate * (1.0 - alpha)
                             + (1.0 if success else 0.0) * alpha
                         )
+                        policy.firecrawl_attempts += 1
 
                     policy.average_latency = (
                         policy.average_latency * (1.0 - alpha) + latency_ms * alpha

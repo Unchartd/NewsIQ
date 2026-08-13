@@ -1616,7 +1616,9 @@ def dispatch_story_candidate_task(
                 except Exception:
                     return 3
 
-            tiered_urls = sorted(resolved_urls, key=_get_tier)
+            from app.services.crawl_policy import drop_unresolved_redirects, order_crawl_urls
+
+            tiered_urls = order_crawl_urls(drop_unresolved_redirects(resolved_urls), _get_tier)
 
             # 11. Update StoryCandidate metrics
             sc.status = StoryCandidateState.DISCOVERED
@@ -1879,10 +1881,14 @@ def discovery_search_task(
                 resolved_urls = discovered_urls
 
             from app.ingestion.pre_crawler_engine import pre_crawler_engine
+            from app.services.crawl_policy import (
+                drop_unresolved_redirects,
+                interleave_by_domain,
+            )
 
             created_crawl_task_ids = []
 
-            for url in resolved_urls:
+            for url in interleave_by_domain(drop_unresolved_redirects(resolved_urls)):
                 decision = await pre_crawler_engine.evaluate_url(url, session)
                 if not decision.should_crawl:
                     logger.info(
