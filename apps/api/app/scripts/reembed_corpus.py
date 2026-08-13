@@ -127,6 +127,54 @@ async def run(execute: bool, batch_size: int, limit: int | None) -> None:
             logger.info("Reached --limit %s, stopping.", limit)
             break
 
+    # Story centroids live in stories.story_embedding, NOT in Qdrant, so
+    # dropping and rebuilding the collection leaves every one of them in the
+    # PREVIOUS model's vector space. Stage B compares an article vector against
+    # that centroid, so the mismatch is silent and total: measured on real
+    # duplicate stories, article-to-article cosine was 0.95 while the same
+    # article against its stale centroid scored 0.02 — below every threshold,
+    # so nothing could ever merge. Refresh them in the same pass.
+    logger.info("Refreshing story centroids into the new vector space …")
+    from app.models.models import Story, StoryArticle
+    from app.services.clustering_service import clustering_service
+
+    refreshed = centroid_failed = 0
+    async with async_session_factory() as session:
+        story_ids = (await session.execute(select(Story.id))).scalars().all()
+
+    for story_id in story_ids:
+        async with async_session_factory() as session:
+            story = (
+                await session.execute(select(Story).where(Story.id == story_id))
+            ).scalar_one_or_none()
+            if story is None:
+                continue
+            member_ids = (
+                (
+                    await session.execute(
+                        select(StoryArticle.article_id).where(StoryArticle.story_id == story_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if not member_ids:
+                continue
+            try:
+                result = await clustering_service.refresh_story_centroid(
+                    story, session, article_ids=list(member_ids)
+                )
+                await session.commit()
+                if result is not None:
+                    refreshed += 1
+                else:
+                    centroid_failed += 1
+            except Exception as exc:
+                await session.rollback()
+                centroid_failed += 1
+                logger.error("Centroid refresh failed for story %s: %s", story_id, exc)
+
+    logger.info("Story centroids refreshed: %s ok, %s skipped/failed", refreshed, centroid_failed)
     logger.info("Re-embed complete: %s succeeded, %s failed.", done, failed)
     if failed:
         logger.warning(
