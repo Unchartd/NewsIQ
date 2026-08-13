@@ -182,6 +182,27 @@ async def should_skip_local(domain: str) -> bool:
     return True
 
 
+def host_of(url: str) -> str:
+    """Hostname of *url*, lowercased and without a leading www."""
+    from urllib.parse import urlparse
+
+    try:
+        return urlparse(url).netloc.lower().split(":")[0].removeprefix("www.")
+    except Exception:
+        return ""
+
+
+def is_google_news_redirect(url: str) -> bool:
+    """True when *url* is an undecoded news.google.com redirect.
+
+    Matched on the parsed hostname rather than as a substring: a substring test
+    also fires on https://elsewhere.example/news.google.com/x and, worse,
+    accepts https://news.google.com.attacker.example/ as Google's own.
+    """
+    host = host_of(url)
+    return host == "news.google.com" or host.endswith(".news.google.com")
+
+
 def drop_unresolved_redirects(urls: list[str]) -> list[str]:
     """Remove Google News redirect URLs that could not be decoded.
 
@@ -191,7 +212,7 @@ def drop_unresolved_redirects(urls: list[str]) -> list[str]:
     """
     kept, dropped = [], 0
     for url in urls:
-        if "news.google.com" in url:
+        if is_google_news_redirect(url):
             dropped += 1
             continue
         kept.append(url)
@@ -209,15 +230,10 @@ def interleave_by_domain(urls: list[str]) -> list[str]:
     the per-domain pacer rarely has to block, so politeness costs no throughput.
     """
     from collections import OrderedDict, deque
-    from urllib.parse import urlparse
 
     groups: OrderedDict[str, deque[str]] = OrderedDict()
     for url in urls:
-        try:
-            host = urlparse(url).netloc.lower().removeprefix("www.")
-        except Exception:
-            host = ""
-        groups.setdefault(host, deque()).append(url)
+        groups.setdefault(host_of(url), deque()).append(url)
 
     ordered: list[str] = []
     while groups:

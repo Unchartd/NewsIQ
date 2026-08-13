@@ -192,6 +192,7 @@ class GNewsService:
         # (15.6% of the corpus) were stored this way because this path — unlike
         # the pre-crawler engine — never called resolve_url.
         from app.ingestion.discovery_providers import get_discovery_provider
+        from app.services.crawl_policy import is_google_news_redirect
 
         provider = get_discovery_provider("google_rss")
 
@@ -201,7 +202,7 @@ class GNewsService:
             if not raw_url:
                 continue
             resolved_url = await provider.resolve_url(raw_url)
-            if "news.google.com" in resolved_url:
+            if is_google_news_redirect(resolved_url):
                 # Undecodable redirect. Crawling it yields Google's own page,
                 # not journalism, so it is worth less than the request it costs.
                 logger.warning("Skipping undecodable Google News redirect: %s", raw_url)

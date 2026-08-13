@@ -17,7 +17,9 @@ import pytest
 
 from app.services.crawl_policy import (
     drop_unresolved_redirects,
+    host_of,
     interleave_by_domain,
+    is_google_news_redirect,
     order_crawl_urls,
 )
 from app.services.crawler_service import CrawlerService
@@ -89,7 +91,7 @@ def test_consecutive_urls_come_from_different_hosts():
 
 def test_interleaving_preserves_each_hosts_internal_order():
     urls = ["https://a.com/1", "https://a.com/2", "https://b.com/1"]
-    ordered = [u for u in interleave_by_domain(urls) if "a.com" in u]
+    ordered = [u for u in interleave_by_domain(urls) if host_of(u) == "a.com"]
     assert ordered == ["https://a.com/1", "https://a.com/2"]
 
 
@@ -98,16 +100,27 @@ def test_tier_priority_survives_interleaving():
     urls = ["https://low.com/1", "https://top.com/1", "https://low.com/2", "https://top.com/2"]
 
     def tier(u: str) -> int:
-        return 1 if "top.com" in u else 3
+        return 1 if host_of(u) == "top.com" else 3
 
     ordered = order_crawl_urls(urls, tier)
-    assert all("top.com" in u for u in ordered[:2]), ordered
+    assert all(host_of(u) == "top.com" for u in ordered[:2]), ordered
 
 
 def test_undecodable_google_news_redirects_are_dropped():
     """Crawling one yields Google's interstitial and misattributes the publisher."""
     urls = ["https://news.google.com/rss/articles/CBM123", "https://bbc.com/news/1"]
     assert drop_unresolved_redirects(urls) == ["https://bbc.com/news/1"]
+
+
+def test_redirect_detection_matches_the_host_not_a_substring():
+    """A substring test accepts a lookalike host and rejects innocent paths."""
+    # Lookalike domain: substring matching would treat this as Google's own.
+    assert is_google_news_redirect("https://news.google.com.attacker.example/a") is False
+    # Google's name merely in the path of another site.
+    assert is_google_news_redirect("https://elsewhere.example/news.google.com/a") is False
+    # The real thing, with and without a subdomain or port.
+    assert is_google_news_redirect("https://news.google.com/rss/articles/CBM1") is True
+    assert is_google_news_redirect("https://www.news.google.com/rss/articles/CBM1") is True
 
 
 def test_interleaving_handles_empty_and_malformed_input():
