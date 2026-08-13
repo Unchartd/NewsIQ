@@ -177,7 +177,14 @@ class Settings(BaseSettings):
     # rate-limited the pipeline.
     EMBEDDING_PROVIDER: str = "openrouter"
     EMBEDDING_MODEL: str = "qwen/qwen3-embedding-8b"
-    SUMMARIZATION_MODEL: str = "gemini-3.1-flash-lite"
+    # gemini-3.1-flash-lite exhausted its daily free-tier quota and returned
+    # 429 on 100% of calls, while 3.5-flash-lite still had headroom. A 429 also
+    # puts the key into cooldown, and the request manager then SLEEPS up to 20s
+    # waiting for it — so every call paid that toll before reaching a healthy
+    # model, and 20-article extraction batches stopped completing at all.
+    # Quotas are per-model, so leading with a model that has headroom is the
+    # immediate fix; per-model circuit breaking is the durable one.
+    SUMMARIZATION_MODEL: str = "gemini-3.5-flash-lite"
 
     # ── Pipeline Optimization ─────────────────────────────────────────────────
     PIPELINE_VERSION: str = "1.27.0"
