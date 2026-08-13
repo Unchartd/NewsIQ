@@ -86,14 +86,21 @@ def clean_json_for_schema(data: Any, schema: type[BaseModel]) -> Any:
                     break
 
     # 2. General Summary field extraction
-    if "summary" in data:
-        s_val = data["summary"]
-        if "one_line_summary" not in data or not data["one_line_summary"]:
-            data["one_line_summary"] = s_val
-        if "short_summary" not in data or not data["short_summary"]:
-            data["short_summary"] = s_val
-        if "detailed_summary" not in data or not data["detailed_summary"]:
-            data["detailed_summary"] = s_val
+    #
+    # A lone "summary" is the model ignoring the three-tier schema. It is a
+    # comprehensive prose summary, so it maps to detailed_summary and NOTHING
+    # else: copying it into one_line_summary/short_summary fabricates two
+    # summaries that were never generated and puts a full paragraph behind a
+    # tab labelled "1-line". Leaving the other fields absent fails schema
+    # validation, which the gateway retries (and then falls back on) — a real
+    # repair path instead of silently shipping three identical strings.
+    if "summary" in data and "detailed_summary" not in {k for k, v in data.items() if v}:
+        data["detailed_summary"] = data["summary"]
+        logger.warning(
+            "Model returned a single 'summary' for %s instead of the three-tier fields; "
+            "mapped to detailed_summary — schema validation will force a retry.",
+            schema.__name__,
+        )
 
     # 3. Key Mapping (camelCase/PascalCase to snake_case)
     camel_to_snake = {}

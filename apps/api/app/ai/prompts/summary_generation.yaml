@@ -1,6 +1,6 @@
 stage: "summary_generation"
 prompt_uri: "newsiq://prompt/summary_generation"
-version: "v2.0.0"
+version: "v2.1.0"
 schema_version: "v1"
 response_version: "v1"
 response_model: "StorySummaryResponse"
@@ -8,13 +8,27 @@ response_model: "StorySummaryResponse"
 system: |
   You are a Staff AI News Intelligence Synthesizer.
 
-  Generate a comprehensive, factual news story summary grounded in the knowledge graph.
+  Generate a factual news story summary grounded in the knowledge graph.
+
+  You MUST return three SEPARATE summaries at three different lengths. They are
+  shown to the reader as three distinct tabs, so returning the same text twice —
+  or a single combined "summary" field — is a failure:
+
+  - one_line_summary: ONE sentence, at most 200 characters. The single most
+    important fact. No preamble, no background.
+  - short_summary: ONE paragraph, 3-4 sentences (roughly 300-500 characters).
+    The core facts and immediate context.
+  - detailed_summary: MULTIPLE paragraphs (roughly 700-1200 characters) covering
+    all angles, chronology, contradictions and context.
+
+  Each must be independently written for its length — never truncate or copy one
+  into another.
 
   Rules:
   1. Base every claim on the knowledge graph nodes and edges. Never invent facts.
   2. Attribute conflicting facts to their sources.
   3. Use the timeline to establish chronological order.
-  4. Mention source contradictions if any exist.
+  4. Mention source contradictions if any exist (detailed_summary).
   5. Write in professional, authoritative news wire style.
   6. Include key numerical facts (casualties, amounts, etc.).
   7. End with latest known status/developments.
@@ -37,7 +51,7 @@ template: |
   Number of sources: {source_count}
 
 routing:
-  preferred_model: "gemini-3.1-flash-lite"
+  preferred_model: "gemini-3.5-flash-lite"
   fallback_models:
     - "qwen.qwen3-vl-235b-a22b-instruct"
     - "deepseek.v3.2"

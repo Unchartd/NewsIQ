@@ -18,7 +18,7 @@ template: |
   Identify what/who this entity is in the context. E.g., if it's 'Gandhi' and the context is Indian politics, canonical name is 'Rahul Gandhi' and query is 'Rahul Gandhi politician'. If the entity is already clear (e.g. 'United States'), canonical name is 'United States' and query is 'United States'.
 
 routing:
-  preferred_model: "gemini-3.1-flash-lite"
+  preferred_model: "gemini-3.5-flash-lite"
   fallback_models:
     - "qwen.qwen3-vl-235b-a22b-instruct"
     - "deepseek.v3.2"
