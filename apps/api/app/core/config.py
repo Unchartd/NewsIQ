@@ -72,6 +72,14 @@ class Settings(BaseSettings):
     # want. For a one-off backfill of already-processed articles, prefer the
     # explicit max_age_hours argument to run_batch_clustering().
     PIPELINE_MAX_ARTICLE_AGE_HOURS: int = 72
+
+    # Story reconciliation: how far back to look for duplicate stories, and how
+    # many merges one scheduled run may apply. The cap bounds the blast radius —
+    # if the validators ever become too permissive, a single run can affect at
+    # most this many stories, and hitting the cap is logged rather than silently
+    # absorbed.
+    STORY_RECONCILE_WINDOW_HOURS: int = 48
+    STORY_RECONCILE_MAX_MERGES: int = 25
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/1")
     CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/2")
 
