@@ -460,3 +460,18 @@ newsiq_crawler_low_quality_total = Counter(
     "Extractions rejected because the content was not article prose.",
     ["provider", "reason"],
 )
+
+
+# Duplicate stories awaiting/receiving reconciliation. A persistently non-zero
+# "found" means clustering is still splitting events at creation time and the
+# reconciler is only papering over it — the merge rate is the symptom, the
+# found rate is the disease.
+newsiq_story_duplicates_found = Gauge(
+    "newsiq_story_duplicates_found",
+    "Duplicate story pairs identified on the last reconciliation pass.",
+)
+
+newsiq_story_duplicates_merged = Counter(
+    "newsiq_story_duplicates_merged",
+    "Story pairs merged by reconciliation since process start.",
+)

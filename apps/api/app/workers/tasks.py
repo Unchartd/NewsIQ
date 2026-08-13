@@ -1164,6 +1164,59 @@ def retire_stale_unprocessed_articles_task() -> int:
     return run_async(_run())
 
 
+@celery_app.task(name="app.workers.tasks.reconcile_duplicate_stories_task")
+def reconcile_duplicate_stories_task() -> dict[str, int]:
+    """Merge stories that describe the same event.
+
+    Clustering evaluates an article once, at extraction time, and never
+    revisits it — and no process ever compares two stories to each other. So
+    two articles about the same event arriving in different batches each create
+    a story, and those stories stay split forever regardless of how good the
+    scoring is. Production measured 41 duplicate groups across 144 stories.
+
+    Running this on a schedule makes fragmentation self-healing: a merge missed
+    for any reason — batch boundary, transient provider failure, a scoring bug
+    later fixed — is caught on a later pass instead of persisting.
+    """
+    logger.info("Celery task: Reconciling duplicate stories.")
+
+    async def _run() -> dict[str, int]:
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping story reconciliation.")
+            return {"found": 0, "merged": 0, "skipped": 0}
+
+        from app.core.config import settings as _settings
+        from app.services.story_reconciliation_service import story_reconciliation_service
+
+        result = await story_reconciliation_service.reconcile(
+            hours=_settings.STORY_RECONCILE_WINDOW_HOURS,
+            max_merges=_settings.STORY_RECONCILE_MAX_MERGES,
+        )
+        try:
+            from app.core.metrics import (
+                newsiq_story_duplicates_found,
+                newsiq_story_duplicates_merged,
+            )
+
+            newsiq_story_duplicates_found.set(result["found"])
+            newsiq_story_duplicates_merged.inc(result["merged"])
+        except Exception as exc:
+            logger.debug("Failed to record reconciliation metrics: %s", exc)
+
+        if result["found"]:
+            logger.info(
+                "Story reconciliation complete",
+                extra={
+                    "duplicates_found": result["found"],
+                    "merged": result["merged"],
+                    "skipped": result["skipped"],
+                },
+            )
+        return result
+
+    return run_async(_run())
+
+
 @celery_app.task(name="app.workers.tasks.evaluate_story_lifecycles_task")
 def evaluate_story_lifecycles_task() -> int:
     """Periodically evaluate transitions for all active stories."""

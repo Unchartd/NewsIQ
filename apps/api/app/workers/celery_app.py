@@ -140,6 +140,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.digest_tasks.process_hourly_digests_task",
         "schedule": crontab(minute="0"),
     },
+    # Merge stories that describe the same event. Clustering judges an article
+    # once and never revisits it, so without this pass duplicates created across
+    # batch boundaries are permanent — 41 of 144 production stories were splits.
+    "reconcile-duplicate-stories-every-30-minutes": {
+        "task": "app.workers.tasks.reconcile_duplicate_stories_task",
+        "schedule": crontab(minute="*/30"),
+    },
     # Evaluate story lifecycles
     "evaluate-story-lifecycles-every-15-minutes": {
         "task": "app.workers.tasks.evaluate_story_lifecycles_task",
