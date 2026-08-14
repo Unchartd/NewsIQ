@@ -1045,6 +1045,13 @@ class DomainExtractionPolicy(Base):
     local_success_rate: Mapped[float] = mapped_column(Float, default=0.0)
     tavily_success_rate: Mapped[float] = mapped_column(Float, default=0.0)
     firecrawl_success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    # Sample counts behind the rates above. The rates are exponential moving
+    # averages, so a single failure on a brand-new domain reads identically to
+    # a domain that has failed fifty times — routing decisions need to know
+    # which, or one unlucky timeout would banish a domain to a paid provider.
+    local_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    tavily_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    firecrawl_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     average_latency: Mapped[float] = mapped_column(Float, default=0.0)
     average_content_length: Mapped[float] = mapped_column(Float, default=0.0)
     last_success_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)

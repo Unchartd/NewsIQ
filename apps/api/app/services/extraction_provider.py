@@ -444,11 +444,36 @@ class FirecrawlProvider(ExtractionProvider):
                         res.diagnostics.notes.append(
                             data.get("error", "Firecrawl extraction failed")
                         )
+                        logger.warning(
+                            "Firecrawl returned 200 without data for %s: %s",
+                            url,
+                            data.get("error", "<no error field>"),
+                        )
+                elif response.status_code == 402:
+                    # Out of credits. Every subsequent URL will fail identically
+                    # until the monthly quota resets, so record it as an account
+                    # state and let the manager circuit-break the provider.
+                    res.failure = ExtractionFailure.QUOTA_EXHAUSTED
+                    res.diagnostics.notes.append("firecrawl credits exhausted (HTTP 402)")
+                    logger.error(
+                        "Firecrawl is OUT OF CREDITS (HTTP 402) — disabling until quota resets. "
+                        "Response: %s",
+                        response.text[:200],
+                    )
                 else:
                     if response.status_code in (401, 403):
                         res.failure = ExtractionFailure.HTTP_403
                     else:
                         res.failure = ExtractionFailure.HTTP_ERROR
+                    # Previously silent: 256 calls a day failed with no log line
+                    # and no cost metric, so a fully dead tier looked like a
+                    # tier that was simply never used.
+                    logger.warning(
+                        "Firecrawl HTTP %d for %s: %s",
+                        response.status_code,
+                        url,
+                        response.text[:200],
+                    )
         except httpx.TimeoutException:
             res.failure = ExtractionFailure.TIMEOUT
             res.diagnostics.latency_ms = (time.perf_counter() - start_time) * 1000.0

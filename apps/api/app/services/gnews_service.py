@@ -184,12 +184,30 @@ class GNewsService:
             return 0
 
         # Filter new articles and resolve sources first
+        #
+        # Google News RSS hands back news.google.com redirect URLs. Decoding
+        # them is not cosmetic: an undecoded URL is stored as the article's
+        # own URL, so the article is attributed to news.google.com rather than
+        # its publisher, and every such fetch hammers one host. 994 articles
+        # (15.6% of the corpus) were stored this way because this path — unlike
+        # the pre-crawler engine — never called resolve_url.
+        from app.ingestion.discovery_providers import get_discovery_provider
+        from app.services.crawl_policy import is_google_news_redirect
+
+        provider = get_discovery_provider("google_rss")
+
         new_articles_to_crawl = []
         for art_dict in articles_data:
             raw_url = art_dict.get("url", "").strip()
             if not raw_url:
                 continue
-            url = canonicalize_url(raw_url)
+            resolved_url = await provider.resolve_url(raw_url)
+            if is_google_news_redirect(resolved_url):
+                # Undecodable redirect. Crawling it yields Google's own page,
+                # not journalism, so it is worth less than the request it costs.
+                logger.warning("Skipping undecodable Google News redirect: %s", raw_url)
+                continue
+            url = canonicalize_url(resolved_url)
 
             # URL deduplication
             res = await session.execute(select(Article).where(Article.url == url))

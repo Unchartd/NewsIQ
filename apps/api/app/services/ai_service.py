@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +25,49 @@ CATEGORY_SLUGS = [
 ]
 
 
+# Values a model emits when it echoes the JSON schema instead of answering it.
+# Production published a story whose headline, all three summaries and only key
+# fact were each the literal word "string" — the schema's type name. Every field
+# was a valid non-empty string, so Pydantic accepted it and synthesis recorded
+# decision=success against a knowledge graph of 30 nodes and 12 timeline events.
+_PLACEHOLDER_VALUES = frozenset(
+    {
+        "string",
+        "str",
+        "text",
+        "summary",
+        "headline",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "todo",
+        "tbd",
+        "example",
+        "lorem ipsum",
+    }
+)
+
+
 class StorySummaryResponse(BaseModel):
+    # The length floors are what make a schema echo fail validation rather than
+    # reach a reader. They are deliberately far below any real summary, so they
+    # catch degenerate output without rejecting a genuinely terse story.
     headline: str = Field(
-        description="A highly neutral, objective, and non-clickbait headline summarizing the event"
+        min_length=12,
+        description="A highly neutral, objective, and non-clickbait headline summarizing the event",
     )
-    one_line_summary: str = Field(description="A concise 1-sentence summary of the story")
-    short_summary: str = Field(description="A short 1-paragraph summary (3-4 sentences)")
+    one_line_summary: str = Field(
+        min_length=25,
+        max_length=400,
+        description="A concise 1-sentence summary of the story",
+    )
+    short_summary: str = Field(
+        min_length=60, description="A short 1-paragraph summary (3-4 sentences)"
+    )
     detailed_summary: str = Field(
-        description="A detailed multi-paragraph summary covering all angles and context"
+        min_length=150,
+        description="A detailed multi-paragraph summary covering all angles and context",
     )
     key_facts: list[str] = Field(description="List of 3 to 6 key objective bullet points of fact")
     category: str = Field(
@@ -41,6 +76,30 @@ class StorySummaryResponse(BaseModel):
             f"Must be one of: {', '.join(CATEGORY_SLUGS)}"
         )
     )
+
+    @model_validator(mode="after")
+    def _reject_placeholder_or_duplicated_summaries(self) -> "StorySummaryResponse":
+        """Fail validation so the gateway retries and then falls back.
+
+        Two failure modes reach here, and both used to be stored as successes:
+        a model echoing the schema ("string" in every field), and a model
+        emitting the same text for all three tiers, which puts a full paragraph
+        behind a tab labelled "1-line".
+        """
+        for name in ("headline", "one_line_summary", "short_summary", "detailed_summary"):
+            value = getattr(self, name).strip()
+            if value.lower().rstrip(".") in _PLACEHOLDER_VALUES:
+                raise ValueError(
+                    f"{name} is the placeholder {value!r} — the model echoed the schema "
+                    f"instead of summarising the story"
+                )
+
+        if self.one_line_summary.strip() == self.short_summary.strip():
+            raise ValueError("one_line_summary and short_summary are identical")
+        if self.short_summary.strip() == self.detailed_summary.strip():
+            raise ValueError("short_summary and detailed_summary are identical")
+
+        return self
 
 
 class AIService:

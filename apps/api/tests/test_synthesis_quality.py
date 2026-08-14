@@ -138,9 +138,17 @@ async def test_generate_story_content_end_to_end_synthesis(
     # Mock synthesis result
     mock_summary_res = StorySummaryResponse(
         headline="Validated Event Headline",
-        one_line_summary="Objective one line",
-        short_summary="Objective short summary",
-        detailed_summary="Objective detailed summary",
+        one_line_summary="Researchers confirmed the result in an independent replication.",
+        short_summary=(
+            "Researchers confirmed the result in an independent replication this week. "
+            "The team reported the same effect size as the original study."
+        ),
+        detailed_summary=(
+            "Researchers confirmed the result in an independent replication this week, "
+            "reporting the same effect size as the original study. The replication used "
+            "a larger sample and pre-registered its analysis. Two groups that attempted "
+            "the work earlier reported null results and have not yet responded."
+        ),
         key_facts=["Fact A", "Fact B"],
         category="science",
     )
@@ -160,7 +168,7 @@ async def test_generate_story_content_end_to_end_synthesis(
 
         # 1. Verify story summaries got updated with mock_summary_res
         assert story.headline == "Validated Event Headline"
-        assert story.one_line_summary == "Objective one line"
+        assert story.one_line_summary == mock_summary_res.one_line_summary
         assert story.category_id is not None  # mapped science category
 
         # 2. Verify timeline objects were added

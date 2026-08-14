@@ -21,6 +21,11 @@ class ExtractionFailure(StrEnum):
     LOW_QUALITY_CONTENT = "LOW_QUALITY_CONTENT"
     PAYWALL = "PAYWALL"
     JS_REQUIRED = "JS_REQUIRED"
+    # The provider's account is out of credits (Firecrawl answers HTTP 402).
+    # Distinct from HTTP_ERROR because it is an account state, not a property
+    # of the URL: retrying any URL costs a round-trip and cannot succeed until
+    # the quota resets, so the provider must be circuit-broken instead.
+    QUOTA_EXHAUSTED = "QUOTA_EXHAUSTED"
     UNKNOWN = "UNKNOWN"
 
 

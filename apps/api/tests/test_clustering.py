@@ -107,8 +107,16 @@ async def test_run_batch_clustering(
         mock_summarize_story.return_value = StorySummaryResponse(
             headline="AI Deep Learning Breakthrough in Protein Prediction",
             one_line_summary="A new deep learning model predicts protein structures.",
-            short_summary="Medical researchers achieve state of the art results using AI.",
-            detailed_summary="Medical researchers achieve state of the art results using AI deep learning.",
+            short_summary=(
+                "Medical researchers achieved state-of-the-art results using AI. The "
+                "model predicts folded protein structures directly from sequence data."
+            ),
+            detailed_summary=(
+                "Medical researchers achieved state-of-the-art results using AI deep "
+                "learning. The model predicts folded protein structures directly from "
+                "sequence data, outperforming prior methods on a standard benchmark. "
+                "Independent groups have not yet reproduced the headline figures."
+            ),
             key_facts=["Breakthrough in medical AI.", "Uses deep learning."],
             category="technology",
         )
