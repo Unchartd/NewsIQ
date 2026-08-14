@@ -82,10 +82,18 @@ async def test_story_synthesis_orchestrator_flow(mock_db_session):
     from app.services.ai_service import StorySummaryResponse
 
     mock_summary = StorySummaryResponse(
-        headline="AI and ML Growth",
-        one_line_summary="AI is growing fast.",
-        short_summary="A short summary.",
-        detailed_summary="A detailed summary of AI growth.",
+        headline="AI and ML Growth Accelerates",
+        one_line_summary="Artificial intelligence and machine learning adoption is accelerating.",
+        short_summary=(
+            "Adoption of artificial intelligence and machine learning accelerated this "
+            "quarter. Analysts point to cheaper inference and wider tooling as the cause."
+        ),
+        detailed_summary=(
+            "Adoption of artificial intelligence and machine learning accelerated sharply "
+            "this quarter, according to several independent analyses. Observers attribute "
+            "the shift to falling inference costs and a broader base of tooling. Vendors "
+            "differ on how durable the trend will prove over the next year."
+        ),
         key_facts=["AI is fast", "ML is growing"],
         category="world",
     )
@@ -271,10 +279,18 @@ async def test_story_synthesis_transaction_decoupling():
     from app.services.ai_service import StorySummaryResponse
 
     mock_summary = StorySummaryResponse(
-        headline="AI Growth",
-        one_line_summary="AI is growing.",
-        short_summary="A short summary.",
-        detailed_summary="Detailed summary.",
+        headline="AI Growth Continues",
+        one_line_summary="Artificial intelligence adoption continued to grow this quarter.",
+        short_summary=(
+            "Artificial intelligence adoption continued to grow this quarter across "
+            "several sectors, with analysts citing cheaper inference as the main driver."
+        ),
+        detailed_summary=(
+            "Artificial intelligence adoption continued to grow this quarter across "
+            "several sectors. Analysts cite cheaper inference and wider tooling as the "
+            "main drivers, though they disagree on how long the trend will hold. "
+            "Vendors have not published figures that would settle the question."
+        ),
         key_facts=["AI is growing"],
         category="world",
     )

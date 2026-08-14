@@ -143,10 +143,18 @@ async def test_synthesis_flow_orm_safety_mocked(mock_db_session):
     from app.services.ai_service import StorySummaryResponse
 
     mock_summary = StorySummaryResponse(
-        headline="Title",
-        one_line_summary="One line",
-        short_summary="Short",
-        detailed_summary="Detailed",
+        headline="Committee Publishes Findings",
+        one_line_summary="The committee published its findings on Tuesday afternoon.",
+        short_summary=(
+            "The committee published its findings on Tuesday. The report sets out a "
+            "sequence of events and names the officials involved in the decision."
+        ),
+        detailed_summary=(
+            "The committee published its findings on Tuesday afternoon. The report sets "
+            "out a sequence of events and names the officials involved in the decision. "
+            "Two members filed a dissent disputing the weight given to witness testimony, "
+            "and the chair has not said whether that dissent will be published."
+        ),
         key_facts=["Fact"],
         category="world",
     )

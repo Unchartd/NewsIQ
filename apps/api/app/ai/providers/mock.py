@@ -112,7 +112,14 @@ class MockProvider(AIProvider):
                         "headline": "[Mock] News Headline",
                         "one_line_summary": "Reports detail developments regarding mock event.",
                         "short_summary": "Recent media coverage highlights key developments surrounding the mock event.",
-                        "detailed_summary": "A synthesis of recent news coverage reveals details regarding the mock event.",
+                        # Long enough to satisfy StorySummaryResponse's floor, which
+                        # exists to reject schema echoes like "string" reaching readers.
+                        "detailed_summary": (
+                            "A synthesis of recent news coverage reveals details regarding "
+                            "the mock event. Multiple outlets corroborate the sequence of "
+                            "events, while differing on attribution and on the figures "
+                            "involved. No contradictions were material to the outcome."
+                        ),
                         "key_facts": ["Mock fact 1", "Mock fact 2"],
                         "category": "world",
                     }

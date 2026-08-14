@@ -108,9 +108,17 @@ async def test_golden_stories_evaluation(mock_db_session):
                 else "Prime Minister Announces Corporate Tax Reform Bill"
                 if story_data["category"] == "politics"
                 else "Severe 7.2 Magnitude Earthquake Strikes Florida Big Bend",
-                one_line_summary=f"Objective summary for {name}.",
-                short_summary=f"Short paragraph summary for {name}.",
-                detailed_summary=f"Detailed context and summary paragraphs for {name}.",
+                one_line_summary=f"An objective one-sentence summary of the {name} story.",
+                short_summary=(
+                    f"A short paragraph summarising the {name} story. It states the core "
+                    f"facts and the immediate context reported by the sources."
+                ),
+                detailed_summary=(
+                    f"A detailed multi-paragraph treatment of the {name} story. It covers "
+                    f"the chronology, the parties involved and the figures reported. Where "
+                    f"sources disagree the discrepancy is attributed to the outlet that "
+                    f"reported it, rather than resolved silently."
+                ),
                 key_facts=[f"Fact {i}: expected detail is present." for i in range(3)],
                 category=expected["category"],
             )

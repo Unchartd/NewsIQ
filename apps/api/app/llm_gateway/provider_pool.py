@@ -719,10 +719,12 @@ class MockProvider(BaseLLMProvider):
                     if not title_matches:
                         title_matches = re.findall(r'"label":\s*"([^"]+)"', user_msg)
 
+                    # 12 is StorySummaryResponse's headline floor: a shorter title
+                    # would make the mock emit output its own schema rejects.
                     real_titles = [
                         t.strip()
                         for t in title_matches
-                        if len(t.strip()) >= 5 and not t.strip().lower().startswith("mock")
+                        if len(t.strip()) >= 12 and not t.strip().lower().startswith("mock")
                     ]
                     if real_titles:
                         headline = real_titles[0]

@@ -149,8 +149,16 @@ async def run_scenario(scenario: dict) -> dict:
             "tech_acquisition": StorySummaryResponse(
                 headline="TechCorp Announces Definitive Agreement to Acquire InnovateAI startup for $500M",
                 one_line_summary="TechCorp is acquiring startup InnovateAI to accelerate ML offerings.",
-                short_summary="TechCorp announced it is acquiring InnovateAI in a $500M deal.",
-                detailed_summary="Silicon Valley giant TechCorp is buying InnovateAI for $500 million cash.",
+                short_summary=(
+                    "TechCorp announced it is acquiring InnovateAI in a $500M all-cash "
+                    "deal. The purchase is intended to accelerate its ML offerings."
+                ),
+                detailed_summary=(
+                    "Silicon Valley giant TechCorp is buying InnovateAI for $500 million "
+                    "in cash. The company said the purchase accelerates its machine "
+                    "learning roadmap and brings in a team of roughly 80 engineers. "
+                    "Regulatory review is expected to conclude before the year ends."
+                ),
                 key_facts=[
                     "TechCorp is acquiring startup InnovateAI.",
                     "The cash transaction is valued at $500M.",
@@ -160,8 +168,16 @@ async def run_scenario(scenario: dict) -> dict:
             "natural_disaster": StorySummaryResponse(
                 headline="Hurricane Helene Landfall in Florida as Category 4 Storm",
                 one_line_summary="Hurricane Helene makes landfall in Florida causing storm surges.",
-                short_summary="A powerful Category 4 Hurricane Helene made landfall on Florida Big Bend.",
-                detailed_summary="Helene slammed into Florida coast with 140 mph wind gusts.",
+                short_summary=(
+                    "A powerful Category 4 Hurricane Helene made landfall on Florida's "
+                    "Big Bend, driving storm surge across low-lying coastal counties."
+                ),
+                detailed_summary=(
+                    "Helene slammed into the Florida coast with 140 mph wind gusts, "
+                    "making landfall on the Big Bend as a Category 4 storm. Emergency "
+                    "managers reported storm surge across low-lying coastal counties and "
+                    "widespread power loss. Casualty figures remained provisional."
+                ),
                 key_facts=[
                     "Hurricane Helene made landfall in Florida.",
                     "Maximum winds reached 140 mph in Category 4 storm.",
@@ -171,8 +187,16 @@ async def run_scenario(scenario: dict) -> dict:
             "financial_policy": StorySummaryResponse(
                 headline="Federal Reserve Hikes Interest Rates by 25 Basis Points to Combat Inflation",
                 one_line_summary="The Federal Reserve increases interest rates by 0.25% to target inflation.",
-                short_summary="The Fed raises interest rates to the highest level in 16 years.",
-                detailed_summary="Fed Chairman Jerome Powell announced another interest rates hike.",
+                short_summary=(
+                    "The Fed raised interest rates to their highest level in 16 years, "
+                    "citing inflation still running above its 2% target."
+                ),
+                detailed_summary=(
+                    "Fed Chairman Jerome Powell announced another interest rate hike of "
+                    "25 basis points, taking the benchmark to its highest level in 16 "
+                    "years. Powell said inflation remains above the 2% target and "
+                    "declined to rule out further increases at coming meetings."
+                ),
                 key_facts=[
                     "Federal Reserve raises benchmark interest rate by 25 bps.",
                     "The decision aims to return inflation to 2% target.",
@@ -182,8 +206,16 @@ async def run_scenario(scenario: dict) -> dict:
             "space_discovery": StorySummaryResponse(
                 headline="NASA's Webb Telescope Confirms Earth-Sized Exoplanet LHS 475 b",
                 one_line_summary="James Webb Space Telescope discovers new rocky exoplanet.",
-                short_summary="Astronomers confirm discovery of Earth-sized planet LHS 475 b.",
-                detailed_summary="James Webb space telescope detected LHS 475 b orbiting red dwarf star.",
+                short_summary=(
+                    "Astronomers confirmed the discovery of Earth-sized planet LHS 475 b, "
+                    "detected by the James Webb Space Telescope."
+                ),
+                detailed_summary=(
+                    "The James Webb Space Telescope detected LHS 475 b orbiting a red "
+                    "dwarf star, and astronomers have now confirmed it as an Earth-sized "
+                    "rocky world. The planet completes an orbit in roughly two days. "
+                    "Whether it retains an atmosphere is still an open question."
+                ),
                 key_facts=[
                     "Webb telescope confirms rocky exoplanet LHS 475 b.",
                     "LHS 475 b orbits its star in two days.",
@@ -193,8 +225,16 @@ async def run_scenario(scenario: dict) -> dict:
             "sports_championship": StorySummaryResponse(
                 headline="Argentina Wins World Cup Championship in Thrilling Shootout",
                 one_line_summary="Argentina beats France to win the World Cup championship.",
-                short_summary="Messi leads Argentina to historic World Cup victory over France.",
-                detailed_summary="Argentina won the championship on penalty shootout after 3-3 draw.",
+                short_summary=(
+                    "Messi led Argentina to a historic World Cup victory over France, "
+                    "settled on penalties after a 3-3 draw."
+                ),
+                detailed_summary=(
+                    "Argentina won the championship on a penalty shootout after a 3-3 "
+                    "draw with France. Lionel Messi scored twice in normal and extra "
+                    "time before converting in the shootout. It is Argentina's third "
+                    "World Cup title and Messi's first."
+                ),
                 key_facts=[
                     "Argentina wins World Cup title.",
                     "Lionel Messi scored twice and won shootout.",
@@ -208,8 +248,16 @@ async def run_scenario(scenario: dict) -> dict:
             StorySummaryResponse(
                 headline=f"Validated acquisition of {scenario_id} in {target_category} space",
                 one_line_summary=f"This is a simulated objective one-line summary for {scenario_id}.",
-                short_summary=f"This is a simulated short summary. Details about {description}.",
-                detailed_summary=f"This is a simulated detailed summary. It describes {description} in length.",
+                short_summary=(
+                    f"This is a simulated short summary for {scenario_id}. It sets out "
+                    f"the core details about {description} and their immediate context."
+                ),
+                detailed_summary=(
+                    f"This is a simulated detailed summary for {scenario_id}. It describes "
+                    f"{description} at length, covering the chronology, the parties "
+                    f"involved and the figures reported. Where the simulated sources "
+                    f"disagree, the discrepancy is attributed rather than resolved."
+                ),
                 key_facts=[
                     f"Fact 1: {description} was finalized.",
                     "Fact 2: High interest in this industry.",

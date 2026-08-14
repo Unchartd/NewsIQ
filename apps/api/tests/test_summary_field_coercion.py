@@ -80,6 +80,62 @@ def test_summary_prompt_demands_three_distinct_summaries():
         assert field in text, f"the prompt never names {field}, so models omit it"
 
 
+def _valid_payload(**overrides):
+    payload = {
+        "headline": "Panel finds judge guilty of misconduct",
+        "one_line_summary": "An inquiry panel found the judge guilty of misconduct.",
+        "short_summary": "An inquiry panel found the judge guilty. " * 3,
+        "detailed_summary": "An inquiry panel found the judge guilty of misconduct. " * 6,
+        "key_facts": ["a"],
+        "category": "politics",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_schema_echo_is_rejected():
+    """Production published a story whose every field was the word "string"."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        StorySummaryResponse.model_validate(
+            {
+                "headline": "string",
+                "one_line_summary": "string",
+                "short_summary": "string",
+                "detailed_summary": "string",
+                "key_facts": ["string"],
+                "category": "string",
+            }
+        )
+
+
+def test_three_identical_summaries_are_rejected_even_when_all_fields_present():
+    """The coercion fix only covered a lone 'summary'; a model can still repeat itself."""
+    import pytest
+    from pydantic import ValidationError
+
+    same = "The inquiry panel found the judge guilty of misconduct in a written report. " * 3
+    with pytest.raises(ValidationError):
+        StorySummaryResponse.model_validate(
+            _valid_payload(one_line_summary=same, short_summary=same, detailed_summary=same)
+        )
+
+
+def test_a_paragraph_behind_the_one_line_tab_is_rejected():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        StorySummaryResponse.model_validate(_valid_payload(one_line_summary="word " * 200))
+
+
+def test_a_genuinely_tiered_summary_still_validates():
+    """The floors must not reject real output."""
+    assert StorySummaryResponse.model_validate(_valid_payload()).category == "politics"
+
+
 def test_no_stage_prefers_the_quota_exhausted_model():
     """gemini-3.1-flash-lite measured 1598 rate-limit errors over 1026 calls."""
     from pathlib import Path
