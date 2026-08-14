@@ -66,8 +66,14 @@ def test_model_supplied_three_tier_summaries_are_preserved():
         assert cleaned[field] == payload[field]
 
 
-def test_summary_prompt_demands_three_distinct_summaries():
-    """The prompt must actually ask for the three fields, not one 'summary'."""
+def test_summary_prompt_names_every_required_field():
+    """A field the prompt does not name is a field the model leaves out.
+
+    Naming only the three summaries made the model return exactly those three
+    plus category, dropping headline and key_facts — so every attempt failed
+    validation and the story kept its old text. The prompt must enumerate the
+    whole schema, not the subset that happens to be under discussion.
+    """
     from pathlib import Path
 
     import app.ai.prompts as prompts_pkg
@@ -76,7 +82,7 @@ def test_summary_prompt_demands_three_distinct_summaries():
         encoding="utf-8"
     )
 
-    for field in ("one_line_summary", "short_summary", "detailed_summary"):
+    for field in StorySummaryResponse.model_fields:
         assert field in text, f"the prompt never names {field}, so models omit it"
 
 

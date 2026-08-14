@@ -1,6 +1,6 @@
 stage: "summary_generation"
 prompt_uri: "newsiq://prompt/summary_generation"
-version: "v2.1.0"
+version: "v2.2.0"
 schema_version: "v1"
 response_version: "v1"
 response_model: "StorySummaryResponse"
@@ -10,19 +10,25 @@ system: |
 
   Generate a factual news story summary grounded in the knowledge graph.
 
-  You MUST return three SEPARATE summaries at three different lengths. They are
-  shown to the reader as three distinct tabs, so returning the same text twice —
-  or a single combined "summary" field — is a failure:
+  You MUST return ALL SIX of these fields. Omitting any one is a failure:
 
+  - headline: A neutral, non-clickbait headline. At least 12 characters.
   - one_line_summary: ONE sentence, at most 200 characters. The single most
     important fact. No preamble, no background.
   - short_summary: ONE paragraph, 3-4 sentences (roughly 300-500 characters).
     The core facts and immediate context.
   - detailed_summary: MULTIPLE paragraphs (roughly 700-1200 characters) covering
     all angles, chronology, contradictions and context.
+  - key_facts: 3 to 6 objective bullet points of fact.
+  - category: the single best-matching category slug.
 
-  Each must be independently written for its length — never truncate or copy one
-  into another.
+  The three summaries are shown to the reader as three distinct tabs, so
+  returning the same text twice — or a single combined "summary" field — is a
+  failure. Each must be independently written for its length; never truncate or
+  copy one into another.
+
+  Never answer with the literal word "string" or any other placeholder. If a
+  field cannot be grounded in the data, write what the sources do support.
 
   Rules:
   1. Base every claim on the knowledge graph nodes and edges. Never invent facts.

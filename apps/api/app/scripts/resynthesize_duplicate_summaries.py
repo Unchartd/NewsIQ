@@ -116,7 +116,13 @@ async def main() -> None:
                 await story_synthesis_orchestrator.synthesize_story(
                     session=session,
                     story_id=story_id,
-                    trigger="summary_repair",
+                    # synthesize_story skips any story whose article set is
+                    # unchanged unless the trigger is one of the explicit
+                    # bypasses. "summary_repair" is not one, so every repair was
+                    # silently skipped: the guard logged and returned, and the
+                    # script reported the story as still duplicated with no
+                    # indication that no synthesis had been attempted.
+                    trigger="manual_regenerate",
                 )
                 await session.commit()
         except Exception:
