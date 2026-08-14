@@ -177,8 +177,8 @@ async def should_skip_local(domain: str) -> bool:
         from app.core.metrics import newsiq_crawler_local_skipped_total
 
         newsiq_crawler_local_skipped_total.labels(domain=domain).inc()
-    except Exception:
-        pass
+    except Exception:  # a metrics failure must never stop an extraction
+        logger.debug("Could not record local-skip metric for %s", domain, exc_info=True)
     return True
 
 
