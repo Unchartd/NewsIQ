@@ -855,9 +855,46 @@ class StageTrace:
             self.errors.append(str(exc_val))
             await self._save_failure_artifacts()
             await self._emit_event("StageFailed", error=str(exc_val))
+
+            # Record the failure so it reaches the Failure Center.
+            #
+            # StageSpan has always done this; this collector never did, and
+            # event_extraction is the only production stage that uses it. The
+            # result was 779 of 892 event-extraction failures (87%) marked
+            # failed in stage_runs with no pipeline_failures row — invisible in
+            # the Failure Center, and the single largest block of missing
+            # failures in the system.
+            try:
+                from app.core.failure_recorder import record_pipeline_failure
+
+                await record_pipeline_failure(
+                    stage=self.stage,
+                    exception=exc_val,
+                    # The span's own ids, captured at entry. Reading the
+                    # contextvars here would pick up "" if the token has
+                    # already been reset above.
+                    trace_id=_to_uuid(self.trace_id),
+                    run_id=_to_uuid(self.run_id),
+                    story_id=_to_uuid(self.story_id),
+                    article_id=_to_uuid(self.article_id),
+                    provider=self.metadata.get("provider"),
+                    model=self.metadata.get("model"),
+                    retry_count=getattr(self, "retry_count", 0),
+                    latency=self.latency_ms / 1000.0,
+                )
+            except Exception as rec_err:
+                # Never mask the original exception with a telemetry problem,
+                # but never swallow it silently either.
+                logger.error(
+                    "Failed to record %s failure in pipeline_failures: %s", self.stage, rec_err
+                )
         else:
             if self.status == "RUNNING":
-                self.status = "COMPLETED"
+                # "SUCCESS", not "COMPLETED": this collector was the only writer
+                # of a second terminal vocabulary, leaving 1,128 stage_runs with
+                # a status the dashboard's STATUS_CONFIG does not map, so they
+                # rendered with no icon and no colour.
+                self.status = "SUCCESS"
             await self._emit_event("StageCompleted")
 
         # Persist to database

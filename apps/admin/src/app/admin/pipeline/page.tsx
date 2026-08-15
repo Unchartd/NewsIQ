@@ -55,6 +55,10 @@ const GROUP_COLORS: Record<string, { bg: string; border: string; text: string }>
 
 const STATUS_CONFIG: Record<string, { icon: React.ElementType; cls: string; label: string; iconCls?: string }> = {
   success: { icon: CheckCircle2, cls: "text-emerald-400", label: "Success" },
+  // The trace collector used to write "completed" where StageSpan writes
+  // "success". 1,128 historical stage_runs still carry it, and without this
+  // entry they render with no icon and no colour.
+  completed: { icon: CheckCircle2, cls: "text-emerald-400", label: "Success" },
   failed: { icon: XCircle, cls: "text-red-400", label: "Failed" },
   running: { icon: Loader2, cls: "text-blue-400", iconCls: "animate-spin", label: "Running" },
   pending: { icon: Clock, cls: "text-slate-500", label: "Pending" },
@@ -1742,18 +1746,47 @@ export default function PipelinePage() {
                   {/* Overview Tab */}
                   {activeTab === "overview" && (
                     <div className="space-y-6">
+                      {/* A stage is not unique within a run — crawl opens a span
+                          per URL, so one run can hold thousands. Say so, rather
+                          than presenting an aggregate as a single execution. */}
+                      {stageDetails.is_aggregated && (
+                        <div className="p-3.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-[10px] text-indigo-300 uppercase tracking-wider font-semibold">
+                              Aggregated over {stageDetails.attempt_count.toLocaleString()} executions
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              showing {stageDetails.attempts?.length ?? 0}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px]">
+                            {Object.entries(stageDetails.status_counts ?? {}).map(([st, n]: any) => (
+                              <span key={st} className={STATUS_CONFIG[st]?.cls ?? "text-slate-400"}>
+                                {STATUS_CONFIG[st]?.label ?? st}: <strong>{n.toLocaleString()}</strong>
+                              </span>
+                            ))}
+                          </div>
+                          {stageDetails.aggregate?.avg_latency_ms != null && (
+                            <div className="mt-2 text-[11px] text-slate-400 font-mono">
+                              avg {stageDetails.aggregate.avg_latency_ms.toFixed(0)} ms · max{" "}
+                              {stageDetails.aggregate.max_latency_ms?.toFixed(0) ?? "—"} ms
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/80">
                           <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
                             Stage Status
                           </span>
                           <span className="text-xs font-bold text-white capitalize block mt-1">
-                            {stageDetails.status}
+                            {STATUS_CONFIG[stageDetails.status]?.label ?? stageDetails.status}
                           </span>
                         </div>
                         <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/80">
                           <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
-                            Execution Latency
+                            {stageDetails.is_aggregated ? "Total Latency" : "Execution Latency"}
                           </span>
                           <span className="text-xs font-mono font-bold text-white block mt-1">
                             {stageDetails.latency_ms ? `${stageDetails.latency_ms.toFixed(2)} ms` : "—"}
@@ -1797,6 +1830,48 @@ export default function PipelinePage() {
                               );
                             })}
                           </div>
+                        </div>
+                      )}
+
+                      {/* Individual attempts. Ordered worst-first by the API, so
+                          a single failure among a thousand successes is the first
+                          row rather than being buried. */}
+                      {stageDetails.is_aggregated && stageDetails.attempts?.length > 0 && (
+                        <div className="p-4 bg-slate-900/40 rounded-xl border border-slate-800 space-y-2">
+                          <div className="flex items-baseline justify-between">
+                            <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              Executions
+                            </h4>
+                            <span className="text-[10px] text-slate-600">worst first</span>
+                          </div>
+                          <div className="max-h-64 overflow-y-auto">
+                            {stageDetails.attempts.map((a: any) => {
+                              const cfg = STATUS_CONFIG[a.status];
+                              return (
+                                <div
+                                  key={a.id}
+                                  className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-850/60 text-[11px]"
+                                >
+                                  <span className={`font-semibold shrink-0 ${cfg?.cls ?? "text-slate-400"}`}>
+                                    {cfg?.label ?? a.status}
+                                  </span>
+                                  <span className="text-slate-500 truncate flex-1 font-mono">
+                                    {a.error ? a.error.slice(0, 90) : a.article_id || a.story_id || a.id.slice(0, 8)}
+                                  </span>
+                                  <span className="text-slate-400 font-mono shrink-0">
+                                    {a.latency_ms != null ? `${a.latency_ms.toFixed(0)} ms` : "—"}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {stageDetails.attempts_page &&
+                            stageDetails.attempts_page.total > stageDetails.attempts.length && (
+                              <p className="text-[10px] text-slate-600 pt-1">
+                                Showing {stageDetails.attempts.length} of{" "}
+                                {stageDetails.attempts_page.total.toLocaleString()}
+                              </p>
+                            )}
                         </div>
                       )}
 

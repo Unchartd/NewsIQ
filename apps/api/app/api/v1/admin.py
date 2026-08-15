@@ -11,7 +11,7 @@ from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import require_admin
+from app.core.deps import require_admin, require_admin_sse
 from app.models.models import Article, CanonicalEntity, Source, Story, StoryArticle, User
 from app.models.observability_models import (
     AIExecutionRecordModel,
@@ -563,25 +563,111 @@ async def list_pipeline_runs(
     ]
 
 
+# A stage is not unique within a run. crawl_url_task opens its own span per URL,
+# so one run legitimately holds thousands of `crawling` rows — 2,079 in the worst
+# case measured in production. The previous implementation used
+# scalar_one_or_none() here, which raised MultipleResultsFound and returned HTTP
+# 500 for the two highest-volume stages (89% of all stage runs).
+#
+# Returning a single row instead would be worse than the crash: it would silently
+# hide 2,078 attempts behind a page that looks authoritative. So the endpoint
+# aggregates, and exposes the individual attempts through a paged list.
+_ATTEMPTS_PAGE_MAX = 200
+_LLM_TRACE_MAX = 100
+
+# Worst-first, so a drawer opened on a stage with one failure among a thousand
+# successes shows the failure rather than an arbitrary success.
+_STATUS_SEVERITY = {"failed": 3, "running": 2, "skipped": 1}
+
+
 @router.get("/pipeline/runs/{run_id}/stages/{stage}")
 async def get_stage_run_details(
     run_id: uuid.UUID,
     stage: str,
+    limit: int = 50,
+    offset: int = 0,
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve details (inputs, outputs, metrics, errors) of a specific stage run (admin only)."""
+    """Aggregate view of a stage within a run, plus a page of individual attempts.
+
+    Shape is backward compatible: when a stage ran once the top-level fields are
+    exactly what they were. When it ran many times they describe the stage as a
+    whole (worst status, summed latency, first start, last finish) and
+    `attempt_count` is greater than 1.
+    """
     stage_lower = stage.lower().strip()
-    stmt = select(StageRunModel).where(
-        StageRunModel.run_id == run_id, StageRunModel.stage == stage_lower
-    )
-    res = await db.execute(stmt)
-    stage_run = res.scalar_one_or_none()
-    if not stage_run:
+    limit = max(1, min(limit, _ATTEMPTS_PAGE_MAX))
+    offset = max(0, offset)
+
+    base = (StageRunModel.run_id == run_id, StageRunModel.stage == stage_lower)
+
+    # Aggregate in the database rather than loading every row.
+    agg = (
+        await db.execute(
+            select(
+                func.count(StageRunModel.id),
+                func.sum(StageRunModel.latency_ms),
+                func.avg(StageRunModel.latency_ms),
+                func.max(StageRunModel.latency_ms),
+                func.min(StageRunModel.started_at),
+                func.max(StageRunModel.completed_at),
+                func.sum(StageRunModel.retry_count),
+            ).where(*base)
+        )
+    ).one()
+    attempt_count = agg[0] or 0
+
+    if not attempt_count:
         raise HTTPException(status_code=404, detail=f"Stage run not found for stage {stage}")
 
-    llm_stmt = select(LLMTraceModel).where(
-        LLMTraceModel.run_id == run_id, LLMTraceModel.stage == stage_lower
+    status_counts = {
+        row[0]: row[1]
+        for row in (
+            await db.execute(
+                select(StageRunModel.status, func.count(StageRunModel.id))
+                .where(*base)
+                .group_by(StageRunModel.status)
+            )
+        ).all()
+    }
+
+    # Representative row: worst status first, then most recent.
+    severity = case(_STATUS_SEVERITY, value=StageRunModel.status, else_=0)
+    stage_run = (
+        (
+            await db.execute(
+                select(StageRunModel)
+                .where(*base)
+                .order_by(severity.desc(), StageRunModel.started_at.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    attempts = (
+        (
+            await db.execute(
+                select(StageRunModel)
+                .where(*base)
+                .order_by(severity.desc(), StageRunModel.started_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Capped: a run with thousands of crawl spans would otherwise serialise an
+    # unbounded number of traces, each carrying full prompt and response text.
+    llm_stmt = (
+        select(LLMTraceModel)
+        .where(LLMTraceModel.run_id == run_id, LLMTraceModel.stage == stage_lower)
+        .order_by(LLMTraceModel.created_at.desc())
+        .limit(_LLM_TRACE_MAX)
     )
     llm_res = await db.execute(llm_stmt)
     llm_traces = llm_res.scalars().all()
@@ -618,25 +704,70 @@ async def get_stage_run_details(
         if rca:
             rca_report = rca.model_dump()
 
+    total_latency, avg_latency, max_latency, first_started, last_completed, total_retries = agg[1:]
+
+    def _iso(value) -> str | None:
+        return f"{value.isoformat()}Z" if value else None
+
+    # Worst status wins, so a stage with any failure never reports as successful.
+    if status_counts.get("failed"):
+        overall_status = "failed"
+    elif status_counts.get("running"):
+        overall_status = "running"
+    elif attempt_count and set(status_counts) <= {"skipped"}:
+        overall_status = "skipped"
+    else:
+        overall_status = stage_run.status
+
+    single = attempt_count == 1
+
     return {
         "id": str(stage_run.id),
         "run_id": str(stage_run.run_id),
         "trace_id": str(stage_run.trace_id),
         "stage": stage_run.stage,
-        "status": stage_run.status,
-        "started_at": f"{stage_run.started_at.isoformat()}Z" if stage_run.started_at else None,
-        "completed_at": f"{stage_run.completed_at.isoformat()}Z"
-        if stage_run.completed_at
-        else None,
-        "latency_ms": stage_run.latency_ms,
-        "retry_count": stage_run.retry_count,
+        "status": overall_status,
+        "started_at": _iso(stage_run.started_at if single else first_started),
+        "completed_at": _iso(stage_run.completed_at if single else last_completed),
+        # Summed across attempts: the wall-clock cost of the stage, not of one URL.
+        "latency_ms": stage_run.latency_ms if single else total_latency,
+        "retry_count": stage_run.retry_count if single else (total_retries or 0),
         "error": stage_run.error,
         "error_type": stage_run.error_type,
         "story_id": str(stage_run.story_id) if stage_run.story_id else None,
         "article_id": str(stage_run.article_id) if stage_run.article_id else None,
         "metadata": stage_run.metadata_payload or {},
         "llm_traces": traces_payload,
+        "llm_traces_truncated": len(traces_payload) >= _LLM_TRACE_MAX,
         "rca_report": rca_report,
+        # ── Aggregate view ────────────────────────────────────────────────────
+        "attempt_count": attempt_count,
+        "status_counts": status_counts,
+        "is_aggregated": not single,
+        "aggregate": {
+            "total_latency_ms": total_latency,
+            "avg_latency_ms": round(float(avg_latency), 2) if avg_latency is not None else None,
+            "max_latency_ms": max_latency,
+            "first_started_at": _iso(first_started),
+            "last_completed_at": _iso(last_completed),
+            "total_retries": total_retries or 0,
+        },
+        "attempts": [
+            {
+                "id": str(a.id),
+                "status": a.status,
+                "started_at": _iso(a.started_at),
+                "completed_at": _iso(a.completed_at),
+                "latency_ms": a.latency_ms,
+                "retry_count": a.retry_count,
+                "error": a.error,
+                "error_type": a.error_type,
+                "article_id": str(a.article_id) if a.article_id else None,
+                "story_id": str(a.story_id) if a.story_id else None,
+            }
+            for a in attempts
+        ],
+        "attempts_page": {"limit": limit, "offset": offset, "total": attempt_count},
     }
 
 
@@ -662,8 +793,14 @@ async def get_stage_run_logs(
 async def stream_stage_run_logs(
     run_id: uuid.UUID,
     stage: str,
+    _admin: User = Depends(require_admin_sse),
 ):
-    """Stream logs live via SSE for a specific stage run."""
+    """Stream logs live via SSE for a specific stage run (admin only).
+
+    The sibling non-streaming endpoint has always required an admin; this one
+    declared no dependency at all while the UI dutifully appended a token to the
+    URL, so the credential was logged and never checked.
+    """
     import redis.asyncio as aioredis
 
     from app.core.config import settings
@@ -703,8 +840,9 @@ async def stream_stage_run_logs(
 async def stream_pipeline_status(
     request: Request,
     last_id: str = "$",
+    _admin: User = Depends(require_admin_sse),
 ):
-    """SSE endpoint streaming real-time pipeline status transitions from Redis Streams."""
+    """SSE endpoint streaming real-time pipeline status transitions (admin only)."""
     import asyncio
 
     import redis.asyncio as aioredis
