@@ -185,8 +185,14 @@ async def test_pipeline_trace_collector_lifecycle():
             # Lineage
             stage.lineage("art_1", "ARTICLE", "EMBEDDED")
 
-        # Exited context successfully
-        assert stage.status == "COMPLETED"
+        # Exited context successfully.
+        #
+        # "SUCCESS", not "COMPLETED": this collector used to write a second
+        # terminal vocabulary, so stage_runs held both 'success' (29,410 rows,
+        # from StageSpan) and 'completed' (1,128, from here). The dashboard's
+        # STATUS_CONFIG maps only the former, so those rows rendered with no
+        # icon and no status colour.
+        assert stage.status == "SUCCESS"
         assert stage.latency_ms > 0
         assert mock_emit_event.call_count == 2  # StageStarted + StageCompleted
 
