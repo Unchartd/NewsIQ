@@ -466,6 +466,16 @@ newsiq_crawler_low_quality_total = Counter(
 # Firecrawl answering HTTP 402 to every call, for instance. This firing at all
 # means a tier is down; it previously took a log dive to notice, because
 # non-200 responses were unlogged and the cost metric only fired on success.
+# An LLM disabled because its quota is spent. Quotas are per-model, so this is
+# labelled by model rather than provider: one Gemini model being exhausted says
+# nothing about the other, and tripping the provider would strand both.
+newsiq_ai_model_circuit_open_total = Counter(
+    "newsiq_ai_model_circuit_open_total",
+    "Times a model was circuit-broken for rate limiting.",
+    ["model"],
+)
+
+
 newsiq_crawler_provider_circuit_open_total = Counter(
     "newsiq_crawler_provider_circuit_open_total",
     "Times a paid extraction provider was circuit-broken.",
