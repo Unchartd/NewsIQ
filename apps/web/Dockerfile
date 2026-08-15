@@ -10,7 +10,8 @@ RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
-# Install certificates so next/font/google can fetch fonts over HTTPS during build
+# Fonts are self-hosted (see src/app/layout.tsx), so the build makes no network
+# calls for them. Certificates are kept for any other HTTPS the build may need.
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules

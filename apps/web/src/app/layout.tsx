@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import {
@@ -10,24 +10,35 @@ import {
 } from "@/lib/jsonld";
 import { SITE_URL, SITE_NAME, SITE_DESCRIPTION, DEFAULT_OG_IMAGE } from "@/lib/metadata";
 
-// ─── Fonts via next/font (no render-blocking, automatic font-display:swap) ───
-const inter = Inter({
-  subsets: ["latin"],
+// ─── Fonts, self-hosted (no render-blocking, automatic font-display:swap) ────
+//
+// These were next/font/google, which fetches every face from fonts.gstatic.com
+// at BUILD time. That made releases non-deterministic: a v1.36.1 deploy failed
+// when Google returned 404 for the Newsreader woff2 files mid-build and
+// Turbopack died with 12 "Module not found" errors. Nothing in the commit was
+// at fault and a plain re-run succeeded, which is precisely the problem.
+//
+// Serving the files from the repo removes the network from the build entirely.
+// All three are variable fonts, so the whole latin subset is 206 KB across four
+// files — fewer requests than the eight static faces Newsreader used to pull.
+const inter = localFont({
+  src: [{ path: "./fonts/inter-latin-normal.woff2", weight: "100 900", style: "normal" }],
   variable: "--font-inter",
   display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
+const jetbrainsMono = localFont({
+  src: [{ path: "./fonts/jetbrains-mono-latin-normal.woff2", weight: "100 800", style: "normal" }],
   variable: "--font-mono",
   display: "swap",
 });
 
-const newsreader = Newsreader({
-  subsets: ["latin"],
+const newsreader = localFont({
+  src: [
+    { path: "./fonts/newsreader-latin-normal.woff2", weight: "200 800", style: "normal" },
+    { path: "./fonts/newsreader-latin-italic.woff2", weight: "200 800", style: "italic" },
+  ],
   variable: "--font-newsreader",
-  style: ["normal", "italic"],
-  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 

@@ -31,6 +31,7 @@ from app.ai.metrics.telemetry import (
     newsiq_prompt_tokens_total,
     newsiq_provider_fallback_executions_total,
 )
+from app.ai.model_health import filter_healthy, mark_exhausted
 from app.ai.prompts.registry import prompt_registry
 from app.ai.router.capability_router import capability_router
 from app.core.trace import article_id_ctx, story_id_ctx, track_llm_call
@@ -392,7 +393,11 @@ class AIGateway:
         newsiq_ai_gateway_cache_total.labels(capability=stage, status="miss").inc()
 
         # Build fallback chain from manifest: preferred_model + fallback_models
-        all_models = [cfg.model] + list(cfg.fallback_models)
+        # Skip models already known to be out of quota. Without this a stage
+        # whose preferred model is exhausted spends nine calls and ~7s of
+        # backoff on Gemini before reaching a Bedrock fallback that would have
+        # answered immediately.
+        all_models = await filter_healthy([cfg.model] + list(cfg.fallback_models))
         last_error: Exception | None = None
 
         for idx, model_name in enumerate(all_models):
@@ -660,6 +665,14 @@ class AIGateway:
                             reason=err.__class__.__name__,
                         ).inc()
                         last_error = err
+
+                        # A spent quota does not refill during a backoff sleep.
+                        # Record the model as exhausted and abandon it now, so
+                        # the chain reaches a model that can actually answer.
+                        if isinstance(err, RateLimitError):
+                            await mark_exhausted(model_name, str(err))
+                            break
+
                         await asyncio.sleep(backoff)
                         backoff *= 2.0
 
