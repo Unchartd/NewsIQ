@@ -471,48 +471,119 @@ async def replay_story_stage(
     )
 
 
+def _metric(meta: dict, *names: str):
+    """Read a counter from stage metadata, wherever the collector put it.
+
+    The collector nests everything under input/output/metrics/lineage/…, and one
+    stage (clustering_incremental) writes a hand-rolled inputs/outputs shape
+    instead. The previous implementation read these names at the TOP level,
+    where they have never appeared for any stage — so its counters were always
+    zero and every successful run was summarised "Completed (no actions)".
+    """
+    if not isinstance(meta, dict):
+        return None
+    for container in (meta.get("metrics"), meta.get("output"), meta.get("outputs"), meta):
+        if isinstance(container, dict):
+            for name in names:
+                value = container.get(name)
+                if value is not None:
+                    return value
+    return None
+
+
+def _as_int(value) -> int:
+    """Counters are sometimes stored as strings (output.stories_created == "1")."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _build_run_summary(stage_runs) -> str:
+    """Describe what a run actually did, from the telemetry it recorded."""
     if not stage_runs:
         return "Idle"
 
-    failed_stages = [sr for sr in stage_runs if sr.status == "failed"]
-    if failed_stages:
-        stage_name = failed_stages[0].stage.replace("_", " ").title()
-        return f"Failed at {stage_name}"
-
-    ingested = 0
-    embedded = 0
-    stories_created = 0
-    stories_updated = 0
+    counts: dict[str, int] = {}
+    totals: dict[str, int] = {}
 
     for sr in stage_runs:
+        stage = (sr.stage or "").lower()
+        counts[stage] = counts.get(stage, 0) + 1
         meta = sr.metadata_payload or {}
-        stage = sr.stage.lower()
-        if "ingestion" in stage:
-            ingested += meta.get("articles_ingested", 0)
-        elif "deduplication" in stage or "embedding" in stage:
-            embedded += meta.get("success_count", 0)
-        elif "clustering" in stage:
-            stories_created += meta.get("stories_created", 0)
-            stories_updated += meta.get("stories_updated", 0)
 
-    parts = []
-    if ingested > 0:
-        parts.append(f"Ingested {ingested} articles")
-    if stories_created > 0:
-        parts.append(f"Created {stories_created} stories")
-    if stories_updated > 0:
-        parts.append(f"Updated {stories_updated} stories")
+        def add(key: str, *names: str) -> None:
+            totals[key] = totals.get(key, 0) + _as_int(_metric(meta, *names))
 
-    if not parts:
-        all_skipped = all(sr.status == "skipped" for sr in stage_runs)
-        if all_skipped:
-            return "No new articles found"
-        if any(sr.status == "running" for sr in stage_runs):
-            return "Executing..."
-        return "Completed (no actions)"
+        if stage == "ingestion_rss":
+            add("feeds", "sources_processed")
+            add("candidates", "story_candidates_created")
+            add("new", "total_new")
+        elif stage == "ingestion_gnews":
+            add("ingested", "articles_ingested")
+            add("new", "total_new")
+        elif stage == "embedding":
+            add("embedded", "success_count")
+            add("embed_failed", "failed_count")
+        elif stage == "event_extraction":
+            add("events", "success_count")
+            add("event_failed", "failed_count")
+            add("merged", "merged_count")
+        elif stage == "clustering_batch":
+            add("stories_created", "stories_created")
+        elif stage == "clustering_incremental":
+            if _metric(meta, "merged") is True:
+                totals["merged"] = totals.get("merged", 0) + 1
+        elif stage == "entity_extraction":
+            add("entities", "entities_extracted")
+        elif stage == "entity_linking":
+            add("linked", "canonical_entities_linked")
+        elif stage == "indexing":
+            add("indexed", "indexed")
 
-    return " → ".join(parts)
+    parts: list[str] = []
+
+    def push(value: int, singular: str, plural: str | None = None) -> None:
+        if value > 0:
+            parts.append(f"{value:,} {singular if value == 1 else (plural or singular + 's')}")
+
+    push(totals.get("feeds", 0), "feed", "feeds")
+    push(totals.get("candidates", 0), "candidate", "candidates")
+    push(totals.get("ingested", 0), "article ingested", "articles ingested")
+    # Crawl and discovery record no metadata yet, but the number of spans is
+    # itself the number of URLs attempted — real information, previously unused.
+    push(counts.get("discovery_search", 0), "search", "searches")
+    push(counts.get("crawling", 0), "URL crawled", "URLs crawled")
+    push(totals.get("embedded", 0), "article embedded", "articles embedded")
+    push(totals.get("events", 0), "event", "events")
+    push(totals.get("entities", 0), "entity", "entities")
+    push(totals.get("linked", 0), "entity linked", "entities linked")
+    push(totals.get("merged", 0), "merge", "merges")
+    push(totals.get("stories_created", 0), "story created", "stories created")
+    push(totals.get("indexed", 0), "story indexed", "stories indexed")
+
+    failed_total = totals.get("embed_failed", 0) + totals.get("event_failed", 0)
+    failed_stages = [sr for sr in stage_runs if sr.status == "failed"]
+
+    if failed_stages or failed_total:
+        # Name the failure without discarding what the run achieved — the old
+        # behaviour replaced the entire summary with "Failed at <stage>".
+        stage_name = failed_stages[0].stage.replace("_", " ") if failed_stages else "processing"
+        n = len(failed_stages) or failed_total
+        detail = f"{n:,} failed at {stage_name}"
+        return f"{' · '.join(parts)} · {detail}" if parts else f"Failed: {detail}"
+
+    if parts:
+        return " · ".join(parts)
+
+    if any(sr.status == "running" for sr in stage_runs):
+        return "Executing…"
+    if all(sr.status == "skipped" for sr in stage_runs):
+        return "Nothing to do — no new articles"
+
+    # Last resort: name the stages that ran rather than claiming nothing happened.
+    ran = ", ".join(sorted({s.replace("_", " ") for s in counts}))
+    return f"Completed: {ran}" if ran else "Completed"
 
 
 @router.get("/pipeline/runs")

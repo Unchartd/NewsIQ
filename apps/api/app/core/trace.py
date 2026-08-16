@@ -1102,25 +1102,30 @@ class LLMCallData:
 
 # ── LLM Cost Calculator ─────────────────────────────────────────────────────
 
-# Pricing per million tokens (as of 2026-06 — update as needed)
-LLM_PRICING: dict[str, dict[str, float]] = {
-    "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
-    "gemini-2.5-flash-lite": {"input": 0.075, "output": 0.30},
-    "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
-    "gemini-2.0-flash-lite": {"input": 0.075, "output": 0.30},
-    "gemini-embedding-2": {"input": 0.00, "output": 0.00},  # Free
-    "gemini-embedding-001": {"input": 0.00, "output": 0.00},  # Free
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "text-embedding-3-small": {"input": 0.02, "output": 0.00},
-}
+# Pricing lives in app/ai/pricing.py so the gateway and the tracer cannot drift.
+#
+# They did drift: this module's table held only gemini-2.x, which this
+# deployment has never run, while the gateway's held the live models. The
+# gateway computed the correct cost, and the `finally` block below recomputed it
+# from this table and discarded it — cost_usd was 0.00 on all 17,333 llm_traces
+# rows. The re-export keeps `from app.core.trace import calculate_llm_cost`
+# working for existing callers and tests.
+from app.ai.pricing import PRICING_TABLE as LLM_PRICING  # noqa: E402
+from app.ai.pricing import calculate_llm_cost as _calculate_llm_cost  # noqa: E402
+
+__all_pricing__ = (LLM_PRICING,)
 
 
 def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Calculate cost in USD for an LLM call."""
-    pricing = LLM_PRICING.get(model, {"input": 0.0, "output": 0.0})
-    input_cost = (input_tokens / 1_000_000) * pricing["input"]
-    output_cost = (output_tokens / 1_000_000) * pricing["output"]
-    return round(input_cost + output_cost, 8)
+    """Cost in USD for an LLM call; 0.0 when the model has no confirmed rate.
+
+    The underlying helper returns None for an unpriced model. This wrapper keeps
+    the historical float contract for callers that cannot represent "unknown";
+    prefer app.ai.pricing.calculate_llm_cost directly when you can distinguish
+    unknown from free.
+    """
+    cost = _calculate_llm_cost(model, input_tokens, output_tokens)
+    return 0.0 if cost is None else cost
 
 
 @asynccontextmanager
@@ -1187,7 +1192,13 @@ async def track_llm_call(
         parent_llm_trace_id_ctx.reset(parent_token)
         call.latency_ms = round((time.perf_counter() - start) * 1000, 2)
         call.total_tokens = call.input_tokens + call.output_tokens
-        call.cost_usd = calculate_llm_cost(call.model, call.input_tokens, call.output_tokens)
+
+        # Only price the call if the caller has not already done so. The gateway
+        # computes cost from the provider's own usage numbers and assigns it to
+        # this object; recomputing here unconditionally is what discarded that
+        # value and left cost_usd at 0.00 on every trace.
+        if not call.cost_usd:
+            call.cost_usd = calculate_llm_cost(call.model, call.input_tokens, call.output_tokens)
 
         # End Langfuse generation
         if lf_generation:

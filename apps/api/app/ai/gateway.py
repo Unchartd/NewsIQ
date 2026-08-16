@@ -40,27 +40,10 @@ from app.services.cost_budget import cost_budget_manager
 logger = logging.getLogger(__name__)
 
 
-# Cost pricing per million tokens
-PRICING_TABLE = {
-    # Gemini
-    "gemini-3.1-flash-lite": {"input": 0.075, "output": 0.30},
-    "gemini-3.5-flash-lite": {"input": 0.075, "output": 0.30},
-    "gemini-embedding-001": {"input": 0.025, "output": 0.0},
-    "gemini-embedding-2": {"input": 0.025, "output": 0.0},
-    # NVIDIA DeepSeek V4 Flash / Pro (Enterprise estimates or flat free)
-    "deepseek-ai/deepseek-v4-flash": {"input": 0.14, "output": 0.28},
-    "deepseek-ai/deepseek-v4-pro": {"input": 0.55, "output": 2.19},
-    "nvidia/llama-3.2-nv-embedqa-4b-v1": {"input": 0.0, "output": 0.0},
-    # OpenRouter fallbacks
-    "deepseek/deepseek-chat": {"input": 0.14, "output": 0.28},
-    "qwen/qwen-2.5-72b-instruct": {"input": 0.40, "output": 0.40},
-    "nomic/nomic-embed-text-v1.5": {"input": 0.0, "output": 0.0},
-    # OpenRouter embedding models
-    "sentence-transformers/all-mpnet-base-v2": {"input": 0.005, "output": 0.0},
-    "qwen/qwen3-embedding-8b": {"input": 0.01, "output": 0.0},
-    "baai/bge-m3": {"input": 0.01, "output": 0.0},
-    "openai/text-embedding-3-small": {"input": 0.02, "output": 0.0},
-}
+# Pricing is defined once, in app/ai/pricing.py. This module and app/core/trace
+# previously kept separate tables that disagreed about which models exist, and
+# the tracer's copy — holding only models this deployment has never run — won.
+from app.ai.pricing import PRICING_TABLE  # noqa: E402
 
 
 def clean_json_for_schema(data: Any, schema: type[BaseModel]) -> Any:

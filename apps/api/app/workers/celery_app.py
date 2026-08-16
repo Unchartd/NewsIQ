@@ -183,6 +183,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.purge_observability_data_task",
         "schedule": crontab(hour="0", minute="0"),
     },
+    # Close out runs whose worker died mid-stage. Without this a killed
+    # container leaves the row `running` forever — production held 7 such runs
+    # and 3 such stages, which the dashboard polls as live work indefinitely.
+    "reap-stuck-pipeline-runs-every-30-minutes": {
+        "task": "app.workers.tasks.reap_stuck_pipeline_runs_task",
+        "schedule": crontab(minute="*/30"),
+    },
 }
 
 

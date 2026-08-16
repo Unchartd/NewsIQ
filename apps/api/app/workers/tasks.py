@@ -2646,3 +2646,96 @@ def export_run_to_otel_task(run_id: str) -> bool:
             return await exporter.export_run(run, list(stages), list(llm_traces))
 
     return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.reap_stuck_pipeline_runs_task")
+def reap_stuck_pipeline_runs_task(stale_after_minutes: int = 60) -> dict[str, int]:
+    """Close out pipeline runs and stage runs that will never finish.
+
+    Nothing reconciles a span whose worker died. A container killed mid-stage
+    leaves the row `running` permanently: production held 7 such runs and 3 such
+    stages, and the dashboard polls them as live work indefinitely while the
+    run's successful/failed stage counters never settle.
+
+    These are marked `failed` with an explicit reason rather than quietly set to
+    success — an abandoned run is not a successful one, and the reason is what
+    tells the next engineer the difference between "this failed" and "nobody
+    knows what happened to this".
+    """
+    logger.info("Celery task: Reaping pipeline runs stuck in 'running'.")
+
+    async def _run() -> dict[str, int]:
+        from datetime import timedelta
+
+        from sqlalchemy import select, update
+
+        from app.models.observability_models import PipelineRunModel, StageRunModel
+
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=stale_after_minutes)
+        reason = (
+            f"Abandoned: still running {stale_after_minutes}m after start; worker presumed lost"
+        )
+        stats = {"stages_reaped": 0, "runs_reaped": 0}
+
+        async with async_session_factory() as session:
+            stale_stages = (
+                (
+                    await session.execute(
+                        select(StageRunModel.id).where(
+                            StageRunModel.status.in_(("running", "RUNNING")),
+                            StageRunModel.started_at < cutoff,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if stale_stages:
+                res_s: Any = await session.execute(
+                    update(StageRunModel)
+                    .where(StageRunModel.id.in_(stale_stages))
+                    .values(
+                        status="failed",
+                        error=reason,
+                        error_type="AbandonedStage",
+                        completed_at=datetime.now(UTC).replace(tzinfo=None),
+                    )
+                )
+                stats["stages_reaped"] = res_s.rowcount or 0
+
+            stale_runs = (
+                (
+                    await session.execute(
+                        select(PipelineRunModel.id).where(
+                            PipelineRunModel.status.in_(("running", "RUNNING")),
+                            PipelineRunModel.started_at < cutoff,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if stale_runs:
+                res_r: Any = await session.execute(
+                    update(PipelineRunModel)
+                    .where(PipelineRunModel.id.in_(stale_runs))
+                    .values(
+                        status="failed",
+                        error=reason,
+                        completed_at=datetime.now(UTC).replace(tzinfo=None),
+                    )
+                )
+                stats["runs_reaped"] = res_r.rowcount or 0
+
+            await session.commit()
+
+        if stats["stages_reaped"] or stats["runs_reaped"]:
+            logger.warning(
+                "Reaped %d stuck stage run(s) and %d stuck pipeline run(s) older than %dm.",
+                stats["stages_reaped"],
+                stats["runs_reaped"],
+                stale_after_minutes,
+            )
+        return stats
+
+    return run_async(_run())
