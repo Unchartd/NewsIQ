@@ -72,7 +72,6 @@ def test_log_list_is_bounded():
 def test_a_broken_redis_is_reported_not_swallowed():
     sl._redis_log_client = client = MagicMock()
     client.pipeline.side_effect = RuntimeError("redis down")
-    sl._redis_log_broken = False
     sl._redis_log_failures = 0
     try:
         with patch.object(sl.logging, "getLogger") as get_logger:
@@ -82,7 +81,7 @@ def test_a_broken_redis_is_reported_not_swallowed():
             )
     finally:
         sl._redis_log_client = None
-        sl._redis_log_broken = False
+        sl._redis_log_failures = 0
 
 
 def test_logging_failure_never_breaks_the_caller():
@@ -93,7 +92,7 @@ def test_logging_failure_never_breaks_the_caller():
         assert out["event"] == "hello", "the processor must still return the event dict"
     finally:
         sl._redis_log_client = None
-        sl._redis_log_broken = False
+        sl._redis_log_failures = 0
 
 
 def test_reporting_does_not_recurse_through_structlog():

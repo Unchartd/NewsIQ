@@ -96,7 +96,6 @@ _LOG_MAX_LINES = 2_000
 
 _redis_log_client: Any = None
 _redis_log_failures = 0
-_redis_log_broken = False
 
 _STANDARD_KEYS = frozenset(
     {
@@ -136,12 +135,11 @@ def _get_log_redis() -> Any:
 
 def _report_log_failure(exc: Exception) -> None:
     """Surface Redis logging failures without recursing through structlog."""
-    global _redis_log_failures, _redis_log_broken
+    global _redis_log_failures
     _redis_log_failures += 1
     # Report the first failure, then every 500th, using the stdlib logger
     # directly — going through structlog here would re-enter this processor.
-    if not _redis_log_broken or _redis_log_failures % 500 == 0:
-        _redis_log_broken = True
+    if _redis_log_failures == 1 or _redis_log_failures % 500 == 0:
         logging.getLogger(__name__).warning(
             "Stage log persistence to Redis failed (%d total): %s. "
             "Stage logs will be missing from the dashboard.",
