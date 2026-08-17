@@ -95,6 +95,9 @@ _cache_mod._make_redis_client = lambda url: _FakeRedis()
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.extraction_manager import ExtractionManager
 
+# The original is kept so tests that need to exercise the real statement (see
+# test_domain_policy_upsert.py) can reach it without lifting the global mock.
+ExtractionManager._real_update_domain_policy = ExtractionManager._update_domain_policy
 ExtractionManager._update_domain_policy = AsyncMock()
 
 # Bypass structured logging Redis publisher globally during tests to prevent connecting to Redis.

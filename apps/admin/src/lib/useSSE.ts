@@ -30,6 +30,14 @@ export function useSSE(): UseSSEReturn {
   const esRef = useRef<EventSource | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryDelay = useRef(1000);
+  // Last Redis stream id seen. The backend emits `id:` on every frame and
+  // accepts either the Last-Event-ID header or a last_id query parameter, so it
+  // can resume exactly where the client left off. A browser only sends
+  // Last-Event-ID on its own automatic reconnect; because onerror closes the
+  // connection and builds a *new* EventSource, that header is never sent and
+  // every event during the outage was lost. Passing the id explicitly is what
+  // makes a 30-second disconnect recoverable rather than a silent gap.
+  const lastIdRef = useRef<string | null>(null);
 
   function connect() {
     if (typeof window === "undefined") return;
@@ -39,7 +47,11 @@ export function useSSE(): UseSSEReturn {
         ? localStorage.getItem("newsiq_admin_token")
         : null;
 
-    const url = `${API_BASE_URL}/admin/pipeline/stream${token ? `?token=${token}` : ""}`;
+    const params = new URLSearchParams();
+    if (token) params.set("token", token);
+    if (lastIdRef.current) params.set("last_id", lastIdRef.current);
+    const query = params.toString();
+    const url = `${API_BASE_URL}/admin/pipeline/stream${query ? `?${query}` : ""}`;
 
     const es = new EventSource(url);
     esRef.current = es;
@@ -51,6 +63,9 @@ export function useSSE(): UseSSEReturn {
     };
 
     es.onmessage = (event) => {
+      // Record the stream position before parsing, so a malformed payload does
+      // not cause the same event to be replayed forever on the next reconnect.
+      if (event.lastEventId) lastIdRef.current = event.lastEventId;
       try {
         const data = JSON.parse(event.data) as PipelineSSEEvent;
         setLastEvent(data);

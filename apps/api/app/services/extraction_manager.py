@@ -466,74 +466,97 @@ class ExtractionManager:
         latency_ms: float,
         content_length: int,
     ) -> None:
-        """Asynchronously updates or inserts the DomainExtractionPolicy table for metrics tracking."""
-        from sqlalchemy import select
+        """Update the per-domain extraction policy in a single atomic statement.
+
+        This runs once per provider attempt, so up to three times for every
+        crawled URL — 23,216 crawls in the measured window. It used to open a
+        fresh session and do SELECT, then INSERT or UPDATE, then COMMIT: three
+        round trips and a connection checkout per attempt.
+
+        It was also a read-modify-write against a uniquely-indexed column, so two
+        workers reaching a new domain together could both miss the SELECT and
+        both insert. The exception was caught and logged, meaning the losing
+        update was silently dropped rather than applied. (No such failure appears
+        in 48h of production logs — the per-domain pacer makes the collision
+        rare — but the upsert removes the possibility rather than relying on
+        timing.)
+
+        The exponential moving averages are now computed in SQL against the
+        existing row, so this is one statement, one round trip, and atomic.
+        """
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from app.core.database import async_session_factory
         from app.models.models import DomainExtractionPolicy
 
+        alpha = 0.1
+        observed = 1.0 if success else 0.0
+        table = DomainExtractionPolicy.__table__
+        columns = table.c
+
+        def _ema(column, value: float):
+            """Fold `value` into `column`'s moving average, in SQL."""
+            return column * (1.0 - alpha) + value * alpha
+
+        # Only the provider that was actually attempted moves; the other two keep
+        # whatever the existing row holds.
+        rates = {
+            "local": columns.local_success_rate,
+            "tavily": columns.tavily_success_rate,
+            "firecrawl": columns.firecrawl_success_rate,
+        }
+        new_rates = {
+            name: (_ema(column, observed) if name == provider else column)
+            for name, column in rates.items()
+        }
+        attempts = {
+            "local": columns.local_attempts,
+            "tavily": columns.tavily_attempts,
+            "firecrawl": columns.firecrawl_attempts,
+        }
+
+        insert_stmt = pg_insert(DomainExtractionPolicy).values(
+            domain=domain,
+            local_success_rate=observed if provider == "local" else 0.0,
+            tavily_success_rate=observed if provider == "tavily" else 0.0,
+            firecrawl_success_rate=observed if provider == "firecrawl" else 0.0,
+            local_attempts=1 if provider == "local" else 0,
+            tavily_attempts=1 if provider == "tavily" else 0,
+            firecrawl_attempts=1 if provider == "firecrawl" else 0,
+            average_latency=latency_ms,
+            average_content_length=float(content_length),
+            last_success_provider=provider if success else None,
+            confidence_score=observed,
+        )
+
+        update_values: dict[str, Any] = {
+            "local_success_rate": new_rates["local"],
+            "tavily_success_rate": new_rates["tavily"],
+            "firecrawl_success_rate": new_rates["firecrawl"],
+            # Postgres cannot reference another column's *new* value in the same
+            # UPDATE, so the rate expressions are reused inline here.
+            "confidence_score": (
+                new_rates["local"] * 0.5 + new_rates["tavily"] * 0.3 + new_rates["firecrawl"] * 0.2
+            ),
+            "average_latency": _ema(columns.average_latency, latency_ms),
+        }
+        if provider in attempts:
+            update_values[f"{provider}_attempts"] = attempts[provider] + 1
+        if success:
+            # Content length only means something for an extraction that returned
+            # content, and the last successful provider only changes on success.
+            update_values["average_content_length"] = _ema(
+                columns.average_content_length, float(content_length)
+            )
+            update_values["last_success_provider"] = provider
+
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[columns.domain], set_=update_values
+        )
+
         async with async_session_factory() as session:
             try:
-                stmt = select(DomainExtractionPolicy).where(DomainExtractionPolicy.domain == domain)
-                res = await session.execute(stmt)
-                policy = res.scalar_one_or_none()
-
-                # Exponential Moving Average factor (alpha = 0.1)
-                alpha = 0.1
-
-                if not policy:
-                    policy = DomainExtractionPolicy(
-                        domain=domain,
-                        local_success_rate=1.0 if (provider == "local" and success) else 0.0,
-                        tavily_success_rate=1.0 if (provider == "tavily" and success) else 0.0,
-                        firecrawl_success_rate=1.0
-                        if (provider == "firecrawl" and success)
-                        else 0.0,
-                        local_attempts=1 if provider == "local" else 0,
-                        tavily_attempts=1 if provider == "tavily" else 0,
-                        firecrawl_attempts=1 if provider == "firecrawl" else 0,
-                        average_latency=latency_ms,
-                        average_content_length=float(content_length),
-                        last_success_provider=provider if success else None,
-                        confidence_score=1.0 if success else 0.0,
-                    )
-                    session.add(policy)
-                else:
-                    if provider == "local":
-                        policy.local_success_rate = (
-                            policy.local_success_rate * (1.0 - alpha)
-                            + (1.0 if success else 0.0) * alpha
-                        )
-                        policy.local_attempts += 1
-                    elif provider == "tavily":
-                        policy.tavily_success_rate = (
-                            policy.tavily_success_rate * (1.0 - alpha)
-                            + (1.0 if success else 0.0) * alpha
-                        )
-                        policy.tavily_attempts += 1
-                    elif provider == "firecrawl":
-                        policy.firecrawl_success_rate = (
-                            policy.firecrawl_success_rate * (1.0 - alpha)
-                            + (1.0 if success else 0.0) * alpha
-                        )
-                        policy.firecrawl_attempts += 1
-
-                    policy.average_latency = (
-                        policy.average_latency * (1.0 - alpha) + latency_ms * alpha
-                    )
-                    if success:
-                        policy.average_content_length = (
-                            policy.average_content_length * (1.0 - alpha)
-                            + float(content_length) * alpha
-                        )
-                        policy.last_success_provider = provider
-
-                    policy.confidence_score = (
-                        policy.local_success_rate * 0.5
-                        + policy.tavily_success_rate * 0.3
-                        + policy.firecrawl_success_rate * 0.2
-                    )
-
+                await session.execute(stmt)
                 await session.commit()
             except Exception as e:
                 logger.warning(
