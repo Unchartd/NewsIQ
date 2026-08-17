@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import "./legal.css";
+import { activateOnKey } from "@/lib/a11y";
 
 export default function LegalLayout({
   children,
@@ -108,7 +109,7 @@ export default function LegalLayout({
             <div className="nav-divider"></div>
             <span className="nav-pill">Legal</span>
             <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
-              <span className="nav-back" onClick={() => { toast.info("Navigating back..."); router.push(isAuthenticated ? "/home" : "/"); }}>
+              <span className="nav-back" onClick={() => { toast.info("Navigating back..."); router.push(isAuthenticated ? "/home" : "/"); }} role="button" tabIndex={0} onKeyDown={activateOnKey(() => { toast.info("Navigating back..."); router.push(isAuthenticated ? "/home" : "/"); })}>
                 <svg width="14" height="14"><use href="#i-back" /></svg>Back to NewsIQ
               </span>
               <div style={{ width: "1px", height: "16px", background: "var(--border)", margin: "0 4px" }}></div>

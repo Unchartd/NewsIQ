@@ -10,6 +10,7 @@ import PrivacyForms from "@/components/legal/privacy-forms";
 import DmcaForm from "@/components/legal/dmca-form";
 import AbuseForm from "@/components/legal/abuse-form";
 import ContactForms from "@/components/legal/contact-forms";
+import { activateOnKey } from "@/lib/a11y";
 
 // Component that reads search params and renders the legal center
 function LegalPageContent() {
@@ -171,6 +172,7 @@ function LegalPageContent() {
         {!isFormSelected && activePolicy && (
           <div className="legal-search-container" style={{ marginBottom: "24px" }}>
             <input
+              aria-label="Search within this policy document"
               type="text"
               className="legal-search-input"
               placeholder={`Search in ${activePolicy.title}...`}
@@ -367,10 +369,10 @@ function LegalPageContent() {
 
             <div className="meta-card">
               <div className="meta-card-title">Actions</div>
-              <div className="meta-link" onClick={handleDownload} style={{ cursor: "pointer" }}>
+              <div className="meta-link" onClick={handleDownload} style={{ cursor: "pointer" }} role="button" tabIndex={0} onKeyDown={activateOnKey(handleDownload)}>
                 <svg width="13" height="13"><use href="#i-download" /></svg>Download PDF
               </div>
-              <div className="meta-link" onClick={handleCopyLink} style={{ cursor: "pointer" }}>
+              <div className="meta-link" onClick={handleCopyLink} style={{ cursor: "pointer" }} role="button" tabIndex={0} onKeyDown={activateOnKey(handleCopyLink)}>
                 <svg width="13" height="13"><use href="#i-copy" /></svg>Copy Link
               </div>
             </div>

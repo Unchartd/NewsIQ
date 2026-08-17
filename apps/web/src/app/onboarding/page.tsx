@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
+import { activateOnKey } from "@/lib/a11y";
 
 const CATEGORIES = [
   { slug: "politics", name: "Politics", icon: "🏛️" },
@@ -193,7 +194,13 @@ export default function OnboardingPage() {
                               setSelectedCategories
                             )
                           }
-                        >
+                         role="button" tabIndex={0} onKeyDown={activateOnKey(() =>
+                            toggleItem(
+                              cat.slug,
+                              selectedCategories,
+                              setSelectedCategories
+                            )
+                          )}>
                           <div className="chk">
                             <svg width="10" height="10" style={{ color: "#fff" }} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3">
                               <path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" />
@@ -242,7 +249,13 @@ export default function OnboardingPage() {
                               setSelectedCountries
                             )
                           }
-                        >
+                         role="button" tabIndex={0} onKeyDown={activateOnKey(() =>
+                            toggleItem(
+                              country.code,
+                              selectedCountries,
+                              setSelectedCountries
+                            )
+                          )}>
                           <div className="chk">
                             <svg width="10" height="10" style={{ color: "#fff" }} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3">
                               <path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" />
@@ -319,7 +332,7 @@ export default function OnboardingPage() {
                             padding: "16px",
                           }}
                           onClick={() => setSummaryType(opt.value)}
-                        >
+                         role="button" tabIndex={0} onKeyDown={activateOnKey(() => setSummaryType(opt.value))}>
                           <div className="chk">
                             <svg width="10" height="10" style={{ color: "#fff" }} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3">
                               <path d="M4 10l5 5 7-7" strokeLinecap="round" strokeLinejoin="round" />

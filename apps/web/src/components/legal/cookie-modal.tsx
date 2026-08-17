@@ -174,7 +174,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center" }}>
-              <input type="checkbox" checked disabled style={{ width: "18px", height: "18px", accentColor: "var(--blue)" }} />
+              <input aria-label="Essential cookies (always on, cannot be disabled)" type="checkbox" checked disabled style={{ width: "18px", height: "18px", accentColor: "var(--blue)" }} />
             </div>
           </div>
 
@@ -204,6 +204,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
             <div style={{ display: "flex", alignItems: "center" }}>
               <input 
                 type="checkbox" 
+                aria-label="Functional preference cookies"
                 checked={localPrefs.functional}
                 onChange={() => handleToggle("functional")}
                 style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "var(--blue)" }} 
@@ -237,6 +238,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
             <div style={{ display: "flex", alignItems: "center" }}>
               <input 
                 type="checkbox" 
+                aria-label="Performance and analytics cookies"
                 checked={localPrefs.analytics}
                 onChange={() => handleToggle("analytics")}
                 style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "var(--blue)" }} 
@@ -270,6 +272,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
             <div style={{ display: "flex", alignItems: "center" }}>
               <input 
                 type="checkbox" 
+                aria-label="Marketing cookies"
                 checked={localPrefs.marketing}
                 onChange={() => handleToggle("marketing")}
                 style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "var(--blue)" }} 

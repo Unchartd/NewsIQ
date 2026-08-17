@@ -48,7 +48,7 @@ export default function ForgotPasswordContent() {
         </Button>
       </header>
 
-      <main style={{
+      <main id="main-content" style={{
         flex: 1,
         display: "flex",
         alignItems: "center",

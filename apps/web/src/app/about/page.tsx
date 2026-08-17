@@ -39,7 +39,7 @@ export default function AboutPage() {
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(orgSchema) }}
       />
 
-      <main className="min-h-screen bg-background">
+      <main id="main-content" className="min-h-screen bg-background">
         {/* Hero */}
         <section className="border-b border-border/50 bg-card/30">
           <div className="max-w-3xl mx-auto px-6 py-16">

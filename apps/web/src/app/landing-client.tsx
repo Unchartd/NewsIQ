@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { toast } from "sonner";
 import { BrandLogo } from "@/branding";
 import "./landing.css";
+import { activateOnKey } from "@/lib/a11y";
 
 export function LandingClientPage() {
   const { isAuthenticated, user } = useAuthStore();
@@ -2195,7 +2196,7 @@ export function LandingClientPage() {
               const isOpen = openFaqIndex === index;
               return (
                 <div className={`faq-item ${isOpen ? "open" : ""}`} key={index}>
-                  <div className="faq-q" onClick={() => toggleFaq(index)}>
+                  <div className="faq-q" onClick={() => toggleFaq(index)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleFaq(index))}>
                     {faq.q}
                     <span className="faq-chevron">
                       <svg
@@ -2307,19 +2308,19 @@ export function LandingClientPage() {
                 <div
                   className="footer-social-btn"
                   onClick={() => showToast("Opening X…")}
-                >
+                 role="button" tabIndex={0} onKeyDown={activateOnKey(() => showToast("Opening X…"))}>
                   𝕏
                 </div>
                 <div
                   className="footer-social-btn"
                   onClick={() => showToast("Opening LinkedIn…")}
-                >
+                 role="button" tabIndex={0} onKeyDown={activateOnKey(() => showToast("Opening LinkedIn…"))}>
                   in
                 </div>
                 <div
                   className="footer-social-btn"
                   onClick={() => showToast("Opening GitHub…")}
-                >
+                 role="button" tabIndex={0} onKeyDown={activateOnKey(() => showToast("Opening GitHub…"))}>
                   <svg
                     width="14"
                     height="14"

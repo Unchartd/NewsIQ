@@ -153,7 +153,7 @@ export default function TopicsPage() {
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
 
-      <main className="min-h-screen bg-background">
+      <main id="main-content" className="min-h-screen bg-background">
         <section className="border-b border-border/50 bg-card/30">
           <div className="max-w-4xl mx-auto px-6 py-12">
             <div className="flex items-center gap-2 mb-4">

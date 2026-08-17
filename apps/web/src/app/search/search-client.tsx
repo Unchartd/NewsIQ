@@ -158,6 +158,7 @@ function SearchResults() {
         <form onSubmit={handleSearchSubmit} className="bigsch">
           <Search size={18} style={{ color: "var(--ink3)", flexShrink: 0 }} />
           <input
+              aria-label="Bengaluru floods, RBI rate, GPT-5"
             type="text"
             placeholder="Bengaluru floods, RBI rate, GPT-5…"
             value={searchInput}

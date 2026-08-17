@@ -41,8 +41,9 @@ export default function ContactForms() {
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <div>
-          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }}>Your Email Address *</label>
+          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }} htmlFor="your-email-address">Your Email Address *</label>
           <input
+              id="your-email-address"
             type="email"
             required
             value={email}
@@ -83,8 +84,9 @@ export default function ContactForms() {
         </div>
 
         <div>
-          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }}>Subject *</label>
+          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }} htmlFor="subject">Subject *</label>
           <input
+              id="subject"
             type="text"
             required
             value={subject}

@@ -98,8 +98,9 @@ export default function PrivacyForms() {
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <div>
-          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }}>Your Registered Email *</label>
+          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }} htmlFor="your-registered-email">Your Registered Email *</label>
           <input
+              id="your-registered-email"
             type="email"
             required
             value={email}
