@@ -1,7 +1,27 @@
-# NewsIQ Pipeline — Observability Audit
+# NewsIQ Pipeline — Observability Audit (June 2026 snapshot)
 
 > **Generated**: 2026-06-20
 > **Purpose**: Map every pipeline stage, its current instrumentation, and observability gaps.
+
+> ## ⚠️ Historical — do not read as current state
+>
+> This is the pre-observability-system snapshot that motivated building the
+> telemetry stack. Most of the "Critical Blind Spots" below have since been
+> addressed, and reading it as current would badly understate what exists:
+>
+> | Blind spot listed below | Actual state, 2026-08-17 |
+> |---|---|
+> | No end-to-end trace correlation | `run_id`/`trace_id`/`span_id` propagate via contextvars; `/admin/articles/{id}/trace` returns an article's journey and is wired into the story inspector |
+> | Zero LLM cost tracking | `llm_traces` records tokens, latency and cost. It read 0.00 on every row until the pricing consolidation (#123) and tokens are still 0 on 92% of rows |
+> | No queue visibility | `queue_metrics`, 9,332 rows |
+> | No pipeline DAG view | The admin pipeline dashboard renders it |
+> | No replay capability | `/admin/replay/{story_id}` and per-stage replay exist |
+> | No prompt versioning | `prompt_versions` exists but is stale — last written 2026-07-14 |
+> | No real-time monitoring | SSE over Redis Streams, resumable from the last event id |
+> | No human review loop | `POST /admin/review/{story_id}/action` writes `human_reviews`; unused so far, not absent |
+>
+> For measured current state see `docs/Observability_Audit.md`, and for what is
+> shipped versus deployed see `docs/Observability_Optimization_Roadmap.md`.
 
 ---
 

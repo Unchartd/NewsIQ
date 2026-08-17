@@ -1,5 +1,19 @@
 # NewsIQ Observability Dashboard — Full Audit
 
+> **Status as of 2026-08-17.** Phases 1–6 of the roadmap are implemented across
+> #122, #123, #124, #125, #126, #127 and #128. Every P0 and P1 in this report is
+> fixed in code. Read the findings below as *what was measured on 2026-08-16*,
+> not as the current state; each section is annotated where it has changed.
+>
+> **Deployed state is behind the code.** Production runs `v1.38.0`, which
+> contains Phase 1 only. Two later tags failed: `v1.39.0` deployed a circular
+> import introduced by #123 and crash-looped the workers until it was rolled
+> back by hand, and `v1.40.0` never built because GitHub Actions was returning
+> 429/503. Both tags are burned. #128 fixes the circular import and adds
+> `tests/test_import_integrity.py`, which imports every entry point in a cold
+> subprocess — the suite stayed green through that outage because `conftest`
+> warms `app.ai` before `app.core.trace` is reached.
+
 **Date:** 2026-08-16
 **Method:** code tracing plus read-only queries against the production database
 (`pipeline_runs` 6,318 rows / `stage_runs` 31,796 / `llm_traces` 17,333) and the
@@ -35,15 +49,21 @@ collected, stored, and then dropped between the database and the UI.**
 > AI decisions occurred, how long it took, how much it cost, and where the final
 > output came from?
 
-**No.** Six links are missing, in order of severity:
+**No — as measured on 2026-08-16.** Six links were missing:
 
-1. Opening the busiest stage returns **HTTP 500** (P0-1).
-2. **65% of failures never appear in the Failure Center** (P0-2).
-3. **Cost is £0.00 everywhere** — every row, every model (P0-3).
-4. Every successful run is summarised as **"Completed (no actions)"** (P1-1).
-5. **73% of stage runs record no metadata at all** (P1-2).
+1. Opening the busiest stage returns **HTTP 500** (P0-1). — *fixed, #122*
+2. **65% of failures never appear in the Failure Center** (P0-2). — *fixed, #122*
+3. **Cost is £0.00 everywhere** — every row, every model (P0-3). — *fixed, #123*
+4. Every successful run is summarised as **"Completed (no actions)"** (P1-1). — *fixed, #123*
+5. **73% of stage runs record no metadata at all** (P1-2). — *fixed, #124*
 6. **Synthesis has no `stage_run` records**, so its DAG node is permanently
-   empty (P1-3).
+   empty (P1-3). — *fixed, #124*
+
+All six are addressed in code. The answer becomes **yes** only once those
+changes are running: production is still on `v1.38.0`, which contains item 1
+alone. Nothing in this report has been verified against a deployed build beyond
+Phase 1, and the historical rows do not backfill — lineage, cost and crawl
+metadata fill in as new work flows through.
 
 ---
 

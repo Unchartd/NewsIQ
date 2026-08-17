@@ -3,6 +3,32 @@
 **Date:** 2026-08-16. Effort is rough engineering days. Impact is measured
 against production figures gathered during the audit.
 
+## Status — 2026-08-17
+
+| Phase | Scope | PR | State |
+|---|---|---|---|
+| 1 | Stage-detail 500, SSE auth, failure recording | #122 | merged, **deployed** (`v1.38.0`) |
+| 2 | Cost, run summaries, stuck-run reaper | #123 | merged, not deployed |
+| 3 | Crawl/discovery/synthesis telemetry, DAG mapping | #124 | merged, not deployed |
+| 3.4 | Article lineage, wired into the UI | #125 | merged, not deployed |
+| 4 | Pooled log client, durable failure logs | #126 | merged, not deployed |
+| 5 | Domain-policy upsert, SSE-driven UI | #127 | merged, not deployed |
+| 6 | Circular-import fix, dead code, import guard | #128 | open, **must ship before any tag** |
+| 7 | Documentation reconciliation | this | — |
+
+**Deployment is the outstanding risk, not the code.** #123 introduced a circular
+import that made `import app.main` fail; `v1.39.0` shipped it and crash-looped
+the workers until the API was rolled back to `v1.38.0` by hand. `v1.40.0` never
+built (GitHub Actions 429/503) and points at the same broken commit, so **neither
+tag may be re-run**. #128 carries the fix plus `tests/test_import_integrity.py`,
+which imports each entry point in a fresh subprocess — the whole suite passed
+throughout the outage because `conftest` warms `app.ai` first.
+
+Items 1–9 below are implemented. Item 10 (a typed API layer for the admin app)
+is not, and remains the highest-value structural improvement outstanding: every
+response is still consumed as `any`, which is what let several of these defects
+survive review.
+
 ---
 
 ## Top 10 optimizations, by value

@@ -34,10 +34,19 @@ Before executing any LLM task, the system computes the SHA-256 hash of the compi
 Every prompt invocation is linked to a trace record containing metrics:
 
 *   `prompt_version_id`: Link to the source template.
-*   `input_tokens` / `output_tokens`: Exact counts from the provider's response metadata.
-*   `cost_usd`: Calculated using standardized cost maps per 1M tokens.
+*   `input_tokens` / `output_tokens`: Counts from the provider's response metadata — **but 0 on 92% of rows** (15,910 of 17,333 measured 2026-08-16), because providers that return no usage block are recorded as zero rather than unknown.
+*   `cost_usd`: Calculated from the pricing table in `app/core/llm_pricing.py`.
 *   `latency_ms`: Response duration.
 *   `raw_response`: Captured raw JSON string.
+
+> **Cost read 0.00 on every row until #123.** Two pricing tables had drifted:
+> `app/ai/gateway.py` held the live models while `app/core/trace.py` held only
+> gemini-2.x, which this deployment has never run. The gateway computed the
+> correct cost and `track_llm_call`'s `finally` block recomputed it from the
+> stale table and discarded it. Consolidated into one module; an unpriced model
+> now reports **unknown** rather than zero, because a zero is indistinguishable
+> from a free call. Two Bedrock models in production are deliberately listed as
+> unpriced pending a confirmed rate.
 
 ---
 
