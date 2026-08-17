@@ -40,10 +40,10 @@ from app.services.cost_budget import cost_budget_manager
 logger = logging.getLogger(__name__)
 
 
-# Pricing is defined once, in app/ai/pricing.py. This module and app/core/trace
+# Pricing is defined once, in app/core/llm_pricing.py. This module and app/core/trace
 # previously kept separate tables that disagreed about which models exist, and
 # the tracer's copy — holding only models this deployment has never run — won.
-from app.ai.pricing import PRICING_TABLE  # noqa: E402
+from app.core.llm_pricing import PRICING_TABLE  # noqa: E402
 
 
 def clean_json_for_schema(data: Any, schema: type[BaseModel]) -> Any:

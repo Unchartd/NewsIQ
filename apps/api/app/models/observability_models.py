@@ -513,37 +513,6 @@ class HumanReviewModel(Base):
 # ──────────────────────────────────────────────
 
 
-class FunctionRunModel(Base):
-    """Execution record for tracked helper functions across workers.
-
-    Captures parameters, results, duration, and error states.
-    """
-
-    __tablename__ = "function_runs"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
-    )
-    function_name: Mapped[str] = mapped_column(String(255), index=True)
-    caller: Mapped[str] = mapped_column(String(255), default="system")
-    run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("pipeline_runs.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True
-    )
-    span_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
-    execution_time_ms: Mapped[float] = mapped_column(Float, default=0.0)
-    status: Mapped[str] = mapped_column(String(30), default="success")  # success, failed
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    arguments: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
-
-
 class PipelineTraceModel(Base):
     """Rich execution trace logging for all pipeline stages (PipelineTrace)."""
 

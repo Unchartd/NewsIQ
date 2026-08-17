@@ -86,7 +86,7 @@ def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> flo
             _reported_unknown.add(model)
             logger.warning(
                 "No pricing for model %r — its cost will be reported as unknown, not zero. "
-                "Add it to app/ai/pricing.PRICING_TABLE once the rate is confirmed.",
+                "Add it to app/core/llm_pricing.PRICING_TABLE once the rate is confirmed.",
                 model,
             )
         return None

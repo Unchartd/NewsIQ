@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.ai import pricing
 from app.ai.gateway import PRICING_TABLE as GATEWAY_TABLE
+from app.core import llm_pricing as pricing
 from app.core.trace import LLM_PRICING as TRACE_TABLE
 from app.core.trace import PipelineRun, StageSpan, track_llm_call
 

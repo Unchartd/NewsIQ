@@ -31,6 +31,20 @@ from sqlalchemy import select
 
 from app.core.langfuse_client import langfuse_client
 
+# Pricing lives in app/core/llm_pricing.py so the gateway and the tracer cannot
+# drift. They did drift: this module's table held only gemini-2.x, which this
+# deployment has never run, while the gateway's held the live models. The gateway
+# computed the correct cost and the `finally` block in track_llm_call recomputed
+# it from this table and discarded it — cost_usd was 0.00 on all 17,333
+# llm_traces rows.
+#
+# It must NOT live under app.ai: app/ai/__init__.py imports the gateway, which
+# imports this module, so importing app.ai.* from here triggers a circular import
+# and `import app.main` fails outright. LLM_PRICING is re-exported for callers
+# and tests that import it from this module.
+from app.core.llm_pricing import PRICING_TABLE as LLM_PRICING  # noqa: F401
+from app.core.llm_pricing import calculate_llm_cost as _calculate_llm_cost
+
 logger = logging.getLogger(__name__)
 
 # ── Context Variables ─────────────────────────────────────────────────────────
@@ -1130,26 +1144,13 @@ class LLMCallData:
 
 # ── LLM Cost Calculator ─────────────────────────────────────────────────────
 
-# Pricing lives in app/ai/pricing.py so the gateway and the tracer cannot drift.
-#
-# They did drift: this module's table held only gemini-2.x, which this
-# deployment has never run, while the gateway's held the live models. The
-# gateway computed the correct cost, and the `finally` block below recomputed it
-# from this table and discarded it — cost_usd was 0.00 on all 17,333 llm_traces
-# rows. The re-export keeps `from app.core.trace import calculate_llm_cost`
-# working for existing callers and tests.
-from app.ai.pricing import PRICING_TABLE as LLM_PRICING  # noqa: E402
-from app.ai.pricing import calculate_llm_cost as _calculate_llm_cost  # noqa: E402
-
-__all_pricing__ = (LLM_PRICING,)
-
 
 def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Cost in USD for an LLM call; 0.0 when the model has no confirmed rate.
 
     The underlying helper returns None for an unpriced model. This wrapper keeps
     the historical float contract for callers that cannot represent "unknown";
-    prefer app.ai.pricing.calculate_llm_cost directly when you can distinguish
+    prefer app.core.llm_pricing.calculate_llm_cost directly when you can distinguish
     unknown from free.
     """
     cost = _calculate_llm_cost(model, input_tokens, output_tokens)

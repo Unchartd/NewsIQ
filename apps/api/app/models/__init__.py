@@ -41,7 +41,6 @@ from app.models.models import (
 from app.models.observability_models import (
     CostRecordModel,
     ErrorLogModel,
-    FunctionRunModel,
     HumanReviewModel,
     LLMTraceModel,
     PipelineRunModel,
@@ -105,6 +104,5 @@ __all__ = [
     "PromptVersionModel",
     "QueueMetricsModel",
     "HumanReviewModel",
-    "FunctionRunModel",
     "StoryEvolutionModel",
 ]
