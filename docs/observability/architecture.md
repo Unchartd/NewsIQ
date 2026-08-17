@@ -96,17 +96,30 @@ These variables are automatically bound to:
 
 All database models are managed via SQLAlchemy under `app/models/observability_models.py`:
 
+> **Which of these actually carry data.** Row counts measured in production on
+> 2026-08-16 during the observability audit. Several tables are modelled and
+> migrated but have never been written, so treat this section as the schema, not
+> as a description of what is collected. See `docs/Observability_Audit.md`.
+
 ### 4.1 Core Telemetry Tables
-*   `pipeline_runs`: Records the execution trigger (`celery_beat`, `manual`, `chained`), type (`batch`, `incremental`), starting/ending timestamps, overall latency, and termination status.
-*   `stage_runs`: Stores granular timing, retries, and error traceback payloads for each pipeline stage. Linked to `pipeline_runs`.
-*   `llm_traces`: Logs every LLM completion. Stores model type, provider, system prompt, user prompt, response JSON/text, input/output tokens, cost, and latency.
-*   `function_runs`: Tracks generic processing functions (args, returns, duration, exceptions) executing across workers.
-*   `error_logs`: Captures pipeline failures, error types, trace references, and context.
-*   `queue_metrics`: Snapshots Redis queue lengths and Celery worker health.
+*   `pipeline_runs` — **live (6,318 rows)**. Records the execution trigger (`celery_beat`, `manual`, `chained`), type (`batch`, `incremental`), starting/ending timestamps, overall latency, and termination status.
+*   `stage_runs` — **live (31,796 rows)**. Stores granular timing, retries, and error traceback payloads for each pipeline stage. Linked to `pipeline_runs`.
+*   `llm_traces` — **live (17,333 rows)**. Logs every LLM completion: model, provider, prompts, response, tokens, cost, latency. Two caveats: prompts are stored only for errors, `DEBUG`, or sampled calls, and `cost_usd` read 0.00 on every row until the pricing consolidation (#123) — see below.
+*   `queue_metrics` — **live (9,332 rows)**. Snapshots Redis queue lengths and Celery worker health.
+*   `error_logs` — **empty (0 rows). No writer exists.** Stage logs live in Redis under a 24-hour TTL instead; a bounded tail is snapshotted into `stage_runs.metadata.logs_tail` when a stage fails (#126). The table is retained deliberately as the natural home for a durable log store.
+*   ~~`function_runs`~~ — **removed (#128)**. Never written, no reader, no endpoint; the table is dropped by migration `f1b6d3e90a24`.
+
+Also present and live, though not originally listed here:
+
+*   `pipeline_traces` — **live (9,856 rows)**. Written by the synthesis orchestrator, and the only place the seven synthesis stages were recorded until #124 mirrored them into `stage_runs`.
+*   `ai_execution_records` — **live (3,794 rows)**, richer than `llm_traces` (decision, confidence, cache hit, schema repair, prompt version) and **currently read by nothing**.
+*   `pipeline_failures` — **live (331 rows)**. Backs the Failure Center.
+*   `story_evolutions` — **live (716 rows)**.
+*   `token_usage`, `cost_records`, `retry_history` — **empty (0 rows), no writer.** Retained as the intended destinations for gaps the audit identified (token capture, cost records).
 
 ### 4.2 Human Review & Replay Tables
-*   `human_reviews`: Stores manual interventions (approvals, rejections, cluster splits, cluster merges, and canonical entity/Wikidata overrides) with detailed Before/After JSON diff logs and justification notes.
-*   `prompt_versions`: Retains hash-deduplicated versions of system and user templates for LLM tasks, allowing comparisons across versions.
+*   `human_reviews` — **empty (0 rows), but not dead.** `admin_service` writes a row from `POST /admin/review/{story_id}/action`, which the admin UI calls. It is empty because the action has not been used, not because nothing reaches it. Stores manual interventions (approvals, rejections, cluster splits/merges, entity overrides) with Before/After JSON diffs and notes.
+*   `prompt_versions` — **stale (18 rows, last written 2026-07-14).** Retains hash-deduplicated system/user templates for LLM tasks. `/admin/prompt-analytics` reads it and has no frontend consumer, so it currently surfaces month-old data.
 
 ---
 

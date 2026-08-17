@@ -1,5 +1,16 @@
 # Observability — Frontend ↔ Backend Wiring Matrix
 
+> **Status 2026-08-17.** W1–W7 below are all fixed in code (#122–#127). The two
+> orphaned lineage endpoints are now wired: `/admin/articles/{id}/trace` backs an
+> expandable panel in the story inspector (#125), and the synthesis stages it
+> could not previously show are mirrored into `stage_runs` (#124). Production
+> still runs `v1.38.0` — Phase 1 only — so the matrix below describes what was
+> measured, not what is currently served.
+>
+> Section 6 (no typed API layer) is **not** fixed and remains the root enabler:
+> every response is still consumed as `any`, so a field rename or an unmapped
+> status value still fails silently at runtime rather than at build time.
+
 **Date:** 2026-08-16. Verified by tracing each frontend call site to its endpoint,
 service and table, and by querying production for whether the data exists.
 
