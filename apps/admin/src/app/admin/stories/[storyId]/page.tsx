@@ -15,11 +15,143 @@ import {
   ExternalLink,
   AlertTriangle,
   CheckCircle2,
+  ChevronRight,
+  GitBranch,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const TABS = ["Overview", "Articles", "Entities", "LLM Traces", "Replay", "Versions"] as const;
 type Tab = (typeof TABS)[number];
+
+// Lineage for a single article: URL -> article -> story -> summary.
+//
+// /admin/articles/{id}/trace has existed all along with no consumer anywhere in
+// the frontend, which is why the audit found data lineage unreachable from the
+// UI despite the backend supporting it. Fetched on expand rather than for every
+// row, so opening the Articles tab on a large story costs nothing extra.
+function ArticleLineageRow({ article }: { article: any }) {
+  const [open, setOpen] = useState(false);
+
+  const { data: lineage, isLoading } = useQuery<any>({
+    queryKey: ["article-lineage", article.id],
+    queryFn: async () => {
+      const res = await apiClient.get(`/admin/articles/${article.id}/trace`);
+      return res.data;
+    },
+    enabled: open && !!article.id,
+  });
+
+  const stages = [...(lineage?.stages ?? []), ...(lineage?.story_stages ?? [])];
+
+  return (
+    <div className="glass rounded-xl overflow-hidden">
+      <div className="p-4 flex items-start gap-4">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="shrink-0 mt-0.5 text-slate-500 hover:text-slate-300 transition-colors"
+          aria-label={open ? "Hide lineage" : "Show lineage"}
+        >
+          <ChevronRight className={`w-4 h-4 transition-transform ${open ? "rotate-90" : ""}`} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-slate-200 line-clamp-1">{article.title}</p>
+          <p className="text-xs text-slate-550 mt-0.5">
+            {article.source_name} ·{" "}
+            {article.published_at ? new Date(article.published_at).toLocaleDateString() : "—"}
+          </p>
+        </div>
+        {article.similarity_score != null && (
+          <span
+            className={`badge shrink-0 ${article.similarity_score > 0.8 ? "badge-success" : "badge-warning"}`}
+          >
+            {(article.similarity_score * 100).toFixed(0)}% match
+          </span>
+        )}
+        {article.url && (
+          <a
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:text-primary/80 shrink-0"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        )}
+      </div>
+
+      {open && (
+        <div className="border-t border-border px-4 py-3 bg-slate-950/40">
+          <div className="flex items-center gap-1.5 mb-2">
+            <GitBranch className="w-3 h-3 text-slate-500" />
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Pipeline lineage
+            </span>
+          </div>
+
+          {isLoading ? (
+            <p className="text-xs text-slate-600 py-2">Loading lineage…</p>
+          ) : stages.length === 0 ? (
+            <p className="text-xs text-slate-600 py-2">
+              No stage runs recorded against this article.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {stages.map((st: any) => (
+                <div key={st.id} className="flex items-center gap-3 text-[11px]">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      st.status === "failed"
+                        ? "bg-red-400"
+                        : st.status === "skipped"
+                          ? "bg-slate-600"
+                          : "bg-emerald-400"
+                    }`}
+                  />
+                  <span className="text-slate-300 font-medium w-48 shrink-0">
+                    {st.stage.replace(/_/g, " ")}
+                  </span>
+                  <span className="text-slate-600 font-mono shrink-0">
+                    {st.latency_ms != null ? `${st.latency_ms.toFixed(0)} ms` : "—"}
+                  </span>
+                  <span className="text-slate-600 truncate flex-1">
+                    {st.error ?? st.started_at?.slice(0, 19).replace("T", " ") ?? ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {lineage?.llm_traces?.length > 0 && (
+            <div className="mt-3 pt-2 border-t border-border/60">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                AI calls
+              </span>
+              {lineage.llm_traces.map((t: any) => (
+                <div key={t.id} className="flex items-center gap-3 text-[11px] mt-1">
+                  <span className="text-slate-300 w-48 shrink-0">{t.stage}</span>
+                  <span className="text-slate-500 font-mono shrink-0">{t.model}</span>
+                  <span className="text-slate-600 font-mono">
+                    {t.total_tokens ?? (t.input_tokens ?? 0) + (t.output_tokens ?? 0)} tok
+                  </span>
+                  <span className="text-slate-600 font-mono">
+                    {t.cost_usd ? `$${t.cost_usd.toFixed(6)}` : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {lineage?.story && (
+            <p className="mt-3 pt-2 border-t border-border/60 text-[11px] text-slate-500">
+              Clustered into{" "}
+              <span className="text-slate-300">{lineage.story.headline ?? lineage.story.id}</span>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function StoryInspectorPage() {
   const params = useParams();
@@ -242,22 +374,7 @@ export default function StoryInspectorPage() {
             <p className="text-slate-600 text-sm text-center py-8">No articles attached.</p>
           ) : (
             story.articles.map((a: { id: string; title: string; url: string; source_name: string; published_at: string; similarity_score: number }, i: number) => (
-              <div key={i} className="glass rounded-xl p-4 flex items-start gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-200 line-clamp-1">{a.title}</p>
-                  <p className="text-xs text-slate-550 mt-0.5">{a.source_name} · {a.published_at ? new Date(a.published_at).toLocaleDateString() : "—"}</p>
-                </div>
-                {a.similarity_score != null && (
-                  <span className={`badge shrink-0 ${a.similarity_score > 0.8 ? "badge-success" : "badge-warning"}`}>
-                    {(a.similarity_score * 100).toFixed(0)}% match
-                  </span>
-                )}
-                {a.url && (
-                  <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 shrink-0">
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                )}
-              </div>
+              <ArticleLineageRow key={a.id ?? i} article={a} />
             ))
           )}
         </div>

@@ -1271,18 +1271,73 @@ async def get_article_trace(
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve end-to-end trace details for an article (admin only)."""
-    stmt = (
-        select(StageRunModel)
-        .where(StageRunModel.article_id == article_id)
-        .order_by(StageRunModel.started_at.asc())
-    )
-    res = await db.execute(stmt)
-    stages = res.scalars().all()
+    """End-to-end lineage for one article: URL → article → story → summary.
 
-    return [
-        {
+    Previously this returned a bare list of stage_runs filtered on article_id.
+    Because only clustering_incremental ever set that column (5,916 of 48,019
+    spans), an article's "end-to-end trace" was a single stage repeated. The
+    crawl span is now tagged with the article it creates, and this endpoint joins
+    the surrounding record so the journey is followable rather than implied.
+    """
+    article = (
+        await db.execute(select(Article).where(Article.id == article_id))
+    ).scalar_one_or_none()
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    stages = (
+        (
+            await db.execute(
+                select(StageRunModel)
+                .where(StageRunModel.article_id == article_id)
+                .order_by(StageRunModel.started_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # The story this article was clustered into, and that story's synthesis.
+    story_row = (
+        await db.execute(
+            select(Story)
+            .join(StoryArticle, StoryArticle.story_id == Story.id)
+            .where(StoryArticle.article_id == article_id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    story_stages: list = []
+    if story_row is not None:
+        story_stages = list(
+            (
+                await db.execute(
+                    select(StageRunModel)
+                    .where(StageRunModel.story_id == story_row.id)
+                    .order_by(StageRunModel.started_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    llm_traces = (
+        (
+            await db.execute(
+                select(LLMTraceModel)
+                .where(LLMTraceModel.article_id == article_id)
+                .order_by(LLMTraceModel.created_at.asc())
+                .limit(_LLM_TRACE_MAX)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    def _stage_payload(s) -> dict[str, Any]:
+        return {
             "id": str(s.id),
+            "run_id": str(s.run_id),
             "stage": s.stage,
             "status": s.status,
             "started_at": f"{s.started_at.isoformat()}Z" if s.started_at else None,
@@ -1291,8 +1346,50 @@ async def get_article_trace(
             "error": s.error,
             "metadata": s.metadata_payload or {},
         }
-        for s in stages
-    ]
+
+    return {
+        "article": {
+            "id": str(article.id),
+            "url": article.url,
+            "title": article.title,
+            "source_id": str(article.source_id) if article.source_id else None,
+            "crawled_at": f"{article.crawled_at.isoformat()}Z" if article.crawled_at else None,
+            "published_at": f"{article.published_at.isoformat()}Z"
+            if article.published_at
+            else None,
+            "content_length": len(article.content or ""),
+            "event_extraction_status": article.event_extraction_status,
+        },
+        "story": (
+            {
+                "id": str(story_row.id),
+                "headline": story_row.headline,
+                "status": story_row.story_status,
+                "one_line_summary": story_row.one_line_summary,
+            }
+            if story_row is not None
+            else None
+        ),
+        # Kept as `stages` so any existing consumer of the old list shape still
+        # finds the article's own spans in the same order.
+        "stages": [_stage_payload(s) for s in stages],
+        "story_stages": [_stage_payload(s) for s in story_stages],
+        "llm_traces": [
+            {
+                "id": str(t.id),
+                "stage": t.stage,
+                "provider": t.provider,
+                "model": t.model,
+                "input_tokens": t.input_tokens,
+                "output_tokens": t.output_tokens,
+                "cost_usd": t.cost_usd,
+                "latency_ms": t.latency_ms,
+                "status": t.status,
+                "error": t.error,
+            }
+            for t in llm_traces
+        ],
+    }
 
 
 class EntityOverrideRequest(BaseModel):
