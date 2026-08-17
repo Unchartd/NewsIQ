@@ -1376,7 +1376,7 @@ def dispatch_story_candidate_task(
     """
     logger.info("Celery task: Dispatching StoryCandidate search for %s", story_candidate_id_str)
 
-    async def _run():
+    async def _run(span=None):
         import hashlib
         from datetime import UTC, datetime
         from urllib.parse import urlparse
@@ -1672,12 +1672,28 @@ def dispatch_story_candidate_task(
                 len(created_crawl_task_ids),
             )
 
+            # discovery_search was the second-largest stage (5,002 spans) at 0.0%
+            # metadata: no query, no provider, no counts. All of it was already
+            # in scope and simply never written.
+            if span is not None:
+                span.set_metadata(
+                    {
+                        "query": sc.normalized_query,
+                        "headline": sc.headline,
+                        "provider": sc.discovery_provider,
+                        "urls_found": len(discovered_urls),
+                        "urls_after_decode": len(resolved_urls),
+                        "urls_queued": len(created_crawl_task_ids),
+                        "urls_rejected": len(resolved_urls) - len(created_crawl_task_ids),
+                    }
+                )
+
     async def _wrapped_run():
         async with PipelineRun(
             trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
-            async with StageSpan(run, stage=PipelineStage.DISCOVERY_SEARCH):
-                await _run()
+            async with StageSpan(run, stage=PipelineStage.DISCOVERY_SEARCH) as discovery_span:
+                await _run(discovery_span)
 
     return run_async(_wrapped_run())
 
@@ -1937,8 +1953,21 @@ def discovery_crawl_task(
     """Crawl, clean, validate, and persist a single discovered URL."""
     logger.info("Celery task: Crawling discovered URL for CrawlTask %s", crawl_task_id_str)
 
-    async def _run():
+    def _record(span, **fields: Any) -> None:
+        """Attach crawl telemetry to the enclosing stage span.
+
+        `crawling` is 73% of all stage_runs (23,216 of 31,796) and recorded 0.0%
+        metadata — only a traceback, and only on failure. Every field the Crawl
+        inspector is specified to show already exists in crawl_article's return
+        value and was simply thrown away, so no crawl regression was visible
+        after the fact.
+        """
+        if span is not None:
+            span.set_metadata({k: v for k, v in fields.items() if v is not None})
+
+    async def _run(span=None):
         from datetime import UTC, datetime, timedelta
+        from urllib.parse import urlparse
 
         from sqlalchemy import select
 
@@ -1985,6 +2014,13 @@ def discovery_crawl_task(
                     crawl_task.status = CrawlTaskState.FAILED
                     crawl_task.outcome = "BUDGET_EXCEEDED"
                     crawl_task.last_error = "Daily download budget exceeded"
+                    _record(
+                        span,
+                        url=crawl_task.url,
+                        outcome="BUDGET_EXCEEDED",
+                        downloads_used=current_downloads,
+                        daily_budget=settings.DISCOVERY_DAILY_DOWNLOAD_BUDGET,
+                    )
                     await session.commit()
                     await _check_discovery_task_completion(crawl_task.discovery_task_id, session)
                     await session.commit()
@@ -2002,6 +2038,7 @@ def discovery_crawl_task(
                 crawl_task.status = CrawlTaskState.SUCCESS
                 crawl_task.outcome = "BLOOM_SKIP"
                 crawl_task.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                _record(span, url=crawl_task.url, outcome="BLOOM_SKIP", crawled=False)
                 await session.commit()
                 await _check_discovery_task_completion(crawl_task.discovery_task_id, session)
                 await session.commit()
@@ -2033,6 +2070,30 @@ def discovery_crawl_task(
                 crawled_res = await crawler_service.crawl_article(target_url)
                 if crawled_res:
                     crawled = crawled_res
+
+                # Record what the fetch actually did, success or not. The
+                # extractor and diagnostics come straight from crawl_article and
+                # are the whole content of the Crawl stage inspector.
+                _diag = crawled.get("diagnostics") if isinstance(crawled, dict) else None
+                _diag = _diag if isinstance(_diag, dict) else {}
+                _record(
+                    span,
+                    url=target_url,
+                    host=urlparse(target_url).netloc.lower().removeprefix("www."),
+                    status_code=_diag.get("status_code"),
+                    fetch_method=_diag.get("fetch_method"),
+                    extractor=crawled.get("extractor"),
+                    bot_detected=_diag.get("bot_detected"),
+                    attempts=_diag.get("attempts"),
+                    duration_ms=_diag.get("duration_ms"),
+                    content_length=len(crawled.get("content") or ""),
+                    title_found=bool(crawled.get("title")),
+                    published_at_found=bool(crawled.get("published_at")),
+                    failure_reason=_diag.get("failure_reason"),
+                    tier=crawl_task.tier,
+                    retry_count=crawl_task.retry_count,
+                )
+
                 if not crawled or not crawled.get("success") or not crawled.get("content"):
                     raw_diag = crawled.get("diagnostics") if crawled else None
                     diagnostics: dict[str, Any] = raw_diag if isinstance(raw_diag, dict) else {}
@@ -2084,6 +2145,12 @@ def discovery_crawl_task(
                 )
 
                 crawl_task.retry_count += 1
+                _record(
+                    span,
+                    outcome=failure_reason,
+                    terminal=is_terminal,
+                    crawled=False,
+                )
                 if is_terminal:
                     crawl_task.status = CrawlTaskState.FAILED
                     crawl_task.outcome = failure_reason
@@ -2122,6 +2189,7 @@ def discovery_crawl_task(
                 crawl_task.status = CrawlTaskState.SUCCESS
                 crawl_task.outcome = "DUPLICATE_URL"
                 crawl_task.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                _record(span, outcome="DUPLICATE_URL", crawled=True, persisted=False)
                 await session.commit()
                 await _check_discovery_task_completion(crawl_task.discovery_task_id, session)
                 await session.commit()
@@ -2224,6 +2292,13 @@ def discovery_crawl_task(
             crawl_task.outcome = "SUCCESS"
             crawl_task.article_id = new_article.id
             crawl_task.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            _record(
+                span,
+                outcome="SUCCESS",
+                crawled=True,
+                persisted=True,
+                article_id=str(new_article.id),
+            )
 
             await url_bloom_filter.add(crawl_task.url_hash)
             await session.commit()
@@ -2272,8 +2347,8 @@ def discovery_crawl_task(
         async with PipelineRun(
             trigger="chained", pipeline_type="incremental", run_id=run_id, trace_id=trace_id
         ) as run:
-            async with StageSpan(run, stage=PipelineStage.CRAWLING):
-                await _run()
+            async with StageSpan(run, stage=PipelineStage.CRAWLING) as crawl_span:
+                await _run(crawl_span)
 
     return run_async(_wrapped_run())
 

@@ -35,8 +35,14 @@ import { toast } from "sonner";
 const PIPELINE_STAGES = [
   { id: "RSS", label: "RSS Ingestion", group: "ingestion", isAi: false },
   { id: "DISCOVERY", label: "Discovery Search", group: "discovery", isAi: false },
+  { id: "GNEWS", label: "GNews Ingestion", group: "ingestion", isAi: false },
   { id: "CRAWL", label: "Crawl Queue", group: "discovery", isAi: false },
   { id: "CANDIDATE_RETRIEVAL", label: "Candidate Retrieval", group: "processing", isAi: false },
+  // event_extraction is 899 spans with an 886-failure history and was absent
+  // from every mapping, so mapBackendToFrontendStage fell through to
+  // .toUpperCase() and matched no node — the worst-performing stage in the
+  // pipeline could not be seen at all.
+  { id: "EVENT_EXTRACTION", label: "Event Extraction", group: "processing", isAi: true },
   { id: "STAGE_A", label: "Stage A Filters", group: "processing", isAi: false },
   { id: "STAGE_B", label: "Stage B LLM", group: "processing", isAi: true },
   { id: "CLUSTERING", label: "Story Clustering", group: "processing", isAi: false },
@@ -69,6 +75,9 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; cls: string; labe
 // Stage normalization helper mappings
 const BACKEND_TO_FRONTEND_STAGE: Record<string, string> = {
   ingestion_rss: "RSS",
+  ingestion_gnews: "GNEWS",
+  event_extraction: "EVENT_EXTRACTION",
+  entity_extraction: "EVENT_EXTRACTION",
   discovery_search: "DISCOVERY",
   discovery_crawl: "CRAWL",
   crawling: "CRAWL",
@@ -94,6 +103,8 @@ const BACKEND_TO_FRONTEND_STAGE: Record<string, string> = {
 
 const FRONTEND_TO_BACKEND_STAGES: Record<string, string[]> = {
   RSS: ["ingestion_rss"],
+  GNEWS: ["ingestion_gnews"],
+  EVENT_EXTRACTION: ["event_extraction", "entity_extraction"],
   DISCOVERY: ["discovery_search"],
   CRAWL: ["discovery_crawl", "crawling"],
   CANDIDATE_RETRIEVAL: ["deduplication", "embedding"],
@@ -1042,12 +1053,12 @@ const PIPELINE_PHASES = [
   {
     title: "1. Ingestion & Discovery",
     desc: "Fetch feeds & scrape content",
-    stages: ["RSS", "DISCOVERY", "CRAWL"],
+    stages: ["RSS", "GNEWS", "DISCOVERY", "CRAWL"],
   },
   {
     title: "2. Deduplication & Extraction",
     desc: "Filter duplicates & run entities",
-    stages: ["CANDIDATE_RETRIEVAL", "STAGE_A", "STAGE_B"],
+    stages: ["CANDIDATE_RETRIEVAL", "EVENT_EXTRACTION", "STAGE_A", "STAGE_B"],
   },
   {
     title: "3. Clustering & Synthesis",
