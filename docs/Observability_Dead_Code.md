@@ -17,8 +17,21 @@ valuable* — they are marked **WIRE UP, DO NOT DELETE**.
 | `cost_records` | **0** | `CostRecordModel:243` | No writer; cost lives on `llm_traces` (and is 0) | model + migration only | High | **NO — decide first**, same reasoning as above |
 | `retry_history` | **0** | `RetryHistoryModel:284` | No writer; `retry_count` is a column on other tables | model + migration only | High | YES, after confirming no roadmap need |
 | `error_logs` | **0** | `ErrorLogModel:313` | No writer; logs go to Redis with a 24h TTL | model + migration only | High | **NO — this is the missing durable log store** (P2-2) |
-| `human_reviews` | **0** | `HumanReviewModel:475` | No writer; `/admin/review/queue` reads it and has no frontend | model + endpoint | High | YES if the human-review feature is abandoned; otherwise unfinished, not dead |
-| `function_runs` | **0** | `FunctionRunModel:516` | No writer, no reader, no endpoint | model + migration only | High | YES |
+| `human_reviews` | **0** | `HumanReviewModel:475` | ~~No writer~~ — **CORRECTED, see below** | model + endpoint + service | — | **NO — it is live** |
+| `function_runs` | **0** | ~~`FunctionRunModel:516`~~ | No writer, no reader, no endpoint | model + exports only | High | **REMOVED** (2026-08-17) |
+
+### Correction: `human_reviews` is not dead — 2026-08-17
+
+This entry was wrong. Verified before removing anything:
+
+`admin_service.py:485` **constructs and adds** a `HumanReviewModel` row, reached from
+`POST /admin/review/{story_id}/action` — an endpoint the admin frontend does
+call. The table is empty because no admin has used the action yet, not because
+nothing writes to it. Removing it would have deleted a working feature.
+
+The lesson generalises: **zero rows means "unused", not "unreachable".** Only
+`function_runs` had no reference beyond its own export, and it is the only model
+removed.
 
 **None of these should be dropped in the same change as any other work.** Four
 of the six describe capabilities the audit found *missing* — dropping them would
@@ -70,7 +83,7 @@ Not dead, but redundant — this is where consolidation pays.
 
 | Duplication | Evidence | Recommendation |
 |---|---|---|
-| **Two pricing tables** | `PRICING_TABLE` (`gateway.py:44`, current models) vs `LLM_PRICING` (`trace.py:1069`, gemini-2.x only) | **Delete `LLM_PRICING`**, import the gateway's. This is P0-3 and the clearest win in the report |
+| **Two pricing tables** | `PRICING_TABLE` (`gateway.py:44`, current models) vs `LLM_PRICING` (`trace.py:1069`, gemini-2.x only) | **DONE** in #123 — consolidated into `app/core/llm_pricing.py`. Note it deliberately does **not** live under `app.ai`: `app/ai/__init__.py` imports the gateway, which imports `app.core.trace`, so a pricing module there makes `import app.main` fail with a circular import. That regression shipped in #123 and was caught in Phase 6; `tests/test_import_integrity.py` now guards it |
 | **Two AI telemetry stores** | `llm_traces` (17,333, no `prompt_version`) vs `ai_execution_records` (3,794, richer: decision, confidence, cache_hit, schema_repaired, prompt_version) | Converge. `ai_execution_records` has the better schema and no reader |
 | **Two stage-trace systems** | `stage_runs` (31,796, read by UI) vs `pipeline_traces` (9,856, synthesis only, unread) | Either emit `stage_runs` from synthesis or teach the UI to read both |
 | **Two metadata shapes** | collector `input/output/metrics/...` vs `clustering_incremental`'s `inputs/outputs` | Normalise `clustering_incremental` onto the collector |
