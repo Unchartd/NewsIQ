@@ -25,6 +25,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useConsent } from "@/components/legal/consent-provider";
+import { activateOnKey } from "@/lib/a11y";
 
 // Toast Notification type
 interface Toast {
@@ -911,7 +912,7 @@ function SettingsContent() {
             {/* Avatar card */}
             <div className="pcrd pcrd-p" style={{ marginBottom: 20 }}>
               <div className="av-editor">
-                <div className="av-lg" onClick={() => triggerToast("Photo upload coming soon", "w")}>
+                <div className="av-lg" onClick={() => triggerToast("Photo upload coming soon", "w")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => triggerToast("Photo upload coming soon", "w"))}>
                   {firstName ? firstName[0].toUpperCase() : user?.email ? user.email[0].toUpperCase() : "A"}
                   <div className="av-overlay">
                     <svg width="20" height="20" style={{ color: "#fff" }}><use href="#i-cam" /></svg>
@@ -941,8 +942,9 @@ function SettingsContent() {
             <div className="pcrd pcrd-p" style={{ marginBottom: 20 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <div className="field">
-                  <label className="field-label">First name</label>
+                  <label className="field-label" htmlFor="first-name">First name</label>
                   <input
+              id="first-name"
                     className="field-input"
                     type="text"
                     value={firstName}
@@ -953,8 +955,9 @@ function SettingsContent() {
                   />
                 </div>
                 <div className="field">
-                  <label className="field-label">Last name</label>
+                  <label className="field-label" htmlFor="last-name">Last name</label>
                   <input
+              id="last-name"
                     className="field-input"
                     type="text"
                     value={lastName}
@@ -966,8 +969,9 @@ function SettingsContent() {
                 </div>
               </div>
               <div className="field">
-                <label className="field-label">Display name</label>
+                <label className="field-label" htmlFor="display-name">Display name</label>
                 <input
+              id="display-name"
                   className="field-input"
                   type="text"
                   value={displayName}
@@ -991,8 +995,9 @@ function SettingsContent() {
             <div className="slbl">Contact & Login</div>
             <div className="pcrd pcrd-p" style={{ marginBottom: 20 }}>
               <div className="field">
-                <label className="field-label">Email address</label>
+                <label className="field-label" htmlFor="email-address">Email address</label>
                 <input
+              id="email-address"
                   className="field-input"
                   type="email"
                   value={user?.email || ""}
@@ -1002,8 +1007,9 @@ function SettingsContent() {
                 <div className="field-hint">Used for login, digest delivery, and account alerts.</div>
               </div>
               <div className="field" style={{ marginBottom: 0 }}>
-                <label className="field-label">Phone number <span style={{ fontWeight: 400, color: "var(--ink3)" }}>(optional)</span></label>
+                <label className="field-label" htmlFor="phone-number-optional">Phone number <span style={{ fontWeight: 400, color: "var(--ink3)" }}>(optional)</span></label>
                 <input
+              id="phone-number-optional"
                   className="field-input"
                   type="tel"
                   placeholder="+91 98765 43210"
@@ -1490,7 +1496,11 @@ function SettingsContent() {
                         markReadMutation.mutate(notif.id);
                       }
                     }}
-                  >
+                   role="button" tabIndex={0} onKeyDown={activateOnKey(() => {
+                      if (!notif.is_read) {
+                        markReadMutation.mutate(notif.id);
+                      }
+                    })}>
                     <div className={`notif-icon ${iconClass}`}>
                       <svg width="14" height="14"><use href={iconHref} /></svg>
                     </div>
@@ -1541,7 +1551,7 @@ function SettingsContent() {
                     key={cat.slug}
                     className={`chk-opt ${isSelected ? "sel" : ""}`}
                     onClick={() => toggleTopic(cat.slug)}
-                  >
+                   role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleTopic(cat.slug))}>
                     <div className="chk-mark">
                       <svg width="9" height="9" style={{ color: "#fff" }}><use href="#i-check" /></svg>
                     </div>
@@ -1628,7 +1638,7 @@ function SettingsContent() {
                   </button>
                 </div>
               ))}
-              <div className="loc-add-btn" onClick={() => setOpenModal("addLoc")}>
+              <div className="loc-add-btn" onClick={() => setOpenModal("addLoc")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setOpenModal("addLoc"))}>
                 <svg width="16" height="16" style={{ color: "var(--blue)" }}><use href="#i-plus" /></svg>
                 Add location
               </div>
@@ -1700,14 +1710,14 @@ function SettingsContent() {
 
             <div className="slbl">Summary Level</div>
             <div className="radio-group" style={{ marginBottom: 28 }}>
-              <div className={`radio-opt ${summaryLevel === "one_line" ? "sel" : ""}`} onClick={() => setSummaryLevel("one_line")}>
+              <div className={`radio-opt ${summaryLevel === "one_line" ? "sel" : ""}`} onClick={() => setSummaryLevel("one_line")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setSummaryLevel("one_line"))}>
                 <div className="radio-circle"><div className="radio-dot"></div></div>
                 <div className="radio-text">
                   <div className="radio-main">1-line</div>
                   <div className="radio-desc">~20 words · Just the core fact. Who, what, where.</div>
                 </div>
               </div>
-              <div className={`radio-opt ${summaryLevel === "short" ? "sel" : ""}`} onClick={() => setSummaryLevel("short")}>
+              <div className={`radio-opt ${summaryLevel === "short" ? "sel" : ""}`} onClick={() => setSummaryLevel("short")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setSummaryLevel("short"))}>
                 <div className="radio-circle"><div className="radio-dot"></div></div>
                 <div className="radio-text">
                   <div className="radio-main">Short</div>
@@ -1715,7 +1725,7 @@ function SettingsContent() {
                 </div>
                 <span className="radio-badge">Recommended</span>
               </div>
-              <div className={`radio-opt ${summaryLevel === "detailed" ? "sel" : ""}`} onClick={() => setSummaryLevel("detailed")}>
+              <div className={`radio-opt ${summaryLevel === "detailed" ? "sel" : ""}`} onClick={() => setSummaryLevel("detailed")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setSummaryLevel("detailed"))}>
                 <div className="radio-circle"><div className="radio-dot"></div></div>
                 <div className="radio-text">
                   <div className="radio-main">Detailed</div>
@@ -1786,7 +1796,7 @@ function SettingsContent() {
             <div className="slbl">Colour Mode</div>
             <div className="theme-grid" style={{ marginBottom: 28 }}>
               {/* Light */}
-              <div className={`theme-opt ${theme === "light" ? "sel" : ""}`} onClick={() => handleThemeModeSelection("light")}>
+              <div className={`theme-opt ${theme === "light" ? "sel" : ""}`} onClick={() => handleThemeModeSelection("light")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => handleThemeModeSelection("light"))}>
                 <div className="theme-preview tp-light">
                   <div className="tp-bar" style={{ marginTop: 10, width: "60%" }}></div>
                   <div className="tp-card" style={{ marginTop: 6 }}></div>
@@ -1799,7 +1809,7 @@ function SettingsContent() {
                 </div>
               </div>
               {/* Dark */}
-              <div className={`theme-opt ${theme === "dark" ? "sel" : ""}`} onClick={() => handleThemeModeSelection("dark")}>
+              <div className={`theme-opt ${theme === "dark" ? "sel" : ""}`} onClick={() => handleThemeModeSelection("dark")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => handleThemeModeSelection("dark"))}>
                 <div className="theme-preview tp-dark">
                   <div className="tp-bar tp-bar-dark" style={{ marginTop: 10, width: "60%" }}></div>
                   <div className="tp-card tp-card-dark" style={{ marginTop: 6 }}></div>
@@ -1812,7 +1822,7 @@ function SettingsContent() {
                 </div>
               </div>
               {/* System */}
-              <div className={`theme-opt ${theme === "system" ? "sel" : ""}`} onClick={() => handleThemeModeSelection("system")}>
+              <div className={`theme-opt ${theme === "system" ? "sel" : ""}`} onClick={() => handleThemeModeSelection("system")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => handleThemeModeSelection("system"))}>
                 <div className="theme-preview tp-sys">
                   <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "50%", padding: "10px 6px" }}>
                     <div className="tp-bar" style={{ width: "80%" }}></div>
@@ -1833,16 +1843,16 @@ function SettingsContent() {
             <div className="slbl">Font Size</div>
             <div className="pcrd pcrd-p" style={{ marginBottom: 24 }}>
               <div className="radio-group">
-                <div className={`radio-opt ${fontSize === "small" ? "sel" : ""}`} onClick={() => setFontSize("small")}>
+                <div className={`radio-opt ${fontSize === "small" ? "sel" : ""}`} onClick={() => setFontSize("small")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setFontSize("small"))}>
                   <div className="radio-circle"><div className="radio-dot"></div></div>
                   <div className="radio-text"><div className="radio-main" style={{ fontSize: 13 }}>Small</div></div>
                 </div>
-                <div className={`radio-opt ${fontSize === "default" ? "sel" : ""}`} onClick={() => setFontSize("default")}>
+                <div className={`radio-opt ${fontSize === "default" ? "sel" : ""}`} onClick={() => setFontSize("default")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setFontSize("default"))}>
                   <div className="radio-circle"><div className="radio-dot"></div></div>
                   <div className="radio-text"><div className="radio-main">Default</div></div>
                   <span className="radio-badge">Recommended</span>
                 </div>
-                <div className={`radio-opt ${fontSize === "large" ? "sel" : ""}`} onClick={() => setFontSize("large")}>
+                <div className={`radio-opt ${fontSize === "large" ? "sel" : ""}`} onClick={() => setFontSize("large")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setFontSize("large"))}>
                   <div className="radio-circle"><div className="radio-dot"></div></div>
                   <div className="radio-text"><div className="radio-main" style={{ fontSize: 17 }}>Large</div></div>
                 </div>
@@ -1901,6 +1911,7 @@ function SettingsContent() {
               <div className="sch-box" style={{ flex: 1, maxWidth: 360 }}>
                 <svg width="14" height="14" style={{ color: "var(--ink3)", flexShrink: 0 }}><use href="#i-search" /></svg>
                 <input
+              aria-label="Search your history"
                   type="text"
                   placeholder="Search your history…"
                   value={historySearch}
@@ -1991,8 +2002,9 @@ function SettingsContent() {
             <div className="slbl">Password</div>
             <div className="pcrd pcrd-p" style={{ marginBottom: 20 }}>
               <div className="field">
-                <label className="field-label">Current password</label>
+                <label className="field-label" htmlFor="current-password">Current password</label>
                 <input
+              id="current-password"
                   className="field-input"
                   type="password"
                   placeholder="Enter current password"
@@ -2001,8 +2013,9 @@ function SettingsContent() {
                 />
               </div>
               <div className="field">
-                <label className="field-label">New password</label>
+                <label className="field-label" htmlFor="new-password">New password</label>
                 <input
+              id="new-password"
                   className="field-input"
                   type="password"
                   placeholder="At least 8 characters"
@@ -2017,8 +2030,9 @@ function SettingsContent() {
                 </div>
               </div>
               <div className="field" style={{ marginBottom: 16 }}>
-                <label className="field-label">Confirm new password</label>
+                <label className="field-label" htmlFor="confirm-new-password">Confirm new password</label>
                 <input
+              id="confirm-new-password"
                   className="field-input"
                   type="password"
                   placeholder="Repeat new password"
@@ -2173,7 +2187,7 @@ function SettingsContent() {
                   <div className="tog-sub">Required for login sessions, JWT rotating tokens, and anti-CSRF protection.</div>
                 </div>
                 <label className="toggle">
-                  <input type="checkbox" checked disabled />
+                  <input aria-label="Essential cookies (always on, cannot be disabled)" type="checkbox" checked disabled />
                   <div className="tog-track" style={{ opacity: 0.5 }}></div>
                   <div className="tog-thumb"></div>
                 </label>
@@ -2430,7 +2444,7 @@ function SettingsContent() {
       </div>
 
       {/* MODAL: Confirm Delete */}
-      <div className={`modal-overlay ${openModal === "deleteAcc" ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setOpenModal(null); }}>
+      <div className={`modal-overlay ${openModal === "deleteAcc" ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setOpenModal(null); }} role="button" tabIndex={0} onKeyDown={activateOnKey((e) => { if (e.target === e.currentTarget) setOpenModal(null); })}>
         <div className="modal">
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(220,38,38,.1)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, color: "var(--err)" }}>
             <svg width="20" height="20"><use href="#i-alert" /></svg>
@@ -2445,7 +2459,7 @@ function SettingsContent() {
       </div>
 
       {/* MODAL: Cancel Subscription */}
-      <div className={`modal-overlay ${openModal === "cancelSub" ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setOpenModal(null); }}>
+      <div className={`modal-overlay ${openModal === "cancelSub" ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setOpenModal(null); }} role="button" tabIndex={0} onKeyDown={activateOnKey((e) => { if (e.target === e.currentTarget) setOpenModal(null); })}>
         <div className="modal">
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(220,38,38,.1)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, color: "var(--err)" }}>
             <svg width="20" height="20"><use href="#i-crown" /></svg>
@@ -2460,13 +2474,14 @@ function SettingsContent() {
       </div>
 
       {/* MODAL: Add Location */}
-      <div className={`modal-overlay ${openModal === "addLoc" ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setOpenModal(null); }}>
+      <div className={`modal-overlay ${openModal === "addLoc" ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setOpenModal(null); }} role="button" tabIndex={0} onKeyDown={activateOnKey((e) => { if (e.target === e.currentTarget) setOpenModal(null); })}>
         <div className="modal">
           <div className="modal-title">Add location</div>
           <div className="modal-body" style={{ marginBottom: 16 }}>Search for a country, state, or city to add to your feed.</div>
           <div className="sch-box" style={{ marginBottom: 20 }}>
             <svg width="16" height="16" style={{ color: "var(--ink3)", flexShrink: 0 }}><use href="#i-search" /></svg>
-            <input type="text" placeholder="e.g. Chennai, Maharashtra, Japan…" value={locSearchQuery} onChange={(e) => setLocSearchQuery(e.target.value)} />
+            <input
+              aria-label="e.g. Chennai, Maharashtra, Japan" type="text" placeholder="e.g. Chennai, Maharashtra, Japan…" value={locSearchQuery} onChange={(e) => setLocSearchQuery(e.target.value)} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
             {/* Bengaluru */}
@@ -2474,7 +2489,7 @@ function SettingsContent() {
               <div
                 style={{ padding: "10px 12px", border: "1.5px solid var(--primary)", borderRadius: "var(--r6)", backgroundColor: "rgba(var(--brand-primary-dark-rgb), .04)", fontSize: 14, cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}
                 onClick={() => addLocation("city", "Bengaluru")}
-              >
+               role="button" tabIndex={0} onKeyDown={activateOnKey(() => addLocation("city", "Bengaluru"))}>
                 <span>🇮🇳</span>Bengaluru, Karnataka · City
               </div>
             )}
@@ -2483,7 +2498,7 @@ function SettingsContent() {
               <div
                 style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--r6)", fontSize: 14, cursor: "pointer", fontWeight: 400, color: "var(--ink2)", display: "flex", alignItems: "center", gap: 8 }}
                 onClick={() => addLocation("city", "Chennai")}
-              >
+               role="button" tabIndex={0} onKeyDown={activateOnKey(() => addLocation("city", "Chennai"))}>
                 <span>🇮🇳</span>Chennai, Tamil Nadu · City
               </div>
             )}
@@ -2492,7 +2507,7 @@ function SettingsContent() {
               <div
                 style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--r6)", fontSize: 14, cursor: "pointer", fontWeight: 400, color: "var(--ink2)", display: "flex", alignItems: "center", gap: 8 }}
                 onClick={() => addLocation("country", "IN")}
-              >
+               role="button" tabIndex={0} onKeyDown={activateOnKey(() => addLocation("country", "IN"))}>
                 <span>🇮🇳</span>Karnataka · State
               </div>
             )}

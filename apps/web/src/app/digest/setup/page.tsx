@@ -31,6 +31,7 @@ import { useTheme } from "next-themes";
 import { useAuthStore } from "@/stores/auth-store";
 import { toast } from "sonner";
 import { SignalBar } from "@/components/layout/signal-bar";
+import { activateOnKey } from "@/lib/a11y";
 
 type Step = "intro" | "topics" | "schedule" | "channels" | "preview" | "confirm" | "success" | "manage";
 
@@ -370,7 +371,7 @@ export default function DigestSetupPage() {
                     </div>
                     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", background: "var(--surface)", fontSize: 12, color: "var(--ink3)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <span>+ 2 more stories</span>
-                      <span style={{ color: "var(--blue)", fontWeight: 500, cursor: "pointer" }} onClick={() => go("preview")}>See full preview →</span>
+                      <span style={{ color: "var(--blue)", fontWeight: 500, cursor: "pointer" }} onClick={() => go("preview")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => go("preview"))}>See full preview →</span>
                     </div>
                   </div>
 
@@ -408,7 +409,7 @@ export default function DigestSetupPage() {
                   </div>
                   <div className="cat-grid" style={{ marginBottom: 24 }}>
                     {CATEGORIES.map((cat) => (
-                      <div key={cat.id} className={`cat-opt ${selectedCats.has(cat.id) ? "sel" : ""}`} onClick={() => toggleCat(cat.id)}>
+                      <div key={cat.id} className={`cat-opt ${selectedCats.has(cat.id) ? "sel" : ""}`} onClick={() => toggleCat(cat.id)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleCat(cat.id))}>
                         <div className="cat-chk"><Check size={10} color="#fff" /></div>
                         <div className="cat-icon">{cat.icon}</div>
                         <div className="cat-name">{cat.name}</div>
@@ -433,7 +434,7 @@ export default function DigestSetupPage() {
                         <button onClick={() => setStoryCount(Math.min(15, storyCount + 1))} style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--ink2)", cursor: "pointer", transition: "all .15s" }}>+</button>
                       </div>
                     </div>
-                    <input type="range" min="3" max="15" value={storyCount} onChange={(e) => setStoryCount(parseInt(e.target.value))} style={{ width: "100%", accentColor: "var(--primary)", height: 4, cursor: "pointer" }} />
+                    <input aria-label="Number of stories per digest" type="range" min="3" max="15" value={storyCount} onChange={(e) => setStoryCount(parseInt(e.target.value))} style={{ width: "100%", accentColor: "var(--primary)", height: 4, cursor: "pointer" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--ink3)", marginTop: 6 }}>
                       <span>3 stories · ~2 min</span>
                       <span>15 stories · ~8 min</span>
@@ -489,7 +490,7 @@ export default function DigestSetupPage() {
 
                   <div className="slbl">Digest editions</div>
                   <div style={{ marginBottom: 24 }}>
-                    <div className={`channel-opt ${editions.morning ? "sel" : ""}`} onClick={() => setEditions({...editions, morning: !editions.morning})} style={{ alignItems: "flex-start" }}>
+                    <div className={`channel-opt ${editions.morning ? "sel" : ""}`} onClick={() => setEditions({...editions, morning: !editions.morning})} style={{ alignItems: "flex-start" }} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setEditions({...editions, morning: !editions.morning}))}>
                       <div className="ch-icon" style={{ background: "rgba(217,119,6,0.12)", fontSize: 22 }}>🌅</div>
                       <div style={{ flex: 1 }}>
                         <div className="ch-name">Morning Digest</div>
@@ -499,7 +500,7 @@ export default function DigestSetupPage() {
                             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--ink3)", marginBottom: 8 }}>Delivery time</div>
                             <div className="time-grid">
                               {TIMES.map((t) => (
-                                <div key={t.value} className={`time-chip ${deliveryTimes.morning === t.value ? "sel" : ""}`} onClick={(e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, morning: t.value}); }}>
+                                <div key={t.value} className={`time-chip ${deliveryTimes.morning === t.value ? "sel" : ""}`} onClick={(e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, morning: t.value}); }} role="button" tabIndex={0} onKeyDown={activateOnKey((e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, morning: t.value}); })}>
                                   <div className="tc-time">{t.value}</div>
                                   <div className="tc-label">{t.label}</div>
                                 </div>
@@ -511,7 +512,7 @@ export default function DigestSetupPage() {
                       <div className="ch-sel-dot">{editions.morning && <Check size={10} color="#fff" />}</div>
                     </div>
 
-                    <div className={`channel-opt ${editions.midday ? "sel" : ""}`} onClick={() => setEditions({...editions, midday: !editions.midday})} style={{ alignItems: "flex-start" }}>
+                    <div className={`channel-opt ${editions.midday ? "sel" : ""}`} onClick={() => setEditions({...editions, midday: !editions.midday})} style={{ alignItems: "flex-start" }} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setEditions({...editions, midday: !editions.midday}))}>
                       <div className="ch-icon" style={{ background: "rgba(26,86,219,0.1)", fontSize: 22 }}>☀️</div>
                       <div style={{ flex: 1 }}>
                         <div className="ch-name">Midday Briefing</div>
@@ -521,7 +522,7 @@ export default function DigestSetupPage() {
                             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--ink3)", marginBottom: 8 }}>Delivery time</div>
                             <div className="time-grid">
                               {MIDDAY_TIMES.map((t) => (
-                                <div key={t.value} className={`time-chip ${deliveryTimes.midday === t.value ? "sel" : ""}`} onClick={(e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, midday: t.value}); }}>
+                                <div key={t.value} className={`time-chip ${deliveryTimes.midday === t.value ? "sel" : ""}`} onClick={(e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, midday: t.value}); }} role="button" tabIndex={0} onKeyDown={activateOnKey((e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, midday: t.value}); })}>
                                   <div className="tc-time">{t.value}</div>
                                   <div className="tc-label">{t.label}</div>
                                 </div>
@@ -533,7 +534,7 @@ export default function DigestSetupPage() {
                       <div className="ch-sel-dot">{editions.midday && <Check size={10} color="#fff" />}</div>
                     </div>
 
-                    <div className={`channel-opt ${editions.evening ? "sel" : ""}`} onClick={() => setEditions({...editions, evening: !editions.evening})} style={{ alignItems: "flex-start" }}>
+                    <div className={`channel-opt ${editions.evening ? "sel" : ""}`} onClick={() => setEditions({...editions, evening: !editions.evening})} style={{ alignItems: "flex-start" }} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setEditions({...editions, evening: !editions.evening}))}>
                       <div className="ch-icon" style={{ background: "rgba(107,33,168,0.1)", fontSize: 22 }}>🌆</div>
                       <div style={{ flex: 1 }}>
                         <div className="ch-name">Evening Wrap-Up</div>
@@ -543,7 +544,7 @@ export default function DigestSetupPage() {
                             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--ink3)", marginBottom: 8 }}>Delivery time</div>
                             <div className="time-grid">
                               {EVENING_TIMES.map((t) => (
-                                <div key={t.value} className={`time-chip ${deliveryTimes.evening === t.value ? "sel" : ""}`} onClick={(e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, evening: t.value}); }}>
+                                <div key={t.value} className={`time-chip ${deliveryTimes.evening === t.value ? "sel" : ""}`} onClick={(e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, evening: t.value}); }} role="button" tabIndex={0} onKeyDown={activateOnKey((e) => { e.stopPropagation(); setDeliveryTimes({...deliveryTimes, evening: t.value}); })}>
                                   <div className="tc-time">{t.value}</div>
                                   <div className="tc-label">{t.label}</div>
                                 </div>
@@ -563,7 +564,7 @@ export default function DigestSetupPage() {
                       { id: "weekdays", i: "🗓️", n: "Weekdays", d: "Mon – Fri only" },
                       { id: "custom", i: "📆", n: "Custom", d: "Pick specific days" },
                     ].map((f) => (
-                      <div key={f.id} className={`freq-opt ${frequency === f.id ? "sel" : ""}`} onClick={() => setFrequency(f.id as "daily" | "weekdays" | "custom")}>
+                      <div key={f.id} className={`freq-opt ${frequency === f.id ? "sel" : ""}`} onClick={() => setFrequency(f.id as "daily" | "weekdays" | "custom")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setFrequency(f.id as "daily" | "weekdays" | "custom"))}>
                         <div className="freq-icon">{f.i}</div>
                         <div className="freq-name">{f.n}</div>
                         <div className="freq-desc">{f.d}</div>
@@ -577,7 +578,7 @@ export default function DigestSetupPage() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginBottom: 12 }}>Select days</div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-                            <div key={d} className={`time-chip ${customDays.has(d) ? "sel" : ""}`} onClick={() => { const next = new Set(customDays); if (next.has(d)) next.delete(d); else next.add(d); setCustomDays(next); }} style={{ flex: 1, minWidth: 70 }}>
+                            <div key={d} className={`time-chip ${customDays.has(d) ? "sel" : ""}`} onClick={() => { const next = new Set(customDays); if (next.has(d)) next.delete(d); else next.add(d); setCustomDays(next); }} style={{ flex: 1, minWidth: 70 }} role="button" tabIndex={0} onKeyDown={activateOnKey(() => { const next = new Set(customDays); if (next.has(d)) next.delete(d); else next.add(d); setCustomDays(next); })}>
                               <div className="tc-time">{d}</div>
                             </div>
                           ))}
@@ -621,7 +622,7 @@ export default function DigestSetupPage() {
 
                   <div className="slbl">Delivery channels</div>
                   
-                  <div className={`channel-opt ${channels.email ? "sel" : ""}`} onClick={() => setChannels({...channels, email: !channels.email})}>
+                  <div className={`channel-opt ${channels.email ? "sel" : ""}`} onClick={() => setChannels({...channels, email: !channels.email})} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setChannels({...channels, email: !channels.email}))}>
                     <div className="ch-icon" style={{ background: "rgba(26,86,219,0.1)" }}><Mail size={22} color="var(--blue)" /></div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
@@ -631,7 +632,7 @@ export default function DigestSetupPage() {
                       <div className="ch-desc">Beautifully formatted HTML digest — includes summaries, source links, and story timeline.</div>
                       {channels.email && (
                         <div style={{ marginTop: 10 }}>
-                          <input type="email" defaultValue={user?.email || "aarav.mehta@gmail.com"} className="email-input" style={{ height: 38, fontSize: 13 }} onClick={(e) => e.stopPropagation()} />
+                          <input aria-label="Email address for digest delivery" type="email" defaultValue={user?.email || "aarav.mehta@gmail.com"} className="email-input" style={{ height: 38, fontSize: 13 }} onClick={(e) => e.stopPropagation()} />
                           <div style={{ fontSize: 11, color: "var(--green)", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}><Check size={11} />Verified email</div>
                         </div>
                       )}
@@ -639,7 +640,7 @@ export default function DigestSetupPage() {
                     <div className="ch-sel-dot">{channels.email && <Check size={10} color="#fff" />}</div>
                   </div>
 
-                  <div className={`channel-opt ${channels.app ? "sel" : ""}`} onClick={() => setChannels({...channels, app: !channels.app})}>
+                  <div className={`channel-opt ${channels.app ? "sel" : ""}`} onClick={() => setChannels({...channels, app: !channels.app})} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setChannels({...channels, app: !channels.app}))}>
                     <div className="ch-icon" style={{ background: "rgba(22,163,74,0.1)" }}><Bell size={22} color="var(--green)" /></div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
@@ -651,7 +652,7 @@ export default function DigestSetupPage() {
                     <div className="ch-sel-dot">{channels.app && <Check size={10} color="#fff" />}</div>
                   </div>
 
-                  <div className={`channel-opt ${channels.telegram ? "sel" : ""}`} onClick={() => setChannels({...channels, telegram: !channels.telegram})}>
+                  <div className={`channel-opt ${channels.telegram ? "sel" : ""}`} onClick={() => setChannels({...channels, telegram: !channels.telegram})} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setChannels({...channels, telegram: !channels.telegram}))}>
                     <div className="ch-icon" style={{ background: "rgba(0,136,204,0.1)" }}><Send size={22} color="#0088cc" /></div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
@@ -676,7 +677,7 @@ export default function DigestSetupPage() {
                     <div className="ch-sel-dot"></div>
                   </div>
 
-                  <div className={`channel-opt ${channels.push ? "sel" : ""}`} onClick={() => setChannels({...channels, push: !channels.push})} style={{ marginBottom: 24 }}>
+                  <div className={`channel-opt ${channels.push ? "sel" : ""}`} onClick={() => setChannels({...channels, push: !channels.push})} style={{ marginBottom: 24 }} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setChannels({...channels, push: !channels.push}))}>
                     <div className="ch-icon" style={{ background: "rgba(196,30,58,0.1)" }}><Smartphone size={22} color="var(--primary)" /></div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
@@ -690,12 +691,12 @@ export default function DigestSetupPage() {
 
                   <div className="slbl">Email format <span style={{ fontSize: 11, fontWeight: 400, color: "var(--ink3)", marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>(when email is selected)</span></div>
                   <div className="crd crd-p" style={{ marginBottom: 24 }}>
-                    <div className={`radio-opt ${emailFormat === "html" ? "sel" : ""}`} onClick={() => setEmailFormat("html")}>
+                    <div className={`radio-opt ${emailFormat === "html" ? "sel" : ""}`} onClick={() => setEmailFormat("html")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setEmailFormat("html"))}>
                       <div className="radio-circle"><div className="radio-dot"></div></div>
                       <div style={{ flex: 1 }}><div className="radio-main">Rich HTML</div><div className="radio-desc">Full formatting with category colours, source links, and story summaries. Looks great on mobile.</div></div>
                       <span className="radio-badge">Recommended</span>
                     </div>
-                    <div className={`radio-opt ${emailFormat === "text" ? "sel" : ""}`} onClick={() => setEmailFormat("text")}>
+                    <div className={`radio-opt ${emailFormat === "text" ? "sel" : ""}`} onClick={() => setEmailFormat("text")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setEmailFormat("text"))}>
                       <div className="radio-circle"><div className="radio-dot"></div></div>
                       <div style={{ flex: 1 }}><div className="radio-main">Plain text</div><div className="radio-desc">No images or styling — just headlines and summaries. Works in all email clients.</div></div>
                     </div>
@@ -825,7 +826,7 @@ export default function DigestSetupPage() {
                   <div className="crd crd-p" style={{ marginBottom: 24 }}>
                     <div className="tog-row" style={{ borderBottom: "none" }}>
                       <div className="tog-info"><div className="tog-label">I agree to receive the NewsIQ Digest</div><div className="tog-sub">You can unsubscribe any time from the footer of any digest email or from your profile settings.</div></div>
-                      <label className="toggle"><input type="checkbox" defaultChecked id="consent" /><div className="tog-track"></div><div className="tog-thumb"></div></label>
+                      <label className="toggle"><input aria-label="I agree to receive the NewsIQ Digest" type="checkbox" defaultChecked id="consent" /><div className="tog-track"></div><div className="tog-thumb"></div></label>
                     </div>
                   </div>
 
@@ -863,7 +864,7 @@ export default function DigestSetupPage() {
                         { i: "🏠", t: "Browse today's stories", d: "Don't wait — catch up on the feed right now", a: () => router.push("/home") },
                         { i: "👁️", t: "Preview today's digest", d: "See what tomorrow's would look like right now", a: () => go("preview") },
                       ].map((item, idx) => (
-                        <div key={idx} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r6)", cursor: "pointer", transition: "box-shadow 0.15s" }} onClick={item.a}>
+                        <div key={idx} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r6)", cursor: "pointer", transition: "box-shadow 0.15s" }} onClick={item.a} role="button" tabIndex={0} onKeyDown={activateOnKey(item.a)}>
                           <span style={{ fontSize: 18 }}>{item.i}</span>
                           <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{item.t}</div><div style={{ fontSize: 12, color: "var(--ink3)" }}>{item.d}</div></div>
                           <ArrowRight size={14} color="var(--ink3)" />
@@ -928,7 +929,7 @@ export default function DigestSetupPage() {
                       </div>
                     )}
                     {!editions.morning && !editions.midday && !editions.evening && (
-                      <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => go("schedule")}>
+                      <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => go("schedule")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => go("schedule"))}>
                         <span style={{ fontSize: 20, filter: "grayscale(1)", opacity: 0.5 }}>📰</span>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink3)" }}>No active editions</div>

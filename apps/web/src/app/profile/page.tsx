@@ -21,6 +21,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import type { Story, UserPreferences } from "@/types";
 import { AppShell } from "@/components/layout/app-shell";
+import { activateOnKey } from "@/lib/a11y";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -139,7 +140,7 @@ export default function ProfilePage() {
             Account
           </div>
           <ul className="slist">
-            <li className="sitem" onClick={() => router.push("/settings?tab=edit")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=edit")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=edit"))}>
               <div className="si-icon">
                 <User size={15} />
               </div>
@@ -147,7 +148,7 @@ export default function ProfilePage() {
               <ChevronRight size={14} style={{ color: "var(--ink3)" }} />
             </li>
             
-            <li className="sitem" onClick={() => router.push("/settings?tab=sub")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=sub")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=sub"))}>
               <div className="si-icon">
                 <Crown size={15} />
               </div>
@@ -157,7 +158,7 @@ export default function ProfilePage() {
               </div>
             </li>
 
-            <li className="sitem" onClick={() => router.push("/settings?tab=notif")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=notif")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=notif"))}>
               <div className="si-icon">
                 <Bell size={15} />
               </div>
@@ -171,7 +172,7 @@ export default function ProfilePage() {
             Preferences
           </div>
           <ul className="slist">
-            <li className="sitem" onClick={() => router.push("/settings?tab=topics")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=topics")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=topics"))}>
               <div className="si-icon">
                 <Grid size={15} />
               </div>
@@ -179,7 +180,7 @@ export default function ProfilePage() {
               <div className="si-val">{categoriesLabel}</div>
             </li>
 
-            <li className="sitem" onClick={() => router.push("/settings?tab=locs")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=locs")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=locs"))}>
               <div className="si-icon">
                 <Map size={15} />
               </div>
@@ -189,7 +190,7 @@ export default function ProfilePage() {
               </div>
             </li>
 
-            <li className="sitem" onClick={() => router.push("/settings?tab=summary")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=summary")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=summary"))}>
               <div className="si-icon">
                 <BookOpen size={15} />
               </div>
@@ -197,7 +198,7 @@ export default function ProfilePage() {
               <div className="si-val">{summaryLabel}</div>
             </li>
 
-            <li className="sitem" onClick={() => router.push("/settings?tab=theme")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=theme")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=theme"))}>
               <div className="si-icon">
                 {theme === "dark" ? <Moon size={15} /> : <Sun size={15} />}
               </div>
@@ -213,7 +214,7 @@ export default function ProfilePage() {
             Reading
           </div>
           <ul className="slist">
-            <li className="sitem" onClick={() => router.push("/bookmarks")}>
+            <li className="sitem" onClick={() => router.push("/bookmarks")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/bookmarks"))}>
               <div className="si-icon">
                 <Bookmark size={15} />
               </div>
@@ -222,7 +223,7 @@ export default function ProfilePage() {
                 {bookmarkCount} {bookmarkCount === 1 ? "story" : "stories"}
               </div>
             </li>
-            <li className="sitem" onClick={() => router.push("/settings?tab=history")}>
+            <li className="sitem" onClick={() => router.push("/settings?tab=history")} role="button" tabIndex={0} onKeyDown={activateOnKey(() => router.push("/settings?tab=history"))}>
               <div className="si-icon">
                 <BookOpen size={15} />
               </div>

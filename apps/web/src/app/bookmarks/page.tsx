@@ -128,6 +128,7 @@ export default function BookmarksPage() {
         >
           <Search size={14} style={{ color: "var(--ink3)", flexShrink: 0 }} />
           <input
+              aria-label="Search saved stories"
             type="text"
             placeholder="Search saved stories…"
             value={searchQuery}

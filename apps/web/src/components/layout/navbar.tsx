@@ -72,6 +72,7 @@ export function Navbar({ title }: NavbarProps = {}) {
           >
             <Search size={14} />
             <input
+              aria-label="Search stories, topics, locations"
               type="text"
               placeholder="Search stories, topics, locations…"
               value={searchQuery}

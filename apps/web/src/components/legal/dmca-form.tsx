@@ -66,8 +66,9 @@ export default function DmcaForm() {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: "200px" }}>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }}>Full Name *</label>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }} htmlFor="full-name">Full Name *</label>
             <input
+              id="full-name"
               type="text"
               required
               value={name}
@@ -85,8 +86,9 @@ export default function DmcaForm() {
             />
           </div>
           <div style={{ flex: 1, minWidth: "200px" }}>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }}>Contact Email *</label>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }} htmlFor="contact-email">Contact Email *</label>
             <input
+              id="contact-email"
               type="email"
               required
               value={email}
@@ -110,6 +112,7 @@ export default function DmcaForm() {
             {formType === "takedown" ? "URL of Infringing Material on NewsIQ *" : "URL of Removed Material *"}
           </label>
           <input
+            aria-label="URL of the material on NewsIQ"
             type="url"
             required
             value={targetUrl}
@@ -150,8 +153,9 @@ export default function DmcaForm() {
         </div>
 
         <div>
-          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }}>Digital Signature *</label>
+          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "6px" }} htmlFor="digital-signature">Digital Signature *</label>
           <input
+              id="digital-signature"
             type="text"
             required
             value={signature}
@@ -172,6 +176,7 @@ export default function DmcaForm() {
 
         <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", marginTop: "4px" }}>
           <input
+            aria-label="I declare the above statements are accurate"
             type="checkbox"
             required
             checked={declaration}
