@@ -2299,6 +2299,15 @@ def discovery_crawl_task(
                 persisted=True,
                 article_id=str(new_article.id),
             )
+            # Tag the span itself, not just its metadata. stage_runs.article_id is
+            # what /admin/articles/{id}/trace filters on, and only
+            # clustering_incremental was setting it — 5,916 of 48,019 spans — so
+            # an article's "end-to-end trace" was one stage repeated. The crawl
+            # span is 1:1 with the article it creates, which makes it the entry
+            # point of the lineage. Assigned before exit, where the span reads
+            # self.article_id to persist.
+            if span is not None:
+                span.article_id = str(new_article.id)
 
             await url_bloom_filter.add(crawl_task.url_hash)
             await session.commit()
