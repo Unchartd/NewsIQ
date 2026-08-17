@@ -38,11 +38,14 @@ function formatTimeAgo(dateString: string): string {
   }
 }
 
-export default function TrendingPage() {
+export default function TrendingPage({ initialStories }: { initialStories?: Story[] }) {
   const [activeTab, setActiveTab] = useState("today");
 
   const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
     queryKey: ["trending-stories", activeTab],
+    // Server-rendered on first paint; React Query takes over for tab changes
+    // and refetches. Without this the page shipped an empty shell to crawlers.
+    initialData: initialStories,
     queryFn: async () => {
       const response = await apiClient.get("/stories", {
         params: {

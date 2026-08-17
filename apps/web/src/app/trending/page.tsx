@@ -3,6 +3,7 @@ import { buildPageMetadata } from "@/lib/metadata";
 import { buildCollectionPageSchema, buildBreadcrumbSchema, serializeJsonLd } from "@/lib/jsonld";
 import { SITE_URL } from "@/lib/metadata";
 import TrendingPage from "./trending-client";
+import { fetchStoriesServer } from "@/lib/server-api";
 
 export const metadata: Metadata = buildPageMetadata(
   "Trending Stories",
@@ -31,7 +32,11 @@ const breadcrumbSchema = buildBreadcrumbSchema([
   { name: "Trending", url: `${SITE_URL}/trending` },
 ]);
 
-export default function TrendingServerPage() {
+export default async function TrendingServerPage() {
+  // Fetched here so the HTML contains the stories: this is a primary landing
+  // page and was previously an empty shell for any crawler without JS.
+  const initialStories = await fetchStoriesServer({ trending: true, limit: 15 });
+
   return (
     <>
       <script
@@ -42,7 +47,7 @@ export default function TrendingServerPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
-      <TrendingPage />
+      <TrendingPage initialStories={initialStories} />
     </>
   );
 }
