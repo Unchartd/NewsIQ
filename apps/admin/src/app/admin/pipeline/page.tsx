@@ -125,6 +125,11 @@ function getBackendStagesForFrontend(frontendStage: string): string[] {
   return FRONTEND_TO_BACKEND_STAGES[frontendStage] || [frontendStage.toLowerCase()];
 }
 
+// A stage can emit thousands of lines; the Redis list is capped at 2,000 and the
+// reader only ever looks at the tail. Rendering every line created that many DOM
+// nodes with whitespace-pre-wrap on each keystroke of new output.
+const LOG_RENDER_LIMIT = 500;
+
 // Sub-component for Live log streaming
 function LiveLogViewer({ runId, stage, isRunning }: { runId: string; stage: string; isRunning: boolean }) {
   const [logs, setLogs] = useState<string[]>([]);
@@ -184,11 +189,22 @@ function LiveLogViewer({ runId, stage, isRunning }: { runId: string; stage: stri
       {logs.length === 0 ? (
         <div className="text-slate-600 italic">No logs generated for this stage yet.</div>
       ) : (
-        logs.map((log, index) => (
-          <div key={index} className="whitespace-pre-wrap leading-relaxed border-l-2 border-emerald-950 pl-2">
-            {log}
-          </div>
-        ))
+        <>
+          {logs.length > LOG_RENDER_LIMIT && (
+            <div className="text-slate-600 italic pb-1">
+              Showing the last {LOG_RENDER_LIMIT.toLocaleString()} of{" "}
+              {logs.length.toLocaleString()} lines.
+            </div>
+          )}
+          {logs.slice(-LOG_RENDER_LIMIT).map((log, index) => (
+            <div
+              key={logs.length - LOG_RENDER_LIMIT + index}
+              className="whitespace-pre-wrap leading-relaxed border-l-2 border-emerald-950 pl-2"
+            >
+              {log}
+            </div>
+          ))}
+        </>
       )}
       <div ref={logsEndRef} />
     </div>
@@ -1149,9 +1165,10 @@ export default function PipelinePage() {
       const res = await apiClient.get(url);
       return res.data;
     },
+    // Fallback only: SSE invalidation above is the primary trigger.
     refetchInterval: (query) => {
       const data = query.state.data;
-      return !selectedRunId || !data || data.status === "running" ? 6000 : false;
+      return !selectedRunId || !data || data.status === "running" ? 20000 : false;
     },
   });
 
@@ -1182,6 +1199,24 @@ export default function PipelinePage() {
   });
 
   const queryClient = useQueryClient();
+
+  // SSE events were consumed only to render a status string — the dashboard held
+  // an open stream whose events did nothing functional, and still polled every
+  // few seconds for the same information. Now a stage transition refreshes the
+  // affected views immediately, and the polling below is a fallback for a
+  // dropped stream rather than the primary mechanism.
+  const lastInvalidatedRef = useRef(0);
+  useEffect(() => {
+    if (!lastEvent) return;
+    // Bursts of stage events would otherwise trigger a refetch storm.
+    const now = Date.now();
+    if (now - lastInvalidatedRef.current < 1000) return;
+    lastInvalidatedRef.current = now;
+
+    queryClient.invalidateQueries({ queryKey: ["pipeline-status"] });
+    queryClient.invalidateQueries({ queryKey: ["pipeline-runs"] });
+    queryClient.invalidateQueries({ queryKey: ["stage-details"] });
+  }, [lastEvent, queryClient]);
 
   const togglePauseMutation = useMutation({
     mutationFn: async () => {
@@ -1288,9 +1323,10 @@ export default function PipelinePage() {
       return res.data;
     },
     enabled: !!pipelineStatus?.run_id && !!selectedBackendStage,
+    // Fallback only: SSE invalidation above is the primary trigger.
     refetchInterval: (query) => {
       const data = query.state.data;
-      return !data || data.status === "running" ? 4000 : false;
+      return !data || data.status === "running" ? 20000 : false;
     },
   });
 
