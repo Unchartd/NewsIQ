@@ -847,8 +847,15 @@ async def get_stage_run_logs(
     run_id: uuid.UUID,
     stage: str,
     _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve all cached logs for a stage run (admin only)."""
+    """Retrieve logs for a stage run (admin only).
+
+    Live logs come from Redis, which expires them after 24 hours. Beyond that
+    window the only copy is the tail snapshotted onto a failed stage's metadata,
+    so a failure investigated a day later still has its logs — previously it
+    returned an empty list indistinguishable from a stage that logged nothing.
+    """
     import redis
 
     from app.core.config import settings
@@ -857,7 +864,27 @@ async def get_stage_run_logs(
     r = redis.from_url(settings.REDIS_URL)
     redis_key = f"newsiq:logs:{run_id}:{stage_lower}"
     logs = r.lrange(redis_key, 0, -1)
-    return [line.decode("utf-8") if isinstance(line, bytes) else line for line in logs]
+    if logs:
+        return [line.decode("utf-8") if isinstance(line, bytes) else line for line in logs]
+
+    persisted = (
+        (
+            await db.execute(
+                select(StageRunModel.metadata_payload).where(
+                    StageRunModel.run_id == run_id,
+                    StageRunModel.stage == stage_lower,
+                    StageRunModel.metadata_payload.isnot(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for meta in persisted:
+        tail = (meta or {}).get("logs_tail")
+        if tail:
+            return list(tail)
+    return []
 
 
 @router.get("/pipeline/runs/{run_id}/stages/{stage}/logs/stream")

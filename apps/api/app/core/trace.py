@@ -548,6 +548,7 @@ class StageSpan:
             self.error_type = exc_type.__name__
             self.error_traceback = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
             self.metadata["error_traceback"] = self.error_traceback
+            self._snapshot_logs()
 
             # Record Pipeline Failure
             try:
@@ -699,6 +700,23 @@ class StageSpan:
     def set_metadata(self, data: dict[str, Any]) -> None:
         """Add metadata to this span (e.g., articles_count, model_used)."""
         self.metadata.update(data)
+
+    def _snapshot_logs(self) -> None:
+        """Persist this stage's log tail alongside the failure.
+
+        Stage logs live only in Redis under a 24-hour TTL. A run that failed
+        yesterday therefore has no logs today — precisely when an engineer wants
+        them. Snapshotting on failure keeps them with the record that survives.
+        """
+        try:
+            from app.core.structured_logging import snapshot_stage_logs
+
+            run_id = self.pipeline_run.id if self.pipeline_run else run_id_ctx.get("")
+            lines = snapshot_stage_logs(str(run_id), str(self.stage))
+            if lines:
+                self.metadata["logs_tail"] = lines
+        except Exception as exc:
+            logger.debug("Could not snapshot stage logs: %s", exc)
 
     def increment_retry(self) -> None:
         """Record a retry attempt."""
@@ -855,6 +873,16 @@ class StageTrace:
             self.errors.append(str(exc_val))
             await self._save_failure_artifacts()
             await self._emit_event("StageFailed", error=str(exc_val))
+
+            # Keep the logs with the failure; Redis drops them after 24h.
+            try:
+                from app.core.structured_logging import snapshot_stage_logs
+
+                lines = snapshot_stage_logs(str(self.run_id), str(self.stage))
+                if lines:
+                    self.metadata["logs_tail"] = lines
+            except Exception as snap_err:
+                logger.debug("Could not snapshot stage logs: %s", snap_err)
 
             # Record the failure so it reaches the Failure Center.
             #
