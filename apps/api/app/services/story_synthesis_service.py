@@ -317,6 +317,21 @@ class StorySynthesisOrchestrator:
         session.add(trace)
         await session.flush()
 
+        await self._mirror_trace_to_stage_run(
+            session=session,
+            story_id=story_id,
+            stage=stage,
+            started_at=started_at,
+            completed_at=completed_at,
+            latency_ms=latency_ms,
+            cost_usd=cost_usd,
+            cache_hit=cache_hit,
+            model=model,
+            prompt_version=prompt_version,
+            decision=decision,
+            reason=reason,
+        )
+
         # Update Story Metric counters if prometheus is enabled
         try:
             from app.core.metrics import newsiq_story_stages_total
@@ -326,6 +341,92 @@ class StorySynthesisOrchestrator:
         except Exception as e:
             # Metrics emission is best-effort and must not interrupt synthesis flow.
             logger.debug("Failed to emit story stage metric for stage '%s': %s", stage, e)
+
+    async def _mirror_trace_to_stage_run(
+        self,
+        *,
+        session: AsyncSession,
+        story_id: uuid.UUID,
+        stage: str,
+        started_at: datetime,
+        completed_at: datetime,
+        latency_ms: float,
+        cost_usd: float,
+        cache_hit: bool,
+        model: str | None,
+        prompt_version: str | None,
+        decision: str | None,
+        reason: str | None,
+    ) -> None:
+        """Also record this synthesis stage in stage_runs.
+
+        Synthesis wrote only to pipeline_traces, and the dashboard's DAG is
+        driven by stage_runs. So all seven synthesis stages — knowledge_graph,
+        contradiction_detection, source_comparison, timeline_generation,
+        summary_generation, feedback_agent, publisher — had zero stage_runs, and
+        the SYNTHESIS, FEEDBACK and PUBLISHER nodes were permanently empty.
+        Opening a stage detail on them 404'd and their log key never existed,
+        which is the "No logs available" report.
+
+        Mirroring here rather than wrapping each stage in a StageSpan keeps the
+        change to one choke point that every synthesis stage already calls.
+
+        stage_runs.run_id is a non-null FK to pipeline_runs, so this is skipped
+        when synthesis runs outside a PipelineRun (a script, a replay) — an
+        orphan row would violate the constraint and abort the transaction that
+        the synthesis itself depends on.
+        """
+        from app.core.trace import run_id_ctx, trace_id_ctx
+
+        raw_run_id = run_id_ctx.get("")
+        raw_trace_id = trace_id_ctx.get("")
+        if not raw_run_id or not raw_trace_id:
+            return
+
+        try:
+            run_uuid = uuid.UUID(str(raw_run_id))
+            trace_uuid = uuid.UUID(str(raw_trace_id))
+        except (ValueError, TypeError):
+            return
+
+        if decision == "error":
+            status = "failed"
+        elif decision == "skip":
+            status = "skipped"
+        else:
+            status = "success"
+
+        try:
+            from app.models.observability_models import PipelineRunModel, StageRunModel
+
+            # The FK target must exist; a synthesis triggered outside the run's
+            # own transaction may not have it visible yet.
+            if await session.get(PipelineRunModel, run_uuid) is None:
+                return
+
+            session.add(
+                StageRunModel(
+                    run_id=run_uuid,
+                    trace_id=trace_uuid,
+                    stage=stage,
+                    status=status,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    latency_ms=latency_ms,
+                    story_id=story_id,
+                    error=reason if status == "failed" else None,
+                    error_type="SynthesisStageError" if status == "failed" else None,
+                    metadata_payload={
+                        "input": {"model": model, "prompt_version": prompt_version},
+                        "output": {"decision": decision, "reason": reason},
+                        "metrics": {"cost_usd": cost_usd, "cache_hit": cache_hit},
+                    },
+                )
+            )
+            await session.flush()
+        except Exception as exc:
+            # Telemetry must never break synthesis.
+            logger.warning("Could not mirror stage '%s' into stage_runs: %s", stage, exc)
 
     async def run_knowledge_graph_stage(
         self,
