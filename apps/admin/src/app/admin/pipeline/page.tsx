@@ -2,6 +2,13 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
+import {
+  fetchPipelineRuns,
+  fetchPipelineStatus,
+  fetchStageDetail,
+  fetchStageLogs,
+} from "@/lib/admin-api";
+import type { PipelineRunSummary, PipelineStatus, StageDetail } from "@/lib/api-types";
 import { useSSE } from "@/lib/useSSE";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -149,8 +156,7 @@ function LiveLogViewer({ runId, stage, isRunning }: { runId: string; stage: stri
 
     const fetchInitialLogs = async () => {
       try {
-        const res = await apiClient.get(`/admin/pipeline/runs/${runId}/stages/${stage}/logs`);
-        setLogs(res.data);
+        setLogs(await fetchStageLogs(runId, stage));
       } catch (err) {
         // Safe fallback
       }
@@ -391,8 +397,7 @@ function InvestigationView({
     queryKey: ["investigation-stage-details", selectedRunId, selectedStage],
     queryFn: async () => {
       if (!selectedRunId || !selectedStage) return null;
-      const res = await apiClient.get(`/admin/pipeline/runs/${selectedRunId}/stages/${selectedStage}`);
-      return res.data;
+      return fetchStageDetail(selectedRunId, selectedStage);
     },
     enabled: !!selectedRunId && !!selectedStage,
   });
@@ -1156,15 +1161,9 @@ export default function PipelinePage() {
     }, 300);
   };
 
-  const { data: pipelineStatus, isLoading, refetch } = useQuery<any>({
+  const { data: pipelineStatus, isLoading, refetch } = useQuery<PipelineStatus>({
     queryKey: ["pipeline-status", selectedRunId],
-    queryFn: async () => {
-      const url = selectedRunId
-        ? `/admin/pipeline/status?run_id=${selectedRunId}`
-        : "/admin/pipeline/status";
-      const res = await apiClient.get(url);
-      return res.data;
-    },
+    queryFn: () => fetchPipelineStatus(selectedRunId),
     // Fallback only: SSE invalidation above is the primary trigger.
     refetchInterval: (query) => {
       const data = query.state.data;
@@ -1181,12 +1180,9 @@ export default function PipelinePage() {
     refetchInterval: 15000,
   });
 
-  const { data: pipelineHistory, refetch: refetchHistory } = useQuery({
+  const { data: pipelineHistory, refetch: refetchHistory } = useQuery<PipelineRunSummary[]>({
     queryKey: ["pipeline-runs"],
-    queryFn: async () => {
-      const res = await apiClient.get("/admin/pipeline/runs");
-      return res.data;
-    },
+    queryFn: fetchPipelineRuns,
   });
 
   const { data: pausedData, refetch: refetchPaused } = useQuery({
@@ -1315,12 +1311,11 @@ export default function PipelinePage() {
   }, [activeStageId, pipelineStatus]);
 
   // Fetch detailed telemetry for active stage run
-  const { data: stageDetails, isLoading: isLoadingDetails } = useQuery<any>({
+  const { data: stageDetails, isLoading: isLoadingDetails } = useQuery<StageDetail | null>({
     queryKey: ["stage-details", pipelineStatus?.run_id, selectedBackendStage],
     queryFn: async () => {
       if (!pipelineStatus?.run_id || !selectedBackendStage) return null;
-      const res = await apiClient.get(`/admin/pipeline/runs/${pipelineStatus.run_id}/stages/${selectedBackendStage}`);
-      return res.data;
+      return fetchStageDetail(pipelineStatus.run_id, selectedBackendStage);
     },
     enabled: !!pipelineStatus?.run_id && !!selectedBackendStage,
     // Fallback only: SSE invalidation above is the primary trigger.
@@ -1964,7 +1959,7 @@ export default function PipelinePage() {
                             <div className="flex items-center gap-1.5">
                               <span className="text-slate-300 text-[11px]">{stageDetails.story_id}</span>
                               <button
-                                onClick={() => handleCopy(stageDetails.story_id, "story")}
+                                onClick={() => handleCopy(stageDetails.story_id ?? "", "story")}
                                 className="text-slate-500 hover:text-white transition-colors"
                               >
                                 {copiedText === "story" ? (
