@@ -99,7 +99,11 @@ function HomeContentInner() {
     enabled: !isAuthLoading,
   });
 
-  const { data: trendingStories = [], isLoading: isTrendingLoading } = useQuery<Story[]>({
+  const {
+    data: trendingStories = [],
+    isLoading: isTrendingLoading,
+    isError: isTrendingError,
+  } = useQuery<Story[]>({
     queryKey: ["stories", "trending-sidebar"],
     queryFn: async () => {
       const response = await apiClient.get("/stories", {
@@ -138,7 +142,11 @@ function HomeContentInner() {
     };
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const sidebar = <SidebarWidgets trendingStories={trendingStories} isLoading={isTrendingLoading} />;
+  const sidebar = <SidebarWidgets
+      trendingStories={trendingStories}
+      isLoading={isTrendingLoading}
+      isError={isTrendingError}
+    />;
 
   const allStories = data?.pages.flatMap((page) => page) ?? [];
   // Deduplicate stories by ID to prevent duplicate items from rendering
