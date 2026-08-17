@@ -485,6 +485,72 @@ jobs:
               "$IMAGE" \
               alembic upgrade head
 
+            # Capture what is currently serving, so a failed deploy can be undone.
+            #
+            # Until now the health-check failure path printed "initiating rollback"
+            # and then only dumped logs before exiting. v1.39.0 shipped a circular
+            # import, every container crash-looped, that message was written to the
+            # log, and production stayed down until a human noticed and restored
+            # the previous image by hand.
+            #
+            # Note what this does and does not cover: migrations run before the
+            # swap and are NOT reverted. That is tolerable because the migrations
+            # here are additive (new columns, dropping an unused table), so the
+            # previous image runs against the newer schema. A destructive
+            # migration would need its own downgrade path.
+            PREV_IMAGE=$(docker inspect newsiq-user-api --format '{{.Config.Image}}' 2>/dev/null || echo "")
+            PREV_WEB_IMAGE=$(docker inspect newsiq-web-prod --format '{{.Config.Image}}' 2>/dev/null || echo "")
+            PREV_ADMIN_IMAGE=$(docker inspect newsiq-admin-prod --format '{{.Config.Image}}' 2>/dev/null || echo "")
+            echo "=== Previous images (rollback target) ==="
+            echo "  api:   ${PREV_IMAGE:-<none>}"
+            echo "  web:   ${PREV_WEB_IMAGE:-<none>}"
+            echo "  admin: ${PREV_ADMIN_IMAGE:-<none>}"
+
+            rollback() {
+              REASON="$1"
+              echo "=== ROLLBACK: $REASON ==="
+              if [ -z "$PREV_IMAGE" ]; then
+                echo "No previous image recorded (first deploy?) — cannot roll back."
+                echo "Services are left as-is for inspection."
+                return 1
+              fi
+              if [ "$PREV_IMAGE" = "$IMAGE" ]; then
+                echo "Previous image is identical to the new one — rolling back would"
+                echo "restore the same broken build. Leaving services as-is."
+                return 1
+              fi
+
+              echo "Restoring api=$PREV_IMAGE"
+              # The image vars must be passed explicitly: compose defaults
+              # NEWSIQ_IMAGE to newsiq-api:latest, which is stale on this host.
+              NEWSIQ_IMAGE="$PREV_IMAGE" \
+              NEWSIQ_WEB_IMAGE="${PREV_WEB_IMAGE:-$WEB_IMAGE}" \
+              NEWSIQ_ADMIN_IMAGE="${PREV_ADMIN_IMAGE:-$ADMIN_IMAGE}" \
+                docker compose --env-file .env.production --profile prod up -d --no-build || {
+                  echo "FATAL: rollback command itself failed — manual intervention required."
+                  return 1
+                }
+
+              # Restore the recorded tag so the file matches what is running.
+              PREV_TAG="${PREV_IMAGE##*:}"
+              sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${PREV_TAG}|" .env.production || true
+
+              echo "=== Verifying rollback ==="
+              for i in $(seq 1 24); do
+                RB_STATUS=$(curl -sf http://localhost:8000/ready 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','error'))" 2>/dev/null || echo "error")
+                if [ "$RB_STATUS" = "ready" ]; then
+                  echo "Rollback verified — serving $PREV_IMAGE again."
+                  docker compose --env-file .env.production --profile prod ps
+                  return 0
+                fi
+                echo "Rollback health attempt $i/24: $RB_STATUS"
+                sleep 5
+              done
+              echo "FATAL: rollback did not become healthy — manual intervention required."
+              docker compose --env-file .env.production --profile prod ps
+              return 1
+            }
+
             # Update image tag in .env.production
             sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${{ needs.resolve-tag.outputs.tag }}|" .env.production || true
 
@@ -512,6 +578,7 @@ jobs:
                 echo "FATAL: Meilisearch did not become available"
                 docker compose --env-file .env.production --profile prod ps
                 docker compose --env-file .env.production --profile prod logs meilisearch --no-color --tail=200
+                rollback "Meilisearch never became available" || true
                 exit 1
               fi
             done
@@ -526,13 +593,18 @@ jobs:
                 break
               fi
               if [ $i -eq 30 ]; then
-                echo "=== Health check failed — initiating rollback ==="
+                echo "=== Health check failed ==="
                 echo "=== Container Status ==="
                 docker compose --env-file .env.production --profile prod ps
                 echo "=== App logs (last 500 lines) ==="
                 docker compose --env-file .env.production --profile prod logs user-api --no-color --tail=500 || true
+                echo "=== Celery worker logs (last 200 lines) ==="
+                docker compose --env-file .env.production --profile prod logs celery-worker --no-color --tail=200 || true
                 echo "=== Meilisearch logs (last 500 lines) ==="
                 docker compose --env-file .env.production --profile prod logs meilisearch --no-color --tail=500 || true
+                # Diagnostics are captured above, so the rollback cannot destroy
+                # the evidence of why the deploy failed.
+                rollback "app never became ready" || true
                 exit 1
               fi
               sleep 5
