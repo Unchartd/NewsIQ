@@ -79,56 +79,137 @@ def _add_service_info(logger: Any, method_name: str, event_dict: EventDict) -> E
     return event_dict
 
 
+# Stage logs are written to Redis from a structlog processor, which runs inline
+# on every log call — including inside async worker code.
+#
+# The previous implementation called redis.from_url() per log line: a fresh
+# connection, never pooled and never closed, followed by three separate blocking
+# round trips (rpush, expire, publish). At 8,412 stage runs a day this was the
+# single largest avoidable cost in the telemetry path, and the whole body was
+# wrapped in `except Exception: pass`, so a broken Redis was invisible.
+#
+# One pooled client, one pipelined round trip, and failures that are reported.
+_LOG_TTL_SECONDS = 86_400
+# A stage that logs in a loop would otherwise grow an unbounded Redis list; the
+# viewer only ever renders the tail.
+_LOG_MAX_LINES = 2_000
+
+_redis_log_client: Any = None
+_redis_log_failures = 0
+_redis_log_broken = False
+
+_STANDARD_KEYS = frozenset(
+    {
+        "timestamp",
+        "level",
+        "event",
+        "run_id",
+        "trace_id",
+        "span_id",
+        "stage",
+        "story_id",
+        "article_id",
+        "service",
+    }
+)
+
+
+def _get_log_redis() -> Any:
+    """Return the shared, pooled Redis client used for stage logs."""
+    global _redis_log_client
+    if _redis_log_client is None:
+        import redis
+
+        from app.core.config import settings
+
+        # A small pool: this is a side channel, not the application's data path,
+        # and it must never starve the pools that carry real work.
+        _redis_log_client = redis.from_url(
+            settings.REDIS_URL,
+            max_connections=8,
+            socket_timeout=2.0,
+            socket_connect_timeout=2.0,
+            retry_on_timeout=False,
+        )
+    return _redis_log_client
+
+
+def _report_log_failure(exc: Exception) -> None:
+    """Surface Redis logging failures without recursing through structlog."""
+    global _redis_log_failures, _redis_log_broken
+    _redis_log_failures += 1
+    # Report the first failure, then every 500th, using the stdlib logger
+    # directly — going through structlog here would re-enter this processor.
+    if not _redis_log_broken or _redis_log_failures % 500 == 0:
+        _redis_log_broken = True
+        logging.getLogger(__name__).warning(
+            "Stage log persistence to Redis failed (%d total): %s. "
+            "Stage logs will be missing from the dashboard.",
+            _redis_log_failures,
+            exc,
+        )
+
+
+def snapshot_stage_logs(run_id: str, stage: str, limit: int = 200) -> list[str]:
+    """Return the tail of a stage's logs so they can outlive Redis.
+
+    Stage logs live only in Redis under a 24-hour TTL, and there is no durable
+    store — `error_logs` exists as a table and holds zero rows. So a run that
+    failed yesterday has no logs today, which is exactly when they are wanted.
+
+    Callers snapshot this into the stage's metadata on failure. Bounded, because
+    a failing stage in a retry loop can produce a great deal of output and this
+    ends up in a JSONB column.
+    """
+    if not (run_id and stage):
+        return []
+    try:
+        raw = _get_log_redis().lrange(f"newsiq:logs:{run_id}:{stage}", -limit, -1)
+    except Exception as exc:
+        _report_log_failure(exc)
+        return []
+    return [
+        line.decode("utf-8", "replace") if isinstance(line, bytes) else str(line) for line in raw
+    ]
+
+
 def _store_and_publish_log(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
-    """Interceptors for logging inside a StageSpan to persist and stream via Redis."""
+    """Persist and stream logs emitted inside a StageSpan.
+
+    Only fires when both run_id and stage are bound, i.e. inside a stage span —
+    which is why a log written outside one never reaches the dashboard.
+    """
     run_id = event_dict.get("run_id")
     stage = event_dict.get("stage")
-    if run_id and stage:
-        try:
-            import json
+    if not (run_id and stage):
+        return event_dict
 
-            import redis
+    try:
+        import json
 
-            from app.core.config import settings
+        timestamp = event_dict.get("timestamp", datetime.now(UTC).isoformat())
+        level = str(event_dict.get("level", "info")).upper()
+        event = event_dict.get("event", "")
 
-            # Format log line
-            timestamp = event_dict.get("timestamp", datetime.now(UTC).isoformat())
-            level = event_dict.get("level", "info").upper()
-            event = event_dict.get("event", "")
+        extra = {
+            k: v for k, v in event_dict.items() if k not in _STANDARD_KEYS and not k.startswith("_")
+        }
+        extra_str = f" {json.dumps(extra, default=str)}" if extra else ""
+        log_line = f"{timestamp} [{level}] {event}{extra_str}"
 
-            # Filter standard keys to get extra fields
-            filtered_keys = {
-                "timestamp",
-                "level",
-                "event",
-                "run_id",
-                "trace_id",
-                "span_id",
-                "stage",
-                "story_id",
-                "article_id",
-                "service",
-            }
-            extra = {
-                k: v
-                for k, v in event_dict.items()
-                if k not in filtered_keys and not k.startswith("_")
-            }
-            extra_str = f" {json.dumps(extra, default=str)}" if extra else ""
-            log_line = f"{timestamp} [{level}] {event}{extra_str}"
+        redis_key = f"newsiq:logs:{run_id}:{stage}"
+        redis_channel = f"{redis_key}:stream"
 
-            r = redis.from_url(settings.REDIS_URL)
-
-            # 1. Store in Redis list (expire in 24 hours)
-            redis_key = f"newsiq:logs:{run_id}:{stage}"
-            r.rpush(redis_key, log_line)
-            r.expire(redis_key, 86400)
-
-            # 2. Publish to Redis channel for live streaming
-            redis_channel = f"newsiq:logs:{run_id}:{stage}:stream"
-            r.publish(redis_channel, log_line)
-        except Exception:
-            pass
+        # One round trip instead of three, on a reused connection.
+        pipe = _get_log_redis().pipeline(transaction=False)
+        pipe.rpush(redis_key, log_line)
+        pipe.ltrim(redis_key, -_LOG_MAX_LINES, -1)
+        pipe.expire(redis_key, _LOG_TTL_SECONDS)
+        pipe.publish(redis_channel, log_line)
+        pipe.execute()
+    except Exception as exc:
+        # Logging must never break the operation being logged.
+        _report_log_failure(exc)
 
     return event_dict
 

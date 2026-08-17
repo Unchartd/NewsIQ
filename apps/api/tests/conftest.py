@@ -97,9 +97,12 @@ from app.services.extraction_manager import ExtractionManager
 
 ExtractionManager._update_domain_policy = AsyncMock()
 
-# Bypass structured logging Redis publisher globally during tests to prevent connecting to Redis
+# Bypass structured logging Redis publisher globally during tests to prevent connecting to Redis.
+# The original is kept so tests that need to exercise the real processor (see
+# test_stage_log_persistence.py) can reach it without lifting the global bypass.
 import app.core.structured_logging as sl
 
+sl._real_store_and_publish_log = sl._store_and_publish_log
 sl._store_and_publish_log = lambda logger, method_name, event_dict: event_dict
 
 # Bypass PipelineCache._record_metric globally during tests to disable Redis metric publishing
