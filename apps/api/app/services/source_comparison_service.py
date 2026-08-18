@@ -1,68 +1,135 @@
-"""Source Comparison Service — compares source coverage of stories.
+"""Source Comparison Service — validated cross-source coverage differences.
 
-Analyzes the knowledge graph and article events to determine:
-1. The primary focus of each publisher.
-2. Unique details reported only by that publisher.
-3. Key details omitted by that publisher but reported by others.
-4. Factual contradictions involving that publisher.
+Heuristics generate candidates; a validator LLM confirms them; only confirmed
+facts reach the user. Measured before this design (2026-08-18, 1,171 rows):
+56-66% of published "differences" were raw heuristic strings the LLM never
+saw, 60% carried fabricated contradiction text, and 49% of sampled rows listed
+a fact as unique to a source that also appeared in the same row's "missing"
+list once lowercased. docs/Source_Comparison_Audit.md holds the full audit.
 
-Uses a hybrid approach: local heuristics calculate candidate differences,
-and an LLM validates and generates readable summaries.
+The three layers, in order:
+
+1. Candidates come from set differences over *normalized* facts
+   (fact_normalization.py), resolved through the canonical-entity layer where
+   entity linking has done its work — so case variants, aliases and
+   containment duplicates never become candidates at all.
+2. The LLM is a validator, not a formatter: it rejects paraphrases and
+   subsets against the article context, and its rejections are recorded.
+3. No validator, no analysis: when the LLM is unreachable the story's
+   existing comparison rows are left untouched and nothing new is published.
+   The UI hides the section when no rows exist — an absent comparison is
+   honest, fallback prose is not.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from tenacity import retry, stop_after_attempt, wait_exponential
 
+from app.core.metrics import (
+    newsiq_comparison_candidates_total,
+    newsiq_comparison_unavailable_total,
+)
 from app.models.models import (
     Article,
+    ArticleEntity,
     ArticleEvent,
+    CanonicalEntity,
     Source,
     StoryArticle,
     StoryContradiction,
     StoryDifference,
     StorySourceCoverage,
 )
+from app.services.fact_normalization import (
+    CanonicalResolver,
+    normalize_fact,
+    numbers_conflict,
+    partition_unique,
+)
 
 logger = logging.getLogger(__name__)
 
 
+class RejectedCandidate(BaseModel):
+    """A heuristic candidate the validator refused, kept for audit."""
+
+    candidate: str = Field(description="The candidate difference, verbatim")
+    reason: str = Field(description="Why it is not a genuine difference (e.g. 'case-only variant')")
+
+
 class SourceComparisonResolution(BaseModel):
-    """Structured response from LLM validator."""
+    """Structured response from the validator LLM."""
 
     focus_area: str = Field(
-        description="A concise sentence (max 100 chars) summarizing this publisher's primary angle/focus on the event."
+        description="One sentence (max 100 chars) on this publisher's angle, grounded in the articles"
     )
-    unique_information: str = Field(
-        description="Details mentioned ONLY by this source, or empty string if none"
+    validated_unique_information: list[str] = Field(
+        default_factory=list,
+        description="Facts genuinely reported only by this source; empty when none survive",
     )
-    missing_information: str = Field(
-        description="Key details omitted by this source that others covered, or empty string if none"
+    validated_missing_information: list[str] = Field(
+        default_factory=list,
+        description="Facts genuinely omitted by this source that others report; empty when none survive",
     )
-    contradictions: str = Field(
-        description="Factual contradictions or conflicting claims made by this source compared to others, or empty string if none"
+    validated_contradictions: list[str] = Field(
+        default_factory=list,
+        description="Genuine factual conflicts involving this source; empty when none survive",
     )
+    rejected_candidates: list[RejectedCandidate] = Field(
+        default_factory=list,
+        description="Candidates rejected as variants/aliases/paraphrases/subsets, with reasons",
+    )
+
+
+def _join(items: list[str]) -> str | None:
+    cleaned = [i.strip() for i in items if i and i.strip()]
+    return "; ".join(cleaned) if cleaned else None
 
 
 class SourceComparisonService:
-    """Detects unique, missing, and contradictory facts per source in a story cluster."""
+    """Detects and validates unique, missing, and contradictory facts per source."""
 
-    def __init__(self) -> None:
-        pass
+    async def _build_resolver(
+        self, session: AsyncSession, article_ids: list[uuid.UUID]
+    ) -> CanonicalResolver:
+        """Canonical-entity lookup for this story's articles.
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=5),
-        reraise=False,
-    )
+        Surface forms come from article_entities; canonical names and aliases
+        from canonical_entities — so "US", "United States" and "U.S." compare
+        equal wherever entity linking has resolved them.
+        """
+        resolver = CanonicalResolver()
+        if not article_ids:
+            return resolver
+
+        rows = (
+            await session.execute(
+                select(
+                    ArticleEntity.entity_value,
+                    ArticleEntity.canonical_entity_id,
+                    CanonicalEntity.canonical_name,
+                    CanonicalEntity.aliases,
+                )
+                .join(CanonicalEntity, CanonicalEntity.id == ArticleEntity.canonical_entity_id)
+                .where(ArticleEntity.article_id.in_(article_ids))
+                .where(ArticleEntity.canonical_entity_id.is_not(None))
+            )
+        ).all()
+
+        for surface, canonical_id, canonical_name, aliases in rows:
+            resolver.add(surface, canonical_id)
+            resolver.add(canonical_name, canonical_id)
+            for alias in aliases or []:
+                if isinstance(alias, str):
+                    resolver.add(alias, canonical_id)
+        return resolver
+
     async def _analyze_with_llm(
         self,
         src_name: str,
@@ -70,25 +137,29 @@ class SourceComparisonService:
         missing_summary: str,
         contradictions_summary: str,
         context: str,
-    ) -> SourceComparisonResolution:
-        """Call LLM to generate a clean, cohesive source comparison analysis.
+    ) -> SourceComparisonResolution | None:
+        """Validate this source's candidates. Returns None when no model answers.
 
-        Pipeline: cache check → LLM call → cache store.
+        There is no deterministic fallback. The previous one published the raw
+        heuristic strings verbatim under an "AI Comparative Analysis" banner —
+        56-66% of all production rows — and an unreachable validator must mean
+        "no analysis", never "unvalidated analysis".
         """
         from app.ai.prompts.repository import prompt_repository
         from app.services.pipeline_cache import pipeline_cache
 
-        # ── Cache check ───────────────────────────────────────────────────────
         prompt_tmpl = prompt_repository.get("source_comparison")
         prompt_version = prompt_tmpl.version
         model = prompt_repository.model_config("source_comparison").model
 
+        # Keyed on the candidates alone. The key used to include
+        # context[:1000], which changed whenever any article joined the story,
+        # so the cache effectively never hit.
         content_hash = pipeline_cache.composite_hash(
             src_name,
             unique_summary or "",
             missing_summary or "",
             contradictions_summary or "",
-            context[:1000],
         )
 
         cached = await pipeline_cache.get(
@@ -104,23 +175,20 @@ class SourceComparisonService:
             except Exception as e:
                 logger.warning("Failed to deserialize cached source comparison: %s", e)
 
-        # ── LLM call (cache miss) ─────────────────────────────────────────────
         result: SourceComparisonResolution | None = None
 
         from app.ai.gateway import ai_gateway
 
         try:
-            prompt_variables = {
-                "src_name": src_name,
-                "unique_summary": unique_summary or "None",
-                "missing_summary": missing_summary or "None",
-                "contradictions_summary": contradictions_summary or "None",
-                "context": context[:3000],
-            }
-
             response = await ai_gateway.generate_stage(
                 stage="source_comparison",
-                prompt_variables=prompt_variables,
+                prompt_variables={
+                    "src_name": src_name,
+                    "unique_summary": unique_summary or "None",
+                    "missing_summary": missing_summary or "None",
+                    "contradictions_summary": contradictions_summary or "None",
+                    "context": context[:3000],
+                },
                 schema=SourceComparisonResolution,
             )
 
@@ -130,23 +198,36 @@ class SourceComparisonService:
                 try:
                     import json
 
-                    data = json.loads(response.content)
-                    result = SourceComparisonResolution(**data)
+                    result = SourceComparisonResolution(**json.loads(response.content))
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Source comparison validator returned unparseable content for %s; "
+                        "treating as unavailable.",
+                        src_name,
+                    )
         except Exception as exc:
             logger.warning("AI Gateway source comparison failed for %s: %s", src_name, exc)
 
-        # ── Deterministic fallback ───────────────────────────────────────────
         if result is None:
-            result = self._generate_deterministic_comparison(
-                src_name=src_name,
-                unique_summary=unique_summary,
-                missing_summary=missing_summary,
-                contradictions_summary=contradictions_summary,
-            )
+            return None
 
-        # ── Cache store ───────────────────────────────────────────────────────
+        for rejected in result.rejected_candidates:
+            logger.info(
+                "source_comparison rejected candidate for %s: %r (%s)",
+                src_name,
+                rejected.candidate,
+                rejected.reason,
+            )
+        kept = (
+            len(result.validated_unique_information)
+            + len(result.validated_missing_information)
+            + len(result.validated_contradictions)
+        )
+        newsiq_comparison_candidates_total.labels(disposition="validated").inc(kept)
+        newsiq_comparison_candidates_total.labels(disposition="rejected").inc(
+            len(result.rejected_candidates)
+        )
+
         try:
             await pipeline_cache.set(
                 stage="source_comparison",
@@ -161,22 +242,6 @@ class SourceComparisonService:
 
         return result
 
-    def _generate_deterministic_comparison(
-        self,
-        src_name: str,
-        unique_summary: str,
-        missing_summary: str,
-        contradictions_summary: str,
-    ) -> SourceComparisonResolution:
-        """Helper to create a fallback resolution from heuristic strings."""
-        focus_area = f"General coverage by {src_name}."
-        return SourceComparisonResolution(
-            focus_area=focus_area,
-            unique_information=unique_summary,
-            missing_information=missing_summary,
-            contradictions=contradictions_summary,
-        )
-
     async def compare_sources_and_save(
         self,
         story_id: Any,
@@ -187,7 +252,11 @@ class SourceComparisonService:
         sources_list: list[Any] = None,
         precomputed_contradictions: list[StoryContradiction] = None,
     ) -> tuple[list[StorySourceCoverage], list[StoryDifference]]:
-        """Compare sources in a story cluster, generate coverage/difference data, and save to DB."""
+        """Compare sources in a story cluster and persist validated results.
+
+        Fails closed: if any source's candidates cannot be validated, the
+        story's existing rows are left untouched and nothing is returned.
+        """
         # 1. Fetch articles and sources in story if not provided
         rows: list[Any] = []
         if articles is None:
@@ -200,29 +269,15 @@ class SourceComparisonService:
             res = await session.execute(stmt)
             rows = list(res.all())
         else:
-            # Build rows mapping Article to Source
             for art in articles:
                 src = next((s for s in (sources_list or []) if s.id == art.source_id), None)
                 if src:
                     rows.append((art, src))
 
-        if not rows:
-            from sqlalchemy import delete
-
-            await session.execute(
-                delete(StorySourceCoverage).where(StorySourceCoverage.story_id == story_id)
-            )
-            await session.execute(
-                delete(StoryDifference).where(StoryDifference.story_id == story_id)
-            )
-            if articles is None:
-                await session.commit()
-            else:
-                await session.flush()
-            return [], []
-
         unique_sources = {src.id for _, src in rows}
         if len(unique_sources) < 2:
+            # A one-source story has no cross-source comparison; stale rows
+            # from when it had more sources would be wrong to keep.
             from sqlalchemy import delete
 
             await session.execute(
@@ -244,31 +299,35 @@ class SourceComparisonService:
             evt_res = await session.execute(evt_stmt)
             article_events = list(evt_res.scalars().all())
 
-        # 3. Group events by source ID
+        # 3. Group events and articles by source
         events_by_source: dict[uuid.UUID, list[Any]] = {}
+        articles_by_source: dict[uuid.UUID, list[Any]] = {}
         source_by_id: dict[uuid.UUID, Source] = {}
         for art, src in rows:
             source_by_id[src.id] = src
-            events_by_source[src.id] = []
+            events_by_source.setdefault(src.id, [])
+            articles_by_source.setdefault(src.id, []).append(art)
 
+        article_to_source = {art.id: src.id for art, src in rows}
         for evt in article_events:
-            art_id = evt.article_id
-            for art, src in rows:
-                if art.id == art_id:
-                    events_by_source[src.id].append(evt)
-                    break
+            src_id = article_to_source.get(evt.article_id)
+            if src_id is not None:
+                events_by_source[src_id].append(evt)
 
-        # 4. Fetch contradictions for this story
+        # 4. Contradictions for this story
         if precomputed_contradictions is not None:
             story_contradictions = precomputed_contradictions
         else:
-            contra_stmt = select(StoryContradiction).where(StoryContradiction.story_id == story_id)
-            contra_res = await session.execute(contra_stmt)
+            contra_res = await session.execute(
+                select(StoryContradiction).where(StoryContradiction.story_id == story_id)
+            )
             story_contradictions = list(contra_res.scalars().all())
 
-        # 5. Build context corpus for the LLM
-        context_parts = []
+        # 5. Canonical-entity resolver + LLM context corpus
+        resolver = await self._build_resolver(session, [art.id for art, _ in rows])
+
         local_source_map = article_source_map or {}
+        context_parts = []
         for art, src in rows:
             src_name = local_source_map.get(art.id, src.name)
             context_parts.append(
@@ -276,7 +335,7 @@ class SourceComparisonService:
             )
         full_context = "\n".join(context_parts)
 
-        # 6. Compare each source
+        # 6. Per-source candidate generation and validation
         saved_coverage: list[StorySourceCoverage] = []
         saved_differences: list[StoryDifference] = []
 
@@ -284,98 +343,96 @@ class SourceComparisonService:
             source = source_by_id[src_id]
             src_name = source.name
 
-            # Gather attributes for this source
-            src_actors = set()
-            src_targets = set()
-            src_locations = set()
-            src_numbers = set()
-            src_event_types = set()
+            src_actors: set[str] = set()
+            src_targets: set[str] = set()
+            src_locations: set[str] = set()
+            src_numbers: dict[str, Any] = {}
 
             for event in src_evts:
-                if event.actors:
-                    src_actors.update(event.actors)
-                if event.targets:
-                    src_targets.update(event.targets)
+                src_actors.update(event.actors or [])
+                src_targets.update(event.targets or [])
                 if event.location:
                     src_locations.add(event.location)
-                if event.numbers:
-                    for k, v in event.numbers.items():
-                        src_numbers.add(f"{k}: {v}")
-                if event.event_type_canonical:
-                    src_event_types.add(event.event_type_canonical)
-                elif event.event_type:
-                    src_event_types.add(event.event_type)
+                for k, v in (event.numbers or {}).items():
+                    src_numbers.setdefault(normalize_fact(k), v)
 
-            # Gather attributes for other sources
-            other_actors = set()
-            other_targets = set()
-            other_locations = set()
-            other_numbers = set()
+            other_actors: set[str] = set()
+            other_targets: set[str] = set()
+            other_locations: set[str] = set()
+            other_numbers: dict[str, Any] = {}
 
             for other_id, other_evts in events_by_source.items():
                 if other_id == src_id:
                     continue
                 for other_evt in other_evts:
-                    if other_evt.actors:
-                        other_actors.update(other_evt.actors)
-                    if other_evt.targets:
-                        other_targets.update(other_evt.targets)
+                    other_actors.update(other_evt.actors or [])
+                    other_targets.update(other_evt.targets or [])
                     if other_evt.location:
                         other_locations.add(other_evt.location)
-                    if other_evt.numbers:
-                        for k, v in other_evt.numbers.items():
-                            other_numbers.add(f"{k}: {v}")
+                    for k, v in (other_evt.numbers or {}).items():
+                        other_numbers.setdefault(normalize_fact(k), v)
 
-            # Compute set differences
-            unique_actors = src_actors - other_actors
-            unique_targets = src_targets - other_targets
-            unique_locations = src_locations - other_locations
-            unique_numbers = src_numbers - other_numbers
+            # Normalized, canonically-resolved set differences. Case variants,
+            # aliases and containment duplicates never become candidates.
+            unique_actors = partition_unique(src_actors, other_actors, resolver)
+            unique_targets = partition_unique(src_targets, other_targets, resolver)
+            unique_locations = partition_unique(src_locations, other_locations, resolver)
+            missing_actors = partition_unique(other_actors, src_actors, resolver)
+            missing_targets = partition_unique(other_targets, src_targets, resolver)
+            missing_locations = partition_unique(other_locations, src_locations, resolver)
 
-            missing_actors = other_actors - src_actors
-            missing_targets = other_targets - src_targets
-            missing_locations = other_locations - src_locations
-            missing_numbers = other_numbers - src_numbers
+            unique_numbers: set[str] = set()
+            missing_numbers: set[str] = set()
+            conflicting_numbers: set[str] = set()
+            for key, val in src_numbers.items():
+                if key not in other_numbers:
+                    unique_numbers.add(f"{key}: {val}")
+                elif numbers_conflict(val, other_numbers[key]):
+                    conflicting_numbers.add(f"{key}: {val} vs {other_numbers[key]}")
+            for key, val in other_numbers.items():
+                if key not in src_numbers:
+                    missing_numbers.add(f"{key}: {val}")
 
-            # Format heuristic summaries
             unique_parts = []
             if unique_actors:
-                unique_parts.append(f"unique actors: {', '.join(sorted(list(unique_actors)))}")
+                unique_parts.append(f"unique actors: {', '.join(sorted(unique_actors))}")
             if unique_targets:
-                unique_parts.append(f"unique targets: {', '.join(sorted(list(unique_targets)))}")
+                unique_parts.append(f"unique targets: {', '.join(sorted(unique_targets))}")
             if unique_locations:
-                unique_parts.append(
-                    f"unique locations: {', '.join(sorted(list(unique_locations)))}"
-                )
+                unique_parts.append(f"unique locations: {', '.join(sorted(unique_locations))}")
             if unique_numbers:
-                unique_parts.append(
-                    f"unique numerical facts: {', '.join(sorted(list(unique_numbers)))}"
-                )
+                unique_parts.append(f"unique numerical facts: {', '.join(sorted(unique_numbers))}")
             unique_summary = "; ".join(unique_parts)
 
             missing_parts = []
             if missing_actors:
-                missing_parts.append(f"omitted actors: {', '.join(sorted(list(missing_actors)))}")
+                missing_parts.append(f"omitted actors: {', '.join(sorted(missing_actors))}")
             if missing_targets:
-                missing_parts.append(f"omitted targets: {', '.join(sorted(list(missing_targets)))}")
+                missing_parts.append(f"omitted targets: {', '.join(sorted(missing_targets))}")
             if missing_locations:
-                missing_parts.append(
-                    f"omitted locations: {', '.join(sorted(list(missing_locations)))}"
-                )
+                missing_parts.append(f"omitted locations: {', '.join(sorted(missing_locations))}")
             if missing_numbers:
                 missing_parts.append(
-                    f"omitted numerical facts: {', '.join(sorted(list(missing_numbers)))}"
+                    f"omitted numerical facts: {', '.join(sorted(missing_numbers))}"
                 )
             missing_summary = "; ".join(missing_parts)
 
-            # Contradictions involving this source
-            src_contras = []
+            # Deduplicated: the incremental contradiction path appends across
+            # runs, so the table can hold the same description several times —
+            # one production story carried the identical actor mismatch three
+            # times in a single cell. Each relationship is a candidate once.
+            seen_contras: set[str] = set()
+            src_contras: list[str] = []
             for c in story_contradictions:
-                if str(src_id) in c.source_attribution:
+                if (
+                    str(src_id) in (c.source_attribution or {})
+                    and c.description not in seen_contras
+                ):
+                    seen_contras.add(c.description)
                     src_contras.append(c.description)
+            src_contras.extend(sorted(conflicting_numbers))
             contradictions_summary = "; ".join(src_contras)
 
-            # 7. Perform hybrid analysis/synthesis
             resolution = await self._analyze_with_llm(
                 src_name=src_name,
                 unique_summary=unique_summary,
@@ -384,40 +441,53 @@ class SourceComparisonService:
                 context=full_context,
             )
 
-            # 8. Override focus_area if empty or default to event types if LLM fallback used
-            focus_area = resolution.focus_area
-            if not focus_area or focus_area == f"General coverage by {src_name}.":
-                if src_event_types:
-                    types_str = ", ".join(sorted(list(src_event_types))).replace("_", " ").lower()
-                    focus_area = f"Focused on {types_str} details."
-                else:
-                    focus_area = "General coverage."
+            if resolution is None:
+                # Fail closed for the whole story: partial rewrites would
+                # replace rows a healthy run validated with an incomplete set.
+                newsiq_comparison_unavailable_total.inc()
+                logger.warning(
+                    "Story %s: source comparison validator unavailable for %s; "
+                    "leaving existing comparison rows untouched.",
+                    story_id,
+                    src_name,
+                )
+                return [], []
 
-            # Max length constraint on focus_area
-            focus_area = focus_area[:100]
+            focus_area = (resolution.focus_area or "").strip()[:100] or "General coverage."
 
-            # Save StorySourceCoverage
-            coverage = StorySourceCoverage(
-                id=uuid.uuid4(),
-                story_id=story_id,
-                source_id=src_id,
-                focus_area=focus_area,
-                published_at=datetime.now(UTC).replace(tzinfo=None),
+            # published_at is this source's article publish time — previously
+            # it was stamped with the synthesis wall clock, which is why 99%
+            # of dated rows disagreed with their article by over an hour.
+            published_times = [
+                art.published_at
+                for art in articles_by_source.get(src_id, [])
+                if getattr(art, "published_at", None)
+            ]
+            published_at = min(published_times) if published_times else None
+            if published_at is not None and published_at.tzinfo is not None:
+                published_at = published_at.replace(tzinfo=None)
+
+            saved_coverage.append(
+                StorySourceCoverage(
+                    id=uuid.uuid4(),
+                    story_id=story_id,
+                    source_id=src_id,
+                    focus_area=focus_area,
+                    published_at=published_at,
+                )
             )
-            saved_coverage.append(coverage)
-
-            # Save StoryDifference
-            diff = StoryDifference(
-                id=uuid.uuid4(),
-                story_id=story_id,
-                source_id=src_id,
-                unique_information=resolution.unique_information or None,
-                missing_information=resolution.missing_information or None,
-                contradictions=resolution.contradictions or None,
+            saved_differences.append(
+                StoryDifference(
+                    id=uuid.uuid4(),
+                    story_id=story_id,
+                    source_id=src_id,
+                    unique_information=_join(resolution.validated_unique_information),
+                    missing_information=_join(resolution.validated_missing_information),
+                    contradictions=_join(resolution.validated_contradictions),
+                )
             )
-            saved_differences.append(diff)
 
-        # Delete existing coverages and differences for this story to avoid duplication or stale data
+        # 7. Every source validated — reconcile
         from sqlalchemy import delete
 
         await session.execute(

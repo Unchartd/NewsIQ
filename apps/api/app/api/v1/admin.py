@@ -2352,11 +2352,13 @@ async def rollback_story_version(
     # Source Coverage & Differences re-populate
     source_comp_payload = artifacts["source_comparison"]
     for cov_entry in source_comp_payload.get("coverage", []):
+        published_raw = cov_entry.get("published_at")
         cov = StorySourceCoverage(
             id=uuid.uuid4(),
             story_id=story_id,
             source_id=uuid.UUID(cov_entry["source_id"]),
             focus_area=cov_entry["focus_area"],
+            published_at=datetime.fromisoformat(published_raw) if published_raw else None,
             created_at=datetime.now(UTC).replace(tzinfo=None),
         )
         db.add(cov)

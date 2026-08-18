@@ -30,11 +30,30 @@ Both signatures are produced only by the removed fallback. Measured in
 production they agree exactly — 3,748 rows match either condition and 3,748
 match both, with zero disagreement — so no LLM-validated row is caught.
 
+story_differences carries copies
+--------------------------------
+SourceComparisonService joined every StoryContradiction.description into the
+per-source `contradictions` column, so the fabricated text was snapshotted
+into a second table. Its own deterministic fallback also published the raw
+heuristic strings ("unique actors: …" / "omitted actors: …") whenever the LLM
+was unreachable — 56-66% of all rows. Each signature is handled at the COLUMN
+level, with its provenance:
+
+  contradictions       LIKE 'Mismatch on %'  → fail-open fallback copy  → NULL
+  unique_information   LIKE 'unique %'       → raw heuristic passthrough → NULL
+  missing_information  LIKE 'omitted %'      → raw heuristic passthrough → NULL
+
+A column an LLM actually wrote never matches these prefixes (validated output
+is prose or NULL). Rows where all three columns end up NULL are deleted, and
+their coverage rows go with them — a coverage row whose difference row was
+pure fallback was produced by the same unvalidated run.
+
 What this does NOT do
 ---------------------
-It does not re-run validation. Stories left with no contradictions are correct:
-absence of an adjudicated contradiction is the honest state. Synthesis will
-re-derive them, now against a chain that can reach Bedrock when Gemini is spent.
+It does not re-run validation. Stories left with no contradictions or
+comparison are correct: absence of an adjudicated claim is the honest state.
+Synthesis will re-derive them, now against a chain that can reach Bedrock
+when Gemini is spent, with a validator prompt and fail-closed writes.
 
 Usage
 -----
@@ -67,6 +86,24 @@ _COUNTS = {
     ),
     "stories keeping >=1 validated row": (
         f"SELECT count(DISTINCT story_id) FROM story_contradictions WHERE NOT ({_SELECTOR})"
+    ),
+}
+
+# Column-level signatures of unvalidated content in story_differences, each
+# with its provenance. The LLM never wrote text with these prefixes; only the
+# removed fallbacks did.
+_DIFF_COLUMNS = {
+    "contradictions": (
+        "contradictions LIKE 'Mismatch on %'",
+        "copies of the fail-open contradiction fallback",
+    ),
+    "unique_information": (
+        "unique_information LIKE 'unique %'",
+        "raw heuristic passthrough (deterministic fallback)",
+    ),
+    "missing_information": (
+        "missing_information LIKE 'omitted %'",
+        "raw heuristic passthrough (deterministic fallback)",
     ),
 }
 
@@ -113,6 +150,25 @@ async def run(execute: bool) -> None:
 
         logger.info("selector halves agree exactly (%s rows); no validated row is caught", by_both)
 
+        logger.info("--- story_differences scope (column-level) ---")
+        for column, (predicate, provenance) in _DIFF_COLUMNS.items():
+            n = (
+                await session.execute(
+                    text(f"SELECT count(*) FROM story_differences WHERE {predicate}")  # noqa: S608
+                )
+            ).scalar()
+            logger.info("%-22s %-6s -> NULL   (%s)", column, n, provenance)
+
+        all_null_pred = " AND ".join(
+            f"({pred} OR {col} IS NULL)" for col, (pred, _) in _DIFF_COLUMNS.items()
+        )
+        fully_unvalidated = (
+            await session.execute(
+                text(f"SELECT count(*) FROM story_differences WHERE {all_null_pred}")  # noqa: S608
+            )
+        ).scalar()
+        logger.info("difference rows fully unvalidated (to delete): %s", fully_unvalidated)
+
         if not execute:
             logger.info("DRY RUN — nothing changed. Re-run with --execute to apply.")
             return
@@ -121,6 +177,33 @@ async def run(execute: bool) -> None:
             text(f"DELETE FROM story_contradictions WHERE {_SELECTOR}")  # noqa: S608 — fixed literal
         )
         logger.info("deleted %s unvalidated contradictions", getattr(res, "rowcount", 0))
+
+        # Difference rows that are entirely fallback output disappear with
+        # their coverage rows (same unvalidated run produced both); rows with
+        # any validated column keep it and only lose the fallback columns.
+        # The unqualified column names in the predicate exist only on
+        # story_differences, so they bind to `d` here.
+        res = await session.execute(
+            text(
+                "DELETE FROM story_source_coverage sc USING story_differences d "  # noqa: S608
+                "WHERE d.story_id = sc.story_id AND d.source_id = sc.source_id "
+                f"AND {all_null_pred}"
+            )
+        )
+        logger.info(
+            "deleted %s coverage rows from fully-unvalidated runs", getattr(res, "rowcount", 0)
+        )
+
+        res = await session.execute(
+            text(f"DELETE FROM story_differences WHERE {all_null_pred}")  # noqa: S608
+        )
+        logger.info("deleted %s fully-unvalidated difference rows", getattr(res, "rowcount", 0))
+
+        for column, (predicate, _) in _DIFF_COLUMNS.items():
+            res = await session.execute(
+                text(f"UPDATE story_differences SET {column} = NULL WHERE {predicate}")  # noqa: S608
+            )
+            logger.info("nulled %-22s on %s rows", column, getattr(res, "rowcount", 0))
 
         await session.commit()
         logger.info("REMEDIATION COMMITTED.")
