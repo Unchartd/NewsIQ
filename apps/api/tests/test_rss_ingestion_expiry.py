@@ -21,28 +21,39 @@ import pytest
 from app.services.ingestion_service import ingestion_service
 
 
+class _ExpiredRead(RuntimeError):
+    """Stands in for sqlalchemy.exc.MissingGreenlet in this double."""
+
+
 class _ExpiringSource:
     """Behaves like a Source whose attributes expire after the first reads.
 
     Allows one read each of `name` and `rss_url` (the up-front capture), then
-    raises on any further attribute access — the same observable behaviour as
-    an expired instance in an async session, where the lazy refresh dies.
+    raises on any further access — the same observable behaviour as an
+    expired instance in an async session, where the lazy refresh dies.
     """
 
-    def __init__(self) -> None:
-        object.__setattr__(self, "_reads", {"name": 0, "rss_url": 0})
+    _values = {"name": "Fox News", "rss_url": "https://feeds.example/rss"}
 
-    def __getattr__(self, item):
-        reads = object.__getattribute__(self, "_reads")
-        if item in reads:
-            reads[item] += 1
-            if reads[item] > 1:
-                raise AssertionError(
-                    f"source.{item} read again after it may have expired — "
-                    "this is the MissingGreenlet path"
-                )
-            return {"name": "Fox News", "rss_url": "https://feeds.example/rss"}[item]
-        raise AttributeError(item)
+    def __init__(self) -> None:
+        self._reads = dict.fromkeys(self._values, 0)
+
+    def _read(self, item: str) -> str:
+        self._reads[item] += 1
+        if self._reads[item] > 1:
+            raise _ExpiredRead(
+                f"source.{item} read again after it may have expired — "
+                "this is the MissingGreenlet path"
+            )
+        return self._values[item]
+
+    @property
+    def name(self) -> str:
+        return self._read("name")
+
+    @property
+    def rss_url(self) -> str:
+        return self._read("rss_url")
 
 
 def _entry(title: str) -> SimpleNamespace:
