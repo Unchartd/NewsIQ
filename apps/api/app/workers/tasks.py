@@ -604,8 +604,22 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     clustering_failed_count = 0
                     extracted_events_summary = []
 
-                    for article in articles:
-                        bind_article_context(str(article.id))
+                    # Iterate over ids, not instances. The clustering-failure
+                    # branch below rolls the session back, and rollback expires
+                    # every loaded instance regardless of expire_on_commit —
+                    # the next iteration's first attribute read then dies with
+                    # MissingGreenlet (same failure class as the RSS ingestion
+                    # outage fixed in #141/#142). session.get() returns the
+                    # identity-map object when it is fresh and re-selects when
+                    # a rollback has expired it.
+                    article_ids = [article.id for article in articles]
+
+                    for article_id in article_ids:
+                        bind_article_context(str(article_id))
+                        article = await session.get(Article, article_id)
+                        if article is None:
+                            failed_count += 1
+                            continue
                         try:
                             # Mark as processing in-memory — no commit here.
                             # The final commit below will persist the terminal status
@@ -764,11 +778,15 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 try:
                                     from app.core.failure_recorder import record_pipeline_failure
 
+                                    # article_id, not article.id: the rollback
+                                    # just above expired the instance, and
+                                    # touching it here is the MissingGreenlet
+                                    # path again.
                                     await record_pipeline_failure(
                                         stage=PipelineStage.CLUSTERING_INCREMENTAL,
                                         exception=cluster_err,
-                                        article_id=article.id,
-                                        input_payload={"article_id": str(article.id)},
+                                        article_id=article_id,
+                                        input_payload={"article_id": str(article_id)},
                                     )
                                 except Exception as rec_err:
                                     logger.error("Failed to record clustering failure: %s", rec_err)
@@ -790,7 +808,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                             logger.error(
                                 "Event extraction failed",
                                 extra={
-                                    "article_id": str(article.id),
+                                    "article_id": str(article_id),
                                     "error": str(e),
                                 },
                             )
@@ -810,16 +828,25 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     "Rollback before recording extraction failure failed: %s",
                                     rb_err,
                                 )
+                            # The rollback expired the instance; re-fetch so the
+                            # status write and the failure payload below read a
+                            # live object instead of raising MissingGreenlet
+                            # from inside the error handler.
                             try:
-                                article.event_extraction_status = "failed"
-                                await session.commit()
+                                article = await session.get(Article, article_id)
+                            except Exception:
+                                article = None
+                            try:
+                                if article is not None:
+                                    article.event_extraction_status = "failed"
+                                    await session.commit()
                             except Exception as status_err:
                                 # The article stays 'processing' and is recovered
                                 # by recover_stuck_embeddings_task rather than
                                 # taking the rest of the batch down with it.
                                 logger.error(
                                     "Could not record failed status for article %s: %s",
-                                    article.id,
+                                    article_id,
                                     status_err,
                                 )
                                 try:
@@ -835,7 +862,7 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     logger.warning(
                                         "Session unrecoverable after failed status write "
                                         "for article %s: %s",
-                                        article.id,
+                                        article_id,
                                         final_rb_err,
                                     )
                             failed_count += 1
@@ -845,13 +872,10 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 from app.core.failure_recorder import record_pipeline_failure
                                 from app.core.trace import _to_uuid, run_id_ctx, trace_id_ctx
 
-                                await record_pipeline_failure(
-                                    stage=PipelineStage.EVENT_EXTRACTION,
-                                    exception=e,
-                                    trace_id=_to_uuid(trace_id_ctx.get("")),
-                                    run_id=_to_uuid(run_id_ctx.get("")),
-                                    article_id=article.id,
-                                    input_payload={
+                                # article may be None if the re-fetch after
+                                # rollback failed; record the id regardless.
+                                if article is not None:
+                                    payload = {
                                         "title": article.title,
                                         "content": (article.content or article.description or "")[
                                             :4000
@@ -859,7 +883,16 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                         "published_at": article.published_at.isoformat()
                                         if article.published_at
                                         else None,
-                                    },
+                                    }
+                                else:
+                                    payload = {"article_id": str(article_id)}
+                                await record_pipeline_failure(
+                                    stage=PipelineStage.EVENT_EXTRACTION,
+                                    exception=e,
+                                    trace_id=_to_uuid(trace_id_ctx.get("")),
+                                    run_id=_to_uuid(run_id_ctx.get("")),
+                                    article_id=article_id,
+                                    input_payload=payload,
                                 )
                             except Exception as rec_err:
                                 logger.error(

@@ -116,3 +116,26 @@ async def test_candidate_race_branch_rolls_back_before_requerying():
     assert rollback_at != -1, "the race branch must reset the poisoned session"
     assert requery_at != -1, "the race branch must re-query the winner"
     assert rollback_at < requery_at, "rollback must precede the re-query"
+
+
+@pytest.mark.asyncio
+async def test_event_extraction_loop_refetches_after_rollback():
+    """Third instance of the expiry class, in extract_events_task.
+
+    The clustering-failure branch rolls the session back mid-batch; the next
+    iteration's first attribute read on a pre-loaded Article then raised
+    MissingGreenlet and failed the whole task (observed post-v1.42.2). The
+    loop must iterate over captured ids and session.get() each article fresh.
+    """
+    import inspect
+
+    from app.workers import tasks
+
+    src = inspect.getsource(tasks.extract_events_task)
+    assert "article_ids = [article.id for article in articles]" in src, (
+        "ids must be captured before the loop"
+    )
+    assert "for article_id in article_ids:" in src, "the loop must iterate ids, not instances"
+    assert "session.get(Article, article_id)" in src, (
+        "each iteration must re-fetch, surviving a prior rollback"
+    )
