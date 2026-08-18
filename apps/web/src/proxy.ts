@@ -15,6 +15,20 @@ const PUBLIC_PATHS = [
   "/privacy",
   "/legal",
   "/auth/callback",
+  // Every URL the sitemap advertises must actually be reachable without a
+  // session. This list had drifted: all nine routes below — including the
+  // pricing page and the E-E-A-T pages written specifically for crawlers —
+  // 307'd to /login, so search engines could index nothing the sitemap
+  // promised. Keep this in sync with sitemap.ts.
+  "/trending",
+  "/search",
+  "/topics",
+  "/premium",
+  "/about",
+  "/editorial-principles",
+  "/methodology",
+  "/ai-transparency",
+  "/source-transparency",
 ];
 
 const AUTH_ONLY_PATHS = [

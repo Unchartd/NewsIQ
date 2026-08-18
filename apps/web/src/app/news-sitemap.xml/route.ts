@@ -32,9 +32,15 @@ export async function GET() {
     if (res.ok) {
       const data = await res.json();
       stories = Array.isArray(data) ? data : (data?.items ?? []);
+    } else {
+      // An empty news sitemap is indistinguishable from "no recent stories"
+      // to a crawler — the failure must at least be visible in logs. The
+      // tz-aware `after` param 500'd on every request until the API learned
+      // to coerce it, so this sitemap had been empty since launch.
+      console.error(`news-sitemap: story fetch failed with HTTP ${res.status}`);
     }
-  } catch {
-    // Return empty sitemap on error — non-fatal
+  } catch (err) {
+    console.error("news-sitemap: story fetch threw", err);
   }
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
