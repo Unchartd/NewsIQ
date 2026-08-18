@@ -19,6 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.metrics import newsiq_contradiction_unvalidated_total
 from app.models.models import Article, ArticleEvent, Source, StoryArticle, StoryContradiction
 from app.schemas.synthesis_context import ArticleContext, EventContext
+from app.services.fact_normalization import (
+    facts_equivalent,
+    numbers_conflict,
+    sets_share_a_fact,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -232,10 +237,13 @@ class ContradictionService:
                 if src1_id == src2_id:
                     continue  # Skip comparing same publisher
 
-                # 1. Actors Conflict
+                # 1. Actors Conflict — "disjoint" must mean no equivalent
+                # facts, not no byte-identical strings. The verbatim test
+                # fired on pure case variants ("Colombian government" vs
+                # "Colombian Government").
                 a1 = set(evt1.actors or [])
                 a2 = set(evt2.actors or [])
-                if a1 and a2 and a1.isdisjoint(a2):
+                if a1 and a2 and not sets_share_a_fact(a1, a2):
                     candidates.append(
                         {
                             "fact_type": "actor",
@@ -251,7 +259,7 @@ class ContradictionService:
                 # 2. Targets Conflict
                 t1 = set(evt1.targets or [])
                 t2 = set(evt2.targets or [])
-                if t1 and t2 and t1.isdisjoint(t2):
+                if t1 and t2 and not sets_share_a_fact(t1, t2):
                     candidates.append(
                         {
                             "fact_type": "target",
@@ -264,11 +272,10 @@ class ContradictionService:
                         }
                     )
 
-                # 3. Location Conflict
+                # 3. Location Conflict — equivalence includes punctuation
+                # and article stripping, not just lowercase containment.
                 if evt1.location and evt2.location:
-                    loc1 = evt1.location.strip().lower()
-                    loc2 = evt2.location.strip().lower()
-                    if loc1 != loc2 and loc1 not in loc2 and loc2 not in loc1:
+                    if not facts_equivalent(evt1.location, evt2.location):
                         candidates.append(
                             {
                                 "fact_type": "location",
@@ -297,33 +304,22 @@ class ContradictionService:
                             }
                         )
 
-                # 5. Numerical Conflict
+                # 5. Numerical Conflict (>10% relative AND >1 absolute)
                 num1 = evt1.numbers or {}
                 num2 = evt2.numbers or {}
                 for key, val1 in num1.items():
-                    if key in num2:
-                        val2 = num2[key]
-                        try:
-                            v1 = float(val1)
-                            v2 = float(val2)
-                            # Flag if diff > 10% and absolute diff > 1
-                            if abs(v1 - v2) > 1:
-                                max_v = max(v1, v2)
-                                pct_diff = abs(v1 - v2) / max_v if max_v else 0.0
-                                if pct_diff > 0.10:
-                                    candidates.append(
-                                        {
-                                            "fact_type": "number",
-                                            "val1": f"{key}: {v1}",
-                                            "val2": f"{key}: {v2}",
-                                            "src1_name": src1_name,
-                                            "src2_name": src2_name,
-                                            "src1_id": src1_id,
-                                            "src2_id": src2_id,
-                                        }
-                                    )
-                        except (ValueError, TypeError):
-                            pass
+                    if key in num2 and numbers_conflict(val1, num2[key]):
+                        candidates.append(
+                            {
+                                "fact_type": "number",
+                                "val1": f"{key}: {val1}",
+                                "val2": f"{key}: {num2[key]}",
+                                "src1_name": src1_name,
+                                "src2_name": src2_name,
+                                "src1_id": src1_id,
+                                "src2_id": src2_id,
+                            }
+                        )
 
         # Validate candidates using hybrid validation pass (LLM)
         validated_contradictions: list[StoryContradiction] = []
@@ -462,10 +458,10 @@ class ContradictionService:
                 if new_src_id == ext_src_id:
                     continue  # Skip comparing same publisher
 
-                # 1. Actors Conflict
+                # 1. Actors Conflict — equivalence-aware, same as the batch path
                 a1 = set(new_evt.actors or [])
                 a2 = set(ext_evt.actors or [])
-                if a1 and a2 and a1.isdisjoint(a2):
+                if a1 and a2 and not sets_share_a_fact(a1, a2):
                     candidates.append(
                         {
                             "fact_type": "actor",
@@ -481,7 +477,7 @@ class ContradictionService:
                 # 2. Targets Conflict
                 t1 = set(new_evt.targets or [])
                 t2 = set(ext_evt.targets or [])
-                if t1 and t2 and t1.isdisjoint(t2):
+                if t1 and t2 and not sets_share_a_fact(t1, t2):
                     candidates.append(
                         {
                             "fact_type": "target",
@@ -494,11 +490,12 @@ class ContradictionService:
                         }
                     )
 
-                # 3. Numbers Conflict
+                # 3. Numbers Conflict — this path used bare `!=`, so "15" vs
+                # "15.0" was a candidate. Same threshold as the batch path.
                 num1 = new_evt.numbers or {}
                 num2 = ext_evt.numbers or {}
                 for k in num1.keys():
-                    if k in num2 and num1[k] != num2[k]:
+                    if k in num2 and numbers_conflict(num1[k], num2[k]):
                         candidates.append(
                             {
                                 "fact_type": k,

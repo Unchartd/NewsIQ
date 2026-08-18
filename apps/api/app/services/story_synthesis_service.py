@@ -623,9 +623,17 @@ class StorySynthesisOrchestrator:
                 precomputed_contradictions=temp_contras,
             )
 
-            # Expunge and serialize
+            # Expunge and serialize. published_at must survive the round-trip:
+            # this payload is what run_publisher_stage re-materializes rows
+            # from, and dropping it here is why 93% of coverage rows had a
+            # NULL publish date.
             cov_serialized = [
-                {"source_id": str(c.source_id), "focus_area": c.focus_area} for c in cov_list
+                {
+                    "source_id": str(c.source_id),
+                    "focus_area": c.focus_area,
+                    "published_at": c.published_at.isoformat() if c.published_at else None,
+                }
+                for c in cov_list
             ]
             diff_serialized = [
                 {
@@ -899,11 +907,13 @@ class StorySynthesisOrchestrator:
 
         # 4. Populate StorySourceCoverage & Differences tables
         for cov_entry in source_comp_payload.get("coverage", []):
+            published_raw = cov_entry.get("published_at")
             cov = StorySourceCoverage(
                 id=uuid.uuid4(),
                 story_id=story.id,
                 source_id=uuid.UUID(cov_entry["source_id"]),
                 focus_area=cov_entry["focus_area"],
+                published_at=datetime.fromisoformat(published_raw) if published_raw else None,
             )
             session.add(cov)
 

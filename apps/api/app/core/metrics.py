@@ -493,6 +493,25 @@ newsiq_contradiction_unvalidated_total = Counter(
 )
 
 
+# The comparison validator's accept/reject split. A high rejected share means
+# the deterministic candidate generation is still producing noise; a rejected
+# count near zero with high validated counts means normalization is doing its
+# job before any LLM spend.
+newsiq_comparison_candidates_total = Counter(
+    "newsiq_comparison_candidates_total",
+    "Source-comparison candidates by validator disposition.",
+    ["disposition"],
+)
+
+# Stories whose comparison could not be validated at all (LLM unreachable).
+# These publish nothing rather than fallback prose; the count is the size of
+# that honesty gap.
+newsiq_comparison_unavailable_total = Counter(
+    "newsiq_comparison_unavailable_total",
+    "Story comparisons skipped because the validator was unreachable.",
+)
+
+
 # Local crawler deliberately skipped because the domain has never yielded to
 # it. Each increment is roughly 105s of timeouts avoided; a sudden drop means
 # domains started answering locally again.

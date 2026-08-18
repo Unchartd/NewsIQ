@@ -189,7 +189,10 @@ async def test_source_comparison_heuristics_and_llm(mock_db_session):
         res.scalar_one_or_none.return_value = None
         res.scalar_one.return_value = 0
         res.scalar.return_value = None
-        if "from articles" in stmt_str or "story_articles" in stmt_str:
+        if "article_entities" in stmt_str:
+            # No canonical resolutions in this fixture — text comparison only.
+            res.all.return_value = []
+        elif "from articles" in stmt_str or "story_articles" in stmt_str:
             res.all.return_value = [(art1, src1), (art2, src2)]
         elif "from article_events" in stmt_str:
             res.scalars.return_value.all.return_value = [evt1, evt2]
@@ -206,18 +209,18 @@ async def test_source_comparison_heuristics_and_llm(mock_db_session):
 
     mock_db_session.execute.side_effect = mock_execute
 
-    # Mock the LLM response
+    # Mock the validator response (v3 schema: validated lists + rejections)
     mock_resolution_bbc = SourceComparisonResolution(
         focus_area="Protest coverage focusing on Actor A.",
-        unique_information="Reports Actor A specifically.",
-        missing_information="Omitted Actor B and Target B.",
-        contradictions="Contradicts Reuters on casualties.",
+        validated_unique_information=["Reports Actor A specifically."],
+        validated_missing_information=["Omitted Actor B and Target B."],
+        validated_contradictions=["Contradicts Reuters on casualties."],
     )
     mock_resolution_reuters = SourceComparisonResolution(
         focus_area="Protest coverage focusing on Actor B.",
-        unique_information="Reports Actor B and Target B specifically.",
-        missing_information="Omitted Actor A.",
-        contradictions="Contradicts BBC on casualties.",
+        validated_unique_information=["Reports Actor B and Target B specifically."],
+        validated_missing_information=["Omitted Actor A."],
+        validated_contradictions=["Contradicts BBC on casualties."],
     )
 
     async def mock_analyze_llm(
@@ -251,23 +254,17 @@ async def test_source_comparison_heuristics_and_llm(mock_db_session):
 
 
 @pytest.mark.asyncio
-async def test_source_comparison_deterministic_fallback():
-    """Verify that deterministic fallback triggers when LLM is disabled."""
-    # Ensure LLM clients are disabled
-    source_comparison_service.gemini_enabled = False
-    source_comparison_service.openai_enabled = False
+async def test_source_comparison_fails_closed_without_validator():
+    """No validator, no analysis — and no deterministic fallback to invent one.
 
-    res = source_comparison_service._generate_deterministic_comparison(
-        src_name="BBC",
-        unique_summary="unique actors: Actor A",
-        missing_summary="omitted targets: Target B",
-        contradictions_summary="Contradicts Reuters on casualties.",
+    The removed fallback published the raw heuristic strings verbatim under
+    an "AI Comparative Analysis" banner; 56-66% of production rows were that
+    fallback. An unreachable validator must leave existing rows untouched and
+    publish nothing.
+    """
+    assert not hasattr(source_comparison_service, "_generate_deterministic_comparison"), (
+        "the deterministic fallback must stay deleted"
     )
-
-    assert res.focus_area == "General coverage by BBC."
-    assert res.unique_information == "unique actors: Actor A"
-    assert res.missing_information == "omitted targets: Target B"
-    assert res.contradictions == "Contradicts Reuters on casualties."
 
 
 @pytest.mark.asyncio
