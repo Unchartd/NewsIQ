@@ -204,14 +204,28 @@ export function TrendingWidgetSkeleton() {
 interface SidebarWidgetsProps {
   trendingStories?: Story[];
   isLoading?: boolean;
+  isError?: boolean;
   hasActiveDigest?: boolean;
 }
 
-export function SidebarWidgets({ trendingStories = [], isLoading = false, hasActiveDigest }: SidebarWidgetsProps) {
+export function SidebarWidgets({
+  trendingStories = [],
+  isLoading = false,
+  isError = false,
+  hasActiveDigest,
+}: SidebarWidgetsProps) {
   return (
     <div className="sticky-p">
       {isLoading ? (
         <TrendingWidgetSkeleton />
+      ) : isError ? (
+        /* Rendering nothing here was indistinguishable from "nothing is
+           trending". A widget failure must not blank the article a reader is
+           in the middle of, so this stays inline rather than throwing to the
+           route error boundary. */
+        <div role="status" className="rounded-lg border border-border px-4 py-6 text-center text-xs text-muted-foreground">
+          Trending stories are unavailable right now.
+        </div>
       ) : (
         trendingStories.length > 0 && <TrendingWidget stories={trendingStories} />
       )}

@@ -36,7 +36,7 @@ export default function FailureCenterPage() {
   const [page, setPage] = useState(1);
   const limit = 15;
 
-  const { data, isLoading, refetch } = useQuery<FailuresResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<FailuresResponse>({
     queryKey: ["admin-failures", stageFilter, categoryFilter, resolvedFilter, page],
     queryFn: async () => {
       const params: Record<string, string> = {
@@ -211,6 +211,35 @@ export default function FailureCenterPage() {
                     <div className="flex justify-center items-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                       Loading pipeline logs...
+                    </div>
+                  </td>
+                </tr>
+              ) : isError ? (
+                /* Distinguishing this from the empty state matters more here
+                   than anywhere else in the product: when the request failed,
+                   `data` is undefined and the empty branch rendered "No
+                   matching pipeline failures found." — telling an operator the
+                   pipeline is healthy at exactly the moment it cannot be
+                   verified. */
+                <tr>
+                  <td colSpan={7} className="py-12 text-center">
+                    <div role="alert" className="flex flex-col items-center gap-2">
+                      <span className="font-semibold text-red-400">
+                        Could not load failures
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {error instanceof Error
+                          ? error.message
+                          : "The request did not complete."}{" "}
+                        This is not the same as there being no failures.
+                      </span>
+                      <button
+                        onClick={() => refetch()}
+                        className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/5"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Retry
+                      </button>
                     </div>
                   </td>
                 </tr>
