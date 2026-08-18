@@ -39,17 +39,35 @@ class BedrockProvider(AIProvider):
             "temperature": request.temperature,
         }
 
-        # Handle JSON / Structured Outputs
+        # Handle JSON / Structured Outputs.
+        #
+        # Unlike Gemini, the Mantle endpoint's json_object mode does not take
+        # a schema — the model only knows the shape it is told about in the
+        # prompt. This used to say "Respond in valid JSON format matching the
+        # schema" WITHOUT ever including the schema, so the models invented
+        # field names: measured over the first two hours of Bedrock carrying
+        # contradiction_detection, 1,351 of 1,352 responses failed validation,
+        # most echoing literal placeholders like {"reasoning": "step-by-step
+        # reasoning", "explanation": "brief explanation"}.
         if request.response_format:
             params["response_format"] = {"type": "json_object"}
-            has_json = any("json" in str(m.get("content", "")).lower() for m in messages)
-            if not has_json:
-                params["messages"] = messages + [
-                    {
-                        "role": "system",
-                        "content": "Respond in valid JSON format matching the schema.",
-                    }
-                ]
+            schema_instruction = "Respond with a single valid JSON object."
+            if isinstance(request.response_format, type) and issubclass(
+                request.response_format, BaseModel
+            ):
+                schema = request.response_format.model_json_schema()
+                required = schema.get("required", [])
+                fields = []
+                for key, prop in schema.get("properties", {}).items():
+                    kind = prop.get("type", "any")
+                    desc = prop.get("description", "")
+                    req = "required" if key in required else "optional"
+                    fields.append(f'  "{key}" ({kind}, {req}): {desc}')
+                schema_instruction = (
+                    "Respond with ONLY a single JSON object using EXACTLY these "
+                    "keys — no other keys, no prose, no markdown fences:\n" + "\n".join(fields)
+                )
+            params["messages"] = messages + [{"role": "system", "content": schema_instruction}]
 
         return params
 
