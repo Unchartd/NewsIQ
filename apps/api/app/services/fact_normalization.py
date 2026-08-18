@@ -104,8 +104,11 @@ def facts_equivalent(a: str, b: str) -> bool:
     if na in nb or nb in na:
         return True
 
+    # issubset, not `<=`: subset is a partial order, so this is NOT the
+    # tautology `x <= y or y <= x` would be for numbers — {red, fort, delhi}
+    # vs {red, fort, agra} fails both directions. The method form says so.
     ta, tb = set(na.split()), set(nb.split())
-    if ta <= tb or tb <= ta:
+    if ta.issubset(tb) or tb.issubset(ta):
         return True
 
     if not _HAS_DIGIT.search(na) and not _HAS_DIGIT.search(nb):
