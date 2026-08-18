@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import CookieModal from "./cookie-modal";
+import dynamic from "next/dynamic";
+
+// The consent modal is mounted on every page via providers.tsx but only renders
+// once the reader opens it, so its ~340 lines were shipped to every visitor for
+// an interaction most never perform. ssr: false is valid here because this is a
+// Client Component — the docs note it is not allowed in Server Components.
+const CookieModal = dynamic(() => import("./cookie-modal"), { ssr: false });
 import { useConsent } from "./consent-provider";
 
 export default function CookieBanner() {

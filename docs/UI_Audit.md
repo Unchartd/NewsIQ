@@ -86,15 +86,21 @@ correctly 46 times; the element swap is less error-prone.
 No "skip to content" affordance anywhere. With 9 `<nav>` blocks, a keyboard user
 tabs through the full navigation on every page load. **WCAG 2.4.1, Level A.**
 
-### A4. Heading structure — CONFIRMED
+### A4. Heading structure — ~~CONFIRMED~~ **WITHDRAWN**
 
-`digest/setup/page.tsx` renders **8** `<h1>` elements and
-`onboarding/page.tsx` renders **4**. These are step-based flows, so most are
-probably not simultaneously visible, but the document outline is wrong either
-way and screen-reader users navigating by heading get 8 "level 1" landmarks.
+> **This finding was wrong.** It counted `<h1>` occurrences in source, not
+> simultaneously rendered ones. Both `digest/setup` (8) and `onboarding` (4) gate
+> every step behind `step === "…"` conditionals, so exactly one `<h1>` is in the
+> DOM at any time. The document outline is correct and nothing needed changing.
+>
+> The original text hedged — "probably not simultaneously visible" — and then
+> listed it as a defect anyway. Counting source occurrences is not the same as
+> measuring rendered output, and the hedge should have been resolved before the
+> finding was raised.
 
-Separately, **zero `<article>` elements exist** in a news product. Story content
-is rendered in `<div>`s.
+Separately, and this one holds: **zero `<article>` elements existed** in a news
+product — story content was rendered in `<div>`s, leaving assistive tech and
+reader modes no way to identify where the story begins. Fixed on the story page.
 
 ### What is already right
 
@@ -197,7 +203,9 @@ Three stray `console.*` calls remain in shipped code.
 
 ## P2 — Performance
 
-### F1. No code splitting at all — CONFIRMED
+### F1. No code splitting — **OVERSTATED, partially withdrawn**
+
+The counts were right:
 
 ```text
 next/dynamic or React.lazy : 0 occurrences
@@ -205,9 +213,22 @@ next/dynamic or React.lazy : 0 occurrences
 largest client components  : settings 2,520 lines · landing-client 2,460 lines
 ```
 
-Every client component is in the initial graph for its route. The 2,520-line
-settings page and 2,460-line landing client are the obvious candidates for
-`next/dynamic`.
+The conclusion drawn from them was not. **Next.js already code-splits per
+route**, so the absence of `next/dynamic` does not mean everything ships to
+everyone. The two files named as "obvious candidates" are route entry points and
+are already split — lazy-loading them would achieve nothing.
+
+Measured after the fact: 52 chunks, 1.8 MB total across all of them, and a
+446 KB shared root that every route loads regardless.
+
+`next/dynamic` only earns its place for a heavy component **inside** a route that
+is not needed at first paint. The real instance was the cookie consent modal:
+mounted globally through `providers.tsx`, so shipped on every page, but rendered
+only once a reader opens it. It is now a separate 8.1 KB chunk, verified by
+locating its text in a distinct file after the build.
+
+The lesson matches A4 and C1: a grep count is evidence of a pattern, not of an
+impact. Measure the impact before prescribing the fix.
 
 ### F2. Client-side data on landing pages
 

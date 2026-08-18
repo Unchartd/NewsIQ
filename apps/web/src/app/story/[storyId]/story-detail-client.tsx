@@ -351,7 +351,10 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
         </nav>
 
         {/* Story Header */}
-        <div style={{ marginBottom: 28 }}>
+        {/* The story is this page's primary content. A news product had no
+            <article> element anywhere, leaving assistive tech and reader
+            modes no way to identify where the story begins. */}
+        <article style={{ marginBottom: 28 }}>
           <div className="sd-meta">
             {story.category && (
               <Link href={`/home?category=${story.category.slug}`} style={{ textDecoration: "none" }}>
@@ -409,7 +412,7 @@ export function StoryDetailClient({ storyId, initialStory }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </article>
 
         {/* Summary Switcher (Visible on mobile/tablet because .sc is hidden) */}
         <div className="swit" style={{ marginBottom: 14 }}>

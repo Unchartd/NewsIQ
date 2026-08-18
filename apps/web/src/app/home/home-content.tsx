@@ -33,7 +33,7 @@ const CATEGORIES = [
   { slug: "world", name: "World" },
 ];
 
-function HomeContentInner() {
+function HomeContentInner({ initialStories }: { initialStories?: Story[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [category, setCategory] = useState<string>(
@@ -63,6 +63,13 @@ function HomeContentInner() {
     isFetchingNextPage,
   } = useInfiniteQuery<Story[]>({
     queryKey: isPersonalized ? ["stories", "personalized"] : ["stories", category],
+    // Seed only the anonymous default feed. The server render is cacheable and
+    // therefore identical for every visitor, so using it for a personalized or
+    // category-filtered feed would show one user's page to another.
+    initialData:
+      !isPersonalized && category === "all" && initialStories?.length
+        ? { pages: [initialStories], pageParams: [0] }
+        : undefined,
     queryFn: async ({ pageParam }) => {
       const offset = pageParam as number;
       const limit = 20;
@@ -267,10 +274,10 @@ function HomeContentInner() {
 }
 
 // Wrap in Suspense because useSearchParams requires it in Next.js App Router
-export function HomeContent() {
+export function HomeContent({ initialStories }: { initialStories?: Story[] }) {
   return (
     <Suspense fallback={null}>
-      <HomeContentInner />
+      <HomeContentInner initialStories={initialStories} />
     </Suspense>
   );
 }

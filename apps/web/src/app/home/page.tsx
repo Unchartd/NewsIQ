@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { HomeContent } from "./home-content";
+import { fetchStoriesServer } from "@/lib/server-api";
 import { buildPageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildPageMetadata(
@@ -17,6 +18,10 @@ export const metadata: Metadata = buildPageMetadata(
   }
 );
 
-export default function HomePage() {
-  return <HomeContent />;
+export default async function HomePage() {
+  // The default feed is rendered on the server so the HTML a crawler sees
+  // contains stories. Matches the client's default query: category 'all', 20 items.
+  const initialStories = await fetchStoriesServer({ limit: 20 });
+
+  return <HomeContent initialStories={initialStories} />;
 }
