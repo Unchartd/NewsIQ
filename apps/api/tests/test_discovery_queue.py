@@ -97,8 +97,14 @@ def test_discovery_search_task_budget_exceeded():
     mock_session_ctx = AsyncMock()
     mock_session_ctx.__aenter__.return_value = mock_db_session
 
+    # Key-aware: a blanket return value also answers the pipeline_paused
+    # lookup that discovery_search_task now makes, which would make the task
+    # skip as paused instead of reaching the budget check.
+    async def _cache_get(key: str):
+        return None if key == "pipeline_paused" else 99999  # Exceed budget
+
     mock_cache = AsyncMock()
-    mock_cache.get.return_value = 99999  # Exceed budget
+    mock_cache.get.side_effect = _cache_get
 
     with (
         patch("app.workers.tasks.async_session_factory", return_value=mock_session_ctx),
