@@ -427,6 +427,16 @@ class IngestionService:
         """
         from app.services.gnews_service import gnews_service
 
+        # Read the ORM attributes ONCE, before the loop. session.rollback()
+        # expires every instance regardless of expire_on_commit, and the
+        # idempotency branches below roll back as a matter of course — after
+        # which touching source.name is a lazy refresh, which async SQLAlchemy
+        # answers with MissingGreenlet. That single expired attribute took down
+        # RSS ingestion for every source, every cycle: 0 successes on
+        # 2026-08-18 against 66 the day before.
+        source_name = source.name
+        source_rss_url = source.rss_url
+
         dispatched = 0
         for url in feed_urls:
             if url in existing_articles:
@@ -438,7 +448,7 @@ class IngestionService:
             pub_date = self.parse_pub_date(entry)
 
             score, breakdown = self.calculate_metadata_score(
-                title, description, pub_date, source.name
+                title, description, pub_date, source_name
             )
 
             await gnews_service._incr_metric("rss_metadata_scored")
@@ -455,7 +465,7 @@ class IngestionService:
                 continue
 
             rss_entry_meta = {
-                "source_name": source.name,
+                "source_name": source_name,
                 "url": url,
                 "published_at": pub_date.isoformat() if pub_date else None,
                 "score": round(score, 4),
@@ -466,7 +476,7 @@ class IngestionService:
             await self._upsert_story_candidate(
                 title=title or "",
                 rss_entry_meta=rss_entry_meta,
-                source=source,
+                source_name=source_name,
                 score=score,
                 session=session,
             )
@@ -474,8 +484,8 @@ class IngestionService:
 
         logger.info(
             "[StoryFirst] Ingested %s '%s': %d entries qualified, %d story candidates dispatched.",
-            source.name,
-            source.rss_url,
+            source_name,
+            source_rss_url,
             dispatched,
             dispatched,
         )
@@ -485,7 +495,7 @@ class IngestionService:
         self,
         title: str,
         rss_entry_meta: dict[str, Any],
-        source: Source,
+        source_name: str,
         score: float,
         session: AsyncSession,
     ) -> None:
@@ -539,7 +549,7 @@ class IngestionService:
             return
 
         # ── New story — create StoryCandidate ─────────────────────────────────
-        source_lower = source.name.lower()
+        source_lower = source_name.lower()
         priority = (
             90
             if any(
@@ -575,11 +585,16 @@ class IngestionService:
         except IntegrityError:
             # Race condition: another worker won the UniqueConstraint race.
             # Re-query the winner and attach this source to it.
+            #
+            # No session.rollback() here: the begin_nested() savepoint has
+            # already rolled the failed INSERT back, and a full rollback
+            # expires every instance in the session — including the Source the
+            # caller's loop is still iterating with, whose next attribute
+            # access then dies with MissingGreenlet.
             logger.info(
                 "[StoryFirst] StoryCandidate race for query '%s' — re-querying winner.",
                 normalized_query,
             )
-            await session.rollback()
             try:
                 stmt = select(StoryCandidate).where(
                     StoryCandidate.query_hash == query_hash,
@@ -615,6 +630,10 @@ class IngestionService:
             logger.info(
                 "[StoryFirst] DiscoveryTask idempotency key hit for query '%s'.", normalized_query
             )
+            # Full rollback is intended here — it discards the just-flushed
+            # StoryCandidate, which must not exist without its DiscoveryTask.
+            # It also expires every instance in the session, which is why the
+            # calling loop reads Source attributes into locals up front.
             await session.rollback()
             return
 
