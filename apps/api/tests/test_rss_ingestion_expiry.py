@@ -21,7 +21,7 @@ import pytest
 from app.services.ingestion_service import ingestion_service
 
 
-class _ExpiredRead(RuntimeError):
+class _ExpiredReadError(RuntimeError):
     """Stands in for sqlalchemy.exc.MissingGreenlet in this double."""
 
 
@@ -41,7 +41,7 @@ class _ExpiringSource:
     def _read(self, item: str) -> str:
         self._reads[item] += 1
         if self._reads[item] > 1:
-            raise _ExpiredRead(
+            raise _ExpiredReadError(
                 f"source.{item} read again after it may have expired — "
                 "this is the MissingGreenlet path"
             )
@@ -98,16 +98,21 @@ async def test_loop_survives_source_expiry_after_rollback():
 
 
 @pytest.mark.asyncio
-async def test_candidate_race_branch_does_not_full_rollback():
-    """The begin_nested() savepoint already undoes the failed INSERT.
+async def test_candidate_race_branch_rolls_back_before_requerying():
+    """A failed flush poisons the session, savepoint or not.
 
-    A full session.rollback() on top of it is what expired the Source for
-    the rest of the feed. The race branch must not call it.
+    Every statement after it raises PendingRollbackError until rollback()
+    runs — removing this rollback (briefly shipped in v1.42.1) made the
+    race branch's own winner re-query fail. The rollback must come BEFORE
+    the re-query; the Source-expiry side effect it carries is neutralized
+    by the caller reading attributes into locals up front (previous test).
     """
     import inspect
 
     src = inspect.getsource(ingestion_service._upsert_story_candidate)
     race_branch = src.split("StoryCandidate race")[1].split("Create the associated")[0]
-    assert "session.rollback()" not in race_branch, (
-        "the race branch re-grew a full rollback; the savepoint handles it"
-    )
+    rollback_at = race_branch.find("session.rollback()")
+    requery_at = race_branch.find("select(StoryCandidate)")
+    assert rollback_at != -1, "the race branch must reset the poisoned session"
+    assert requery_at != -1, "the race branch must re-query the winner"
+    assert rollback_at < requery_at, "rollback must precede the re-query"
