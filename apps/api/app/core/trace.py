@@ -708,6 +708,21 @@ class StageSpan:
                 stage_run.error = self.error
                 stage_run.error_type = self.error_type
                 stage_run.metadata_payload = self.metadata
+                # The row is inserted at span entry, before the work has run, so
+                # anything the span learns about *during* its body was dropped
+                # here. The crawl span is the clearest case: it only knows which
+                # article it produced at the very end, and tagging it is what
+                # makes /admin/articles/{id}/trace return a journey rather than a
+                # single stage. Measured over 15h of production after that
+                # tagging shipped: 1,486 successful crawls, 1,618 articles
+                # created, and 0 of 3,896 spans carrying an article_id.
+                #
+                # Only ever set, never cleared — a later None must not wipe an id
+                # an earlier assignment established.
+                if self.article_id:
+                    stage_run.article_id = _to_uuid(self.article_id)
+                if self.story_id:
+                    stage_run.story_id = _to_uuid(self.story_id)
 
             await session.commit()
 
