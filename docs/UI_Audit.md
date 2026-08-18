@@ -203,7 +203,9 @@ Three stray `console.*` calls remain in shipped code.
 
 ## P2 — Performance
 
-### F1. No code splitting at all — CONFIRMED
+### F1. No code splitting — **OVERSTATED, partially withdrawn**
+
+The counts were right:
 
 ```text
 next/dynamic or React.lazy : 0 occurrences
@@ -211,9 +213,22 @@ next/dynamic or React.lazy : 0 occurrences
 largest client components  : settings 2,520 lines · landing-client 2,460 lines
 ```
 
-Every client component is in the initial graph for its route. The 2,520-line
-settings page and 2,460-line landing client are the obvious candidates for
-`next/dynamic`.
+The conclusion drawn from them was not. **Next.js already code-splits per
+route**, so the absence of `next/dynamic` does not mean everything ships to
+everyone. The two files named as "obvious candidates" are route entry points and
+are already split — lazy-loading them would achieve nothing.
+
+Measured after the fact: 52 chunks, 1.8 MB total across all of them, and a
+446 KB shared root that every route loads regardless.
+
+`next/dynamic` only earns its place for a heavy component **inside** a route that
+is not needed at first paint. The real instance was the cookie consent modal:
+mounted globally through `providers.tsx`, so shipped on every page, but rendered
+only once a reader opens it. It is now a separate 8.1 KB chunk, verified by
+locating its text in a distinct file after the build.
+
+The lesson matches A4 and C1: a grep count is evidence of a pattern, not of an
+impact. Measure the impact before prescribing the fix.
 
 ### F2. Client-side data on landing pages
 
