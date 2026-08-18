@@ -417,11 +417,19 @@ class SourceComparisonService:
                 )
             missing_summary = "; ".join(missing_parts)
 
-            src_contras = [
-                c.description
-                for c in story_contradictions
-                if str(src_id) in (c.source_attribution or {})
-            ]
+            # Deduplicated: the incremental contradiction path appends across
+            # runs, so the table can hold the same description several times —
+            # one production story carried the identical actor mismatch three
+            # times in a single cell. Each relationship is a candidate once.
+            seen_contras: set[str] = set()
+            src_contras: list[str] = []
+            for c in story_contradictions:
+                if (
+                    str(src_id) in (c.source_attribution or {})
+                    and c.description not in seen_contras
+                ):
+                    seen_contras.add(c.description)
+                    src_contras.append(c.description)
             src_contras.extend(sorted(conflicting_numbers))
             contradictions_summary = "; ".join(src_contras)
 

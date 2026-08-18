@@ -30,6 +30,7 @@ import re
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 
 # Leading articles carry no identity: "the Colombian government" is
 # "Colombian government".
@@ -44,6 +45,11 @@ _WS = re.compile(r"\s+")
 # Containment folding needs enough signal that "US" does not swallow
 # "USA Today" — short fragments only merge on exact equality.
 _MIN_CONTAINMENT_LEN = 5
+
+# Spelling-drift tier: high enough that "north korea" vs "south korea"
+# (~0.82) stays apart; "dimaagi naxals" vs "dimagi naxals" is 0.96.
+_FUZZY_RATIO = 0.90
+_HAS_DIGIT = re.compile(r"\d")
 
 
 def normalize_fact(text: str) -> str:
@@ -64,17 +70,47 @@ def normalize_fact(text: str) -> str:
 def facts_equivalent(a: str, b: str) -> bool:
     """True when two free-text facts are the same fact, not merely similar.
 
-    Equality after normalization, or containment when both sides are long
-    enough for containment to mean specialization rather than coincidence
-    ("western colombia" ⊃ "colombia" — same place, one more specific).
+    Four tiers, all replayed against the production story that motivated them
+    ("dimaagi Naxals", 6 sources, 19 false contradiction candidates):
+
+    1. Equality after normalization.
+    2. Containment, when both sides are long enough for containment to mean
+       specialization rather than coincidence ("western colombia" ⊃
+       "colombia" — same place, one more specific).
+    3. Token subset: "Red Fort, Delhi, India" and "Red Fort, New Delhi,
+       India" share no substring relationship, but one's word set contains
+       the other's — same place, one extra word. Guarded by the same length
+       floor so "US" cannot swallow "USA Today".
+    4. Spelling drift: "Dimaagi Naxals" vs "dimagi Naxals" is a
+       transliteration variant, not two facts. SequenceMatcher at >=0.9,
+       only when NEITHER side contains a digit — "15 dead" vs "50 dead"
+       scores 0.86 on the same scale and must never merge, so numeric facts
+       are excluded from this tier outright.
+
+    What deliberately stays non-equivalent here: person aliases ("PM Modi" vs
+    "Narendra Modi") and rephrasings ("Government of India" vs "Indian
+    Government"). Those need identity knowledge or semantics — the canonical
+    entity layer and the LLM validator own them, per the pipeline's ownership
+    rules. A text tier that guessed at them would merge "Lalit Modi" into
+    "Narendra Modi" eventually.
     """
     na, nb = normalize_fact(a), normalize_fact(b)
     if not na or not nb:
         return False
     if na == nb:
         return True
-    if len(na) >= _MIN_CONTAINMENT_LEN and len(nb) >= _MIN_CONTAINMENT_LEN:
-        return na in nb or nb in na
+    if len(na) < _MIN_CONTAINMENT_LEN or len(nb) < _MIN_CONTAINMENT_LEN:
+        return False
+    if na in nb or nb in na:
+        return True
+
+    ta, tb = set(na.split()), set(nb.split())
+    if ta <= tb or tb <= ta:
+        return True
+
+    if not _HAS_DIGIT.search(na) and not _HAS_DIGIT.search(nb):
+        if SequenceMatcher(None, na, nb).ratio() >= _FUZZY_RATIO:
+            return True
     return False
 
 

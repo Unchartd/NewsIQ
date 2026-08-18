@@ -313,3 +313,47 @@ async def test_payload_round_trip_preserves_published_at():
     assert serialize_idx != -1, "coverage serialization must include published_at"
     rehydrate_idx = src.find('cov_entry.get("published_at")')
     assert rehydrate_idx != -1, "publisher-stage rehydration must read published_at"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contradiction_descriptions_reach_validator_once():
+    """The incremental contradiction path appended across runs, so the table
+    held the same description several times — one production story carried
+    the identical actor mismatch three times in a single cell. Each
+    relationship must be offered to the validator once."""
+    from app.models.models import StoryContradiction
+
+    articles, events, sources, src_a, src_b = _story()
+    service = SourceComparisonService()
+    session = _RecordingSession()
+    captured: list[str] = []
+
+    dup = "heraldscotland.com and HuffPost disagree on the aid actors."
+    contras = [
+        StoryContradiction(
+            story_id=uuid.uuid4(),
+            fact_type="actor",
+            description=dup,
+            source_attribution={str(src_a.id): "x", str(src_b.id): "y"},
+        )
+        for _ in range(3)
+    ]
+
+    async def capture(
+        *, src_name, unique_summary, missing_summary, contradictions_summary, context
+    ):
+        captured.append(contradictions_summary)
+        return SourceComparisonResolution(focus_area="F.")
+
+    with patch.object(service, "_analyze_with_llm", side_effect=capture):
+        await service.compare_sources_and_save(
+            story_id=uuid.uuid4(),
+            session=session,
+            articles=articles,
+            article_events=events,
+            sources_list=sources,
+            precomputed_contradictions=contras,
+        )
+
+    for summary in captured:
+        assert summary.count(dup) == 1, f"duplicate offered to validator: {summary!r}"

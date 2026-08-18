@@ -210,6 +210,7 @@ confirmed facts reach the user**.
 | # | Fix | Where |
 |---|---|---|
 | 1 | Normalization + canonical-entity resolution before set-difference; shared by comparison and contradiction candidates | `app/services/fact_normalization.py` |
+| 1b | Token-subset and spelling-drift tiers, added after replaying a second production story (below) showed plain normalization caught too little | same module |
 | 2 | Prompt reframed as validator (v3.0.0): reject case variants / aliases / paraphrases / subsets, `rejected_candidates` recorded for audit | `source_comparison.yaml`, new response schema |
 | 3 | Fail closed: no validator → existing rows untouched, nothing published; counted by `newsiq_comparison_unavailable_total`. Deterministic fallback deleted | `source_comparison_service.py` |
 | 5 | `published_at` = the source's article publish time, carried through all three writers (service, synthesis payload round-trip, admin republish) | service + `story_synthesis_service.py` + `admin.py` |
@@ -225,3 +226,55 @@ Tracked for a follow-up.
 
 The Gemini-only chain that starved this stage's validator was already fixed in
 #136 (Bedrock fallbacks on all four affected stages).
+
+---
+
+## Second case study: the "dimaagi Naxals" story (2026-08-18)
+
+A six-source story (`65623ccf…`) surfaced the same defects at larger scale and
+was used to *measure* the fix rather than assume it. Its production event data
+was replayed through the pipeline layers.
+
+**Where each false difference must die** (the ownership that the code now
+implements):
+
+| Example from the story | Owner | Deterministic? |
+|---|---|---|
+| `Dimaagi Naxals` vs `dimagi Naxals` | text tier (spelling drift, no-digit fuzzy ≥0.9) | ✅ |
+| `Red Fort, Delhi, India` vs `Red Fort, New Delhi, India` | text tier (token subset) | ✅ |
+| `dimaagi Naxals` vs `ideological Naxals (dimaagi Naxals)` | text tier (containment) | ✅ |
+| `PM Modi` vs `Narendra Modi` | canonical entity layer; validator as backstop | needs entity linking |
+| `Government of India` vs `Indian Government` vs `BJP-led government` | validator (genuine scope semantics) | no — and should not be |
+
+Guard cases verified not to merge: `north korea`/`south korea`, `15 dead`/
+`50 dead` (0.86 on the same fuzzy scale — digits opt out entirely),
+`US`/`USA Today`, `Lalit Modi`/`Narendra Modi`.
+
+**Measured on the story's real event sets:** unique/missing candidates
+203 → 178; pairwise contradiction candidates **18 → 11**. The remainder is
+carried by the canonical layer and the validator — which is the designed
+division of labour, not a shortfall: a text tier that guessed at person
+aliases would eventually merge different people.
+
+**Two further defects this story exposed, both fixed:**
+
+* `article_entities` had **zero rows** for these articles — entity linking was
+  itself quota-starved (230 calls / 5 successes in the audit window), so the
+  canonical resolver had nothing to resolve. The #136 Bedrock fallbacks are
+  what make this layer start functioning; until linking coverage recovers, the
+  validator carries person aliases.
+* The same contradiction appeared **three times in a single cell**: the
+  incremental contradiction path appends across runs without consulting the
+  table. It now skips source-pairs that already have a stored contradiction,
+  and the comparison service deduplicates descriptions before the validator
+  sees them.
+
+**Prompt invariants added (v3.0.0):** absence of a statement is an omission,
+never a contradiction — a contradiction requires claims that cannot both be
+true; and each genuine difference is reported once, merged across sources.
+
+**Still open (product-level, part of deferred fix 4):** the fact-centric
+presentation — shared facts / source-specific additions / confirmed
+contradictions, with "No confirmed factual contradictions detected" as an
+honest empty state — and surfacing entity normalization groupings in the
+observability UI rather than the story page.

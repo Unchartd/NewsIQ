@@ -511,6 +511,20 @@ class ContradictionService:
         validated_contradictions = []
         seen_pairs = set()
 
+        # This path only appends, so without checking the table it re-adds the
+        # same source-pair contradiction on every incremental run — production
+        # stories accumulated the identical description three times over.
+        existing_res = await session.execute(
+            select(StoryContradiction.fact_type, StoryContradiction.source_attribution).where(
+                StoryContradiction.story_id == story_id
+            )
+        )
+        for fact_type, attribution in existing_res.all():
+            for s1 in attribution or {}:
+                for s2 in attribution or {}:
+                    if s1 != s2:
+                        seen_pairs.add((fact_type, s1, s2))
+
         for cand in candidates:
             pair_key = (cand["fact_type"], cand["src1_id"], cand["src2_id"])
             if pair_key in seen_pairs:

@@ -126,3 +126,42 @@ def test_genuine_numeric_disagreement_conflicts():
 def test_non_numeric_values_compare_normalized():
     assert not numbers_conflict("Two Dozen", "two dozen")
     assert numbers_conflict("two dozen", "three dozen")
+
+
+# ── The "dimaagi Naxals" story (6 sources, replayed from production) ─────────
+# Each example is owned by a specific layer; the text tier takes exactly the
+# ones that need no identity knowledge or semantics.
+
+
+def test_alternative_geographic_representations_merge():
+    """'Red Fort, Delhi, India' vs 'Red Fort, New Delhi, India': no substring
+    relationship, but one word set contains the other — same place."""
+    assert facts_equivalent("Red Fort, Delhi, India", "Red Fort, New Delhi, India")
+
+
+def test_transliteration_spelling_drift_merges():
+    """'Dimaagi' vs 'dimagi' is one Hindi word romanized two ways."""
+    assert facts_equivalent("Dimaagi Naxals", "dimagi Naxals")
+    assert facts_equivalent(
+        "ideological Naxalism (dimagi Naxalism)", "ideological Naxalism (dimaagi Naxalism)"
+    )
+
+
+def test_person_aliases_are_not_the_text_tiers_call():
+    """'PM Modi' vs 'Narendra Modi' is identity knowledge — the canonical
+    entity layer and validator own it. A text tier that guessed would merge
+    'Lalit Modi' into 'Narendra Modi' eventually."""
+    assert not facts_equivalent("PM Modi", "Narendra Modi")
+    assert not facts_equivalent("Lalit Modi", "Narendra Modi")
+
+
+def test_fuzzy_tier_never_touches_numeric_facts():
+    """'15 dead' vs '50 dead' scores 0.86 on SequenceMatcher — close enough
+    to be dangerous, which is why digits opt out of the fuzzy tier."""
+    assert not facts_equivalent("15 dead", "50 dead")
+    assert not facts_equivalent("2 PM", "3 PM")
+
+
+def test_fuzzy_tier_keeps_near_miss_entities_apart():
+    assert not facts_equivalent("north korea", "south korea")
+    assert not facts_equivalent("Intellectual Naxals", "Intellectual critics")

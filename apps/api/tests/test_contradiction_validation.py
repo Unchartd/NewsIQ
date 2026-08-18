@@ -338,3 +338,72 @@ async def test_cache_key_excludes_story_context():
     assert len(seen) == 2
     assert seen[0] == seen[1], f"cache key varies with story context: {seen}"
     assert all("x" * 20 not in part and "y" * 20 not in part for part in seen[0])
+
+
+# ── 5. Incremental runs must not re-add existing contradictions ──────────────
+
+
+@pytest.mark.asyncio
+async def test_incremental_path_skips_pairs_already_in_the_table():
+    """detect_and_save_contradictions_incremental only appends, so without
+    consulting the table it re-added the same source-pair contradiction on
+    every run — production stories accumulated the identical description
+    three times over."""
+    from unittest.mock import MagicMock
+
+    from app.models.models import Article as ArticleModel
+    from app.models.models import ArticleEvent as ArticleEventModel
+
+    story_id = uuid.uuid4()
+    src_new, src_old = uuid.uuid4(), uuid.uuid4()
+    new_article = ArticleModel(id=uuid.uuid4(), source_id=src_new, title="new")
+    old_article = ArticleModel(id=uuid.uuid4(), source_id=src_old, title="old")
+
+    new_evt = ArticleEventModel(article_id=new_article.id, actors=["Russia"], targets=None)
+    old_evt = ArticleEventModel(article_id=old_article.id, actors=["Ukraine"], targets=None)
+
+    service = ContradictionService()
+    session = MagicMock()
+    added: list = []
+    session.add = added.append
+
+    async def flush():
+        return None
+
+    session.flush = flush
+    session.commit = flush
+
+    async def execute(stmt):
+        stmt_str = str(stmt).lower()
+        res = MagicMock()
+        if "story_contradictions" in stmt_str:
+            # The actor pair already has a validated contradiction.
+            res.all.return_value = [
+                ("actor", {str(src_new): "['Russia']", str(src_old): "['Ukraine']"})
+            ]
+        elif "from articles" in stmt_str:
+            res.all.return_value = [(old_article, old_evt)]
+        elif "article_events" in stmt_str:
+            res.scalars.return_value.all.return_value = [new_evt]
+        elif "sources" in stmt_str:
+            res.all.return_value = [(src_new, "New Source"), (src_old, "Old Source")]
+        return res
+
+    session.execute = execute
+
+    validator = AsyncMock(
+        return_value=ContradictionResolution(
+            is_contradiction=True, description="dup", confidence=0.9
+        )
+    )
+    with patch.object(service, "_validate_with_llm", validator):
+        saved = await service.detect_and_save_contradictions_incremental(
+            story_id=story_id,
+            new_article=new_article,
+            existing_articles=[old_article],
+            session=session,
+        )
+
+    assert saved == [], "an already-recorded pair must not be re-validated or re-added"
+    assert added == []
+    validator.assert_not_awaited()
