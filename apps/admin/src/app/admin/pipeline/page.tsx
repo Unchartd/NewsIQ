@@ -1404,6 +1404,12 @@ export default function PipelinePage() {
               refetch();
               refetchPaused();
               refetchHistory();
+              // The header cards (total runs, tokens, LLM cost) and the stage
+              // detail panel were left out, so Refresh visibly did nothing to
+              // the numbers an operator is most likely looking at when they
+              // press it — they only moved on their own 15s timer.
+              queryClient.invalidateQueries({ queryKey: ["metrics-summary"] });
+              queryClient.invalidateQueries({ queryKey: ["stage-details"] });
             }}
             disabled={isLoading}
             className="flex items-center gap-2 px-3 py-2 rounded-xl glass border border-slate-850 text-xs text-slate-400 hover:text-slate-200 transition-all"

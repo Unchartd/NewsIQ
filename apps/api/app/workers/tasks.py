@@ -216,6 +216,24 @@ def _record_pause_state(reason: str) -> None:
 
 
 async def is_pipeline_paused() -> bool:
+    """Whether an operator- or quota-initiated pause is in effect.
+
+    Every task that spends money or advances the pipeline must consult this.
+    The discovery and crawl tasks did not, which made "Pause Pipeline" a
+    misleading control: it stopped ingestion, embedding, extraction and
+    clustering while the billed path kept running — crawling alone was 6,803
+    of one 24h window's ~11,500 stage runs, plus 1,848 discovery searches.
+
+    Deliberately NOT gated: observability (metric collection, aggregation,
+    OTel export), recovery and cleanup (stuck-run reaping, stale-article
+    retirement, discovery-task cleanup, story-lifecycle evaluation), and
+    operator-initiated actions (story replay). Pausing those would blind or
+    degrade the system precisely when someone has stopped it to look at it.
+
+    Callers guard before touching any row, so a skipped discovery or crawl
+    leaves its task PENDING and poll_discovery_retries_task re-dispatches it
+    once the pipeline resumes.
+    """
     try:
         from app.services.cache_service import cache_service
 
@@ -1410,6 +1428,10 @@ def dispatch_story_candidate_task(
     logger.info("Celery task: Dispatching StoryCandidate search for %s", story_candidate_id_str)
 
     async def _run(span=None):
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping story-candidate dispatch.")
+            return
+
         import hashlib
         from datetime import UTC, datetime
         from urllib.parse import urlparse
@@ -1739,6 +1761,10 @@ def discovery_search_task(
     logger.info("Celery task: Running search discovery for Task %s", discovery_task_id_str)
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping discovery search.")
+            return
+
         import hashlib
         from datetime import UTC, datetime, timedelta
 
@@ -1999,6 +2025,10 @@ def discovery_crawl_task(
             span.set_metadata({k: v for k, v in fields.items() if v is not None})
 
     async def _run(span=None):
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping discovered-URL crawl.")
+            return
+
         from datetime import UTC, datetime, timedelta
         from urllib.parse import urlparse
 
@@ -2401,6 +2431,10 @@ def poll_discovery_retries_task() -> dict[str, int]:
     logger.info("Celery task: Polling discovery retries.")
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping discovery retry polling.")
+            return {"searches": 0, "crawls": 0}
+
         from datetime import UTC, datetime
 
         from sqlalchemy import select
@@ -2534,6 +2568,10 @@ def poll_story_candidate_timeouts_task() -> dict[str, int]:
     logger.debug("Celery task: Polling StoryCandidate timeouts.")
 
     async def _run() -> dict[str, int]:
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping story-candidate timeout polling.")
+            return {"requeued": 0}
+
         from datetime import UTC, datetime
 
         from sqlalchemy import select
@@ -2585,6 +2623,10 @@ def discovery_grouping_task() -> None:
     logger.info("Celery task: Running discovery grouping and promotion.")
 
     async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping discovery grouping.")
+            return
+
         try:
             from app.services.pipeline_coordinator import discovery_manager
         except ImportError:
