@@ -34,6 +34,11 @@ routing:
   preferred_model: "gemini-3.5-flash-lite"
   fallback_models:
     - "gemini-3.1-flash-lite"
+    # Both Gemini models draw on the same free-tier allowance, so a
+    # Gemini-only chain has no escape once it is spent. Bedrock is
+    # billed separately and answers when Gemini cannot.
+    - "qwen.qwen3-vl-235b-a22b-instruct"
+    - "deepseek.v3.2"
   temperature: 0.1
   max_tokens: 4096
   timeout_seconds: 45.0
