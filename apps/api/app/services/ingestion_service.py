@@ -586,15 +586,18 @@ class IngestionService:
             # Race condition: another worker won the UniqueConstraint race.
             # Re-query the winner and attach this source to it.
             #
-            # No session.rollback() here: the begin_nested() savepoint has
-            # already rolled the failed INSERT back, and a full rollback
-            # expires every instance in the session — including the Source the
-            # caller's loop is still iterating with, whose next attribute
-            # access then dies with MissingGreenlet.
+            # The full rollback is REQUIRED, savepoint or not: a failed flush
+            # puts the session in pending-rollback state and every statement
+            # after it raises PendingRollbackError until rollback() runs
+            # (measured in production when this rollback was briefly removed).
+            # Its side effect — expiring every instance, including the Source
+            # the caller's loop iterates with — is why the caller reads the
+            # Source's attributes into locals before the loop.
             logger.info(
                 "[StoryFirst] StoryCandidate race for query '%s' — re-querying winner.",
                 normalized_query,
             )
+            await session.rollback()
             try:
                 stmt = select(StoryCandidate).where(
                     StoryCandidate.query_hash == query_hash,
