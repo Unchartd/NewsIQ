@@ -86,15 +86,21 @@ correctly 46 times; the element swap is less error-prone.
 No "skip to content" affordance anywhere. With 9 `<nav>` blocks, a keyboard user
 tabs through the full navigation on every page load. **WCAG 2.4.1, Level A.**
 
-### A4. Heading structure — CONFIRMED
+### A4. Heading structure — ~~CONFIRMED~~ **WITHDRAWN**
 
-`digest/setup/page.tsx` renders **8** `<h1>` elements and
-`onboarding/page.tsx` renders **4**. These are step-based flows, so most are
-probably not simultaneously visible, but the document outline is wrong either
-way and screen-reader users navigating by heading get 8 "level 1" landmarks.
+> **This finding was wrong.** It counted `<h1>` occurrences in source, not
+> simultaneously rendered ones. Both `digest/setup` (8) and `onboarding` (4) gate
+> every step behind `step === "…"` conditionals, so exactly one `<h1>` is in the
+> DOM at any time. The document outline is correct and nothing needed changing.
+>
+> The original text hedged — "probably not simultaneously visible" — and then
+> listed it as a defect anyway. Counting source occurrences is not the same as
+> measuring rendered output, and the hedge should have been resolved before the
+> finding was raised.
 
-Separately, **zero `<article>` elements exist** in a news product. Story content
-is rendered in `<div>`s.
+Separately, and this one holds: **zero `<article>` elements existed** in a news
+product — story content was rendered in `<div>`s, leaving assistive tech and
+reader modes no way to identify where the story begins. Fixed on the story page.
 
 ### What is already right
 
