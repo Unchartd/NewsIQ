@@ -109,10 +109,16 @@ const CATEGORY_ROUTES: MetadataRoute.Sitemap = CATEGORIES.map((slug) => ({
  */
 async function fetchRecentStoryIds(): Promise<Array<{ id: string; headline: string; updatedAt: string }>> {
   try {
-    const res = await fetch(`${API_BASE_URL}/stories?limit=200&sort=updated_at`, {
+    // limit must respect the API's cap (le=100). This asked for 200, the API
+    // answered 422 on every request, and the catch below turned that into an
+    // empty list — so the sitemap silently carried zero story URLs.
+    const res = await fetch(`${API_BASE_URL}/stories?limit=100&sort=updated_at`, {
       next: { revalidate: 900 }, // Re-fetch every 15 minutes
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`sitemap: story fetch failed with HTTP ${res.status}`);
+      return [];
+    }
     const stories = await res.json();
     const list = Array.isArray(stories) ? stories : (stories?.items ?? []);
     return list.map((s: { id: string; headline?: string; updated_at?: string }) => ({
@@ -120,7 +126,8 @@ async function fetchRecentStoryIds(): Promise<Array<{ id: string; headline: stri
       headline: s.headline || "",
       updatedAt: s.updated_at || new Date().toISOString(),
     }));
-  } catch {
+  } catch (err) {
+    console.error("sitemap: story fetch threw", err);
     return [];
   }
 }

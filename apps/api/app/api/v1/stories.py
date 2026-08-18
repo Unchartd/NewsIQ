@@ -147,6 +147,15 @@ async def list_stories(
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve news stories with filtering, pagination, and sorting."""
+    # ISO timestamps with an offset ("...T00:00:00.000Z") parse as tz-aware,
+    # but the timestamp columns are naive UTC — asyncpg refuses to compare
+    # them and the request 500s. The news sitemap sends exactly that format,
+    # so every one of its requests failed and it rendered empty since launch.
+    # isinstance, not `is not None`: tests calling this function directly
+    # leave unpassed params as FastAPI Query sentinels.
+    if isinstance(after, datetime) and after.tzinfo is not None:
+        after = after.astimezone(UTC).replace(tzinfo=None)
+
     stmt = (
         select(Story)
         .options(
