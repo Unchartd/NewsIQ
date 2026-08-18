@@ -387,6 +387,15 @@ class AIGateway:
             chain = capability_router.get_model_route(model_name)
             level_name = "primary" if idx == 0 else "fallback" if idx == 1 else "lastFallback"
 
+            # A model whose quota is spent must abandon the rest of its chain,
+            # not just the rest of its attempts. MODEL_FALLBACKS lists three
+            # entries per Gemini model, all provider="gemini", and the request
+            # below sends `model_name` rather than route_cfg["model"] — so with
+            # a single Gemini key in the pool the three entries are the same
+            # key, the same model, three times. Breaking only the attempt loop
+            # left a 429'd model burning all three before moving on.
+            model_exhausted = False
+
             for client, api_key, route_cfg in chain:
                 provider_name = route_cfg["provider"]
 
@@ -654,10 +663,14 @@ class AIGateway:
                         # the chain reaches a model that can actually answer.
                         if isinstance(err, RateLimitError):
                             await mark_exhausted(model_name, str(err))
+                            model_exhausted = True
                             break
 
                         await asyncio.sleep(backoff)
                         backoff *= 2.0
+
+                if model_exhausted:
+                    break
 
         # Emit failed execution record (Phase 1)
         try:

@@ -15,8 +15,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from tenacity import retry, stop_after_attempt, wait_exponential
 
+from app.core.metrics import newsiq_contradiction_unvalidated_total
 from app.models.models import Article, ArticleEvent, Source, StoryArticle, StoryContradiction
 from app.schemas.synthesis_context import ArticleContext, EventContext
 
@@ -43,11 +43,6 @@ class ContradictionService:
     def __init__(self) -> None:
         pass
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=5),
-        reraise=False,
-    )
     async def _validate_with_llm(
         self,
         fact_type: str,
@@ -56,10 +51,18 @@ class ContradictionService:
         source1_name: str,
         source2_name: str,
         context: str,
-    ) -> ContradictionResolution:
-        """Call Gemini/OpenAI to verify if a candidate mismatch is a true contradiction.
+    ) -> ContradictionResolution | None:
+        """Verify that a candidate mismatch is a true contradiction.
 
-        Pipeline: cache check → Agno Agent → LLM Gateway fallback → heuristic fallback.
+        Pipeline: cache check → LLM Gateway → give up.
+
+        Returns None when the model could not be reached. The heuristics that
+        produce candidates are deliberately loose — disjoint actor sets, any
+        location string mismatch, a >10% numeric gap — and the LLM is the only
+        thing standing between a candidate and a published claim that two named
+        publishers contradict each other. There is no honest way to make that
+        judgement without it, so an unreachable model means "unknown", never
+        "contradiction".
         """
         from app.ai.prompts.repository import prompt_repository
         from app.services.pipeline_cache import pipeline_cache
@@ -69,9 +72,11 @@ class ContradictionService:
         prompt_version = prompt_tmpl.version
         model = prompt_repository.model_config("contradiction_detection").model
 
-        content_hash = pipeline_cache.composite_hash(
-            fact_type, str(val1), str(val2), context[:1000]
-        )
+        # Keyed on the fact pair alone. The story context used to be part of
+        # this hash, which meant the key changed every time any article joined
+        # the story and the cache never hit — the same "15 dead vs 50 dead"
+        # pair was re-validated from scratch on every synthesis run.
+        content_hash = pipeline_cache.composite_hash(fact_type, str(val1), str(val2))
 
         cached = await pipeline_cache.get(
             stage="contradiction_detection",
@@ -86,68 +91,51 @@ class ContradictionService:
             except Exception as e:
                 logger.warning("Failed to deserialize cached contradiction: %s", e)
 
-        # ── Agno Agent (primary path) ─────────────────────────────────────────
+        # ── LLM Gateway ───────────────────────────────────────────────────────
+        # This used to try the Agno contradiction agent first and fall through
+        # to the gateway. Both resolve to GatewayModel(stage=
+        # "contradiction_detection"), so the "fallback" re-ran the same model
+        # chain with the same prompt — it could only ever add a second failure,
+        # and it doubled the call volume on the busiest stage in the pipeline.
         result: ContradictionResolution | None = None
         try:
-            from app.agents.contradiction_agent import check_contradiction
+            from app.ai.gateway import ai_gateway
 
-            agent_res = await check_contradiction(
-                fact_type=fact_type,
-                val1=str(val1),
-                val2=str(val2),
-                source1_name=source1_name,
-                source2_name=source2_name,
-                context=context,
-            )
-            result = ContradictionResolution(
-                is_contradiction=agent_res.contradiction,
-                description=agent_res.explanation,
-                confidence=agent_res.confidence,
-            )
-        except Exception as e:
-            logger.warning("Agno Contradiction Agent failed: %s. Falling back.", e)
+            prompt_variables = {
+                "fact_type": fact_type,
+                "val1": val1,
+                "val2": val2,
+                "source1_name": source1_name,
+                "source2_name": source2_name,
+                "context": context[:3000],
+            }
 
-        # ── LLM Gateway fallback ──────────────────────────────────────────────
+            response = await ai_gateway.generate_stage(
+                stage="contradiction_detection",
+                prompt_variables=prompt_variables,
+                schema=ContradictionResolution,
+            )
+
+            if response.parsed:
+                result = response.parsed
+            else:
+                try:
+                    import json
+
+                    data = json.loads(response.content)
+                    result = ContradictionResolution(**data)
+                except Exception:
+                    logger.warning(
+                        "Contradiction validator returned unparseable content for "
+                        "fact_type=%s; treating as unvalidated.",
+                        fact_type,
+                    )
+        except Exception as exc:
+            logger.warning("AI Gateway contradiction verification failed: %s", exc)
+
         if result is None:
-            try:
-                from app.ai.gateway import ai_gateway
-
-                prompt_variables = {
-                    "fact_type": fact_type,
-                    "val1": val1,
-                    "val2": val2,
-                    "source1_name": source1_name,
-                    "source2_name": source2_name,
-                    "context": context[:3000],
-                }
-
-                response = await ai_gateway.generate_stage(
-                    stage="contradiction_detection",
-                    prompt_variables=prompt_variables,
-                    schema=ContradictionResolution,
-                )
-
-                if response.parsed:
-                    result = response.parsed
-                else:
-                    try:
-                        import json
-
-                        data = json.loads(response.content)
-                        result = ContradictionResolution(**data)
-                    except Exception:
-                        pass
-            except Exception as exc:
-                logger.warning("AI Gateway contradiction verification failed: %s", exc)
-
-        # ── Heuristic fallback ────────────────────────────────────────────────
-        if result is None:
-            desc = f"Mismatch on {fact_type}: {source1_name} reports '{val1}', while {source2_name} reports '{val2}'."
-            result = ContradictionResolution(
-                is_contradiction=True,
-                description=desc,
-                confidence=0.70,
-            )
+            newsiq_contradiction_unvalidated_total.labels(fact_type=fact_type).inc()
+            return None
 
         # ── Cache store ───────────────────────────────────────────────────────
         try:
@@ -343,6 +331,8 @@ class ContradictionService:
         # Deduplicate candidates on fact_type + src1_id + src2_id to keep DB clean
         seen_pairs = set()
 
+        unvalidated = 0
+
         for cand in candidates:
             pair_key = (cand["fact_type"], cand["src1_id"], cand["src2_id"])
             if pair_key in seen_pairs:
@@ -359,6 +349,10 @@ class ContradictionService:
                 context=full_context,
             )
 
+            if res_resolution is None:
+                unvalidated += 1
+                continue
+
             if res_resolution.is_contradiction:
                 contradiction = StoryContradiction(
                     story_id=story_id,
@@ -372,7 +366,21 @@ class ContradictionService:
                 )
                 validated_contradictions.append(contradiction)
 
-        # Delete existing contradictions for this story to avoid duplication or stale data
+        # This rewrites the story's contradictions wholesale, so it is only safe
+        # when every candidate got an answer. If the validator was unreachable
+        # for some of them, rewriting would delete contradictions confirmed by
+        # an earlier run and replace them with a partial set — an outage would
+        # silently erase good data. Leave the existing rows alone instead.
+        if unvalidated:
+            logger.warning(
+                "Story %s: %d of %d contradiction candidates could not be validated; "
+                "leaving existing contradictions untouched.",
+                story_id,
+                unvalidated,
+                len(seen_pairs),
+            )
+            return []
+
         from sqlalchemy import delete
 
         await session.execute(
@@ -521,6 +529,11 @@ class ContradictionService:
                 source2_name=str(cand["src2_name"]),
                 context=full_context,
             )
+
+            # Unlike the full pass this path only appends, so an unvalidated
+            # candidate can simply be dropped without risking existing rows.
+            if res_resolution is None:
+                continue
 
             if res_resolution.is_contradiction:
                 contradiction = StoryContradiction(

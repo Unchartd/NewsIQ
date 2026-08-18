@@ -483,6 +483,16 @@ newsiq_crawler_provider_circuit_open_total = Counter(
 )
 
 
+# A candidate contradiction that no model could adjudicate is discarded rather
+# than published. That is the safe outcome, but it is still lost coverage, so
+# it needs to be visible instead of silent.
+newsiq_contradiction_unvalidated_total = Counter(
+    "newsiq_contradiction_unvalidated_total",
+    "Candidate contradictions dropped because the validator was unreachable.",
+    ["fact_type"],
+)
+
+
 # Local crawler deliberately skipped because the domain has never yielded to
 # it. Each increment is roughly 105s of timeouts avoided; a sudden drop means
 # domains started answering locally again.

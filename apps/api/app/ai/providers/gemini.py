@@ -85,14 +85,15 @@ class GeminiProvider(AIProvider):
         """Map SDK errors to custom gateway exceptions."""
         err_msg = str(e)
         err_lower = err_msg.lower()
+        # Rate limiting is classified before authentication. These branches use
+        # bare substring tests, and a quota payload readily contains "403"
+        # somewhere in its limit values or quota URLs — so the auth branch was
+        # swallowing exhaustion errors. 414 traces in a 15h window carried
+        # "Gemini authentication failed: 429 RESOURCE_EXHAUSTED", and because
+        # AuthenticationError is not RateLimitError the gateway never marked
+        # the model exhausted and retried it with full backoff instead.
+        # "429" and "resource exhausted" are unambiguous; "403" is not.
         if (
-            "401" in err_lower
-            or "api key not valid" in err_lower
-            or "invalid api key" in err_lower
-            or "403" in err_lower
-        ):
-            return AuthenticationError(f"Gemini authentication failed: {err_msg}")
-        elif (
             "429" in err_lower
             or "rate limit" in err_lower
             or "quota" in err_lower
@@ -100,6 +101,13 @@ class GeminiProvider(AIProvider):
             or "too many requests" in err_lower
         ):
             return RateLimitError(f"Gemini rate limit exceeded: {err_msg}")
+        elif (
+            "401" in err_lower
+            or "api key not valid" in err_lower
+            or "invalid api key" in err_lower
+            or "403" in err_lower
+        ):
+            return AuthenticationError(f"Gemini authentication failed: {err_msg}")
         elif "timeout" in err_lower or "deadline exceeded" in err_lower:
             return TimeoutError(f"Gemini request timed out: {err_msg}")
         else:

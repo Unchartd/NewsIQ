@@ -422,11 +422,108 @@ code calls.
 
 ---
 
-### P1-5 — 92% of LLM traces have no token counts — CONFIRMED
+### P1-5 — 92% of LLM traces have no token counts — **CORRECTED, was mis-framed**
 
-`input_tokens = output_tokens = 0` on 15,910 of 17,333 rows. Providers that do
-not return usage are recorded as zero rather than unknown, so token and cost
-analytics silently under-report instead of flagging the gap.
+The original finding read: "`input_tokens = output_tokens = 0` on 15,910 of
+17,333 rows. Providers that do not return usage are recorded as zero rather than
+unknown." That diagnosis was wrong, and the number was measuring something else
+entirely.
+
+Breaking the same query down by provider and status shows token capture is
+working:
+
+```text
+provider  model                              n      with_tok        success
+gemini    gemini-3.5-flash-lite          17779    438 ( 2.5%)          438
+gemini    gemini-3.1-flash-lite          12391    208 ( 1.7%)          208
+bedrock   qwen.qwen3-vl-235b-a22b-instr    180    176 (97.8%)          152
+bedrock   deepseek.v3.2                     19     19 (100.0%)           1
+```
+
+`with_tok` equals `success` exactly for both Gemini models. Tokens are captured
+on every call that returns a response; the rows without them are **failed**
+calls, which legitimately have no usage to report.
+
+The real finding is what that failure rate implies: **29,524 of 30,170 Gemini
+calls returned RESOURCE_EXHAUSTED in 15 hours.** Token coverage was tracking
+quota exhaustion, not a telemetry defect. Cost coverage will follow the success
+rate up on its own once the calls succeed.
+
+That investigation is what surfaced P0-6 below, which is a considerably more
+serious problem than the one this finding claimed to be about.
+
+---
+
+### P0-6 — The contradiction validator failed open; 94% of published contradictions were never adjudicated — CONFIRMED
+
+`ContradictionService` derives candidate contradictions from deliberately loose
+heuristics — disjoint actor sets, any location string that is not a substring of
+the other, a >10% numeric gap — and its docstring states that the LLM exists "to
+ensure high precision (gating false positives)".
+
+That gate failed **open**. When no model could be reached it returned
+`is_contradiction=True, confidence=0.70` with the raw candidate as the
+description. Because Gemini was exhausted for most of the window, the gate was
+almost never actually closed:
+
+```text
+story_contradictions total : 3988
+  confidence exactly 0.70  : 3748  (94.0%)
+  description LIKE 'Mismatch on %' : 3748
+  both (fabrication signature)     : 3748   ← zero disagreement
+stories affected                   :  178
+stories keeping >=1 validated row  :   31
+```
+
+These are user-facing. They render on the story page
+(`story-detail-client.tsx:694`) and are emitted into **JSON-LD**
+(`jsonld.ts:378`), so the product was publishing machine-readable claims that
+two named publishers contradicted each other, on evidence no model had seen.
+The descriptions are raw Python reprs:
+
+```text
+Mismatch on target: Business Standard reports '['Accused individuals
+(8 named + unidentified)', ...
+```
+
+Three compounding causes, all fixed:
+
+1. **Fail-open fallback** — now returns `None`, and an unvalidated candidate is
+   dropped rather than published.
+2. **Wholesale rewrite on partial results** — `detect_and_save_contradictions`
+   deleted the story's contradictions before re-inserting, so an outage erased
+   rows a healthy run had confirmed. It now leaves them alone unless every
+   candidate was answered.
+3. **Quota amplification** — see P0-7.
+
+Remediation for the existing rows:
+`python -m app.scripts.purge_unvalidated_contradictions` (dry run by default).
+
+---
+
+### P0-7 — One logical LLM call became twelve against an exhausted quota — CONFIRMED
+
+`contradiction_detection` alone made **26,152 of the 30,170** Gemini calls in
+the window, for 486 successes. Three independent multipliers:
+
+| # | Cause | Multiplier |
+|---|---|---|
+| 1 | Agno agent path and gateway path both resolve to `stage="contradiction_detection"` — the "fallback" re-ran the same models with the same prompt | ×2 |
+| 2 | `MODEL_FALLBACKS` lists 3 entries per Gemini model, all `provider="gemini"`; the gateway sends `model_name` rather than `route_cfg["model"]`, and the pool holds **one** Gemini key — so it is the same key, same model, three times. `break` on `RateLimitError` left the attempt loop but not the chain | ×3 |
+| 3 | Both Gemini models draw on one free-tier allowance, and four stages declared Gemini-only chains — no escape once spent | no escape |
+
+A fourth defect kept the circuit breaker from firing at all for some calls:
+`GeminiProvider._handle_exception` tested the auth branch before the rate-limit
+branch using bare substring matches, so a quota payload containing `"403"`
+anywhere was classified `AuthenticationError`. That is not `RateLimitError`, so
+`mark_exhausted` never ran and the model was retried with full backoff. 414
+traces read `"Gemini authentication failed: 429 RESOURCE_EXHAUSTED"`.
+
+Separately, the pipeline cache keyed on `context[:1000]` — the whole story
+context — so the key changed whenever any article joined the story and the same
+fact pair was re-validated from scratch on every synthesis run.
+
+All fixed; `test_quota_amplification.py` pins each.
 
 ---
 

@@ -133,3 +133,15 @@ The frontend's problem is not dead code. It is a 2,195-line monolith
 **Do not remove** `error_logs`, `token_usage`, or `cost_records` until the
 corresponding gaps (durable logs, token capture, cost) are resolved — they are the
 natural destinations for those fixes.
+
+---
+
+## 7. Newly dead after the P0-6 / P0-7 fixes
+
+| Item | State | Action |
+|---|---|---|
+| `check_contradiction` (`app/agents/contradiction_agent.py:39`) | Its only production caller was the duplicate chain removed from `ContradictionService`. Now referenced solely by its own module, `agent_registry`'s `"contradiction"` branch, and `test_agents.py` | Remove together with the registry branch and its test, once the fix has run in production long enough to be sure the gateway path is sufficient |
+
+Deliberately left in place for now: deleting it would widen a correctness fix
+into a refactor of the agent registry, and the registry branch is the kind of
+thing another caller could reasonably pick up.
