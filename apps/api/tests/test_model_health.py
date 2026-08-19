@@ -68,7 +68,10 @@ def test_gateway_skips_exhausted_models_and_stops_retrying_them():
     assert "mark_exhausted" in src, "a rate-limited model must be recorded"
 
     rate_limit_idx = src.index("if isinstance(err, RateLimitError):")
-    following = src[rate_limit_idx : rate_limit_idx + 300]
+    # Read to the end of the handler rather than a fixed character budget: a
+    # comment inside it previously pushed the `break` past a 300-char window
+    # and failed this test while the behaviour was unchanged.
+    following = src[rate_limit_idx : src.index("await asyncio.sleep(backoff)", rate_limit_idx)]
     assert "break" in following, (
         "a spent quota does not refill during backoff — the model must be abandoned, "
         "not retried three times"

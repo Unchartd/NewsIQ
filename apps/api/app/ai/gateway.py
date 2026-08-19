@@ -31,7 +31,7 @@ from app.ai.metrics.telemetry import (
     newsiq_prompt_tokens_total,
     newsiq_provider_fallback_executions_total,
 )
-from app.ai.model_health import filter_healthy, mark_exhausted
+from app.ai.model_health import filter_healthy, is_exhausted, mark_exhausted
 from app.ai.prompts.registry import prompt_registry
 from app.ai.router.capability_router import capability_router
 from app.core.trace import article_id_ctx, story_id_ctx, track_llm_call
@@ -387,17 +387,31 @@ class AIGateway:
             chain = capability_router.get_model_route(model_name)
             level_name = "primary" if idx == 0 else "fallback" if idx == 1 else "lastFallback"
 
-            # A model whose quota is spent must abandon the rest of its chain,
-            # not just the rest of its attempts. MODEL_FALLBACKS lists three
-            # entries per Gemini model, all provider="gemini", and the request
-            # below sends `model_name` rather than route_cfg["model"] — so with
-            # a single Gemini key in the pool the three entries are the same
-            # key, the same model, three times. Breaking only the attempt loop
-            # left a 429'd model burning all three before moving on.
-            model_exhausted = False
-
             for client, api_key, route_cfg in chain:
                 provider_name = route_cfg["provider"]
+                # Honour the route's own model. This used to send the manifest
+                # model name to whatever provider the route named, which meant
+                # a MODEL_FALLBACKS entry could only ever point at the same
+                # provider — adding a Bedrock route to a Gemini model would
+                # have POSTed "gemini-3.1-flash-lite" to Bedrock. That
+                # constraint is why the Gemini chains were three identical
+                # same-provider entries, and why every agent-driven stage
+                # (which routes purely through MODEL_FALLBACKS) had no
+                # cross-provider escape at all.
+                route_model = route_cfg.get("model") or model_name
+
+                # Skip a route whose model is already known out of quota.
+                # This replaces the previous "abandon the whole chain on a
+                # 429": that was right when every entry was the same Gemini
+                # model, and wrong now that a chain can end in Bedrock.
+                if await is_exhausted(route_model):
+                    logger.info(
+                        "Skipping %s/%s for stage=%s: model is rate-limited.",
+                        provider_name,
+                        route_model,
+                        stage,
+                    )
+                    continue
 
                 newsiq_provider_fallback_executions_total.labels(
                     provider=provider_name, stage=stage, level=level_name
@@ -410,7 +424,7 @@ class AIGateway:
                     schema_repaired = False
                     try:
                         req = GatewayRequest(
-                            model=model_name,
+                            model=route_model,
                             messages=messages,
                             temperature=cfg.temperature,
                             response_format=resolved_schema,
@@ -431,7 +445,7 @@ class AIGateway:
 
                         async with track_llm_call(
                             provider=provider_name,
-                            model=model_name,
+                            model=route_model,
                             stage=stage,
                             system_prompt=system_prompt,
                             user_prompt=user_prompt,
@@ -459,7 +473,7 @@ class AIGateway:
                                     schema_repaired = True
                                 except (ValueError, PydanticValidationError) as val_err:
                                     newsiq_ai_gateway_validation_failures_total.labels(
-                                        capability=stage, model=model_name
+                                        capability=stage, model=route_model
                                     ).inc()
                                     raise ValidationError(
                                         f"[{stage}] Response validation failed: {val_err}"
@@ -496,12 +510,12 @@ class AIGateway:
 
                         newsiq_ai_gateway_calls_total.labels(
                             provider=provider_name,
-                            model=model_name,
+                            model=route_model,
                             capability=stage,
                             status="success",
                         ).inc()
                         newsiq_ai_gateway_cost_usd.labels(
-                            provider=provider_name, model=model_name, capability=stage
+                            provider=provider_name, model=route_model, capability=stage
                         ).inc(cost)
 
                         capability_router.health_trackers[provider_name].report_success()
@@ -510,7 +524,7 @@ class AIGateway:
                         if manifest.is_cacheable():
                             await ai_cache.set(
                                 capability=stage,
-                                model=model_name,
+                                model=route_model,
                                 prompt_version=manifest.version,
                                 prompt_text=prompt_text,
                                 response_data={
@@ -569,7 +583,7 @@ class AIGateway:
                                 execution_id=uuid.uuid4(),
                                 stage=stage,
                                 provider=provider_name,
-                                model=model_name,
+                                model=route_model,
                                 capability=cfg.model,
                                 prompt_name=stage,
                                 prompt_version=manifest.version,
@@ -602,7 +616,7 @@ class AIGateway:
                         last_error = ve
                         newsiq_ai_gateway_retries_total.labels(
                             provider=provider_name,
-                            model=model_name,
+                            model=route_model,
                             capability=stage,
                             reason="validation_failure",
                         ).inc()
@@ -642,17 +656,17 @@ class AIGateway:
                             )
                         newsiq_ai_gateway_calls_total.labels(
                             provider=provider_name,
-                            model=model_name,
+                            model=route_model,
                             capability=stage,
                             status="error",
                         ).inc()
                         if isinstance(err, TimeoutError):
                             newsiq_ai_gateway_timeouts_total.labels(
-                                provider=provider_name, model=model_name, capability=stage
+                                provider=provider_name, model=route_model, capability=stage
                             ).inc()
                         newsiq_ai_gateway_retries_total.labels(
                             provider=provider_name,
-                            model=model_name,
+                            model=route_model,
                             capability=stage,
                             reason=err.__class__.__name__,
                         ).inc()
@@ -662,15 +676,14 @@ class AIGateway:
                         # Record the model as exhausted and abandon it now, so
                         # the chain reaches a model that can actually answer.
                         if isinstance(err, RateLimitError):
-                            await mark_exhausted(model_name, str(err))
-                            model_exhausted = True
+                            # Mark the model that actually rate-limited, not the
+                            # manifest's preferred one — with heterogeneous
+                            # chains they are frequently different.
+                            await mark_exhausted(route_model, str(err))
                             break
 
                         await asyncio.sleep(backoff)
                         backoff *= 2.0
-
-                if model_exhausted:
-                    break
 
         # Emit failed execution record (Phase 1)
         try:
