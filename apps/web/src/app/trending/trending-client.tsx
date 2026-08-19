@@ -12,11 +12,14 @@ import type { Story } from "@/types";
 import Link from "next/link";
 import { getStoryRoute } from "@/lib/metadata";
 
+// Each tab must map to a distinct window the API actually honours. The
+// previous set had "Today" and "24 hours" as separate tabs that both did
+// nothing: activeTab only varied the React Query cache key and was never
+// sent, so every tab refired the identical request.
 const TIME_TABS = [
-  { slug: "today", name: "Today" },
-  { slug: "24h", name: "24 hours" },
-  { slug: "7d", name: "7 days" },
-  { slug: "30d", name: "30 days" },
+  { slug: "24h", name: "24 hours", hours: 24 },
+  { slug: "48h", name: "48 hours", hours: 48 },
+  { slug: "7d", name: "7 days", hours: 168 },
 ];
 
 function formatTimeAgo(dateString: string): string {
@@ -39,14 +42,17 @@ function formatTimeAgo(dateString: string): string {
 }
 
 export default function TrendingPage() {
-  const [activeTab, setActiveTab] = useState("today");
+  const [activeTab, setActiveTab] = useState("48h");
 
   const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
     queryKey: ["trending-stories", activeTab],
     queryFn: async () => {
+      const windowHours =
+        TIME_TABS.find((t) => t.slug === activeTab)?.hours ?? 48;
       const response = await apiClient.get("/stories", {
         params: {
           trending: "true",
+          window_hours: windowHours,
           limit: 15,
         },
       });
@@ -104,7 +110,7 @@ export default function TrendingPage() {
           Trending Stories
         </h1>
         <p style={{ fontSize: 14, color: "var(--ink3)" }}>
-          Ranked by source count, recency, and engagement velocity
+          Ranked by source breadth, recency, and how fast new coverage is arriving
         </p>
       </div>
 

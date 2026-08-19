@@ -152,6 +152,7 @@ function HomeContentInner() {
   // Deduplicate stories by ID to prevent duplicate items from rendering
   const uniqueStories = Array.from(new Map(allStories.map((s) => [s.id, s])).values());
   const hasStories = !isLoading && !error && uniqueStories.length > 0;
+  const topStory = hasStories ? uniqueStories.find((s) => s.is_top_story) : undefined;
 
   const handleCategorySelect = (slug: string) => {
     setCategory(slug);
@@ -177,17 +178,21 @@ function HomeContentInner() {
         />
       }
     >
-      {/* Breaking News Banner */}
-      {hasStories && (
+      {/* Top story banner — only when a story actually qualifies.
+          This used to render feed row 1 unconditionally, labelled BREAKING
+          with a hardcoded "Just now"; in production that was a 72.9-hour-old
+          story. The server decides (surfaced within 6h, 3+ publishers) and
+          no qualifying story means no banner. The time claim is gone: with
+          a ~72h median ingestion lag there is no honest one to make. */}
+      {topStory && (
         <BreakingBanner
-          text={`${uniqueStories[0].headline} — ${uniqueStories[0].source_count} sources covering`}
-          time="Just now"
-          onClick={() => router.push(getStoryRoute(uniqueStories[0]))}
+          text={`${topStory.headline} — ${topStory.source_count} sources covering`}
+          onClick={() => router.push(getStoryRoute(topStory))}
         />
       )}
 
       {/* Section label — fixed height, never changes */}
-      <div className="slbl" style={{ marginTop: hasStories ? 12 : 24 }}>
+      <div className="slbl" style={{ marginTop: topStory ? 12 : 24 }}>
         {category === "personalized" ? "Your Personalized Feed" : "Top Stories"}
       </div>
 
