@@ -139,6 +139,15 @@ class StoryListResponse(BaseModel):
         default_factory=list, description="URLs of logos for reporting sources"
     )
     story_status: str | None = "active"
+    is_top_story: bool = Field(
+        False,
+        description=(
+            "Surfaced by us within the last 6h with 3+ independent publishers "
+            "covering it. Decided server-side so every client agrees. Not "
+            '"breaking": median ingestion lag is ~72h, so no story here is '
+            "fresh enough for that claim."
+        ),
+    )
     cluster_confidence: float | None = Field(
         None, description="Dynamic similarity confidence score of the story cluster"
     )

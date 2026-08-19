@@ -93,6 +93,8 @@ export interface Story {
   updated_at: string;
   article_count: number;
   source_count: number;
+  /** Server-decided: surfaced within 6h with 3+ publishers covering it. */
+  is_top_story?: boolean;
   tags: string[];
 }
 

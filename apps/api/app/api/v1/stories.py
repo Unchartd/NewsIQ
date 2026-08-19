@@ -2,10 +2,10 @@
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -51,6 +51,98 @@ from app.services.search_service import search_service
 router = APIRouter()
 
 
+# Only stories first seen inside this window are eligible for /trending.
+# Without it, any active story ranked forever: production served a
+# 105-hour-old story in the top 15.
+TRENDING_WINDOW = timedelta(hours=48)
+
+# Fresh coverage arriving inside this window is what "trending" means, as
+# distinct from "big". A 9-source story assembled over three days and a
+# 5-source story assembled in forty minutes are different things, and the
+# stored score could not tell them apart.
+VELOCITY_WINDOW = timedelta(hours=6)
+
+_RECENCY_DECAY_PER_HOUR = 0.1155  # ln(2)/6 → six-hour half-life
+
+
+def _now_naive() -> datetime:
+    """Wall clock in the same naive-UTC form the timestamp columns use."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _trending_rank():
+    """Live trending score, evaluated by Postgres at query time.
+
+        0.35 x source breadth + 0.35 x recency + 0.30 x velocity
+
+    Source breadth uses a log curve rather than the stored formula's
+    `min(n/5, 1)`: that cap made every story with 5+ publishers score
+    identically, so the most-covered story in production (11 sources) ranked
+    15th behind three-source stories.
+    """
+    source_count = (
+        select(func.count(func.distinct(Article.source_id)))
+        .select_from(StoryArticle)
+        .join(Article, Article.id == StoryArticle.article_id)
+        .where(StoryArticle.story_id == Story.id)
+        .correlate(Story)
+        .scalar_subquery()
+    )
+    recent_articles = (
+        select(func.count())
+        .select_from(StoryArticle)
+        .join(Article, Article.id == StoryArticle.article_id)
+        .where(
+            StoryArticle.story_id == Story.id,
+            Article.created_at >= _now_naive() - VELOCITY_WINDOW,
+        )
+        .correlate(Story)
+        .scalar_subquery()
+    )
+
+    breadth = func.least(func.ln(1 + source_count) / func.ln(6.0), 1.2)
+
+    # timezone('utc', now()) keeps this naive, matching the column type;
+    # a bare now() is timestamptz and would compare against session time.
+    age_hours = (
+        func.extract("epoch", func.timezone("utc", func.now()) - Story.first_seen_at) / 3600.0
+    )
+    recency = func.exp(-_RECENCY_DECAY_PER_HOUR * func.greatest(age_hours, 0.0))
+
+    velocity = func.least(recent_articles / 5.0, 1.0)
+
+    return 0.35 * breadth + 0.35 * recency + 0.30 * velocity
+
+
+# The home banner's headline slot: a story we surfaced recently that several
+# independent publishers are covering.
+#
+# It is deliberately NOT called "breaking", and it keys on created_at
+# (discovery) rather than first_seen_at (publication). Two measurements
+# forced both choices:
+#
+#   * first_seen_at is min(published_at) across the cluster, so it moves
+#     BACKWARD as older articles join and is not a story age at all. Median
+#     gap between it and the story row being created: 72 hours.
+#   * Median age of the actual reporting inside a story we discovered in the
+#     last 6h is 69 hours. Requiring genuinely fresh coverage returns zero
+#     stories at every threshold tried (2h/6h through 12h/24h).
+#
+# A pipeline three days behind publication cannot truthfully say BREAKING.
+# It can truthfully say "we just surfaced this and N publishers are on it",
+# which is what this flag means and what the banner now says.
+TOP_STORY_MAX_AGE = timedelta(hours=6)
+TOP_STORY_MIN_SOURCES = 3
+
+
+def _is_top_story(created_at: datetime | None, source_count: int) -> bool:
+    """Recently surfaced by us, with several publishers already covering it."""
+    if created_at is None or source_count < TOP_STORY_MIN_SOURCES:
+        return False
+    # Stored naive UTC; compare like for like.
+    return (datetime.now(UTC).replace(tzinfo=None) - created_at) <= TOP_STORY_MAX_AGE
+
+
 def _build_story_list_response(
     story: Story, cluster_confidence: float | None = None
 ) -> StoryListResponse:
@@ -80,6 +172,7 @@ def _build_story_list_response(
         source_logos=logos[:5],
         story_status=story.story_status or "active",
         cluster_confidence=cluster_confidence,
+        is_top_story=_is_top_story(story.created_at, len(source_ids)),
     )
 
 
@@ -141,6 +234,15 @@ async def list_stories(
     sort: str | None = Query(None, description="updated_at, first_seen_at, trend_score"),
     after: datetime | None = Query(
         None, description="Filter stories updated or created after this UTC datetime"
+    ),
+    window_hours: int | None = Query(
+        None,
+        ge=1,
+        le=720,
+        description=(
+            "Trending eligibility window in hours (default 48). Only applies "
+            "when trending=true or sort=trend_score."
+        ),
     ),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -205,13 +307,26 @@ async def list_stories(
 
     # Sorting
     if trending or sort == "trend_score":
-        stmt = stmt.order_by(Story.trend_score.desc())
+        # Ranked at read time, not by the stored trend_score.
+        #
+        # compute_trending_score() runs only when clustering touches a story
+        # and nothing ever recomputes it, so its recency term froze at write
+        # time. Measured across the top 50 stories, that inflated scores by
+        # an average of 0.116 (max 0.350 — the entire recency budget), and
+        # /trending was serving a 105-hour-old story. Evaluating the decay in
+        # SQL costs nothing at this table size and cannot go stale.
+        window = timedelta(hours=window_hours) if window_hours else TRENDING_WINDOW
+        stmt = stmt.where(Story.first_seen_at >= _now_naive() - window)
+        stmt = stmt.order_by(_trending_rank().desc())
     elif sort == "first_seen_at":
         stmt = stmt.order_by(Story.first_seen_at.desc())
     elif sort == "updated_at":
         stmt = stmt.order_by(Story.updated_at.desc())
     else:
-        stmt = stmt.order_by(Story.updated_at.desc())
+        # first_seen_at, not updated_at: re-synthesis and reconciliation bump
+        # updated_at, which floated days-old stories to the top of "Top
+        # Stories" — and fed the breaking banner its 72.9-hour-old headline.
+        stmt = stmt.order_by(Story.first_seen_at.desc())
 
     stmt = stmt.limit(limit).offset(offset)
 
