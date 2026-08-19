@@ -81,9 +81,16 @@ def test_every_capability_route_model_is_registered():
 
 
 def test_registered_models_route_to_their_own_provider():
-    """A model must never be registered against a provider that cannot serve it.
+    """No route may name a model its provider cannot serve.
 
-    Guards the specific shape of the incident: a Bedrock model routed to Gemini.
+    Guards the specific shape of the incident: a Bedrock model routed to
+    Gemini, which 404'd on every fallback tier for days.
+
+    The check is per ROUTE ENTRY, not per dict key. A key is only the entry
+    point into a chain — chains deliberately cross providers so that agent
+    driven stages, which route solely through this table, can escape an
+    exhausted Gemini quota. What must always hold is that each entry's own
+    model matches its own provider.
     """
     prefix_owner = {
         "gemini-": "gemini",
@@ -91,13 +98,31 @@ def test_registered_models_route_to_their_own_provider():
         "deepseek.": "bedrock",
     }
     wrong = []
-    for model, routes in MODEL_FALLBACKS.items():
-        for prefix, expected in prefix_owner.items():
-            if model.startswith(prefix):
-                for cfg in routes:
-                    if cfg["provider"] != expected:
-                        wrong.append((model, cfg["provider"], expected))
-    assert not wrong, f"models routed to the wrong provider: {wrong}"
+    for entry_model, routes in MODEL_FALLBACKS.items():
+        for cfg in routes:
+            for prefix, expected in prefix_owner.items():
+                if cfg["model"].startswith(prefix) and cfg["provider"] != expected:
+                    wrong.append((entry_model, cfg["model"], cfg["provider"], expected))
+    assert not wrong, f"routes name a model their provider cannot serve: {wrong}"
+
+
+def test_cross_provider_chains_are_only_safe_because_routes_carry_their_model():
+    """The two changes that make cross-provider chains possible are coupled.
+
+    generate_stage previously sent the manifest model name to whatever
+    provider a route named. Adding a Bedrock route under a Gemini key while
+    that was true would have POSTed "gemini-3.1-flash-lite" to Bedrock —
+    reproducing the very incident the test above guards. If that regresses,
+    the chains must go back to single-provider.
+    """
+    import inspect
+
+    from app.ai.gateway import AIGateway
+
+    src = inspect.getsource(AIGateway.generate_stage)
+    assert 'route_model = route_cfg.get("model") or model_name' in src, (
+        "cross-provider chains require generate_stage to honour the route's model"
+    )
 
 
 def test_unknown_model_returns_no_route_instead_of_guessing_gemini():

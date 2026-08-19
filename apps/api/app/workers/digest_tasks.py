@@ -1,8 +1,5 @@
-import asyncio
 import logging
-from collections.abc import Coroutine
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import select
 
@@ -10,18 +7,17 @@ from app.core.database import async_session_factory
 from app.models.models import DigestSubscription, UserPreference
 from app.services.digest_service import digest_delivery_service
 from app.workers.celery_app import celery_app
+from app.workers.tasks import run_async
 
 logger = logging.getLogger(__name__)
 
-
-def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
-    """Helper to run async coroutines in synchronous Celery tasks."""
-    try:
-        return asyncio.run(coro)
-    except RuntimeError:
-        # Event loop is already running in this thread
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(coro)
+# run_async is imported from app.workers.tasks rather than reimplemented.
+# This module used to carry its own copy that called asyncio.run() directly,
+# without disposing the SQLAlchemy connection pool inherited from the prefork
+# parent. The new event loop then reused asyncpg connections bound to the
+# parent's loop, and every digest task died with MissingGreenlet on its first
+# query — the canonical helper documents that disposal as CRITICAL for
+# exactly this reason.
 
 
 @celery_app.task(name="app.workers.digest_tasks.process_hourly_digests_task")

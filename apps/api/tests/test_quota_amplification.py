@@ -6,11 +6,16 @@ accounted for 26,152.
 
 Three independent multipliers, each pinned below:
 
-1. MODEL_FALLBACKS lists three entries per Gemini model, all provider="gemini",
-   and the gateway sends the manifest `model_name` rather than the route entry's
-   own model. With a single Gemini key in the pool that is the same key, the
-   same model, three times. `break` on RateLimitError left the attempt loop but
-   not the chain, so an exhausted model burned all three.
+1. MODEL_FALLBACKS listed three entries per Gemini model, all
+   provider="gemini", and the gateway sent the manifest `model_name` rather
+   than the route entry's own model. With a single Gemini key in the pool that
+   was the same key, the same model, three times.
+
+   Both halves are now fixed: generate_stage honours route_cfg["model"], and
+   the Gemini chains end in Bedrock. Because chains are no longer homogeneous,
+   abandoning the whole chain on a 429 would skip a genuinely different
+   provider — the gateway now marks the specific route model exhausted and
+   skips only routes whose model is already spent.
 
 2. _handle_exception tested the auth branch before the rate-limit branch using
    bare substring matches. A quota payload containing "403" anywhere was
@@ -32,32 +37,63 @@ from app.ai.providers.gemini import GeminiProvider
 # ── 1. An exhausted model abandons its whole chain ───────────────────────────
 
 
-def test_rate_limited_model_breaks_out_of_its_chain():
-    """The `break` must leave the chain loop, not just the attempt loop."""
+def test_exhausted_routes_are_skipped_individually():
+    """A spent model must be skipped without abandoning the rest of the chain.
+
+    The chain now ends in Bedrock, so the old "break out of the chain on a
+    429" would have thrown away the cross-provider escape.
+    """
     import inspect
 
     from app.ai.gateway import AIGateway
 
     src = inspect.getsource(AIGateway.generate_stage)
 
-    assert "model_exhausted = True" in src, "the rate-limit handler must flag the model"
-    assert "if model_exhausted:" in src, "the chain loop must honour the flag"
+    assert "if await is_exhausted(route_model):" in src, (
+        "each route must be checked against model health before it is tried"
+    )
+    assert "mark_exhausted(route_model" in src, (
+        "the model that actually rate-limited must be the one marked"
+    )
+    assert "model_exhausted" not in src, (
+        "the whole-chain abandon is wrong now that chains span providers"
+    )
 
 
-def test_gemini_chain_entries_are_not_distinct_routes():
-    """Documents *why* abandoning the chain loses nothing.
+def test_generate_stage_honours_the_route_model():
+    """Sending the manifest model to another provider's route is what kept
+    MODEL_FALLBACKS single-provider, and starved every agent-driven stage."""
+    import inspect
 
-    If these entries ever become genuinely distinct providers, this test fails
-    and the break-out above needs revisiting.
+    from app.ai.gateway import AIGateway
+
+    src = inspect.getsource(AIGateway.generate_stage)
+    assert 'route_model = route_cfg.get("model") or model_name' in src
+    assert "model=model_name," not in src, (
+        "requests must name the route's model, not the manifest's preference"
+    )
+
+
+def test_gemini_chains_have_a_cross_provider_escape():
+    """Agent-driven stages route ONLY through this table.
+
+    entity_disambiguation, feedback_agent, cluster_verification, contradiction,
+    reflection and judge have no prompt manifest, so the manifest-level
+    fallback_models never apply to them. With Gemini-only entries here they
+    died outright when the free tier was spent: 348 RESOURCE_EXHAUSTED errors
+    in one 20-minute production window.
     """
     from app.ai.config import MODEL_FALLBACKS
 
     for model in ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite"):
         providers = {entry["provider"] for entry in MODEL_FALLBACKS[model]}
-        assert providers == {"gemini"}, (
-            f"{model} now routes to {providers}; abandoning the chain on a 429 "
-            "would skip a genuinely different provider"
+        assert providers - {"gemini"}, (
+            f"{model} routes only to {providers}; every agent-driven stage "
+            "would still die when Gemini is exhausted"
         )
+        # The escape must be last, so Gemini is still preferred while healthy.
+        assert MODEL_FALLBACKS[model][0]["provider"] == "gemini"
+        assert MODEL_FALLBACKS[model][-1]["provider"] != "gemini"
 
 
 # ── 2. A 429 is a rate limit, whatever else the payload contains ─────────────

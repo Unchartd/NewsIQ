@@ -139,3 +139,27 @@ async def test_event_extraction_loop_refetches_after_rollback():
     assert "session.get(Article, article_id)" in src, (
         "each iteration must re-fetch, surviving a prior rollback"
     )
+
+
+def test_every_celery_module_uses_the_pool_disposing_run_async():
+    """A second run_async that skipped pool disposal killed all digest tasks.
+
+    tasks.run_async disposes the SQLAlchemy connection pool inherited from the
+    prefork parent, so the new event loop gets fresh asyncpg connections; its
+    own docstring calls that CRITICAL. digest_tasks.py carried a private copy
+    that called asyncio.run() directly, so every digest task raised
+    MissingGreenlet on its first query. One canonical helper, imported.
+    """
+    import pathlib
+    import re
+
+    workers = pathlib.Path(__file__).resolve().parents[1] / "app" / "workers"
+    definitions = [
+        p.name
+        for p in workers.glob("*.py")
+        if re.search(r"^def run_async\(", p.read_text(encoding="utf-8"), re.M)
+    ]
+    assert definitions == ["tasks.py"], (
+        f"run_async is defined in {definitions}; every worker module must import "
+        "the pool-disposing helper from app.workers.tasks instead of redefining it"
+    )

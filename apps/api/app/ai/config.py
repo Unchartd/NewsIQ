@@ -36,11 +36,24 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "temperature": 0.1,
             "timeout": 30.0,
         },
+        # Cross-provider escape. Every agent-driven stage (entity
+        # disambiguation, feedback, cluster verification, contradiction,
+        # reflection, judge) routes purely through this table — they have no
+        # prompt manifest and so never see the manifest fallback_models. With
+        # only Gemini entries here they simply died when the free tier was
+        # spent: 348 RESOURCE_EXHAUSTED errors in a 20-minute window, 276 of
+        # them entity_disambiguation alone.
         {
-            "provider": "gemini",
-            "model": "gemini-3.5-flash-lite",
+            "provider": "bedrock",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
-            "timeout": 30.0,
+            "timeout": 45.0,
+        },
+        {
+            "provider": "bedrock",
+            "model": "deepseek.v3.2",
+            "temperature": 0.1,
+            "timeout": 45.0,
         },
     ],
     "gemini-3.1-flash-lite": [
@@ -56,11 +69,24 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "temperature": 0.1,
             "timeout": 30.0,
         },
+        # Cross-provider escape. Every agent-driven stage (entity
+        # disambiguation, feedback, cluster verification, contradiction,
+        # reflection, judge) routes purely through this table — they have no
+        # prompt manifest and so never see the manifest fallback_models. With
+        # only Gemini entries here they simply died when the free tier was
+        # spent: 348 RESOURCE_EXHAUSTED errors in a 20-minute window, 276 of
+        # them entity_disambiguation alone.
         {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
+            "provider": "bedrock",
+            "model": "qwen.qwen3-vl-235b-a22b-instruct",
             "temperature": 0.1,
-            "timeout": 30.0,
+            "timeout": 45.0,
+        },
+        {
+            "provider": "bedrock",
+            "model": "deepseek.v3.2",
+            "temperature": 0.1,
+            "timeout": 45.0,
         },
     ],
     "gemini-embedding-001": [
