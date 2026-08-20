@@ -23,6 +23,14 @@ import { join } from "node:path";
 const APP_DIR = join(process.cwd(), ".next", "server", "app");
 const GA_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
 
+/**
+ * Matches the gtag.js loader specifically, anchored on the full origin and
+ * path. A bare `includes("googletagmanager.com")` would both over-match (any
+ * string mentioning the host anywhere) and under-specify what we care about,
+ * which is that the loader script itself is present.
+ */
+const GTAG_SCRIPT_SRC = /https:\/\/www\.googletagmanager\.com\/gtag\/js\?id=/;
+
 /** Collect prerendered HTML, which is where the bootstrap script lands. */
 async function htmlFiles(dir) {
   const found = [];
@@ -68,7 +76,7 @@ if (GA_ID) {
         "sends pageviews on route change, so SPA navigations would double-count."
     );
   }
-} else if (joined.includes("googletagmanager.com")) {
+} else if (GTAG_SCRIPT_SRC.test(joined)) {
   failures.push(
     "no measurement id was supplied, yet gtag.js is still loaded. A missing id " +
       "must disable GA4 outright rather than fall back to a placeholder."
