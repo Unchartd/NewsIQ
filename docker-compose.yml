@@ -523,9 +523,12 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: https://api.newsiq.online/api/v1
       INTERNAL_API_URL: http://user-api:8000/api/v1
-      NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-G-NEWSIQ}
-      NEXT_PUBLIC_POSTHOG_TOKEN: ${NEXT_PUBLIC_POSTHOG_TOKEN:-phc_mock_token_newsiq}
-      NEXT_PUBLIC_ANALYTICS_DEBUG: ${NEXT_PUBLIC_ANALYTICS_DEBUG:-false}
+      # NEXT_PUBLIC_* analytics keys are deliberately absent here. Next inlines
+      # them at BUILD time (see apps/web/Dockerfile ARGs and the build-args in
+      # .github/workflows/deploy.yml), so setting them at runtime configures
+      # nothing. They used to sit here with placeholder defaults, which meant
+      # `docker exec … env` reported G-NEWSIQ while the deployed bundle carried
+      # the real measurement id — a false trail for anyone debugging analytics.
     depends_on:
       user-api:
         condition: service_healthy
@@ -564,8 +567,11 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
       INTERNAL_API_URL: http://user-api:8000/api/v1
       WATCHPACK_POLLING: "true"
-      NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-G-NEWSIQ}
-      NEXT_PUBLIC_POSTHOG_TOKEN: ${NEXT_PUBLIC_POSTHOG_TOKEN:-phc_mock_token_newsiq}
+      # No placeholder defaults: an unset key must disable the provider
+      # loudly rather than look configured. `next dev` does read these at
+      # runtime, unlike the prebuilt production image.
+      NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}
+      NEXT_PUBLIC_POSTHOG_TOKEN: ${NEXT_PUBLIC_POSTHOG_TOKEN:-}
       NEXT_PUBLIC_ANALYTICS_DEBUG: ${NEXT_PUBLIC_ANALYTICS_DEBUG:-true}
     develop:
       watch:

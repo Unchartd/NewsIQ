@@ -196,6 +196,7 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.newsiq.online/api/v1
             NEXT_PUBLIC_GA_MEASUREMENT_ID=${{ secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
             NEXT_PUBLIC_POSTHOG_TOKEN=${{ secrets.NEXT_PUBLIC_POSTHOG_TOKEN }}
+            NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}
             NEXT_PUBLIC_ANALYTICS_DEBUG=false
           tags: ${{ needs.resolve-tag.outputs.web_image }}:${{ needs.resolve-tag.outputs.tag }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           platforms: ${{ matrix.platform }}

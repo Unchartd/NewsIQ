@@ -14,21 +14,28 @@ export class GA4Provider extends BaseAnalyticsProvider {
   initialize(): void {
     if (typeof window === "undefined") return;
     
-    // Gtag is pre-loaded inside layout.tsx for Consent Mode v2 setup
+    // layout.tsx loads gtag.js and issues consent defaults + config. It
+    // renders nothing at all when no measurement id was supplied at build
+    // time, so an absent window.gtag means GA4 is deliberately disabled.
     this.isInitialized = !!window.gtag;
     if (this.isInitialized) {
       this.debugLog("Loaded GA4 provider.");
     } else {
-      this.debugLog("gtag not found on window. GA4 provider is standby.");
+      console.warn(
+        "[analytics] GA4 is disabled: no gtag on window. " +
+          "Set NEXT_PUBLIC_GA_MEASUREMENT_ID at build time to enable it."
+      );
     }
   }
 
   identify(userId: string, traits?: UserTraits): void {
     if (!window.gtag || typeof window === "undefined") return;
     const cleanTraits = this.sanitizePayload(traits);
-    
-    const measurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-NEWSIQ";
-    window.gtag("config", measurementId, {
+
+    // `set` rather than a second `config`: the tag is configured once at page
+    // load now, and re-issuing config re-initialises the tag and can restart
+    // the session. This only needs to attach identity to the existing one.
+    window.gtag("set", {
       user_id: userId,
       user_tier: cleanTraits?.user_tier,
       subscription_status: cleanTraits?.subscription_status,
@@ -68,11 +75,9 @@ export class GA4Provider extends BaseAnalyticsProvider {
 
   reset(): void {
     if (!window.gtag || typeof window === "undefined") return;
-    const measurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-NEWSIQ";
-    
-    window.gtag("config", measurementId, {
-      user_id: "",
-    });
+
+    // Clear identity without reconfiguring the tag (see identify above).
+    window.gtag("set", { user_id: null, user_tier: null, subscription_status: null });
     this.debugLog("Reset user identity");
   }
 }

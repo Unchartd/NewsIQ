@@ -153,6 +153,12 @@ export const viewport: Viewport = {
 };
 
 // ─── Global JSON-LD schemas ───────────────────────────────────────────────────
+// Measurement id comes from the build (NEXT_PUBLIC_* is inlined at build
+// time, not read at runtime). There is deliberately no fallback: the previous
+// `|| "G-NEWSIQ"` looked like a real id in logs while silently discarding
+// every hit, so a missing id must disable GA4 outright instead.
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+
 const orgSchema = buildOrganizationSchema();
 const websiteSchema = buildWebSiteSchema();
 const appSchema = buildSoftwareApplicationSchema();
@@ -184,7 +190,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(appSchema) }}
         />
 
-        {/* Google Consent Mode v2 Default Settings */}
+        {/* Google Consent Mode v2 defaults + tag configuration.
+            Rendered only when a measurement id was supplied at build time. */}
+        {GA_MEASUREMENT_ID && (
+          <>
         <script
           id="google-consent-defaults"
           dangerouslySetInnerHTML={{
@@ -212,15 +221,27 @@ export default function RootLayout({
               });
               
               gtag('js', new Date());
+
+              // Without this, gtag.js loads but is bound to no measurement:
+              // events queue in dataLayer and are never sent. It used to be
+              // called only from the GA4 provider's identify(), i.e. only
+              // after a login, so anonymous traffic — effectively the whole
+              // audience of a public news site — was never measured at all.
+              //
+              // send_page_view is off because analytics-tracker.tsx sends
+              // pageviews itself on every route change; leaving it on would
+              // double-count each SPA navigation.
+              gtag('config', '${GA_MEASUREMENT_ID}', { send_page_view: false });
             `
           }}
         />
 
-        {/* Google Analytics 4 Script */}
         <script
           async
-          src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-NEWSIQ"}`}
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
         />
+          </>
+        )}
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         {/* Keyboard users otherwise tab through the full navigation on every
