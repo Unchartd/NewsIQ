@@ -41,7 +41,7 @@ function formatTimeAgo(dateString: string): string {
   }
 }
 
-export default function TrendingPage() {
+export default function TrendingPage({ initialStories }: { initialStories?: Story[] }) {
   const [activeTab, setActiveTab] = useState("48h");
 
   const { data: stories, isLoading, error, refetch } = useQuery<Story[]>({
@@ -58,6 +58,10 @@ export default function TrendingPage() {
       });
       return response.data;
     },
+    // Seed the default tab only. The server render is for the 48h window, so
+    // handing it to another tab would show the wrong period.
+    initialData:
+      activeTab === "48h" && initialStories?.length ? initialStories : undefined,
   });
 
   // Aggregate stories by category for sidebar
@@ -156,10 +160,6 @@ export default function TrendingPage() {
             else if (rank === 2) rankClass = "rk2";
             else if (rank === 3) rankClass = "rk3";
 
-            // Generate a realistic looking velocity score
-            const charCode = story.id ? story.id.charCodeAt(0) : 50;
-            const velocity = 1000 - rank * 120 + (charCode % 80);
-
             const locationLabel = story.location_city || story.location_state || story.location_country || "World";
             const timeAgo = formatTimeAgo(story.updated_at);
 
@@ -179,11 +179,19 @@ export default function TrendingPage() {
                     {story.category && (
                       <CategoryBadge category={story.category.name} />
                     )}
-                    <span>{story.source_count || 1} sources</span>
+                    {/* The "+N in 1h" badge that used to sit here was invented:
+                        `1000 - rank * 120 + story.id.charCodeAt(0) % 80`, under a
+                        comment reading "Generate a realistic looking velocity
+                        score". It was presented as measured engagement. There is
+                        no per-hour engagement data to show — production carries
+                        213 views and 0 shares in total — so this reports article
+                        count, which is real and is part of what the ranking
+                        actually uses. */}
                     <span className="vel">
                       <TrendingUp size={11} style={{ marginRight: 2 }} />
-                      +{velocity > 0 ? velocity : 50} in 1h
+                      {story.source_count || 1} sources
                     </span>
+                    <span>{story.article_count || 1} articles</span>
                     <span>
                       {locationLabel} · {timeAgo}
                     </span>

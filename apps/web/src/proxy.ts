@@ -1,51 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = [
-  "/",
-  "/home",
-  "/category",
-  "/story",
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/reset-password",
-  "/verify-email",
-  "/tos",
-  "/privacy",
-  "/legal",
-  "/auth/callback",
-  // Every URL the sitemap advertises must actually be reachable without a
-  // session. This list had drifted: all nine routes below — including the
-  // pricing page and the E-E-A-T pages written specifically for crawlers —
-  // 307'd to /login, so search engines could index nothing the sitemap
-  // promised. Keep this in sync with sitemap.ts.
-  "/trending",
-  "/search",
-  "/topics",
-  "/premium",
-  "/about",
-  "/editorial-principles",
-  "/methodology",
-  "/ai-transparency",
-  "/source-transparency",
-];
-
-const AUTH_ONLY_PATHS = [
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/reset-password",
-  "/verify-email",
-];
+import { isAuthOnlyPath, isProtectedPath } from "@/lib/route-access";
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Determine if the path is public
-  const isPublic = PUBLIC_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(path + "/")
-  );
+  // 1. Determine if the path requires a session
+  const isProtected = isProtectedPath(pathname);
 
   // 2. Check for authentication tokens in cookies
   const hasRefreshToken = request.cookies.has("refresh_token");
@@ -53,7 +15,7 @@ export function proxy(request: NextRequest) {
   const isAuthenticated = hasRefreshToken || hasAccessToken;
 
   // 3. Server-side redirect rules
-  if (!isPublic) {
+  if (isProtected) {
     // Protected page: redirect to login if not authenticated
     if (!isAuthenticated) {
       const loginUrl = new URL("/login", request.url);
@@ -61,10 +23,9 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
   } else {
-    // Public page: redirect to home if authenticated and trying to access login/signup/etc.
-    const isAuthOnly = AUTH_ONLY_PATHS.some(
-      (path) => pathname === path || pathname.startsWith(path + "/")
-    );
+    // Public (or non-existent) page. Unknown paths fall through to the router
+    // and 404 rather than being redirected.
+    const isAuthOnly = isAuthOnlyPath(pathname);
     if (isAuthOnly && isAuthenticated) {
       return NextResponse.redirect(new URL("/home", request.url));
     }

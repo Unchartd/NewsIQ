@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/stores/auth-store";
+import { isAuthOnlyPath, isProtectedPath } from "@/lib/route-access";
 import apiClient from "@/lib/api-client";
 import { usePathname, useRouter } from "next/navigation";
 import CookieBanner from "@/components/legal/cookie-banner";
@@ -17,29 +18,6 @@ import { analytics } from "@/lib/analytics/service";
 
 
 
-const PUBLIC_PATHS = [
-  "/",
-  "/home",
-  "/category",
-  "/story",
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/reset-password",
-  "/verify-email",
-  "/tos",
-  "/privacy",
-  "/legal",
-  "/auth/callback",
-];
-
-const AUTH_ONLY_PATHS = [
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/reset-password",
-  "/verify-email",
-];
 
 function AuthInitializer({ children }: { children: React.ReactNode }) {
   const { setUser, setLoading, isAuthenticated, isLoading } = useAuthStore();
@@ -94,29 +72,25 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
 
-    const isPublic = PUBLIC_PATHS.some(
-      (path) => pathname === path || pathname.startsWith(path + "/")
-    );
-    const isAuthOnly = AUTH_ONLY_PATHS.some(
-      (path) => pathname === path || pathname.startsWith(path + "/")
-    );
+    const isProtected = isProtectedPath(pathname);
+    const isAuthOnly = isAuthOnlyPath(pathname);
 
-    if (!isPublic && !isAuthenticated) {
+    if (isProtected && !isAuthenticated) {
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
     } else if (isAuthOnly && isAuthenticated) {
       router.replace("/home");
     }
   }, [isLoading, isAuthenticated, pathname, router]);
 
-  const isPublic = PUBLIC_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(path + "/")
-  );
-  const isAuthOnly = AUTH_ONLY_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(path + "/")
-  );
+  const isProtected = isProtectedPath(pathname);
+  const isAuthOnly = isAuthOnlyPath(pathname);
 
-  // While initializing, show a loader on protected pages to prevent flash of content
-  if (isLoading && !isPublic) {
+  // Show the session loader only on genuinely protected pages. This used to
+  // fire for anything absent from a local PUBLIC_PATHS copy — including
+  // /trending, /search and every E-E-A-T page — so during SSR (isLoading is
+  // always true there) a crawler received "Verifying secure session..." and
+  // no content at all.
+  if (isLoading && isProtected) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
         <div className="text-center space-y-4">
@@ -130,7 +104,7 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   }
 
   // Prevent flashing protected content while redirection is in progress
-  if (!isPublic && !isAuthenticated) {
+  if (isProtected && !isAuthenticated) {
     return null;
   }
 

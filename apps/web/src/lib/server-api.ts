@@ -5,7 +5,7 @@
  * directly from the backend without going through the browser axios client.
  */
 
-import type { StoryDetail } from "@/types";
+import type { Story, StoryDetail } from "@/types";
 
 const API_BASE_URL =
   process.env.INTERNAL_API_URL ||
@@ -30,5 +30,38 @@ export async function fetchStoryServer(storyId: string): Promise<StoryDetail | n
     return (await res.json()) as StoryDetail;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fetch a list of stories on the server.
+ *
+ * `/home` and `/trending` were thin server wrappers around client components, so
+ * the prerendered HTML contained the page shell and no stories: a crawler that
+ * does not execute JavaScript indexed an empty page, and the LCP element could
+ * not paint until JS loaded and a request completed. These are the product's
+ * primary landing pages.
+ *
+ * Returns [] rather than throwing, so a backend blip degrades the page to the
+ * client-side fetch it already performs instead of failing the render.
+ */
+export async function fetchStoriesServer(
+  params: Record<string, string | number | boolean> = {},
+  revalidateSeconds = 120,
+): Promise<Story[]> {
+  try {
+    const query = new URLSearchParams(
+      Object.entries(params).map(([k, v]) => [k, String(v)]),
+    ).toString();
+
+    const res = await fetch(`${API_BASE_URL}/stories${query ? `?${query}` : ""}`, {
+      // Shorter than a story's 5 minutes: a feed's ordering changes more often
+      // than any single story's contents.
+      next: { revalidate: revalidateSeconds },
+    });
+    if (!res.ok) return [];
+    return (await res.json()) as Story[];
+  } catch {
+    return [];
   }
 }

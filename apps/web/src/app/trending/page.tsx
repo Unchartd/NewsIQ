@@ -3,6 +3,16 @@ import { buildPageMetadata } from "@/lib/metadata";
 import { buildCollectionPageSchema, buildBreadcrumbSchema, serializeJsonLd } from "@/lib/jsonld";
 import { SITE_URL } from "@/lib/metadata";
 import TrendingPage from "./trending-client";
+import { fetchStoriesServer } from "@/lib/server-api";
+
+// Rendered per request. HomeContentInner calls useSearchParams(), which in a
+// statically rendered page makes Next bail out to the nearest Suspense
+// fallback on the server — and that fallback is null, so the prerendered HTML
+// contained no stories and no /story/ links at all. The feed is per-visitor
+// anyway; fetchStoriesServer still caches the upstream call for 120s, so the
+// backend sees the same load either way.
+export const dynamic = "force-dynamic";
+
 
 export const metadata: Metadata = buildPageMetadata(
   "Trending Stories",
@@ -31,7 +41,15 @@ const breadcrumbSchema = buildBreadcrumbSchema([
   { name: "Trending", url: `${SITE_URL}/trending` },
 ]);
 
-export default function TrendingServerPage() {
+export default async function TrendingServerPage() {
+  // Server-rendered so the HTML a crawler sees contains stories and their
+  // links. Matches the client's default tab: the 48h window, 15 items.
+  const initialStories = await fetchStoriesServer({
+    trending: true,
+    window_hours: 48,
+    limit: 15,
+  });
+
   return (
     <>
       <script
@@ -42,7 +60,7 @@ export default function TrendingServerPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
-      <TrendingPage />
+      <TrendingPage initialStories={initialStories} />
     </>
   );
 }
