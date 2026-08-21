@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════ */
 :root {
   --landing-primary: #C41E3A;
+  --landing-primary-text: #C41E3A;  /* passes as text on the light surface */
   --landing-primary-d: #9B1830;
   --landing-primary-glow: rgba(196,30,58,.18);
   --landing-ink: #0D0D0D;
@@ -26,9 +27,23 @@
   --landing-nav-h: 62px;
 }
 .dark {
-  --landing-primary: #E8334A;
+  /* The accent is used two ways with opposite contrast requirements, so it
+     is two tokens in dark mode:
+       - as a BUTTON BACKGROUND under white text, it must be dark enough
+         (#E8334A gave 4.20:1 on the 13px/700 nav CTA, under the 4.5 AA needs);
+       - as TEXT on the dark surface, it must be light enough (#D92B41 is only
+         3.63:1 on #1a1a18).
+     One value cannot do both. */
+  --landing-primary: #D92B41;        /* 4.80:1 with white on top */
+  --landing-primary-text: #F2596C;   /* 5.33:1 as text on #1a1a18 */
   --landing-primary-glow: rgba(232,51,74,.2);
-  --landing-ink: #F0EFE9; --landing-ink2: #B0AFA8; --landing-ink3: #7A7A72; --landing-ink4: #555550;
+  /* ink3 was #7A7A72 — 4.46:1 on the dark background, just under the 4.5
+     WCAG AA needs for the nav links that use it (Lighthouse flagged it).
+     #82827A is 4.99:1 and still reads as muted. */
+  --landing-ink: #F0EFE9; --landing-ink2: #B0AFA8; --landing-ink3: #82827A;
+  /* ink4 was #555550 — 2.58:1, well under AA, and it is used for real
+     text (.sources-label and the footer meta rows), not decoration. */
+  --landing-ink4: #82827A;
   --landing-surface: #0E0E0D; --landing-card: #1A1A18; --landing-border: #2A2A27; --landing-border-strong: #3A3A36;
   --landing-blue: #6B9EF0; --landing-sh1: 0 1px 3px rgba(0,0,0,.4); --landing-sh2: 0 4px 20px rgba(0,0,0,.5); --landing-sh3: 0 20px 56px rgba(0,0,0,.6);
 }
@@ -91,7 +106,7 @@
   display: flex; align-items: center; line-height: 1; flex-shrink: 0;
 }
 .landing-body .logo b { font-family: var(--landing-fb); color: var(--landing-ink); font-weight: 700; }
-.landing-body .logo i { font-family: var(--landing-fd); font-style: italic; color: var(--landing-primary); font-weight: 700; }
+.landing-body .logo i { font-family: var(--landing-fd); font-style: italic; color: var(--landing-primary-text); font-weight: 700; }
 .landing-body .nav-links { display: flex; align-items: center; gap: 2px; margin-left: 36px; }
 .landing-body .nav-link {
   padding: 6px 12px; border-radius: var(--landing-r6); font-size: 14px;
@@ -144,7 +159,7 @@
 .container-narrow { max-width: 820px; margin: 0 auto; padding: 0 28px; }
 .eyebrow {
   font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--landing-primary); margin-bottom: 12px; display: inline-flex; align-items: center; gap: 7px;
+  color: var(--landing-primary-text); margin-bottom: 12px; display: inline-flex; align-items: center; gap: 7px;
 }
 .eyebrow::before { content: ''; width: 18px; height: 2px; background: var(--landing-primary); border-radius: 1px; flex-shrink: 0; }
 .section-title {
@@ -205,7 +220,7 @@
   padding: 5px 14px; border-radius: 99px;
   border: 1px solid rgba(196,30,58,.22);
   background: rgba(196,30,58,.06);
-  font-size: 12px; font-weight: 600; color: var(--landing-primary);
+  font-size: 12px; font-weight: 600; color: var(--landing-primary-text);
   margin-bottom: 28px; cursor: default;
 }
 .hero-badge-dot {
@@ -220,7 +235,7 @@
   line-height: 1.08; letter-spacing: -.02em;
   margin-bottom: 24px; max-width: 880px;
 }
-.hero-title em { font-style: italic; color: var(--landing-primary); }
+.hero-title em { font-style: italic; color: var(--landing-primary-text); }
 .hero-sub {
   font-size: clamp(16px, 2vw, 19px); color: var(--landing-ink3);
   line-height: 1.7; max-width: 580px; margin-bottom: 36px;
@@ -369,7 +384,7 @@
 }
 .prob-step-text { font-size: 14px; color: var(--landing-ink2); line-height: 1.4; padding: 10px 0; font-weight: 500; }
 .prob-arrow { font-size: 18px; color: var(--landing-border); line-height: 1; }
-.prob-step-text.highlight { color: var(--landing-primary); font-weight: 700; font-size: 15px; }
+.prob-step-text.highlight { color: var(--landing-primary-text); font-weight: 700; font-size: 15px; }
 .prob-step-text.dim { color: var(--landing-ink4); }
 .problem-vs {
   display: flex; align-items: center; justify-content: center;
@@ -510,7 +525,7 @@
   font-family: var(--landing-fd); font-size: clamp(36px, 5vw, 54px); font-weight: 700;
   color: #fff; line-height: 1; margin-bottom: 8px;
 }
-.stat-num .accent { color: var(--landing-primary); }
+.stat-num .accent { color: var(--landing-primary-text); }
 .stat-label { font-size: 13px; color: rgba(255,255,255,.55); font-weight: 500; }
 
 /* ═══════════════════════════════════════════
@@ -596,7 +611,7 @@
   font-family: var(--landing-fd); font-size: clamp(32px, 5.5vw, 62px); font-weight: 600;
   color: #fff; line-height: 1.1; letter-spacing: -.02em; margin-bottom: 18px;
 }
-.final-cta-title em { color: var(--landing-primary); font-style: italic; }
+.final-cta-title em { color: var(--landing-primary-text); font-style: italic; }
 .final-cta-sub { font-size: 17px; color: rgba(255,255,255,.55); max-width: 520px; margin: 0 auto 40px; line-height: 1.7; }
 .final-cta-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .landing-body .btn-white {
@@ -643,7 +658,7 @@
   line-height: 1.15; text-align: center;
   color: var(--landing-ink); margin-bottom: 16px;
 }
-.landing-body .pricing-title em { color: var(--landing-primary); font-style: italic; }
+.landing-body .pricing-title em { color: var(--landing-primary-text); font-style: italic; }
 .landing-body .pricing-sub {
   text-align: center; font-size: 16px; color: var(--landing-ink3);
   max-width: 520px; margin: 0 auto 56px; line-height: 1.65;
@@ -690,7 +705,7 @@
   margin-bottom: 10px;
 }
 .landing-body .pricing-card.featured .pricing-plan-name {
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
 }
 .landing-body .pricing-price {
   font-family: var(--landing-fb);
@@ -813,7 +828,8 @@
   transition: border-color .15s, background .15s;
 }
 .landing-body .footer-social-btn:hover { border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.06); }
-.footer-col-title { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: rgba(255,255,255,.35); margin-bottom: 14px; }
+/* rgba(255,255,255,.35) resolves to 3.09:1 on the footer background. */
+.footer-col-title { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: rgba(255,255,255,.62); margin-bottom: 14px; }
 .footer-link { display: block; font-size: 13px; color: rgba(255,255,255,.55); margin-bottom: 9px; cursor: pointer; transition: color .15s; }
 .footer-link:hover { color: #fff; }
 .footer-bottom { border-top: 1px solid rgba(255,255,255,.08); padding-top: 24px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; font-size: 12px; }
@@ -836,7 +852,7 @@
    ═══════════════════════════════════════════ */
 .divider { height: 1px; background: var(--landing-border); margin: 0; }
 .mt-4 { margin-top: 4px; } .mt-8 { margin-top: 8px; } .mt-12 { margin-top: 12px; }
-.text-primary { color: var(--landing-primary); }
+.text-primary { color: var(--landing-primary-text); }
 
 /* ═══════════════════════════════════════════
    RESPONSIVE
@@ -934,7 +950,7 @@
 }
 .how-pulse-ring:nth-child(1) {
   width: 64px; height: 64px;
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
   animation-delay: 0s;
 }
 .how-pulse-ring:nth-child(2) {
@@ -944,7 +960,7 @@
 }
 .how-pulse-ring:nth-child(3) {
   width: 32px; height: 32px;
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
   opacity: 0.8;
   animation-delay: 1s;
 }
@@ -1025,7 +1041,7 @@
   padding: 4px 10px;
   border-radius: 6px;
   background: var(--landing-primary-glow);
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
 }
 .how-time {
   font-size: 12px;
@@ -1196,7 +1212,7 @@
   text-transform: uppercase;
 }
 .prob-card-traditional .prob-card-lbl { color: var(--landing-ink3); }
-.prob-card-newsiq .prob-card-lbl { color: var(--landing-primary); }
+.prob-card-newsiq .prob-card-lbl { color: var(--landing-primary-text); }
 
 .prob-card-icon {
   width: 40px;
@@ -1303,13 +1319,13 @@
   transition: color 0.3s;
 }
 .prob-card-traditional .prob-step:hover .prob-step-txt { color: var(--landing-ink); }
-.prob-card-newsiq .prob-step:hover .prob-step-txt { color: var(--landing-primary); }
+.prob-card-newsiq .prob-step:hover .prob-step-txt { color: var(--landing-primary-text); }
 
 .prob-step-txt strong {
   font-weight: 700;
   color: var(--landing-ink);
 }
-.prob-card-newsiq .prob-step-txt strong { color: var(--landing-primary); }
+.prob-card-newsiq .prob-step-txt strong { color: var(--landing-primary-text); }
 
 .prob-step-meta {
   font-size: 12.5px;
@@ -1380,7 +1396,7 @@
 }
 .prob-vs-divider:hover .prob-vs-badge {
   border-color: var(--landing-primary);
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
   transform: scale(1.1);
   box-shadow: 0 0 20px var(--landing-primary-glow);
 }
@@ -1408,9 +1424,9 @@
   font-size: 15px;
   color: var(--landing-ink2);
 }
-.prob-summary-txt strong { color: var(--landing-primary); font-weight: 700; }
+.prob-summary-txt strong { color: var(--landing-primary-text); font-weight: 700; }
 .prob-summary-arrow {
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
   font-size: 18px;
   animation: prob-bounce 2s infinite;
 }
@@ -1642,7 +1658,7 @@
 }
 .why-icon-star {
   background: var(--landing-primary-glow);
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
 }
 
 .why-feat-item.yes { color: var(--landing-ink); }
@@ -1679,7 +1695,7 @@
 }
 .why-cta-txt {
   font-size: 13px;
-  color: var(--landing-primary);
+  color: var(--landing-primary-text);
   font-weight: 700;
   letter-spacing: 0.5px;
 }
