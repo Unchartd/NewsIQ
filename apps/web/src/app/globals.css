@@ -83,7 +83,10 @@
   --popover-foreground: #0D0D0D;
 
   /* Primary — Brand Red #EF4444 */
-  --primary: #EF4444;
+  /* red-600 rather than red-500: white text on #EF4444 is 3.76:1, under
+     the 4.5 WCAG AA needs, and this token backs every primary button in
+     the app (.btnp and friends). #DC2626 is 4.83:1. */
+  --primary: #DC2626;
   --primary-foreground: #FFFFFF;
 
   /* Secondary */
@@ -210,7 +213,10 @@
   --popover: #1C1C1A;
   --popover-foreground: #F0EFE9;
 
-  --primary: #EF4444;
+  /* red-600 rather than red-500: white text on #EF4444 is 3.76:1, under
+     the 4.5 WCAG AA needs, and this token backs every primary button in
+     the app (.btnp and friends). #DC2626 is 4.83:1. */
+  --primary: #DC2626;
   --primary-foreground: #FFFFFF;
 
   --secondary: #1C1C1A;

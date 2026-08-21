@@ -226,6 +226,13 @@ export function LandingClientPage() {
         </div>
       </nav>
 
+      {/* The skip link in layout.tsx targets #main-content. Every other page
+          provides it via <main id="main-content">; the landing page had
+          neither a <main> landmark nor the anchor, so Lighthouse reported
+          "Skip links are not focusable — no skip link target" and keyboard
+          users tabbing from the skip link went nowhere. */}
+      <main id="main-content">
+
       {/* ════════════════════════════════════════
            HERO
            ════════════════════════════════════════ */}
@@ -2294,6 +2301,8 @@ export function LandingClientPage() {
       {/* ════════════════════════════════════════
            FOOTER
            ════════════════════════════════════════ */}
+      </main>
+
       <footer className="footer">
         <div className="container">
           <div className="footer-grid">
@@ -2354,58 +2363,36 @@ export function LandingClientPage() {
             {/* Resources */}
             <div>
               <div className="footer-col-title">Resources</div>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Blog…")}
-              >
-                Blog
-              </a>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Documentation…")}
-              >
-                Documentation
-              </a>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening API…")}
-              >
-                API
-              </a>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Status…")}
-              >
-                Status
-              </a>
+              {/* These were <a onClick={showToast("Opening Blog…")}> with no
+                  href: not crawlable, not keyboard reachable, and pointing at
+                  pages that do not exist. Replaced with the pages that do —
+                  the E-E-A-T set, which is in the sitemap but until now had no
+                  inbound link anywhere on the site, so nothing could reach it
+                  by crawling. */}
+              <Link href="/methodology" className="footer-link">
+                Methodology
+              </Link>
+              <Link href="/editorial-principles" className="footer-link">
+                Editorial Principles
+              </Link>
+              <Link href="/ai-transparency" className="footer-link">
+                AI Transparency
+              </Link>
+              <Link href="/source-transparency" className="footer-link">
+                Source Transparency
+              </Link>
             </div>
             {/* Company */}
             <div>
               <div className="footer-col-title">Company</div>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening About…")}
-              >
+              {/* Careers, Press and Contact had no destination; only About
+                  exists as a route. */}
+              <Link href="/about" className="footer-link">
                 About
-              </a>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Careers…")}
-              >
-                Careers
-              </a>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Press…")}
-              >
-                Press
-              </a>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Contact…")}
-              >
-                Contact
-              </a>
+              </Link>
+              <Link href="/legal" className="footer-link">
+                Legal
+              </Link>
             </div>
             {/* Legal */}
             <div>
@@ -2416,18 +2403,6 @@ export function LandingClientPage() {
               <Link href="/tos" className="footer-link">
                 Terms of Service
               </Link>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Cookie Settings…")}
-              >
-                Cookie Settings
-              </a>
-              <a
-                className="footer-link"
-                onClick={() => showToast("Opening Grievance Officer…")}
-              >
-                Grievance Officer
-              </a>
             </div>
           </div>
           <div className="footer-bottom">
@@ -2445,11 +2420,7 @@ export function LandingClientPage() {
               <Link href="/tos" className="footer-link" style={{ margin: 0 }}>
                 Terms
               </Link>
-              <a
-                className="footer-link"
-                style={{ margin: 0 }}
-                onClick={() => showToast("Opening Sitemap…")}
-              >
+              <a href="/sitemap.xml" className="footer-link" style={{ margin: 0 }}>
                 Sitemap
               </a>
             </div>
