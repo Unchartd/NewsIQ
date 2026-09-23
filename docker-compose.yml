@@ -140,8 +140,18 @@ services:
     container_name: newsiq-redis
     restart: unless-stopped
     profiles: [dev, prod]
+    # Capped. Uncapped, this grew to 6.46 GB, its RDB snapshot filled the
+    # disk, Redis refused writes, /ready went 503 and a deploy rolled back.
+    #
+    # volatile-lru, not allkeys-lru: only keys WITH a TTL are evictable. Every
+    # cache and Celery-result key carries a TTL (db0 313,260 of 313,265;
+    # db2 all 221,590) while the broker's queues in db1 carry none — so under
+    # pressure the cache sheds and queued tasks are never silently dropped.
+    command: ["redis-server", "--maxmemory", "2gb", "--maxmemory-policy", "volatile-lru"]
+    # Loopback only. It has no password; publishing on 0.0.0.0 left the
+    # cloud firewall as the only thing between it and the internet.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -201,8 +211,8 @@ services:
     container_name: newsiq-qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -219,7 +229,7 @@ services:
       MEILI_ENV: ${MEILI_ENV:-development}
       MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:-newsiq-dev-key}
     ports:
-      - "7700:7700"
+      - "127.0.0.1:7700:7700"
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:
@@ -244,7 +254,7 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes: *api-volumes
     environment:
       <<: *api-env
@@ -270,7 +280,7 @@ services:
     command: >
       sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir app"
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes: *api-volumes
     environment:
       <<: *api-env
@@ -375,7 +385,7 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - prometheus_multiproc:/tmp/prometheus_multiproc
       - local_storage:/app/data/storage
@@ -410,7 +420,7 @@ services:
     command: >
       sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 2"
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes:
       - prometheus_multiproc:/tmp/prometheus_multiproc
       - local_storage:/app/data/storage
@@ -519,7 +529,7 @@ services:
     restart: unless-stopped
     profiles: [prod]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: https://api.newsiq.online/api/v1
       INTERNAL_API_URL: http://user-api:8000/api/v1
@@ -539,7 +549,7 @@ services:
     restart: unless-stopped
     profiles: [prod]
     ports:
-      - "3002:3001"
+      - "127.0.0.1:3002:3001"
     environment:
       NEXT_PUBLIC_API_URL: https://admin-api.newsiq.online/api/v1
     depends_on:
@@ -558,7 +568,7 @@ services:
     container_name: newsiq-web
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./apps/web:/app
       - /app/node_modules
@@ -650,7 +660,7 @@ services:
     restart: unless-stopped
     profiles: [admin]
     ports:
-      - "3002:3001"
+      - "127.0.0.1:3002:3001"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001/api/v1}
       NEXT_PUBLIC_APP_NAME: NewsIQ Admin

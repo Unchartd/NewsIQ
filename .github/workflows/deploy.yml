@@ -611,8 +611,26 @@ jobs:
               sleep 5
             done
 
-            # Remove old images (keep last 3)
-            docker image prune -f --filter "until=72h"
+            # Remove old release images, keeping the three newest per repo:
+            # the one now running and two rollback targets.
+            #
+            # This used to be `docker image prune -f --filter until=72h` under
+            # the same "keep last 3" comment. Without -a, prune removes only
+            # dangling (untagged) images, and every release is tagged — so it
+            # never removed anything. 61 release images (~82 GB) accumulated,
+            # filled the disk, stopped Redis persisting, and failed a deploy.
+            # Tags are listed per repo, version-sorted, and all but the newest
+            # three removed. No -f: an image still used by a container is
+            # refused rather than yanked.
+            for repo in "${IMAGE%:*}" "${WEB_IMAGE%:*}" "${ADMIN_IMAGE%:*}"; do
+              docker images "$repo" --format '{{.Tag}}' |
+                grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+                sort -V | head -n -3 |
+                xargs -r -I{} docker rmi "$repo:{}" || true
+            done
+            docker image prune -f || true
+            docker builder prune -f --filter "until=168h" || true
+            df -h / | tail -1 | awk '{print "Disk after cleanup: "$3" used, "$4" free ("$5")"}'
             echo "=== Deploy complete ==="
 
       - name: Tag deployment in Sentry
