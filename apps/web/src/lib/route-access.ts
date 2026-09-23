@@ -30,14 +30,16 @@ export const PROTECTED_PATHS = [
   "/onboarding",
 ] as const;
 
-/** Routes only meaningful to a signed-out visitor. */
-export const AUTH_ONLY_PATHS = [
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/reset-password",
-  "/verify-email",
-] as const;
+/**
+ * Routes only meaningful to a signed-out visitor.
+ *
+ * Never list a page that an emailed link lands on. Signup signs the user in,
+ * so /verify-email used to be here and the proxy bounced every verification
+ * link to /home before the page could submit the token — the account stayed
+ * unverified however many times the email was resent. /reset-password has the
+ * same shape: its link must work from a device that is still signed in.
+ */
+export const AUTH_ONLY_PATHS = ["/login", "/signup", "/forgot-password"] as const;
 
 function matches(pathname: string, paths: readonly string[]): boolean {
   return paths.some((path) => pathname === path || pathname.startsWith(path + "/"));
