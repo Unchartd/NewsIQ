@@ -361,6 +361,9 @@ jobs:
           username: ${{ secrets.ORACLE_VM_USER }}
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           port: ${{ secrets.ORACLE_VM_PORT || 22 }}
+          # The action's default is 10m. A fresh VM pulls all three images
+          # uncached, and one slow pull used up the whole budget (v1.47.0).
+          command_timeout: 30m
           script: |
             set -e
 
