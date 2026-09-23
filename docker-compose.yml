@@ -120,17 +120,37 @@ services:
     image: postgres:17-alpine
     container_name: newsiq-postgres
     restart: unless-stopped
-    profiles: [dev]
+    # Self-hosted in production too. Production previously used Neon; the
+    # data now lives in this container's postgres_data volume on the VM.
+    profiles: [dev, prod]
     environment:
       POSTGRES_USER: newsiq
-      POSTGRES_PASSWORD: newsiq
+      # "newsiq" is the local-dev default only. Production sets a generated
+      # POSTGRES_PASSWORD in .env.production.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-newsiq}
       POSTGRES_DB: newsiq
+    # Sizing comes from the env so a laptop keeps Postgres' small defaults
+    # while the production VM gives it a real share of 16 GB.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-128MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-512MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-4MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}
+      - -c
+      - max_connections=150
+    # Loopback only: reachable by the app containers over the compose
+    # network and by the host for backups, never from outside the VM.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U newsiq"]
+      test: ["CMD-SHELL", "pg_isready -U newsiq -d newsiq"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -393,6 +413,8 @@ services:
       <<: *api-env
       BACKEND_SERVICE_ROLE: user
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
@@ -428,6 +450,8 @@ services:
       <<: *api-env
       BACKEND_SERVICE_ROLE: processing
     depends_on:
+      postgres:
+        condition: service_healthy
       qdrant:
         condition: service_healthy
       meilisearch:
@@ -463,6 +487,8 @@ services:
     environment:
       <<: *api-env
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -493,6 +519,8 @@ services:
     environment:
       <<: *api-env
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
