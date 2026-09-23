@@ -1,0 +1,70 @@
+# Slim dependency set for serving the read-only API (no pipeline workers).
+#
+# The full pyproject dependency list pulls sentence-transformers, which pulls
+# torch — roughly 2.5 GB installed. That will not build or run on a small
+# Render instance, and none of it is needed to serve the site: importing
+# app.main loads no torch, sentence_transformers, spacy, sklearn or hdbscan,
+# because every pipeline service imports them lazily inside function bodies.
+#
+# Excluded deliberately, and what breaks if you call into them:
+#   sentence-transformers, scikit-learn, hdbscan, spacy  -> clustering and
+#       embedding generation (pipeline only)
+#   newspaper4k, trafilatura, readability-lxml, lxml_html_clean, curl-cffi,
+#       googlenewsdecoder                                -> crawling (pipeline only)
+#   agno                                                 -> LLM agents (pipeline only)
+#   boto3                                                -> S3/R2 uploads (avatars)
+#
+# Keep this in sync with apps/api/pyproject.toml when you add a runtime
+# dependency that the API serves requests with.
+
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.30.0
+alembic>=1.14.0
+
+# Validation & settings
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+
+# Auth
+pyjwt[crypto]>=2.9.0
+passlib>=1.7.4
+argon2-cffi>=23.1.0
+authlib>=1.4.0
+httpx>=0.28.0
+
+# Cache
+redis>=5.2.0
+
+# Celery is imported at startup by the admin router's task triggers, even
+# though no worker runs here. The client library alone is small.
+celery[redis]>=5.4.0
+
+# Read paths that are imported at startup
+meilisearch-python-sdk>=3.4.0
+qdrant-client>=1.13.0
+feedparser>=6.0.0
+beautifulsoup4>=4.12.0
+lxml>=6.1.0
+
+# LLM clients (imported at startup by the gateway module)
+openai>=1.60.0
+google-genai>=2.8.0
+
+# Misc runtime
+tenacity>=9.0.0
+rapidfuzz>=3.0.0
+python-multipart>=0.0.18
+python-dotenv>=1.0.0
+uuid7>=0.1.0
+email-validator>=2.2.0
+
+# Observability
+sentry-sdk[fastapi]>=2.0.0
+structlog>=24.0.0
+langfuse>=2.0.0,<3.0.0
+prometheus-client>=0.21.0
