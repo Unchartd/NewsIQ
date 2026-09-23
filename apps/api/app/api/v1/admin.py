@@ -251,22 +251,14 @@ async def trigger_pipeline(
             },
         )
 
-    if force and paused:
-        # Temporarily clear the pause flag so the enqueued tasks pass the
-        # is_pipeline_paused() guard, then immediately re-set it so that
-        # Celery Beat scheduled tasks remain blocked.
-        pause_ttl = (
-            await cache_service._redis.ttl("pipeline_paused") if cache_service._redis else -1
-        )
-        await cache_service.delete("pipeline_paused")
-        ingest_task = ingest_news_task.delay()
-        cluster_task = cluster_news_task.delay()
-        # Re-set the pause flag with remaining TTL (or 1 year for manual pauses)
-        restore_ttl = pause_ttl if pause_ttl > 0 else 86400 * 365
-        await cache_service.set("pipeline_paused", True, ttl=restore_ttl)
-    else:
-        ingest_task = ingest_news_task.delay()
-        cluster_task = cluster_news_task.delay()
+    # A forced trigger tells the two tasks to ignore the pause; everything they
+    # chain still honours it, so Beat stays blocked. This used to clear the
+    # flag, queue the tasks and restore the flag within this one request — so
+    # by the time a worker ran them the pipeline was paused again and they
+    # skipped. A forced trigger never did anything.
+    bypass_pause = force and paused
+    ingest_task = ingest_news_task.delay(force=bypass_pause)
+    cluster_task = cluster_news_task.delay(force=bypass_pause)
 
     return {
         "message": "Pipeline triggered successfully.",

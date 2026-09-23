@@ -29,7 +29,7 @@ from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
@@ -49,30 +49,191 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-# Cooldown duration (seconds) when all LLM providers are quota-exhausted
+# Cooldown duration (seconds) when no LLM provider can answer
 _QUOTA_COOLDOWN_SECONDS = 3600  # 1 hour
 
 
 async def _pause_pipeline_for_quota_cooldown(stage: str) -> None:
     """Set the pipeline_paused flag in Redis for _QUOTA_COOLDOWN_SECONDS.
 
-    Called automatically when every provider in the LLM fallback chain returns
-    a quota / rate-limit error so Celery Beat stops firing AI-heavy tasks.
+    Called automatically when no provider in the LLM fallback chain can answer
+    (see _is_provider_outage) so Celery Beat stops firing AI-heavy tasks.
     The flag has a TTL equal to the cooldown duration and is automatically
     cleared by the cache expiry — no manual resume needed.
+
+    Never shortens an operator's pause: if the flag is already set, it is left
+    alone, so an auto-pause cannot turn a manual (1-year) pause into a 1-hour
+    one.
     """
     try:
         from app.services.cache_service import cache_service
 
+        if await cache_service.get("pipeline_paused"):
+            logger.info("Pipeline already paused; leaving the existing pause in place.")
+            return
         await cache_service.set("pipeline_paused", True, ttl=_QUOTA_COOLDOWN_SECONDS)
         logger.warning(
-            "Pipeline auto-paused for %d seconds due to quota exhaustion at stage '%s'. "
+            "Pipeline auto-paused for %d seconds: no AI provider could answer at stage '%s'. "
             "Will auto-resume after TTL expires.",
             _QUOTA_COOLDOWN_SECONDS,
             stage,
         )
     except Exception as cache_err:
         logger.error("Failed to set pipeline_paused flag: %s", cache_err)
+
+
+def _is_provider_outage(exc: BaseException) -> bool:
+    """Whether ``exc`` means no AI provider could answer at all.
+
+    Only then is pausing right: the input was never the problem, and every
+    further call fails the same way. The auto-pause used to test for the
+    legacy gateway's QuotaExhaustedError alone, which the current gateway
+    never raises — so a Gemini quota outage combined with a rejected Bedrock
+    key paused nothing, and extraction burned through the backlog marking
+    every article failed. The current gateway raises AllProvidersFailedError,
+    whose provider_outage flag covers quota, outages, timeouts and rejected
+    keys, and is False when a model answered with invalid output.
+    """
+    from app.ai.errors import AllProvidersFailedError
+    from app.llm_gateway.request_manager import QuotaExhaustedError
+
+    if isinstance(exc, QuotaExhaustedError):
+        return True
+    return isinstance(exc, AllProvidersFailedError) and exc.provider_outage
+
+
+# ── Event extraction concurrency ─────────────────────────────────────────────
+# Articles per extraction run.
+_EXTRACTION_BATCH_SIZE = 20
+# Consecutive provider-outage failures that confirm an outage (rather than one
+# article whose request happens to fail) and pause the pipeline.
+_OUTAGE_CONFIRM_STREAK = 2
+# Slot lock TTL. Comfortably above the ~6 minutes a batch takes while fighting
+# a failing provider, so a live run never loses its slot; a crashed run's slot
+# frees itself.
+_EXTRACTION_SLOT_TTL = 1800
+_EXTRACTION_SLOT_KEY = "newsiq:lock:extract_events:slot:{}"
+
+
+async def _acquire_extraction_slot() -> tuple[str, str] | None:
+    """Take one of EVENT_EXTRACTION_MAX_CONCURRENT_RUNS run slots.
+
+    Returns (slot_key, token), or None when every slot is held. Beat fires
+    extraction every 10 minutes and each full batch re-queues itself, so
+    without a cap the runs stack up on the shared worker and starve every
+    other queue.
+    """
+    from app.services.cache_service import cache_service
+
+    token = uuid.uuid4().hex
+    for i in range(max(1, settings.EVENT_EXTRACTION_MAX_CONCURRENT_RUNS)):
+        key = _EXTRACTION_SLOT_KEY.format(i)
+        if await cache_service.set_nx(key, token, ttl=_EXTRACTION_SLOT_TTL):
+            return key, token
+    return None
+
+
+async def _release_extraction_slot(slot: tuple[str, str]) -> None:
+    from app.services.cache_service import cache_service
+
+    key, token = slot
+    try:
+        await cache_service.delete_if_equals(key, token)
+    except Exception as err:
+        # The TTL frees it regardless; a leaked slot only lowers throughput.
+        logger.warning("Failed to release extraction slot %s: %s", key, err)
+
+
+async def _claim_extraction_batch(session) -> list[uuid.UUID]:
+    """Claim up to _EXTRACTION_BATCH_SIZE embedded, not-yet-extracted articles.
+
+    Claiming (FOR UPDATE SKIP LOCKED plus a 'processing' write, committed by
+    the caller) is what keeps concurrent runs apart. A plain SELECT ... LIMIT
+    20 handed overlapping runs the same 20 articles: 860 AI calls were spent
+    on 241 articles, and each failed article failed 2.1 times.
+
+    Same age bound as embedding and clustering. Event extraction is the most
+    expensive stage per article (one LLM call each), so processing articles
+    clustering will reject is the costliest version of that mistake.
+    """
+    eligible = (
+        select(Article.id)
+        .where(
+            Article.embedding_status == "completed",
+            # Not `.in_(["pending", None])`: SQL `IN (..., NULL)` never
+            # matches a NULL row.
+            or_(
+                Article.event_extraction_status == "pending",
+                Article.event_extraction_status.is_(None),
+            ),
+            Article.created_at >= _article_age_cutoff(),
+        )
+        # Untried articles before retries; newest news first.
+        .order_by(Article.event_extraction_attempts, Article.created_at.desc())
+        .limit(_EXTRACTION_BATCH_SIZE)
+        .with_for_update(skip_locked=True)
+    )
+    claim = await session.execute(
+        update(Article)
+        .where(Article.id.in_(eligible))
+        .values(
+            event_extraction_status="processing",
+            event_extraction_started_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+        .returning(Article.id)
+        .execution_options(synchronize_session=False)
+    )
+    return list(claim.scalars().all())
+
+
+async def _release_extraction_claims(session, article_ids) -> None:
+    """Return claimed-but-unattempted articles to 'pending' at no attempt cost."""
+    ids = list(article_ids)
+    if not ids:
+        return
+    await session.execute(
+        update(Article)
+        .where(Article.id.in_(ids), Article.event_extraction_status == "processing")
+        .values(event_extraction_status="pending", event_extraction_started_at=None)
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+
+
+async def _charge_extraction_attempts(session, article_ids) -> None:
+    """Count one failed attempt against each article; terminal at the cap.
+
+    For provider-outage failures that turned out to be isolated (the next
+    article succeeded, so the providers were up). Such an article went back
+    to 'pending' uncharged when it failed; charging it now keeps an article
+    whose request always fails from retrying every batch until it ages out.
+    """
+    ids = list(article_ids)
+    if not ids:
+        return
+    attempts = func.coalesce(Article.event_extraction_attempts, 0) + 1
+    try:
+        await session.execute(
+            update(Article)
+            .where(Article.id.in_(ids), Article.event_extraction_status == "pending")
+            .values(
+                event_extraction_attempts=attempts,
+                event_extraction_status=case(
+                    (attempts >= settings.EVENT_EXTRACTION_MAX_ATTEMPTS, "failed"),
+                    else_="pending",
+                ),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await session.commit()
+    except Exception as err:
+        # Bookkeeping only: the articles stay 'pending' and uncharged, which
+        # costs at most an extra retry. Never let it end the batch.
+        logger.error("Could not charge extraction attempts for %d articles: %s", len(ids), err)
+        try:
+            await session.rollback()
+        except Exception as rb_err:
+            logger.warning("Rollback after failed attempt charge failed: %s", rb_err)
 
 
 def _article_age_cutoff() -> datetime:
@@ -264,12 +425,19 @@ async def is_pipeline_paused() -> bool:
 
 
 @celery_app.task(name="app.workers.tasks.ingest_news_task")
-def ingest_news_task(run_id: str | None = None, trace_id: str | None = None) -> dict[str, int]:
-    """Ingest articles from all active RSS news sources."""
+def ingest_news_task(
+    run_id: str | None = None, trace_id: str | None = None, force: bool = False
+) -> dict[str, int]:
+    """Ingest articles from all active RSS news sources.
+
+    force: run even while the pipeline is paused. Only the admin "trigger
+    anyway" action passes it; everything this run chains still honours the
+    pause.
+    """
     logger.info("Celery task: Starting RSS news ingestion.")
 
     async def _run():
-        if await is_pipeline_paused():
+        if not force and await is_pipeline_paused():
             logger.info("Pipeline is paused. Skipping RSS news ingestion.")
             return {}
 
@@ -572,6 +740,19 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
             logger.info("Pipeline is paused. Skipping event extraction.")
             return 0
 
+        slot = await _acquire_extraction_slot()
+        if slot is None:
+            logger.info(
+                "extract_events_task: %d extraction runs already in progress — skipping.",
+                settings.EVENT_EXTRACTION_MAX_CONCURRENT_RUNS,
+            )
+            return 0
+        try:
+            return await _extract_batch()
+        finally:
+            await _release_extraction_slot(slot)
+
+    async def _extract_batch():
         from app.services.event_service import event_service
         from app.services.event_taxonomy import get_parent_type
 
@@ -580,34 +761,30 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
         ) as run:
             async with PipelineTraceCollector.stage(PipelineStage.EVENT_EXTRACTION) as stage:
                 async with async_session_factory() as session:
-                    # Find articles that are embedded but not yet event-extracted
-                    # Same age bound as embedding and clustering. Event
-                    # extraction is the most expensive stage per article (one
-                    # LLM call each), so processing articles clustering will
-                    # reject is the costliest version of this mistake.
-                    stmt = (
-                        select(Article)
-                        .where(
-                            Article.embedding_status == "completed",
-                            Article.event_extraction_status.in_(["pending", None]),
-                            Article.created_at >= _article_age_cutoff(),
-                        )
-                        .limit(20)
-                    )
-                    result = await session.execute(stmt)
-                    articles = list(result.scalars().all())
+                    claimed_ids = await _claim_extraction_batch(session)
 
-                    if not articles:
+                    if not claimed_ids:
+                        await session.rollback()
                         logger.info("No articles pending event extraction.")
                         stage.mark_skipped("no_pending_articles")
                         return 0
 
-                    # Close the read transaction before the per-article loop: the
-                    # first thing each iteration does is an LLM extraction call,
-                    # and an open transaction idling through gateway retries gets
-                    # the backend killed by idle_in_transaction_session_timeout
-                    # (30s in production). expire_on_commit=False keeps the loaded
-                    # Article objects usable.
+                    # Commit the claim, then load the rows and close the read
+                    # transaction before the per-article loop: the first thing
+                    # each iteration does is an LLM extraction call, and an
+                    # open transaction idling through gateway retries gets the
+                    # backend killed by idle_in_transaction_session_timeout
+                    # (30s in production). expire_on_commit=False keeps the
+                    # loaded Article objects usable.
+                    await session.commit()
+                    result = await session.execute(
+                        select(Article)
+                        .where(Article.id.in_(claimed_ids))
+                        # The claim's order, so a batch cut short by an
+                        # outage has tried the articles that matter most.
+                        .order_by(Article.event_extraction_attempts, Article.created_at.desc())
+                    )
+                    articles = list(result.scalars().all())
                     await session.commit()
 
                     stage.input(articles=articles)
@@ -622,6 +799,20 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                     clustering_failed_count = 0
                     extracted_events_summary = []
 
+                    # Provider-outage bookkeeping. A failure where no provider
+                    # could answer returns its article to 'pending' without
+                    # charging an attempt, because whether it was really an
+                    # outage only shows in what happens next:
+                    #   * _OUTAGE_CONFIRM_STREAK in a row confirms it — stop,
+                    #     pause the pipeline, and charge nobody. None of those
+                    #     articles was the problem.
+                    #   * Any other outcome in between means the providers
+                    #     answered for the next article, so the streak is
+                    #     charged as ordinary failures after all.
+                    outage_streak: list[uuid.UUID] = []
+                    outage_confirmed = False
+                    attempted: set[uuid.UUID] = set()
+
                     # Iterate over ids, not instances. The clustering-failure
                     # branch below rolls the session back, and rollback expires
                     # every loaded instance regardless of expire_on_commit —
@@ -634,15 +825,13 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
 
                     for article_id in article_ids:
                         bind_article_context(str(article_id))
+                        attempted.add(article_id)
                         article = await session.get(Article, article_id)
                         if article is None:
                             failed_count += 1
                             continue
                         try:
-                            # Mark as processing in-memory — no commit here.
-                            # The final commit below will persist the terminal status
-                            # ("completed" or "failed") in a single round-trip.
-                            article.event_extraction_status = "processing"
+                            # Already 'processing' — the claim above committed it.
 
                             # Extract structured events
                             content = article.content or article.description or ""
@@ -728,9 +917,16 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 session.add(article_entity)
 
                             article.event_extraction_status = "completed"
+                            article.event_extraction_started_at = None
                             await session.commit()
                             success_count += 1
                             stage.lineage(str(article.id), "ARTICLE", "EVENTS_EXTRACTED")
+
+                            # A provider answered, so an outage streak just
+                            # before this article was specific to those articles.
+                            if outage_streak:
+                                await _charge_extraction_attempts(session, outage_streak)
+                                outage_streak.clear()
 
                             extracted_events_summary.append(
                                 {
@@ -810,24 +1006,13 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     logger.error("Failed to record clustering failure: %s", rec_err)
 
                         except Exception as e:
-                            from app.llm_gateway.request_manager import QuotaExhaustedError
-
-                            if isinstance(e, QuotaExhaustedError):
-                                # All LLM providers are quota-exhausted — pause the whole
-                                # pipeline for a cooldown period rather than hammering the API.
-                                await _pause_pipeline_for_quota_cooldown("event_extraction")
-                                logger.warning(
-                                    "QuotaExhaustedError: stopping event extraction batch early. "
-                                    "Pipeline paused for %d seconds.",
-                                    _QUOTA_COOLDOWN_SECONDS,
-                                )
-                                break  # exit per-article loop
-
+                            provider_outage = _is_provider_outage(e)
                             logger.error(
                                 "Event extraction failed",
                                 extra={
                                     "article_id": str(article_id),
                                     "error": str(e),
+                                    "provider_outage": provider_outage,
                                 },
                             )
                             # Roll back FIRST. If the failure was a DB-level one
@@ -856,7 +1041,24 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                 article = None
                             try:
                                 if article is not None:
-                                    article.event_extraction_status = "failed"
+                                    article.event_extraction_started_at = None
+                                    if provider_outage:
+                                        # Uncharged for now — see the outage
+                                        # bookkeeping above the loop.
+                                        article.event_extraction_status = "pending"
+                                    else:
+                                        # 'failed' was terminal after one try;
+                                        # now only at the attempt cap.
+                                        article.event_extraction_attempts = (
+                                            article.event_extraction_attempts or 0
+                                        ) + 1
+                                        if (
+                                            article.event_extraction_attempts
+                                            >= settings.EVENT_EXTRACTION_MAX_ATTEMPTS
+                                        ):
+                                            article.event_extraction_status = "failed"
+                                        else:
+                                            article.event_extraction_status = "pending"
                                     await session.commit()
                             except Exception as status_err:
                                 # The article stays 'processing' and is recovered
@@ -917,11 +1119,64 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                                     "Failed to record event extraction failure: %s", rec_err
                                 )
 
+                            if provider_outage:
+                                outage_streak.append(article_id)
+                                if len(outage_streak) >= _OUTAGE_CONFIRM_STREAK:
+                                    outage_confirmed = True
+                                    break  # stop calling providers that cannot answer
+                            elif outage_streak:
+                                # Not an outage this time, so the streak was not
+                                # one either: charge it like any other failure.
+                                await _charge_extraction_attempts(session, outage_streak)
+                                outage_streak.clear()
+
+                    if outage_streak and not outage_confirmed:
+                        # The batch ended mid-streak. If outages were all that
+                        # happened, the batch itself is the evidence; otherwise a
+                        # provider answered for some other article.
+                        if success_count == 0 and failed_count == len(outage_streak):
+                            outage_confirmed = True
+                        else:
+                            await _charge_extraction_attempts(session, outage_streak)
+                            outage_streak.clear()
+
+                    # Claimed but never attempted (the loop stopped early): back
+                    # to 'pending' at no attempt cost.
+                    unattempted = [aid for aid in article_ids if aid not in attempted]
+                    if unattempted:
+                        try:
+                            await _release_extraction_claims(session, unattempted)
+                        except Exception as release_err:
+                            # Left 'processing'; recover_stuck_embeddings_task
+                            # returns them to 'pending' once the claim is stale.
+                            logger.error(
+                                "Could not release %d unattempted extraction claims: %s",
+                                len(unattempted),
+                                release_err,
+                            )
+
+                    if outage_confirmed:
+                        await _pause_pipeline_for_quota_cooldown("event_extraction")
+                        stage.mark_failed(
+                            "No AI provider could answer; "
+                            f"{len(outage_streak) + len(unattempted)} articles returned to "
+                            "pending without using an attempt, and the pipeline was paused."
+                        )
+                    elif success_count == 0 and failed_count > 0:
+                        stage.mark_failed(
+                            f"All {failed_count} articles in the batch failed extraction."
+                        )
+                    elif failed_count:
+                        stage.warn(
+                            f"{failed_count} of {len(article_ids)} articles failed extraction."
+                        )
+
                     stage.output(
                         success_count=success_count,
                         failed_count=failed_count,
                         merged_count=merged_count,
                         clustering_failed_count=clustering_failed_count,
+                        provider_outage=outage_confirmed,
                     )
                     stage.metric("batch_size", len(articles))
                     stage.metric("success_count", success_count)
@@ -942,9 +1197,16 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                         },
                     )
 
-                    # If we processed a full batch, check for more
-                    if len(articles) == 20:
-                        extract_events_task.delay(run.id, run.trace_id)
+                    if outage_confirmed:
+                        # Paused. Chaining would only queue work that skips;
+                        # beat resumes extraction when the cooldown expires.
+                        pass
+                    elif len(article_ids) == _EXTRACTION_BATCH_SIZE and success_count > 0:
+                        # A full, productive batch: there are probably more.
+                        # A batch that got nothing done no longer re-queues
+                        # itself at once — that is how failing runs stacked up.
+                        # The short delay lets this run release its slot first.
+                        extract_events_task.apply_async(args=[run.id, run.trace_id], countdown=5)
                     else:
                         # Event extraction for this batch is done. Trigger clustering now.
                         cluster_news_task.delay(run.id, run.trace_id)
@@ -971,12 +1233,17 @@ def _try_parse_event_time(raw: str | None) -> datetime | None:
 
 
 @celery_app.task(name="app.workers.tasks.cluster_news_task")
-def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) -> int:
-    """Run batch clustering of unclustered articles into stories."""
+def cluster_news_task(
+    run_id: str | None = None, trace_id: str | None = None, force: bool = False
+) -> int:
+    """Run batch clustering of unclustered articles into stories.
+
+    force: run even while the pipeline is paused (admin "trigger anyway").
+    """
     logger.info("Celery task: Running batch clustering.")
 
     async def _run():
-        if await is_pipeline_paused():
+        if not force and await is_pipeline_paused():
             logger.info("Pipeline is paused. Skipping batch clustering.")
             return 0
 
@@ -1005,8 +1272,6 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
             return 0
 
         try:
-            from app.llm_gateway.request_manager import QuotaExhaustedError
-
             async with PipelineRun(
                 trigger="chained", pipeline_type="batch", run_id=run_id, trace_id=trace_id
             ):
@@ -1019,13 +1284,16 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
                             stories_created = await clustering_service.run_batch_clustering(session)
                             stage.output(stories_created=stories_created)
                             stage.metric("stories_created", stories_created)
-                        except QuotaExhaustedError:
+                        except Exception as e:
+                            if not _is_provider_outage(e):
+                                raise
                             await _pause_pipeline_for_quota_cooldown("clustering")
                             logger.warning(
-                                "QuotaExhaustedError during clustering. Pipeline paused for %d seconds.",
+                                "No AI provider could answer during clustering. "
+                                "Pipeline paused for %d seconds.",
                                 _QUOTA_COOLDOWN_SECONDS,
                             )
-                            stage.mark_skipped("quota_exhausted")
+                            stage.mark_failed("No AI provider could answer; pipeline paused.")
                             return 0
 
                         if stories_created == 0:
@@ -1041,6 +1309,102 @@ def cluster_news_task(run_id: str | None = None, trace_id: str | None = None) ->
                 await cache_service.delete(_CLUSTER_LOCK_KEY)
             except Exception as lock_err:
                 logger.warning("Failed to release cluster lock: %s", lock_err)
+
+    return run_async(_run())
+
+
+@celery_app.task(name="app.workers.tasks.retry_pending_story_synthesis_task")
+def retry_pending_story_synthesis_task() -> int:
+    """Retry synthesis for multi-article stories stuck in 'pending'.
+
+    Synthesis runs inline when clustering creates or grows a story. If it dies
+    part-way — usually because every provider failed — the story keeps its
+    articles but stays 'pending' with no summary, and nothing tried again: no
+    code selected pending stories at all, so the story was never published.
+
+    A synthesis that finished but was not approved for publishing also leaves
+    the story 'pending'. It stores its input hash, though, so
+    synthesize_story's updates guard skips it here until new articles arrive.
+    Only syntheses that never finished are actually re-run.
+    """
+    logger.info("Celery task: Retrying synthesis for stories stuck in pending.")
+
+    async def _run():
+        if await is_pipeline_paused():
+            logger.info("Pipeline is paused. Skipping pending-story synthesis retry.")
+            return 0
+
+        from datetime import timedelta
+
+        from app.models.models import Story, StoryArticle
+        from app.services.cache_service import cache_service
+        from app.services.story_synthesis_service import story_synthesis_orchestrator
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        # Leave a story alone while clustering may still be synthesizing it.
+        settled_before = now - timedelta(minutes=15)
+        created_after = now - timedelta(hours=settings.PIPELINE_MAX_ARTICLE_AGE_HOURS)
+        retry_ttl = settings.PIPELINE_MAX_ARTICLE_AGE_HOURS * 3600
+
+        async with async_session_factory() as session:
+            stmt = (
+                select(Story.id)
+                .join(StoryArticle, StoryArticle.story_id == Story.id)
+                .where(
+                    Story.story_status == "pending",
+                    Story.updated_at < settled_before,
+                    Story.created_at >= created_after,
+                )
+                .group_by(Story.id, Story.updated_at)
+                # Clustering's own threshold: single-article stories are not
+                # synthesized until a second article joins them.
+                .having(func.count(StoryArticle.article_id) >= 2)
+                .order_by(Story.updated_at)
+                # Over-fetch: stories out of retries are skipped below.
+                .limit(settings.STORY_SYNTHESIS_RETRY_BATCH_SIZE * 4)
+            )
+            candidate_ids = list((await session.execute(stmt)).scalars().all())
+            await session.commit()
+
+        retried = 0
+        async with PipelineRun(trigger="celery_beat", pipeline_type="incremental"):
+            for story_id in candidate_ids:
+                if retried >= settings.STORY_SYNTHESIS_RETRY_BATCH_SIZE:
+                    break
+
+                lock_key = f"newsiq:lock:synthesis_retry:{story_id}"
+                if not await cache_service.set_nx(lock_key, "1", ttl=900):
+                    continue
+                try:
+                    attempts = await cache_service.incr(
+                        f"story_synthesis_retries:{story_id}", ttl=retry_ttl
+                    )
+                    if attempts > settings.STORY_SYNTHESIS_MAX_RETRIES:
+                        continue
+                    retried += 1
+
+                    async with StageSpan(
+                        stage=PipelineStage.SYNTHESIS_ORCHESTRATOR, story_id=str(story_id)
+                    ):
+                        async with async_session_factory() as session:
+                            await story_synthesis_orchestrator.synthesize_story(
+                                session=session, story_id=story_id, trigger="retry_pending"
+                            )
+                            await session.commit()
+                except Exception as e:
+                    # StageSpan has recorded the failure; decide whether to go on.
+                    if _is_provider_outage(e):
+                        await _pause_pipeline_for_quota_cooldown("synthesis_retry")
+                        break
+                    logger.error("Synthesis retry failed for story %s: %s", story_id, e)
+                finally:
+                    await cache_service.delete(lock_key)
+
+        logger.info(
+            "Pending-story synthesis retry complete",
+            extra={"candidates": len(candidate_ids), "retried": retried},
+        )
+        return retried
 
     return run_async(_run())
 
@@ -1172,13 +1536,24 @@ def recover_stuck_embeddings_task() -> int:
                 )
                 .values(embedding_status="pending")
             )
+            # Extraction now commits its claim, so a crawl-time cutoff would
+            # "recover" an article crawled an hour ago but claimed a second
+            # ago — mid-flight, handing it to a second run. Key on the claim
+            # time; rows claimed before event_extraction_started_at existed
+            # keep the old rule.
             evt = await session.execute(
                 update(Article)
                 .where(
                     Article.event_extraction_status == "processing",
-                    or_(Article.crawled_at < cutoff, Article.created_at < cutoff),
+                    or_(
+                        Article.event_extraction_started_at < cutoff,
+                        and_(
+                            Article.event_extraction_started_at.is_(None),
+                            or_(Article.crawled_at < cutoff, Article.created_at < cutoff),
+                        ),
+                    ),
                 )
-                .values(event_extraction_status="pending")
+                .values(event_extraction_status="pending", event_extraction_started_at=None)
             )
             await session.commit()
 

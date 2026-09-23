@@ -73,6 +73,17 @@ class _FakeRedis:
     async def expire(self, key, ttl):
         return True
 
+    async def eval(self, script, numkeys, *args):
+        # Only the compare-and-delete behind cache_service.delete_if_equals.
+        # Any other script fails loudly instead of silently doing nothing.
+        if numkeys == 1 and "redis.call('get', KEYS[1]) == ARGV[1]" in script and "'del'" in script:
+            key, value = args
+            if self._store.get(key) == value:
+                del self._store[key]
+                return 1
+            return 0
+        raise NotImplementedError(f"_FakeRedis.eval does not support this script: {script!r}")
+
     async def llen(self, key):
         return 0
 

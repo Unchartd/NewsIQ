@@ -73,6 +73,26 @@ class Settings(BaseSettings):
     # explicit max_age_hours argument to run_batch_clustering().
     PIPELINE_MAX_ARTICLE_AGE_HOURS: int = 72
 
+    # Event extraction failures an article may accumulate before 'failed'
+    # becomes terminal. Each failure below the cap returns the article to
+    # 'pending'. A confirmed provider outage consumes no attempts.
+    EVENT_EXTRACTION_MAX_ATTEMPTS: int = 3
+
+    # How many extract_events_task runs may execute at once. Every run holds a
+    # worker slot for its whole batch, and a batch fighting a failing provider
+    # takes ~6 minutes. With no cap, beat and the task's own self-chaining
+    # stacked 3-4 concurrent runs on the single 4-slot worker for over two
+    # hours, starving discovery until 1,822 tasks were queued behind them.
+    EVENT_EXTRACTION_MAX_CONCURRENT_RUNS: int = 2
+
+    # Story synthesis retry: stories left 'pending' after a synthesis attempt
+    # died (usually a provider failure) are retried by a scheduled task. Each
+    # run retries at most this many stories, and each story at most
+    # STORY_SYNTHESIS_MAX_RETRIES times — synthesis is the most expensive
+    # stage per story.
+    STORY_SYNTHESIS_RETRY_BATCH_SIZE: int = 5
+    STORY_SYNTHESIS_MAX_RETRIES: int = 3
+
     # Story reconciliation: how far back to look for duplicate stories, and how
     # many merges one scheduled run may apply. The cap bounds the blast radius —
     # if the validators ever become too permissive, a single run can affect at

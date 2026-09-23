@@ -26,7 +26,10 @@ def test_all_processing_stages_share_one_age_setting():
     stage will discard — the exact failure this suite exists to prevent.
     """
     embed_src = inspect.getsource(tasks.process_pending_embeddings_task)
-    extract_src = inspect.getsource(tasks.extract_events_task)
+    # Extraction selects its batch through the claim helper.
+    extract_src = inspect.getsource(tasks.extract_events_task) + inspect.getsource(
+        tasks._claim_extraction_batch
+    )
     cluster_src = inspect.getsource(clustering_service._run_batch_clustering_locked)
 
     assert "_article_age_cutoff()" in embed_src, "embedding is not age-bounded"
