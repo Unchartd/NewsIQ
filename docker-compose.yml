@@ -120,17 +120,37 @@ services:
     image: postgres:17-alpine
     container_name: newsiq-postgres
     restart: unless-stopped
-    profiles: [dev]
+    # Self-hosted in production too. Production previously used Neon; the
+    # data now lives in this container's postgres_data volume on the VM.
+    profiles: [dev, prod]
     environment:
       POSTGRES_USER: newsiq
-      POSTGRES_PASSWORD: newsiq
+      # "newsiq" is the local-dev default only. Production sets a generated
+      # POSTGRES_PASSWORD in .env.production.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-newsiq}
       POSTGRES_DB: newsiq
+    # Sizing comes from the env so a laptop keeps Postgres' small defaults
+    # while the production VM gives it a real share of 16 GB.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-128MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-512MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-4MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}
+      - -c
+      - max_connections=150
+    # Loopback only: reachable by the app containers over the compose
+    # network and by the host for backups, never from outside the VM.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U newsiq"]
+      test: ["CMD-SHELL", "pg_isready -U newsiq -d newsiq"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -140,8 +160,18 @@ services:
     container_name: newsiq-redis
     restart: unless-stopped
     profiles: [dev, prod]
+    # Capped. Uncapped, this grew to 6.46 GB, its RDB snapshot filled the
+    # disk, Redis refused writes, /ready went 503 and a deploy rolled back.
+    #
+    # volatile-lru, not allkeys-lru: only keys WITH a TTL are evictable. Every
+    # cache and Celery-result key carries a TTL (db0 313,260 of 313,265;
+    # db2 all 221,590) while the broker's queues in db1 carry none — so under
+    # pressure the cache sheds and queued tasks are never silently dropped.
+    command: ["redis-server", "--maxmemory", "2gb", "--maxmemory-policy", "volatile-lru"]
+    # Loopback only. It has no password; publishing on 0.0.0.0 left the
+    # cloud firewall as the only thing between it and the internet.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -201,8 +231,8 @@ services:
     container_name: newsiq-qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -219,7 +249,7 @@ services:
       MEILI_ENV: ${MEILI_ENV:-development}
       MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:-newsiq-dev-key}
     ports:
-      - "7700:7700"
+      - "127.0.0.1:7700:7700"
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:
@@ -244,7 +274,7 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes: *api-volumes
     environment:
       <<: *api-env
@@ -270,7 +300,7 @@ services:
     command: >
       sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir app"
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes: *api-volumes
     environment:
       <<: *api-env
@@ -375,7 +405,7 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - prometheus_multiproc:/tmp/prometheus_multiproc
       - local_storage:/app/data/storage
@@ -383,6 +413,8 @@ services:
       <<: *api-env
       BACKEND_SERVICE_ROLE: user
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
@@ -410,7 +442,7 @@ services:
     command: >
       sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 2"
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes:
       - prometheus_multiproc:/tmp/prometheus_multiproc
       - local_storage:/app/data/storage
@@ -418,6 +450,8 @@ services:
       <<: *api-env
       BACKEND_SERVICE_ROLE: processing
     depends_on:
+      postgres:
+        condition: service_healthy
       qdrant:
         condition: service_healthy
       meilisearch:
@@ -453,6 +487,8 @@ services:
     environment:
       <<: *api-env
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -483,6 +519,8 @@ services:
     environment:
       <<: *api-env
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -519,7 +557,7 @@ services:
     restart: unless-stopped
     profiles: [prod]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: https://api.newsiq.online/api/v1
       INTERNAL_API_URL: http://user-api:8000/api/v1
@@ -539,7 +577,7 @@ services:
     restart: unless-stopped
     profiles: [prod]
     ports:
-      - "3002:3001"
+      - "127.0.0.1:3002:3001"
     environment:
       NEXT_PUBLIC_API_URL: https://admin-api.newsiq.online/api/v1
     depends_on:
@@ -558,7 +596,7 @@ services:
     container_name: newsiq-web
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./apps/web:/app
       - /app/node_modules
@@ -650,7 +688,7 @@ services:
     restart: unless-stopped
     profiles: [admin]
     ports:
-      - "3002:3001"
+      - "127.0.0.1:3002:3001"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001/api/v1}
       NEXT_PUBLIC_APP_NAME: NewsIQ Admin

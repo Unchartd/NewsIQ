@@ -465,26 +465,46 @@ jobs:
             # Verify DNS works now
             DB_HOST=$(grep "^DATABASE_DIRECT_URL" .env.production | head -1 | sed -e 's/.*@//' -e 's/[:/].*//')
             echo "DB Host: [$DB_HOST]"
-            if [ "$DB_HOST" != "host.docker.internal" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "127.0.0.1" ]; then
+            # A dotless host is a compose service name (e.g. the self-hosted
+            # `postgres` container). It only resolves inside the compose
+            # network, so a host-side lookup would always fail and abort the
+            # deploy. Only external (dotted) hostnames need checking here.
+            if [ -n "$DB_HOST" ] && [ "$DB_HOST" != "host.docker.internal" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "127.0.0.1" ] && [ "${DB_HOST#*.}" != "$DB_HOST" ]; then
               getent hosts "$DB_HOST" && echo "DNS OK" || { echo "FATAL: DNS still broken after fix"; exit 1; }
             else
-              echo "Local/Docker host detected, skipping DNS check"
+              echo "Local/Docker host detected ($DB_HOST), skipping DNS check"
             fi
 
             # Show masked DB URLs for debugging
             grep -E "^DATABASE" .env.production | sed 's/:[^@]*@/:***@/g'
             grep -E "(REDIS_URL|CELERY_BROKER_URL|CELERY_RESULT_BACKEND)" .env.production | sed 's/:[^@]*@/:***@/g'
 
-            # Run migrations against Neon before switching traffic
-            # Use default bridge network (NOT --network host) so --dns flags are respected
+            # Start the stateful services, wait for Postgres, then migrate on
+            # the compose network before switching traffic.
+            #
+            # This used to be a standalone `docker run` on the default bridge,
+            # which reached Neon over the internet. The database is now the
+            # self-hosted `postgres` service: its hostname only resolves on the
+            # compose network, and on a first deploy it is not running yet.
+            echo "=== Starting stateful services ==="
+            NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" \
+              docker compose --env-file .env.production --profile prod up -d postgres redis
+            PG_HEALTH="missing"
+            for i in $(seq 1 30); do
+              PG_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' newsiq-postgres 2>/dev/null || echo "missing")
+              [ "$PG_HEALTH" = "healthy" ] && break
+              echo "Waiting for postgres ($i/30): $PG_HEALTH"
+              sleep 2
+            done
+            if [ "$PG_HEALTH" != "healthy" ]; then
+              echo "FATAL: postgres never became healthy"
+              docker compose --env-file .env.production --profile prod logs postgres --no-color --tail=100 || true
+              exit 1
+            fi
+
             echo "=== Running Alembic migrations ==="
-            docker run --rm \
-              --dns 8.8.8.8 \
-              --dns 1.1.1.1 \
-              --add-host host.docker.internal:host-gateway \
-              --env-file .env.production \
-              "$IMAGE" \
-              alembic upgrade head
+            NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" \
+              docker compose --env-file .env.production --profile prod run --rm --no-deps user-api alembic upgrade head
 
             # Capture what is currently serving, so a failed deploy can be undone.
             #
@@ -611,8 +631,26 @@ jobs:
               sleep 5
             done
 
-            # Remove old images (keep last 3)
-            docker image prune -f --filter "until=72h"
+            # Remove old release images, keeping the three newest per repo:
+            # the one now running and two rollback targets.
+            #
+            # This used to be `docker image prune -f --filter until=72h` under
+            # the same "keep last 3" comment. Without -a, prune removes only
+            # dangling (untagged) images, and every release is tagged — so it
+            # never removed anything. 61 release images (~82 GB) accumulated,
+            # filled the disk, stopped Redis persisting, and failed a deploy.
+            # Tags are listed per repo, version-sorted, and all but the newest
+            # three removed. No -f: an image still used by a container is
+            # refused rather than yanked.
+            for repo in "${IMAGE%:*}" "${WEB_IMAGE%:*}" "${ADMIN_IMAGE%:*}"; do
+              docker images "$repo" --format '{{.Tag}}' |
+                grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+                sort -V | head -n -3 |
+                xargs -r -I{} docker rmi "$repo:{}" || true
+            done
+            docker image prune -f || true
+            docker builder prune -f --filter "until=168h" || true
+            df -h / | tail -1 | awk '{print "Disk after cleanup: "$3" used, "$4" free ("$5")"}'
             echo "=== Deploy complete ==="
 
       - name: Tag deployment in Sentry

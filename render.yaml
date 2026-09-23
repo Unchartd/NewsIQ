@@ -1,0 +1,78 @@
+# Render Blueprint — read-only NewsIQ API (no pipeline workers, no admin app).
+#
+# Deploy with: Render dashboard -> New -> Blueprint -> point at this repo.
+# Everything below is created and wired automatically except the secrets
+# marked `sync: false`, which Render will prompt for.
+#
+# What this intentionally does NOT deploy:
+#   * Celery worker / beat  — the ingestion + AI pipeline. Running it needs
+#     torch, spacy and friends (1.5 GB of deps) plus Qdrant, and it costs
+#     money on every crawl. The site serves existing data without it.
+#   * The admin dashboard (apps/admin).
+#   * Qdrant and Meilisearch. Neither is in the readiness check; search falls
+#     back to a Postgres ILIKE query when Meilisearch is absent.
+
+databases:
+  - name: newsiq-db
+    databaseName: newsiq
+    user: newsiq
+    # Free Postgres on Render expires after 30 days and is deleted. For an
+    # application you want reviewers to open weeks later, use `basic-256mb`.
+    plan: free
+
+services:
+  - type: redis
+    name: newsiq-redis
+    plan: free
+    # The API's /ready endpoint fails without a reachable cache, so Redis is
+    # required even with no pipeline running. volatile-lru evicts only keys
+    # that carry a TTL — every cache key does, Celery's queues do not — so
+    # memory pressure can never silently drop a queued task.
+    maxmemoryPolicy: volatile-lru
+    ipAllowList: []
+
+  - type: web
+    name: newsiq-api
+    runtime: python
+    plan: free
+    rootDir: apps/api
+    # requirements-web.txt is the slim set: 294 MB installed, against 1.5 GB
+    # for the full pyproject list, which pulls torch via sentence-transformers
+    # and will not fit a small instance.
+    buildCommand: pip install -r requirements-web.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: newsiq-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: newsiq-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: newsiq-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: newsiq-redis
+          property: connectionString
+      # Must include the Vercel domain or every browser request is blocked by
+      # CORS. JSON list — pydantic-settings parses it as list[str].
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENVIRONMENT
+        value: production
+      # Keeps the pipeline dormant even if a task is somehow triggered.
+      - key: STORY_FIRST_ENABLED
+        value: "false"
