@@ -41,6 +41,10 @@ class GatewayRequest(BaseModel):
     story_id: str = Field("", description="Story ID context for tracing")
     article_id: str = Field("", description="Article ID context for tracing")
     timeout: float = Field(30.0, description="Provider timeout")
+    reasoning: dict[str, Any] | None = Field(
+        None,
+        description="Reasoning controls from the route (OpenRouter), e.g. {'enabled': False}",
+    )
 
     class Config:
         arbitrary_types_allowed = True
