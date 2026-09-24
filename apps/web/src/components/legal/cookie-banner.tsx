@@ -22,7 +22,7 @@ export default function CookieBanner() {
       essential: true,
       functional: true,
       analytics: true,
-      marketing: true,
+      marketing: false,
     });
   };
 
@@ -68,8 +68,8 @@ export default function CookieBanner() {
             </div>
           </div>
           <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.6 }}>
-            NewsIQ uses cookies to secure session authentication and maintain layout state. Depending on your region, we may also request permission to run privacy-focused analytics and marketing pixels. Read our{" "}
-            <a href="/legal?policy=cookies" style={{ color: "var(--blue)", textDecoration: "underline", fontWeight: 500 }}>
+            NewsIQ uses essential cookies to keep you signed in. With your permission, we also use Google Analytics and PostHog to understand how the site is used. We use no advertising trackers. Read our{" "}
+            <a href="/cookies" style={{ color: "var(--blue)", textDecoration: "underline", fontWeight: 500 }}>
               Cookie Policy
             </a>{" "}
             to learn more.

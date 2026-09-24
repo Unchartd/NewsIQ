@@ -53,6 +53,7 @@ MUST_PAUSE = [
     "poll_discovery_retries_task",
     "poll_story_candidate_timeouts_task",
     "discovery_grouping_task",
+    "retry_pending_story_synthesis_task",
 ]
 
 # Observability, recovery, cleanup, and operator-initiated actions.

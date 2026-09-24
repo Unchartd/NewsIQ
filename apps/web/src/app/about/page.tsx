@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SITE } from "@/lib/site-identity";
 import Link from "next/link";
 import { buildPageMetadata } from "@/lib/metadata";
 import { buildWebPageSchema, buildOrganizationSchema, serializeJsonLd } from "@/lib/jsonld";
@@ -81,7 +82,7 @@ export default function AboutPage() {
             <div className="grid gap-4">
               {[
                 {
-                  title: "Clusters stories from 200+ sources",
+                  title: "Clusters coverage from many publishers",
                   description:
                     "Our AI groups related articles from across the media landscape into a single, coherent story — so you see the full picture, not one outlet's framing.",
                 },
@@ -120,10 +121,12 @@ export default function AboutPage() {
           <div>
             <h2 className="text-2xl font-bold mb-4">Who We Are</h2>
             <p className="text-muted-foreground leading-relaxed">
-              NewsIQ Technologies Private Limited is an Indian technology company
-              building AI-native media tools. We are a team of engineers,
-              journalists, and product designers who believe the next generation
-              of news consumption should be smarter, not noisier.
+              NewsIQ is built and run by {SITE.operator}, {SITE.operatorDescription}.
+              It reads the public feeds of about 30 publishers, finds further
+              coverage of the same events through news search, and turns it into
+              one clear story. It is an early-stage, independent project. You can
+              reach us at{" "}
+              <a className="underline" href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
             </p>
           </div>
 

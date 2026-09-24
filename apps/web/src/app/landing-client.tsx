@@ -1,5 +1,6 @@
 "use client";
 
+import { SITE } from "@/lib/site-identity";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
@@ -288,20 +289,23 @@ export function LandingClientPage() {
           </div>
 
           <div className="hero-stats reveal">
+            {/* Only facts that stay true: these used to claim "12,000+ readers
+                today", "98% clustering accuracy", "1,240 stories indexed" and
+                5-minute updates, none of which were real. */}
             <span>
-              <b>12,000+</b> readers today
+              <b>~30</b> publisher feeds
             </span>
             <span className="hero-stat-sep"></span>
             <span>
-              <b>98%</b> clustering accuracy
+              <b>3</b> summary depths
             </span>
             <span className="hero-stat-sep"></span>
             <span>
-              Updates every <b>5 minutes</b>
+              New coverage every <b>15 minutes</b>
             </span>
             <span className="hero-stat-sep"></span>
             <span>
-              <b>1,240</b> stories indexed
+              <b>Free</b> in early access
             </span>
           </div>
 
@@ -322,7 +326,7 @@ export function LandingClientPage() {
                 style={{ background: "#28C840" }}
               ></div>
               <div className="chrome-bar">
-                newsiq.in/story/bengaluru-floods-2026
+                newsiq.online/story/bengaluru-floods-2026
               </div>
               <div style={{ width: "24px" }}></div>
             </div>
@@ -1026,7 +1030,7 @@ export function LandingClientPage() {
 
                 <h3 className="how-card-title">News Sources</h3>
                 <p className="how-card-desc">
-                  RSS, APIs & crawlers from 10,000+ publishers worldwide
+                  Publisher RSS feeds, plus news search for wider coverage
                 </p>
                 <div className="how-card-footer">
                   <span className="how-tag">Ingesting</span>
@@ -1872,7 +1876,7 @@ export function LandingClientPage() {
               <ul className="why-feat-list">
                 <li className="why-feat-item yes">
                   <span className="why-feat-icon why-icon-star">★</span>
-                  <span className="why-feat-txt">500+ sources</span>
+                  <span className="why-feat-txt">~30 publisher feeds + news search</span>
                 </li>
                 <li className="why-feat-item yes">
                   <span className="why-feat-icon why-icon-star">★</span>
@@ -2155,7 +2159,7 @@ export function LandingClientPage() {
           </div>
 
           CALLOUT: Source Comparison & Difference Engine are free for everyone
-          NOTE: No credit card required · Free tier always available · Cancel Pro anytime · Students get 50% off at edu@newsiq.in
+          NOTE: No credit card required · Free tier always available · Cancel Pro anytime · Students get 50% off
         </div>
       </section>
       PRICING_SECTION_END */}
@@ -2189,7 +2193,7 @@ export function LandingClientPage() {
               },
               {
                 q: "Which publishers does NewsIQ cover?",
-                a: "We aggregate from 500+ sources globally, including Reuters, AP, BBC, Bloomberg, The Guardian, CNN, CNBC, and in India: NDTV, Times of India, The Hindu, Indian Express, Hindustan Times, Deccan Herald, and many more. We're constantly adding new sources. If you'd like a specific publication added, contact us at hello.newsiq@gmail.com.",
+                a: "We read the public feeds of about 30 publishers, including BBC News, The Guardian, Al Jazeera, DW, France 24, TechCrunch and The Verge, and in India NDTV, The Times of India, The Hindu and Hindustan Times. We also find further coverage of the same events through news search. If you'd like a specific publication added, contact us at hello.newsiq@gmail.com.",
               },
               {
                 q: "Can I compare coverage between publishers?",
@@ -2403,11 +2407,20 @@ export function LandingClientPage() {
               <Link href="/tos" className="footer-link">
                 Terms of Service
               </Link>
+              <Link href="/cookies" className="footer-link">
+                Cookie Policy
+              </Link>
+              <Link href="/security" className="footer-link">
+                Security
+              </Link>
+              <Link href="/contact" className="footer-link">
+                Contact
+              </Link>
             </div>
           </div>
           <div className="footer-bottom">
             <span>
-              © 2026 NewsIQ Technologies Private Limited. All rights reserved.
+              © {new Date().getFullYear()} {SITE.name} · operated by {SITE.operator}, {SITE.country}
             </span>
             <div className="footer-bottom-links">
               <Link

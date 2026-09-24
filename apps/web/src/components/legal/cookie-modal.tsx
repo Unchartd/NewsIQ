@@ -57,10 +57,10 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
   };
 
   const handleAcceptAll = async () => {
-    const allOn = { essential: true, functional: true, analytics: true, marketing: true };
+    const allOn = { essential: true, functional: true, analytics: true, marketing: false };
     setLocalPrefs(allOn);
     await updateConsent(allOn);
-    toast.success("Accepted all cookies and third-party trackers.");
+    toast.success("Accepted all optional cookies.");
     onClose();
   };
 
@@ -77,7 +77,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
       essential: true,
       functional: functionalEnabled,
       analytics: analyticsEnabled,
-      marketing: marketingEnabled,
+      marketing: false, // no marketing trackers exist
     });
     toast.info("Preferences reset to active settings.");
   };
@@ -170,7 +170,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
                 Strictly necessary for secure authentication, CSRF defense, and email validation cooldown limits.
               </div>
               <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
-                <strong>Cookies:</strong> `access_token`, `refresh_token`, `niq_cookie_consent` | <strong>Retention:</strong> 15 mins to 1 year | <strong>Third-party:</strong> No
+                <strong>Cookies:</strong> `access_token` (15 min), `refresh_token` (30 days) | <strong>Browser storage:</strong> `niq_consent_preferences`, `niq_anonymous_id`, `newsiq-auth` | <strong>Third-party:</strong> No
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center" }}>
@@ -198,7 +198,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
                 Remembers theme selections (dark/light), sidebar layout modes, and preferred AI summary depth configs.
               </div>
               <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
-                <strong>Keys:</strong> `newsiq-ui`, `theme`, `next-themes` | <strong>Retention:</strong> Persistent | <strong>Third-party:</strong> No
+                <strong>Browser storage:</strong> `newsiq-ui`, `theme` | <strong>Retention:</strong> Until you clear it | <strong>Third-party:</strong> No
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center" }}>
@@ -232,7 +232,7 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
                 Helps us measure site traffic, identify feature usage clickstreams, and optimize response speeds anonymously.
               </div>
               <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
-                <strong>Cookies:</strong> `_ga`, `_gid`, `posthog-js` | <strong>Retention:</strong> 24 hrs to 1 year | <strong>Third-party:</strong> Yes (Google, PostHog)
+                <strong>Cookies:</strong> `_ga`, `_ga_*` (Google, up to 2 years), `ph_*` (PostHog, up to 1 year) — set only after you allow analytics | <strong>Third-party:</strong> Yes (Google, PostHog)
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center" }}>
@@ -246,37 +246,18 @@ export default function CookieModal({ isOpen, onClose }: CookieModalProps) {
             </div>
           </div>
 
-          {/* Marketing */}
-          <div 
+          {/* Marketing — none in use */}
+          <div
             style={{
               padding: "14px",
               background: "var(--surface)",
               borderRadius: "10px",
               border: "1px solid var(--border)",
-              display: "flex",
-              justifyContent: "space-between",
-              gap: "16px",
             }}
           >
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                <span style={{ fontSize: "14px", fontWeight: 600 }}>4. Targeting & Marketing</span>
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
-                Tracks campaign success and measures newsletter signup events to serve relevant context on partner channels.
-              </div>
-              <div style={{ fontSize: "11px", color: "var(--ink3)", marginTop: "6px" }}>
-                <strong>Cookies:</strong> `_fbp`, `LinkedIn Insight` | <strong>Retention:</strong> 30 to 90 days | <strong>Third-party:</strong> Yes (Meta, LinkedIn)
-              </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <input 
-                type="checkbox" 
-                aria-label="Marketing cookies"
-                checked={localPrefs.marketing}
-                onChange={() => handleToggle("marketing")}
-                style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "var(--blue)" }} 
-              />
+            <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>4. Advertising &amp; Marketing</div>
+            <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
+              Not used. NewsIQ runs no advertising, retargeting or social-media tracking pixels.
             </div>
           </div>
 

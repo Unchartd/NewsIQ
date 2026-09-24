@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from app.core.config import settings
 
@@ -13,6 +13,9 @@ class ProviderModelRoute(TypedDict):
     model: str
     temperature: float
     timeout: float
+    # OpenRouter reasoning controls. Part of the route, not a detail: the same
+    # model took 5.8s with reasoning off and 38-111s with it on.
+    reasoning: NotRequired[dict[str, Any]]
 
 
 class CapabilityRoute(TypedDict):
@@ -20,6 +23,41 @@ class CapabilityRoute(TypedDict):
     fallback: ProviderModelRoute
     lastFallback: ProviderModelRoute
 
+
+# ── OpenRouter escape routes ─────────────────────────────────────────────────
+# Tried after both Gemini models and before Bedrock, so a Gemini outage (free
+# tier spent, or Google's "model is experiencing high demand" 503s) no longer
+# stops the pipeline. Neither is a Google model, so they share no failure
+# domain with Gemini.
+#
+# Chosen from a live comparison on 2026-09-24, with the production key, on the
+# real event-extraction prompt and a 4,389-char article (a court verdict, whose
+# correct taxonomy type is LEGAL). Every model below returned schema-valid output:
+#
+#   deepseek-v4-flash, reasoning off   5.8s  $0.00047  LEGAL (the only correct type)
+#   mercury-2.5, reasoning low         3.3-3.9s  $0.00036-0.00039  OTHER / LEGISLATION
+#   nemotron-3.5-lightning, off        8.8s  $0.00033  POLICY_CHANGE
+#   qwen3.8-flash / qwen3.7-flash, off 11-15s              LEGISLATION
+#   glm-5.3-flash, low (can't be off)  29.7s               LEGISLATION
+#
+# The reasoning setting matters more than the model: with defaults, the same
+# models took 38-111s per article. gpt-oss-20b ranged from 2s to 124s between
+# runs and was rejected for that.
+_OPENROUTER_DEEPSEEK_V4_FLASH: dict[str, Any] = {
+    "provider": "openrouter",
+    "model": "deepseek/deepseek-v4-flash-0731",
+    "temperature": 0.1,
+    "timeout": 45.0,
+    "reasoning": {"enabled": False},
+}
+_OPENROUTER_MERCURY_2_5: dict[str, Any] = {
+    "provider": "openrouter",
+    "model": "inception/mercury-2.5",
+    "temperature": 0.1,
+    "timeout": 45.0,
+    # Fastest measured. Single host (Inception), hence second, not first.
+    "reasoning": {"effort": "low"},
+}
 
 # Model fallback chains — configured strictly for Gemini API (gemini-3.1-flash-lite & gemini-3.5-flash-lite)
 MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
@@ -43,6 +81,8 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         # only Gemini entries here they simply died when the free tier was
         # spent: 348 RESOURCE_EXHAUSTED errors in a 20-minute window, 276 of
         # them entity_disambiguation alone.
+        dict(_OPENROUTER_DEEPSEEK_V4_FLASH),
+        dict(_OPENROUTER_MERCURY_2_5),
         {
             "provider": "bedrock",
             "model": "qwen.qwen3-vl-235b-a22b-instruct",
@@ -76,6 +116,8 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
         # only Gemini entries here they simply died when the free tier was
         # spent: 348 RESOURCE_EXHAUSTED errors in a 20-minute window, 276 of
         # them entity_disambiguation alone.
+        dict(_OPENROUTER_DEEPSEEK_V4_FLASH),
+        dict(_OPENROUTER_MERCURY_2_5),
         {
             "provider": "bedrock",
             "model": "qwen.qwen3-vl-235b-a22b-instruct",
@@ -108,6 +150,11 @@ MODEL_FALLBACKS: dict[str, list[dict[str, Any]]] = {
     "mock": [
         {"provider": "mock", "model": "mock", "temperature": 0.0, "timeout": 15.0},
     ],
+    # ── OpenRouter chat models ───────────────────────────────────────────────
+    # Registered under their own names too, so a manifest or agent can name
+    # them directly — an unregistered name gets no route at all.
+    "deepseek/deepseek-v4-flash-0731": [dict(_OPENROUTER_DEEPSEEK_V4_FLASH)],
+    "inception/mercury-2.5": [dict(_OPENROUTER_MERCURY_2_5)],
     # ── Bedrock (Mantle) chat models ────────────────────────────────────────
     # These MUST be registered here, not only in CAPABILITY_ROUTING and the
     # prompt manifests. generate_stage() — the path every prompt-driven stage

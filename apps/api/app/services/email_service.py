@@ -4,6 +4,7 @@ import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
 
 from app.core.config import settings
 from app.models.user import User
@@ -596,6 +597,46 @@ class EmailService:
 
         await self._send(user.email, subject, html_content, text_content, "digest", "")
 
+    async def send_legal_request(
+        self,
+        *,
+        reference: str,
+        kind: str,
+        request_type: str | None,
+        requester_email: str,
+        name: str | None,
+        subject: str | None,
+        details: str,
+        reference_url: str | None,
+    ) -> None:
+        """Deliver a legal/privacy/abuse/contact request to the monitored inbox.
+
+        Raises on failure: the form must not tell someone their privacy
+        request or copyright notice was received when it was not.
+        """
+        lines = [
+            f"Reference: {reference}",
+            f"Kind: {kind}" + (f" ({request_type})" if request_type else ""),
+            f"From: {name or '(no name given)'} <{requester_email}>",
+        ]
+        if subject:
+            lines.append(f"Subject: {subject}")
+        if reference_url:
+            lines.append(f"URL: {reference_url}")
+        lines += ["", details, "", "Reply to this email to respond to the requester."]
+        text = "\n".join(lines)
+        html = "<pre style='font-family:inherit;white-space:pre-wrap'>" + escape(text) + "</pre>"
+        await self._send(
+            settings.LEGAL_CONTACT_EMAIL,
+            f"[NewsIQ {kind}] {subject or request_type or 'request'} ({reference})",
+            html,
+            text,
+            f"legal:{kind}",
+            "",
+            reply_to=requester_email,
+            raise_errors=True,
+        )
+
     async def _send(
         self,
         recipient: str,
@@ -604,6 +645,8 @@ class EmailService:
         text_content: str,
         email_type: str,
         raw_token: str,
+        reply_to: str | None = None,
+        raise_errors: bool = False,
     ) -> None:
         """Sends the email using SMTP or logs to console if unconfigured."""
         if not settings.SMTP_HOST or not settings.SMTP_PORT:
@@ -628,6 +671,8 @@ class EmailService:
             message["Subject"] = subject
             message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
             message["To"] = recipient
+            if reply_to:
+                message["Reply-To"] = reply_to
 
             # Attach plain text and HTML versions
             message.attach(MIMEText(text_content, "plain"))
@@ -639,6 +684,8 @@ class EmailService:
             logger.info("Successfully sent %s email to %s", email_type, recipient)
         except Exception as e:
             logger.error("Failed to send %s email to %s: %s", email_type, recipient, e)
+            if raise_errors:
+                raise
 
     def _send_smtp_sync(self, recipient: str, message_str: str) -> None:
         """Synchronous SMTP connection and send handler executed in background thread."""

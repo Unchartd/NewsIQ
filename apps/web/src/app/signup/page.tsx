@@ -166,7 +166,7 @@ export default function SignupPage() {
                 Create your account
               </h1>
               <p className="text-sm text-muted-foreground">
-                Join 10,000+ readers getting smarter every day.
+                Understand every story in minutes. Free during early access.
               </p>
             </div>
 

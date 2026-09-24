@@ -2,21 +2,42 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { Honeypot } from "@/components/legal/honeypot";
+import { legalRequestErrorMessage, submitLegalRequest } from "@/lib/legal-requests";
+
 
 export default function AbuseForm() {
   const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot
+  const [sending, setSending] = useState(false);
   const [category, setCategory] = useState("scraping");
   const [description, setDescription] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !description) {
       toast.error("Please fill in all required fields.");
       return;
     }
-    toast.success("Abuse report submitted. Our security operations team will investigate immediately.");
-    setEmail("");
-    setDescription("");
+    // This used to say "submitted" and send nothing.
+    setSending(true);
+    try {
+      const reference = await submitLegalRequest({
+        kind: "abuse",
+        request_type: category,
+        email,
+        subject: `Abuse report: ${category}`,
+        details: description,
+        website,
+      });
+      toast.success(`Report sent (reference ${reference}). Thank you; we will look into it.`);
+      setEmail("");
+      setDescription("");
+    } catch (err) {
+      toast.error(legalRequestErrorMessage(err));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -106,11 +127,13 @@ export default function AbuseForm() {
 
         <button
           type="submit"
+          disabled={sending}
           className="btnp"
           style={{ width: "100%", justifyContent: "center", padding: "10px 18px", marginTop: "8px" }}
         >
           Submit Abuse Report
         </button>
+      <Honeypot value={website} onChange={setWebsite} />
       </form>
     </div>
   );

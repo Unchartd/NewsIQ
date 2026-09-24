@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -51,21 +52,66 @@ class OpenRouterProvider(AIProvider):
             "temperature": request.temperature,
         }
 
-        # Handle JSON / Structured Outputs
+        # Structured output.
+        #
+        # This used to request plain JSON mode and, at most, add "Respond in
+        # valid JSON format matching the schema" — without ever sending the
+        # schema. That is the exact bug that made 1,351 of 1,352 Bedrock
+        # responses fail validation (see providers/bedrock.py): the model
+        # invents field names. The schema now goes both into response_format,
+        # for hosts that enforce it, and into the prompt, for those that only
+        # promise JSON.
         if request.response_format:
-            params["response_format"] = {"type": "json_object"}
-            has_json = any("json" in str(m.get("content", "")).lower() for m in messages)
-            if not has_json:
-                params["messages"] = messages + [
-                    {
-                        "role": "system",
-                        "content": "Respond in valid JSON format matching the schema.",
-                    }
-                ]
+            if isinstance(request.response_format, type) and issubclass(
+                request.response_format, BaseModel
+            ):
+                schema = request.response_format.model_json_schema()
+                params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": request.response_format.__name__, "schema": schema},
+                }
+                instruction = (
+                    "Respond with ONLY one JSON object matching this JSON schema — "
+                    "no prose, no markdown fences:\n" + json.dumps(schema)
+                )
+            else:
+                params["response_format"] = {"type": "json_object"}
+                instruction = "Respond with ONLY one valid JSON object — no prose, no markdown."
+            params["messages"] = messages + [{"role": "system", "content": instruction}]
+
+        # OpenRouter-specific fields go through the SDK's extra_body.
+        extra_body: dict[str, Any] = {
+            # Report the billed cost. OpenRouter picks the host per request, and
+            # hosts differ in price — a measured DeepSeek call billed ~35% above
+            # the listed rate — so the response is the only accurate figure.
+            "usage": {"include": True},
+        }
+        if request.reasoning is not None:
+            extra_body["reasoning"] = request.reasoning
+        if request.response_format or request.reasoning is not None:
+            # Only route to hosts that honour every parameter sent. A host that
+            # silently ignores response_format returns unparseable output, and
+            # one that ignores the reasoning setting turns a 6s call into 100s.
+            extra_body["provider"] = {"require_parameters": True}
+        params["extra_body"] = extra_body
 
         return params
 
+    @staticmethod
+    def _billed_cost(response: Any) -> float:
+        """The cost OpenRouter reports for this call, or 0.0 when absent."""
+        usage = getattr(response, "usage", None)
+        cost = getattr(usage, "cost", None)
+        if cost is None and usage is not None:
+            cost = (getattr(usage, "model_extra", None) or {}).get("cost")
+        try:
+            return float(cost) if cost is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
     def _handle_exception(self, e: Exception) -> Exception:
+        if isinstance(e, asyncio.TimeoutError):
+            return TimeoutError("OpenRouter request exceeded its total deadline")
         if isinstance(e, APITimeoutError):
             return TimeoutError(f"OpenRouter request timed out: {e}")
         elif isinstance(e, APIError):
@@ -81,10 +127,22 @@ class OpenRouterProvider(AIProvider):
     async def generate(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
         t0 = time.perf_counter()
         try:
-            client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
+            # No SDK retries: the gateway already retries each route, so the
+            # SDK's two extra attempts only multiplied the time a failing
+            # route could hold a worker.
+            client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url, max_retries=0)
             params = self._prepare_params(request)
 
-            response = await client.chat.completions.create(**params, timeout=request.timeout)
+            # A real deadline for the whole call. The SDK timeout only bounds
+            # the gap between bytes, and OpenRouter keeps a slow non-streaming
+            # request alive by trickling whitespace — so after the v1.49.0
+            # rollout both extraction runs sat on OpenRouter sockets for over
+            # four minutes against a 45s route timeout, and the pipeline
+            # stopped moving.
+            response = await asyncio.wait_for(
+                client.chat.completions.create(**params, timeout=request.timeout),
+                timeout=request.timeout,
+            )
             latency_ms = (time.perf_counter() - t0) * 1000
 
             choice = response.choices[0]
@@ -113,6 +171,7 @@ class OpenRouterProvider(AIProvider):
                 output_tokens=output_tokens,
                 total_tokens=input_tokens + output_tokens,
                 latency_ms=latency_ms,
+                cost_usd=self._billed_cost(response),
                 provider="openrouter",
                 model=request.model,
                 key_used=api_key.get_masked(),

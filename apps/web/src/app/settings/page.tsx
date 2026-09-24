@@ -200,7 +200,6 @@ function SettingsContent() {
     essentialEnabled,
     functionalEnabled,
     analyticsEnabled,
-    marketingEnabled,
     region,
     consentVersion,
     updateConsent,
@@ -919,8 +918,8 @@ function SettingsContent() {
                   </div>
                 </div>
                 <div className="av-info">
-                  <div className="av-name">{displayName || user?.name || "Aarav Mehta"}</div>
-                  <div className="av-email">{user?.email || "aarav.mehta@gmail.com"}</div>
+                  <div className="av-name">{displayName || user?.name || "Your name"}</div>
+                  <div className="av-email">{user?.email || ""}</div>
                   <div className="av-actions">
                     <button className="btno btnsm" onClick={() => triggerToast("Photo upload coming soon", "w")}>
                       <svg width="13" height="13"><use href="#i-cam" /></svg>Change photo
@@ -2066,7 +2065,7 @@ function SettingsContent() {
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <svg width="14" height="14" style={{ color: "var(--ink3)" }}><use href="#i-mail" /></svg>Email verification
                   </div>
-                  <div className="tog-sub">Send a code to {user?.email || "aarav.mehta@gmail.com"} on new logins</div>
+                  <div className="tog-sub">Send a code to {user?.email || ""} on new logins</div>
                 </div>
                 <label className="toggle">
                   <input type="checkbox" checked={email2Fa} onChange={(e) => handleUiToggleChange("email2Fa", e.target.checked, setEmail2Fa)} />
@@ -2237,26 +2236,14 @@ function SettingsContent() {
                 </label>
               </div>
 
-              {/* Marketing */}
+              {/* Marketing — none in use */}
               <div className="tog-row" style={{ borderBottom: "none" }}>
                 <div className="tog-info">
                   <div className="tog-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
-                    📢 Target Marketing Pixels
+                    Advertising &amp; marketing
                   </div>
-                  <div className="tog-sub">Allows Meta Pixel and LinkedIn tags to measure newsletter and billing conversions.</div>
+                  <div className="tog-sub">Not used. NewsIQ runs no advertising, retargeting or social-media tracking pixels.</div>
                 </div>
-                <label className="toggle">
-                  <input 
-                    type="checkbox" 
-                    checked={marketingEnabled} 
-                    onChange={async (e) => {
-                      await updateConsent({ marketing: e.target.checked });
-                      triggerToast(`Marketing pixels ${e.target.checked ? "enabled" : "disabled"}.`, "s");
-                    }} 
-                  />
-                  <div className="tog-track"></div>
-                  <div className="tog-thumb"></div>
-                </label>
               </div>
             </div>
 

@@ -1,18 +1,16 @@
-"use client";
+import type { Metadata } from "next";
 
-import React, { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { PolicyView } from "@/components/legal/policy-view";
+import { buildPageMetadata } from "@/lib/metadata";
+
+import { normalizedPolicies } from "../normalized-content";
+
+export const metadata: Metadata = buildPageMetadata(
+  "Privacy Policy",
+  "What personal data NewsIQ collects, why, who processes it, and your rights under India's DPDP Act and the GDPR.",
+  "/privacy"
+);
 
 export default function PrivacyPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace("/legal?policy=privacy");
-  }, [router]);
-
-  return (
-    <div style={{ padding: "80px", textAlign: "center", color: "var(--ink3)" }}>
-      Redirecting to Legal Center...
-    </div>
-  );
+  return <PolicyView doc={normalizedPolicies.privacy} current="/privacy" />;
 }

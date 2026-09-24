@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     url: SITE_URL,
     title: `${SITE_NAME} — Understand the Story, Not Just the Headlines`,
     description:
-      "AI-powered news intelligence. Neutral headlines, multi-source comparison, timelines, and fact extraction. Updated every 5 minutes.",
+      "AI-powered news intelligence. Neutral headlines, multi-source comparison, timelines, and fact extraction. New coverage checked every 15 minutes.",
     images: [
       {
         url: "/og-image.png",
