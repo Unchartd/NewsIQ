@@ -369,6 +369,10 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "noreply@newsiq.io"
     SMTP_FROM_NAME: str = "NewsIQ"
     FRONTEND_URL: str = "http://localhost:3000"
+    # Where privacy, copyright, abuse and contact requests from the legal
+    # forms are delivered. Must be a monitored inbox: these include notices
+    # the Privacy Policy and Terms promise to act on.
+    LEGAL_CONTACT_EMAIL: str = "hello.newsiq@gmail.com"
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     CORS_ORIGINS: list[str] = [

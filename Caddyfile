@@ -2,27 +2,43 @@
     email {$ACME_EMAIL}
 }
 
+# Every site is HTTPS-only (Caddy redirects plain HTTP), so tell browsers to
+# never try plain HTTP again. includeSubDomains is safe: every subdomain
+# served here has a certificate.
+(security_headers) {
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}
+
 # User API
 {$API_DOMAIN} {
+    import security_headers
     reverse_proxy user-api:8000
 }
 
 # Processing API (Admin/Background Tasks API)
 {$ADMIN_API_DOMAIN} {
+    import security_headers
     reverse_proxy processing-api:8001
 }
 
 # Admin Dashboard
 admin.newsiq.online {
+    import security_headers
     reverse_proxy admin-prod:3001
 }
 
 # Main Frontend
-newsiq.online, www.newsiq.online {
+newsiq.online {
+    import security_headers
     reverse_proxy web-prod:3000
 }
 
-# Database Dashboard
-db.newsiq.online {
-    reverse_proxy newsiq-cloudbeaver:8978
+# One canonical host. www served the same pages as a duplicate, and search
+# engines had indexed www URLs alongside the apex.
+www.newsiq.online {
+    import security_headers
+    redir https://newsiq.online{uri} permanent
 }
+
+# db.newsiq.online was removed: it proxied to a database UI (CloudBeaver)
+# that is not deployed, so it only served 502s from a public "db." host.

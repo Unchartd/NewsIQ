@@ -11,6 +11,7 @@
  *   https://developers.google.com/search/docs/appearance/structured-data/
  */
 
+import { SITE } from "@/lib/site-identity";
 import { SITE_URL, SITE_NAME, DEFAULT_OG_IMAGE, getStoryRoute } from "@/lib/metadata";
 
 // ─────────────────────────────────────────────────────────────
@@ -32,15 +33,13 @@ export function buildOrganizationSchema() {
     },
     description:
       "NewsIQ is an AI-powered news intelligence platform that clusters stories from dozens of sources, providing neutral headlines, AI summaries, source comparisons, and timelines.",
-    foundingDate: "2024",
-    sameAs: [
-      "https://twitter.com/newsiq_app",
-      // Add LinkedIn, GitHub, etc. as available
-    ],
+    foundingDate: "2026",
+    // Add sameAs profile URLs only for accounts that exist and belong to NewsIQ.
+    founder: { "@type": "Person", name: SITE.operator },
     contactPoint: {
       "@type": "ContactPoint",
       contactType: "customer support",
-      email: "support@newsiq.online",
+      email: SITE.contactEmail,
     },
   };
 }

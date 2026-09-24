@@ -23,17 +23,18 @@ export const brand = {
   url: "https://newsiq.online",
 
   /** Legal entity name */
-  legalName: "NewsIQ Technologies Private Limited",
+  legalName: "NewsIQ (operated by Zakaur Rahman)",
 
   /** Founding year */
-  foundingYear: "2024",
+  foundingYear: "2026",
 
   /** Social handles */
   social: {
-    twitter: "@newsiq_online",
-    supportEmail: "support@newsiq.online",
-    sourcesEmail: "sources@newsiq.in",
-    eduEmail: "edu@newsiq.in",
+    // No verified social accounts yet; add real handles only.
+    twitter: "",
+    supportEmail: "hello.newsiq@gmail.com",
+    sourcesEmail: "hello.newsiq@gmail.com",
+    eduEmail: "hello.newsiq@gmail.com",
   },
 
   /** Asset paths (relative to public/) */

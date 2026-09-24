@@ -21,7 +21,7 @@ export const metadata: Metadata = buildPageMetadata(
 
 const webPageSchema = buildWebPageSchema(
   "NewsIQ Methodology — AI News Clustering",
-  "How NewsIQ uses AI to cluster, summarise, and compare news stories from 200+ publishers.",
+  "How NewsIQ uses AI to cluster, summarise, and compare news stories from many publishers.",
   "/methodology"
 );
 
@@ -29,17 +29,17 @@ const METHODOLOGY_FAQS = [
   {
     question: "How does NewsIQ cluster related news articles?",
     answer:
-      "NewsIQ uses a combination of semantic embedding similarity, named entity overlap, and topic modeling to group articles about the same real-world event into a single story cluster. Articles published within a rolling time window are scored for relatedness and merged when the similarity score exceeds our threshold.",
+      "NewsIQ uses a combination of semantic embedding similarity and named-entity overlap to group articles about the same real-world event into a single story cluster. Articles published within a rolling time window are scored for relatedness and merged when the similarity score exceeds our threshold.",
   },
   {
     question: "How accurate is the NewsIQ AI clustering?",
     answer:
-      "Our internal evaluation shows 98% clustering accuracy on held-out test sets of major news events. False positives (wrongly merging unrelated stories) are rare due to our conservative similarity threshold. False negatives (missing related articles) are addressed by the continuous ingestion cycle.",
+      "Clustering uses deliberately conservative similarity thresholds, so related articles are sometimes left in separate stories rather than unrelated ones being merged. A scheduled job later merges stories that turn out to describe the same event.",
   },
   {
     question: "How often does NewsIQ update its story feed?",
     answer:
-      "NewsIQ ingests new articles every 5 minutes. Trending stories are updated with higher priority. Story summaries are regenerated when a significant new source is added to the cluster.",
+      "NewsIQ checks publisher feeds for new articles every 15 minutes. Story summaries are regenerated when a significant new source is added to the cluster.",
   },
   {
     question: "Does NewsIQ use GPT or other LLMs?",
@@ -77,7 +77,7 @@ export default function MethodologyPage() {
             </h1>
             <p className="text-xl text-muted-foreground leading-relaxed">
               A technical explanation of how NewsIQ ingests, clusters, and
-              intelligently summarises news from 200+ publishers using AI.
+              summarises news from many publishers using AI.
             </p>
           </div>
         </section>
@@ -89,7 +89,7 @@ export default function MethodologyPage() {
             <p className="text-muted-foreground leading-relaxed">
               NewsIQ continuously fetches new articles from our curated publisher
               list via RSS feeds and news APIs. Articles are normalized, deduplicated
-              by URL, and queued for analysis. Ingestion runs every 5 minutes.
+              by URL, and queued for analysis. Ingestion runs every 15 minutes.
             </p>
           </section>
 
@@ -115,8 +115,9 @@ export default function MethodologyPage() {
             </p>
             <div className="mt-4 p-4 rounded-xl bg-card/50 border border-border/50">
               <p className="text-sm text-muted-foreground">
-                <strong className="text-foreground">Accuracy:</strong> 98% clustering precision on our internal benchmark of 10,000 story events.
-                Evaluated against human editorial judgement.
+                <strong className="text-foreground">Accuracy:</strong> thresholds are conservative, so NewsIQ would
+                rather show two stories about one event than merge two different events. A scheduled job merges
+                duplicate stories afterwards.
               </p>
             </div>
           </section>

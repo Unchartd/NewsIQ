@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, consent, oauth, sources, stories, users
+from app.api.v1 import admin, auth, consent, legal, oauth, sources, stories, users
 from app.core.config import settings
 
 api_router = APIRouter()
@@ -25,6 +25,9 @@ if role_norm in ("monolith", "user"):
 
     # User endpoints
     api_router.include_router(users.router, prefix="/users", tags=["users"])
+
+    # Privacy, copyright, abuse and contact requests from the legal forms
+    api_router.include_router(legal.router, prefix="/legal", tags=["legal"])
 
 # Admin & Observability routes
 if role_norm in ("monolith", "processing", "admin"):

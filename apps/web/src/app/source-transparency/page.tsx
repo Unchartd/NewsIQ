@@ -34,7 +34,7 @@ const SOURCE_FAQS = [
   {
     question: "How can publishers opt out of being indexed?",
     answer:
-      "We respect publisher autonomy. If you are a publisher and wish to opt out of our news index, or if you want to update your name, logo, or RSS feed URL in our registry, please email us at support@newsiq.online. We also honor standard web crawling protocols and robots.txt directives.",
+      "We respect publisher autonomy. If you are a publisher and want your feed removed from NewsIQ, or want to update your name, logo or feed URL, email us at hello.newsiq@gmail.com and we will act on it.",
   },
   {
     question: "Does NewsIQ reproduce entire articles?",
@@ -44,7 +44,7 @@ const SOURCE_FAQS = [
   {
     question: "What criteria must a news source meet to be indexed?",
     answer:
-      "To maintain high standards, we require sources to have: (1) a transparent editorial board and masthead, (2) clear disclosures of funding and ownership, (3) a verifiable history of factual reporting, and (4) an active, published corrections policy. Self-published blogs, satirical sites, and hyperpartisan outlets are excluded.",
+      "The feeds we read directly come from established news organisations with a public masthead and a published corrections policy; we do not add self-published blogs or satire sites. Coverage we find through news search can come from a wider range of publishers.",
   },
 ];
 
@@ -197,11 +197,11 @@ export default function SourceTransparencyPage() {
               </li>
             </ul>
             <p className="text-muted-foreground leading-relaxed">
-              For any request or inquiry, please contact our source integrity team at{" "}
-              <a href="mailto:support@newsiq.online" className="text-primary hover:underline font-semibold">
-                support@newsiq.online
+              For any request or enquiry, email{" "}
+              <a href="mailto:hello.newsiq@gmail.com" className="text-primary hover:underline font-semibold">
+                hello.newsiq@gmail.com
               </a>
-              . We respond to all publisher communications within 2 business days.
+              . We reply to publishers within 7 days.
             </p>
           </section>
 
