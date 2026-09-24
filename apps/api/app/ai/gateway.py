@@ -436,13 +436,14 @@ class AIGateway:
                             story_id=s_id,
                             article_id=a_id,
                             timeout=cfg.timeout_seconds,
+                            reasoning=route_cfg.get("reasoning"),
                         )
 
                         logger.info(
                             "Gateway [stage=%s] provider=%s model=%s (attempt %d/%d)",
                             stage,
                             provider_name,
-                            model_name,
+                            route_model,
                             attempt + 1,
                             max_attempts,
                         )
@@ -483,8 +484,13 @@ class AIGateway:
                                         f"[{stage}] Response validation failed: {val_err}"
                                     )
 
-                            cost = self._calculate_cost(
-                                model_name, response.input_tokens, response.output_tokens
+                            # Price the model that was actually called. This used
+                            # the chain's name, so every cross-provider fallback
+                            # call was priced as Gemini. A provider that reports
+                            # its billed cost (OpenRouter) is taken at its word:
+                            # its price depends on which host served the call.
+                            cost = response.cost_usd or self._calculate_cost(
+                                route_model, response.input_tokens, response.output_tokens
                             )
                             response.cost_usd = cost
                             trace_call.cost_usd = cost
@@ -640,7 +646,7 @@ class AIGateway:
                             "Gateway [stage=%s] provider=%s model=%s failed: %s",
                             stage,
                             provider_name,
-                            model_name,
+                            route_model,
                             err,
                         )
                         if not isinstance(err, RateLimitError):
@@ -948,7 +954,7 @@ class AIGateway:
                                 )
 
                         # Calculate and set cost
-                        cost = self._calculate_cost(
+                        cost = response.cost_usd or self._calculate_cost(
                             model_name, response.input_tokens, response.output_tokens
                         )
                         response.cost_usd = cost
@@ -1479,6 +1485,7 @@ class AIGateway:
                         story_id=s_id,
                         article_id=a_id,
                         timeout=timeout,
+                        reasoning=route_cfg.get("reasoning"),
                     )
 
                     logger.info(
@@ -1525,7 +1532,7 @@ class AIGateway:
                                     f"Response validation failed against schema: {val_err}"
                                 )
 
-                        cost = self._calculate_cost(
+                        cost = response.cost_usd or self._calculate_cost(
                             model_name, response.input_tokens, response.output_tokens
                         )
                         response.cost_usd = cost

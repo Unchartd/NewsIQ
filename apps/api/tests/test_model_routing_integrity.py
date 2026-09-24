@@ -96,6 +96,8 @@ def test_registered_models_route_to_their_own_provider():
         "gemini-": "gemini",
         "qwen.": "bedrock",
         "deepseek.": "bedrock",
+        "deepseek/": "openrouter",
+        "inception/": "openrouter",
     }
     wrong = []
     for entry_model, routes in MODEL_FALLBACKS.items():

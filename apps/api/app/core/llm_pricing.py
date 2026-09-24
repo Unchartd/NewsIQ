@@ -42,6 +42,12 @@ PRICING_TABLE: dict[str, dict[str, float]] = {
     "deepseek-ai/deepseek-v4-pro": {"input": 0.55, "output": 2.19},
     "nvidia/llama-3.2-nv-embedqa-4b-v1": {"input": 0.0, "output": 0.0},
     # ── OpenRouter ────────────────────────────────────────────────────────────
+    # For OpenRouter chat the gateway uses the billed cost OpenRouter returns
+    # with each response (it varies by the host that served the call); these
+    # listed rates are only the fallback when a response omits it.
+    # Mercury's listed rate is an 80%-off promotion as of 2026-09-24.
+    "deepseek/deepseek-v4-flash-0731": {"input": 0.03, "output": 0.32},
+    "inception/mercury-2.5": {"input": 0.04, "output": 0.15},
     "deepseek/deepseek-chat": {"input": 0.14, "output": 0.28},
     "qwen/qwen-2.5-72b-instruct": {"input": 0.40, "output": 0.40},
     "nomic/nomic-embed-text-v1.5": {"input": 0.0, "output": 0.0},
