@@ -147,6 +147,14 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.reconcile_duplicate_stories_task",
         "schedule": crontab(minute="*/30"),
     },
+    # Re-run synthesis for multi-article stories left 'pending' by a synthesis
+    # that died part-way. Nothing else ever retried them, so a provider
+    # outage during synthesis kept a story unpublished for good. Offset from
+    # the */15 jobs so it does not compete with ingestion for the worker.
+    "retry-pending-story-synthesis-every-15-minutes": {
+        "task": "app.workers.tasks.retry_pending_story_synthesis_task",
+        "schedule": crontab(minute="7,22,37,52"),
+    },
     # Evaluate story lifecycles
     "evaluate-story-lifecycles-every-15-minutes": {
         "task": "app.workers.tasks.evaluate_story_lifecycles_task",

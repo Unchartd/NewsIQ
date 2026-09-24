@@ -281,6 +281,28 @@ class CacheService:
             logger.warning("Cache SET_NX failed for %s: %s", key, e)
             return False
 
+    # Compare-and-delete must be one atomic step: a GET followed by DELETE
+    # would delete a lock that expired and was re-acquired in between.
+    _DELETE_IF_EQUALS_SCRIPT = (
+        "if redis.call('get', KEYS[1]) == ARGV[1] then "
+        "return redis.call('del', KEYS[1]) else return 0 end"
+    )
+
+    async def delete_if_equals(self, key: str, value: str) -> bool:
+        """Delete ``key`` only if it still holds ``value`` (safe lock release).
+
+        Returns True if the key was deleted. A holder whose lock already
+        expired and was taken by someone else must not release theirs.
+        """
+        if not self._redis:
+            return False
+        try:
+            res = await self._redis.eval(self._DELETE_IF_EQUALS_SCRIPT, 1, key, value)  # type: ignore[misc]
+            return bool(res)
+        except Exception as e:
+            logger.warning("Cache DELETE_IF_EQUALS failed for %s: %s", key, e)
+            return False
+
     async def incr_by_float(self, key: str, amount: float, ttl: int | None = None) -> float:
         """Increment a floating-point value. Sets TTL on new keys."""
         if not self._redis:

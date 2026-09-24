@@ -10,6 +10,7 @@ from pydantic import ValidationError as PydanticValidationError
 from app.ai.cache.redis_cache import ai_cache
 from app.ai.errors import (
     AIGatewayError,
+    AllProvidersFailedError,
     AuthenticationError,
     ProviderUnavailableError,
     RateLimitError,
@@ -382,6 +383,9 @@ class AIGateway:
         # answered immediately.
         all_models = await filter_healthy([cfg.model] + list(cfg.fallback_models))
         last_error: Exception | None = None
+        # Whether any model produced an answer (which then failed validation).
+        # Decides whether a whole-chain failure is a provider outage.
+        model_answered = False
 
         for idx, model_name in enumerate(all_models):
             chain = capability_router.get_model_route(model_name)
@@ -614,6 +618,7 @@ class AIGateway:
 
                     except ValidationError as ve:
                         last_error = ve
+                        model_answered = True
                         newsiq_ai_gateway_retries_total.labels(
                             provider=provider_name,
                             model=route_model,
@@ -718,7 +723,10 @@ class AIGateway:
         except Exception as record_exc:
             logger.warning("Failed to emit failed execution record: %s", record_exc)
 
-        raise AIGatewayError(f"All providers failed for stage='{stage}'. Last error: {last_error}")
+        raise AllProvidersFailedError(
+            f"All providers failed for stage='{stage}'. Last error: {last_error}",
+            provider_outage=not model_answered,
+        )
 
     async def generate(
         self,
@@ -859,6 +867,7 @@ class AIGateway:
 
         # 4. Iterate through the fallback chain
         last_error: Exception | None = None
+        model_answered = False  # see generate_stage
         for idx, (client, api_key, route_cfg) in enumerate(chain):
             provider_name = route_cfg["provider"]
             model_name = route_cfg["model"]
@@ -1094,6 +1103,7 @@ class AIGateway:
                     # maximum 2 times for schema failures
                     logger.warning("LLM output schema validation failed: %s. Attempting retry.", ve)
                     last_error = ve
+                    model_answered = True
                     newsiq_ai_gateway_retries_total.labels(
                         provider=provider_name,
                         model=model_name,
@@ -1194,7 +1204,10 @@ class AIGateway:
         except Exception as record_exc:
             logger.warning("Failed to emit failed execution record: %s", record_exc)
 
-        raise AIGatewayError(f"All AI Gateway providers in chain failed. Last error: {last_error}")
+        raise AllProvidersFailedError(
+            f"All AI Gateway providers in chain failed. Last error: {last_error}",
+            provider_outage=not model_answered,
+        )
 
     async def stream(
         self,

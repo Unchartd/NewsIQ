@@ -202,6 +202,15 @@ class Article(Base):
     )
     # Track event extraction pipeline status
     event_extraction_status: Mapped[str | None] = mapped_column(String(30), default="pending")
+    # Failed extraction attempts. An article goes back to 'pending' after a
+    # failure until this reaches EVENT_EXTRACTION_MAX_ATTEMPTS; only then is
+    # 'failed' terminal. Attempts lost to a confirmed provider outage are not
+    # counted — the article was never the problem.
+    event_extraction_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # When a run claimed this article ('processing'). Stuck-claim recovery keys
+    # on this, not on crawled_at: an article crawled an hour ago and claimed a
+    # second ago is not stuck.
+    event_extraction_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     __table_args__ = (
         Index("idx_articles_published", published_at.desc()),

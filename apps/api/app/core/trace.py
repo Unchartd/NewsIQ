@@ -952,7 +952,12 @@ class StageTrace:
                 # a status the dashboard's STATUS_CONFIG does not map, so they
                 # rendered with no icon and no colour.
                 self.status = "SUCCESS"
-            await self._emit_event("StageCompleted")
+            if self.status == "FAILED":
+                # mark_failed(): the body finished, but the work did not. The
+                # reason is already in self.errors, which the event carries.
+                await self._emit_event("StageFailed")
+            else:
+                await self._emit_event("StageCompleted")
 
         # Persist to database
         await self._persist_db()
@@ -1035,6 +1040,18 @@ class StageTrace:
         """Mark stage status as skipped with reason details."""
         self.status = "SKIPPED"
         self.warnings.append(f"Stage skipped: {reason}")
+
+    def mark_failed(self, reason: str) -> None:
+        """Mark the stage failed without raising.
+
+        For a batch stage that catches its own per-item errors. When every
+        item failed, completing normally used to record the run as 'success'
+        — an event-extraction batch with 20 of 20 articles failed looked
+        healthy on every dashboard. No pipeline_failures row is written here:
+        the per-item failures have already recorded their own.
+        """
+        self.status = "FAILED"
+        self.errors.append(reason)
 
     async def _emit_event(self, event_type: str, error: str | None = None) -> None:
         seq = get_next_sequence_number()
