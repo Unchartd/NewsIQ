@@ -182,7 +182,7 @@ export function buildStoryMetadata(
  */
 export function buildCategoryMetadata(slug: string, name: string): Metadata {
   const title = `${name} News`;
-  const description = `Latest ${name} news, AI-summarized and fact-checked across multiple sources. Updated every 5 minutes on NewsIQ.`;
+  const description = `Latest ${name} news, AI-summarized and fact-checked across multiple sources. Updated throughout the day on NewsIQ.`;
 
   return buildPageMetadata(title, description, `/category/${slug}`, {
     keywords: [`${name} news`, `${name} latest`, "AI news", "NewsIQ", slug],

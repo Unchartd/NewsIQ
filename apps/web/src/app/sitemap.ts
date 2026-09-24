@@ -91,6 +91,13 @@ const STATIC_ROUTES: MetadataRoute.Sitemap = [
     changeFrequency: "monthly",
     priority: 0.6,
   },
+  // Server-rendered policy pages (the /legal hub renders client-side only).
+  ...["/privacy", "/tos", "/cookies", "/security", "/contact"].map((path) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified: new Date(),
+    changeFrequency: "yearly" as const,
+    priority: 0.3,
+  })),
 ];
 
 /**

@@ -24,6 +24,15 @@ function resolveToken(): string | null {
   return token;
 }
 
+function hasAnalyticsConsent(): boolean {
+  try {
+    const raw = localStorage.getItem("niq_consent_preferences");
+    return raw ? JSON.parse(raw).analytics === true : false;
+  } catch {
+    return false;
+  }
+}
+
 type QueuedCall = () => void;
 
 export class PostHogProvider extends BaseAnalyticsProvider {
@@ -40,6 +49,12 @@ export class PostHogProvider extends BaseAnalyticsProvider {
 
   initialize(): void {
     if (typeof window === "undefined" || this.loading || this.client) return;
+
+    // posthog.init() writes its identity cookie immediately, so it must not
+    // run before analytics consent. The analytics service is initialized on
+    // the first event of every visit, consent or not; the consent provider
+    // calls analytics.applyConsent() once analytics is granted.
+    if (!hasAnalyticsConsent()) return;
 
     const token = resolveToken();
     if (!token) {

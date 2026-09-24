@@ -34,12 +34,12 @@ const AI_FAQS = [
   {
     question: "Can NewsIQ AI make mistakes?",
     answer:
-      "Yes. Like all AI systems, NewsIQ can produce incorrect summaries, miss context, or miscluster unrelated stories. We display confidence signals and always link to primary sources so readers can verify independently. If you find an error, please report it via the feedback button on any story.",
+      "Yes. Like all AI systems, NewsIQ can produce incorrect summaries, miss context, or group unrelated stories together. Every story links to its primary sources so readers can check it. If you find an error, email hello.newsiq@gmail.com.",
   },
   {
     question: "Does NewsIQ's AI have political bias?",
     answer:
-      "We actively work to minimize political bias. Our models are instructed to avoid partisan framing and are evaluated against neutrality benchmarks. However, bias can exist in our training data and source selection. We publish our source list and editorial principles openly so readers can assess this.",
+      "We work to minimise political bias: our models are instructed to avoid partisan framing, and every story compares several outlets. Bias can still come from the models and from which sources cover a story. We publish our source list and editorial principles so readers can judge for themselves.",
   },
   {
     question: "Does NewsIQ use AI-generated images?",
@@ -153,10 +153,9 @@ export default function AITransparencyPage() {
           <section>
             <h2 className="text-2xl font-bold mb-4">How to Report Errors</h2>
             <p className="text-muted-foreground leading-relaxed">
-              Every story page has a feedback button. If you find an incorrect
-              summary, misclustered stories, or misleading headlines, please use
-              the report function. We review all reports and update our models
-              accordingly.
+              If you find an incorrect summary, stories grouped together that
+              should not be, or a misleading headline, email
+              hello.newsiq@gmail.com. We read every report and fix what we can.
             </p>
           </section>
 

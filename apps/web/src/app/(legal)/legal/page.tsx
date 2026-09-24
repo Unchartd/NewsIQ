@@ -3,7 +3,8 @@
 import React, { Suspense, useEffect, useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { normalizedPolicies, PolicyDocument, PolicySection } from "../normalized-content";
+import { normalizedPolicies, PolicyDocument, PolicySection, storageInventory } from "../normalized-content";
+import { SITE } from "@/lib/site-identity";
 
 // Import compliance forms
 import PrivacyForms from "@/components/legal/privacy-forms";
@@ -75,12 +76,10 @@ function LegalPageContent() {
     router.push(`/legal?policy=${key}`);
   };
 
+  // Opens the browser's print dialog, which can save the page as a PDF.
+  // This used to show a "Downloading PDF..." toast and download nothing.
   const handleDownload = () => {
-    if (activePolicy) {
-      toast.success(`Downloading ${activePolicy.title} PDF...`);
-    } else {
-      toast.success("Downloading forms PDF...");
-    }
+    window.print();
   };
 
   const handleCopyLink = () => {
@@ -136,7 +135,7 @@ function LegalPageContent() {
               style={{ width: "100%", textAlign: "left", background: "none", border: "none" }}
             >
               <span className="toc-num">✦</span>
-              DMCA Takedown Center
+              Copyright Notice
             </button>
           </li>
           <li>
@@ -156,13 +155,13 @@ function LegalPageContent() {
               style={{ width: "100%", textAlign: "left", background: "none", border: "none" }}
             >
               <span className="toc-num">✦</span>
-              Contact Legal/Grievance
+              Contact / Grievance
             </button>
           </li>
         </ul>
         <div className="toc-divider"></div>
         <div style={{ padding: "0 10px", fontSize: "11px", color: "var(--ink3)" }}>
-          Effective: June 15, 2026
+          Effective: {SITE.policiesUpdated}
         </div>
       </nav>
 
@@ -223,7 +222,7 @@ function LegalPageContent() {
                   style={{ cursor: "pointer", border: "1px solid var(--border)", background: "var(--surface)" }}
                   onClick={handleDownload}
                 >
-                  <svg width="11" height="11"><use href="#i-download" /></svg>Download PDF
+                  <svg width="11" height="11"><use href="#i-download" /></svg>Print / save as PDF
                 </button>
               </div>
             </div>
@@ -264,19 +263,7 @@ function LegalPageContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      {[
-                        { name: "access_token", purpose: "JWT user authentication session", cat: "Essential", ret: "15 mins", tp: "No", consent: "No" },
-                        { name: "refresh_token", purpose: "Rotating refresh token for new access JWTs", cat: "Essential", ret: "30 days", tp: "No", consent: "No" },
-                        { name: "niq_cookie_consent", purpose: "Stores granular cookie choice preferences", cat: "Essential", ret: "1 year", tp: "No", consent: "No" },
-                        { name: "resend_cooldown", purpose: "Blocks spamming verification link requests", cat: "Essential", ret: "60 secs", tp: "No", consent: "No" },
-                        { name: "newsiq-auth", purpose: "Persists visual profile parameters", cat: "Essential", ret: "Persistent", tp: "No", consent: "No" },
-                        { name: "newsiq-ui", purpose: "UI settings (sidebar, AI summary depth)", cat: "Functional", ret: "Persistent", tp: "No", consent: "Yes" },
-                        { name: "theme / next-themes", purpose: "Remembers dark/light mode configurations", cat: "Functional", ret: "Persistent", tp: "No", consent: "Yes" },
-                        { name: "_ga / _gid", purpose: "Traffic and engagement metrics (Google)", cat: "Analytics", ret: "24h - 2yrs", tp: "Yes", consent: "Yes" },
-                        { name: "ph_*_user", purpose: "Feature clickstream telemetry (PostHog)", cat: "Analytics", ret: "1 year", tp: "Yes", consent: "Yes" },
-                        { name: "_fbp", purpose: "Facebook ad campaign conversion metrics", cat: "Marketing", ret: "90 days", tp: "Yes", consent: "Yes" },
-                        { name: "LinkedIn Insight", purpose: "LinkedIn professional campaign tracking", cat: "Marketing", ret: "30 days", tp: "Yes", consent: "Yes" }
-                      ].map((row, index) => (
+                      {storageInventory.map((item) => ({ name: item.name, purpose: item.purpose, cat: item.category, ret: item.retention, tp: item.thirdParty, consent: item.needsConsent ? "Yes" : "No" })).map((row, index) => (
                         <tr key={index} style={{ borderBottom: "1px solid var(--border)", transition: "background .15s" }}>
                           <td style={{ padding: "12px 14px", fontFamily: "monospace", color: "var(--blue)", fontWeight: 600 }}>{row.name}</td>
                           <td style={{ padding: "12px 14px", color: "var(--ink)" }}>{row.purpose}</td>
@@ -313,7 +300,7 @@ function LegalPageContent() {
         {/* Footer */}
         <div className="doc-footer">
           <div style={{ fontSize: "13px", color: "var(--ink3)" }}>
-            © 2026 NewsIQ Technologies Private Limited. All rights reserved.
+            © {new Date().getFullYear()} {SITE.name} · operated by {SITE.operator}, {SITE.country}
           </div>
           <div className="doc-footer-nav">
             <button
@@ -370,7 +357,7 @@ function LegalPageContent() {
             <div className="meta-card">
               <div className="meta-card-title">Actions</div>
               <div className="meta-link" onClick={handleDownload} style={{ cursor: "pointer" }} role="button" tabIndex={0} onKeyDown={activateOnKey(handleDownload)}>
-                <svg width="13" height="13"><use href="#i-download" /></svg>Download PDF
+                <svg width="13" height="13"><use href="#i-download" /></svg>Print / save as PDF
               </div>
               <div className="meta-link" onClick={handleCopyLink} style={{ cursor: "pointer" }} role="button" tabIndex={0} onKeyDown={activateOnKey(handleCopyLink)}>
                 <svg width="13" height="13"><use href="#i-copy" /></svg>Copy Link
@@ -381,7 +368,7 @@ function LegalPageContent() {
           <div className="meta-card">
             <div className="meta-card-title">Action Center</div>
             <div style={{ fontSize: "12.5px", color: "var(--ink2)", lineHeight: 1.5 }}>
-              Use these interactive portals to submit legal requests directly to the compliance department. Submissions generate automated tickets.
+              Requests sent through these forms are emailed to {SITE.contactEmail}, and you get a reference number.
             </div>
           </div>
         )}

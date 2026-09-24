@@ -3,12 +3,16 @@
 import React, { useState } from "react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
+import { legalRequestErrorMessage, submitLegalRequest } from "@/lib/legal-requests";
+import { useAuthStore } from "@/stores/auth-store";
 
 export default function PrivacyForms() {
   const [requestType, setRequestType] = useState<"access" | "delete" | "correct" | "nominate">("access");
   const [email, setEmail] = useState("");
   const [details, setDetails] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [website, setWebsite] = useState(""); // honeypot
+  const { isAuthenticated } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,29 +23,40 @@ export default function PrivacyForms() {
 
     setIsSubmitting(true);
     try {
-      if (requestType === "delete") {
-        // Direct integration with backend account deletion
+      if (requestType === "delete" && isAuthenticated) {
+        // Signed in: erase immediately.
         const confirm = window.confirm(
-          "WARNING: Selecting Deletion Request will trigger account anonymization and wipe all your bookmarks and settings. This cannot be undone. Do you want to proceed?"
+          "This anonymises your account and deletes your bookmarks, history and settings. It cannot be undone. Continue?"
         );
         if (!confirm) {
           setIsSubmitting(false);
           return;
         }
         await apiClient.delete("/users/account");
-        toast.success("Account erasure completed. You have been anonymized.");
-      } else if (requestType === "access") {
-        // Direct integration with data export
+        toast.success("Your account has been deleted and your personal data erased.");
+      } else if (requestType === "access" && isAuthenticated) {
+        // Signed in: download immediately.
         window.open(apiClient.defaults.baseURL + "/users/export-data", "_blank");
-        toast.success("Initiating data export download.");
+        toast.success("Your data export is downloading.");
       } else {
-        // Mock success for correction and nomination
-        toast.success("Request logged successfully. We will follow up via email within 72 hours.");
+        // Correction, nomination, or a request made while signed out: this
+        // used to show "Request logged" and send nothing. It is now emailed
+        // to the monitored inbox and handled by hand, with identity checked
+        // by email before any data is released or erased.
+        const reference = await submitLegalRequest({
+          kind: "privacy",
+          email,
+          request_type: requestType,
+          subject: `Privacy request: ${requestType}`,
+          details: details.trim() || `Please process my ${requestType} request for the account ${email}.`,
+          website,
+        });
+        toast.success(`Request sent (reference ${reference}). We will reply to ${email} within 30 days.`);
       }
       setEmail("");
       setDetails("");
     } catch (err) {
-      toast.error("Failed to process request. Please contact support@newsiq.ai.");
+      toast.error(legalRequestErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -136,7 +151,7 @@ export default function PrivacyForms() {
                 fontSize: "13px",
                 resize: "vertical"
               }}
-              placeholder="e.g. Please update my spelling from Aarav M. to Aarav Mehta..."
+              placeholder="e.g. Please correct the name on my account to ..."
             />
           </div>
         )}
@@ -166,15 +181,30 @@ export default function PrivacyForms() {
 
         {requestType === "access" && (
           <div style={{ fontSize: "12px", color: "var(--ink2)", lineHeight: 1.5 }}>
-            Selecting Access Request will trigger an automated compilation and download of all bookmarks, settings, reading history, and sessions stored on the platform.
+            {isAuthenticated
+              ? "Downloads a file with your profile, preferences, bookmarks, notifications and reading history."
+              : "Sign in to download your data instantly, or send this request and we will verify your identity by email first."}
           </div>
         )}
 
         {requestType === "delete" && (
           <div style={{ fontSize: "12px", color: "var(--err)", lineHeight: 1.5 }}>
-            WARNING: Confirming this action anonymizes your email/profile, and erases bookmarks. This action is final.
+            {isAuthenticated
+              ? "This anonymises your account and erases your bookmarks, history and settings. It cannot be undone."
+              : "Sign in to delete your account instantly, or send this request and we will verify your identity by email first."}
           </div>
         )}
+
+        <input
+          type="text"
+          name="website"
+          value={website}
+          onChange={(e) => setWebsite(e.target.value)}
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          style={{ position: "absolute", left: "-10000px", width: 1, height: 1, opacity: 0 }}
+        />
 
         <button
           type="submit"
@@ -182,7 +212,7 @@ export default function PrivacyForms() {
           disabled={isSubmitting}
           style={{ width: "100%", justifyContent: "center", padding: "10px 18px", marginTop: "8px" }}
         >
-          {isSubmitting ? "Processing..." : requestType === "access" ? "Trigger Data Export" : "Submit Request"}
+          {isSubmitting ? "Sending..." : requestType === "access" && isAuthenticated ? "Download my data" : "Submit request"}
         </button>
       </form>
     </div>

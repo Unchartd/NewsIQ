@@ -167,7 +167,7 @@ export default function TopicsPage() {
               Browse by Topic
             </h1>
             <p className="text-muted-foreground">
-              AI-summarized news from 200+ publishers, organized by category.
+              AI-summarized news from many publishers, organized by category.
             </p>
           </div>
         </section>

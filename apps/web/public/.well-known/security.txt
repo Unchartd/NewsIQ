@@ -1,0 +1,6 @@
+# NewsIQ vulnerability disclosure (RFC 9116)
+Contact: mailto:hello.newsiq@gmail.com
+Expires: 2027-09-24T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://newsiq.online/.well-known/security.txt
+Policy: https://newsiq.online/security

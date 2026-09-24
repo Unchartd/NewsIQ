@@ -4,31 +4,39 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Check, Minus } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
-import apiClient from "@/lib/api-client";
+import { legalRequestErrorMessage, submitLegalRequest } from "@/lib/legal-requests";
 import { toast } from "sonner";
 import { useState } from "react";
 
 export default function PremiumPage() {
   const router = useRouter();
-  const { user, isAuthenticated, setUser } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
 
-  const handleSubscribe = async (plan: "free" | "pro" | "enterprise") => {
-    if (!isAuthenticated) {
-      toast.error("Please sign in to upgrade.");
-      router.push("/login");
+  // Paid plans are not live. This used to PATCH subscription_plan (which the
+  // API deliberately ignores) and then announce "Plan updated successfully to
+  // PRO!", and "Contact sales" announced "Sales team notified!" without
+  // notifying anyone. Both now register real interest in the inbox.
+  const handleInterest = async (plan: "pro" | "enterprise") => {
+    if (!isAuthenticated || !user?.email) {
+      toast.info("Sign in and we'll email you when paid plans launch.");
+      router.push("/login?redirect=/premium");
       return;
     }
-
     setLoadingPlan(plan);
     try {
-      const response = await apiClient.patch("/users/profile", {
-        subscription_plan: plan,
+      await submitLegalRequest({
+        kind: "contact",
+        request_type: `${plan}-interest`,
+        email: user.email,
+        subject: plan === "pro" ? "Notify me when Pro launches" : "Enterprise enquiry",
+        details: `${user.email} asked to hear about the ${plan} plan.`,
       });
-      setUser(response.data);
-      toast.success(`Plan updated successfully to ${plan.toUpperCase()}!`);
-    } catch {
-      toast.error("Failed to update plan.");
+      toast.success(
+        plan === "pro" ? "Thanks! We'll email you when Pro launches." : "Thanks! We'll reply by email."
+      );
+    } catch (err) {
+      toast.error(legalRequestErrorMessage(err));
     } finally {
       setLoadingPlan(null);
     }
@@ -47,7 +55,7 @@ export default function PremiumPage() {
         { text: "Source comparison", included: false },
         { text: "Personalised feed", included: false },
         { text: "AI chat", included: false },
-        { text: "Ad-free", included: false },
+        { text: "Ad-free", included: true },
       ],
       planKey: "free",
       cta: "Continue free",
@@ -69,7 +77,7 @@ export default function PremiumPage() {
       ],
       planKey: "pro",
       popular: true,
-      cta: "Upgrade to Pro",
+      cta: "Notify me at launch",
       isOutline: false,
     },
     {
@@ -87,7 +95,7 @@ export default function PremiumPage() {
         { text: "Custom integrations", included: true },
       ],
       planKey: "enterprise",
-      cta: "Contact sales",
+      cta: "Get in touch",
       isOutline: true,
     },
   ];
@@ -105,6 +113,9 @@ export default function PremiumPage() {
           </h1>
           <p className="pm-sub">
             Unlock the full intelligence layer — source comparison, personalised feed, and AI-powered story chat.
+          </p>
+          <p className="pm-sub" style={{ fontWeight: 600 }}>
+            Paid plans are coming soon. During early access every feature is free, and we take no payments.
           </p>
         </div>
 
@@ -146,10 +157,10 @@ export default function PremiumPage() {
                   className={`pcta ${plan.popular ? "pctap" : "pctao"}`}
                   disabled={isLoading}
                   onClick={() => {
-                    if (plan.planKey === "enterprise") {
-                      toast.success("Sales team notified! We will contact you soon.");
+                    if (plan.planKey === "free") {
+                      router.push("/home");
                     } else {
-                      handleSubscribe(plan.planKey as "free" | "pro" | "enterprise");
+                      handleInterest(plan.planKey as "pro" | "enterprise");
                     }
                   }}
                 >

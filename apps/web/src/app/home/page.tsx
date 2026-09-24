@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = buildPageMetadata(
   "Your News Feed",
-  "Your personalised AI-powered news feed. Multi-source stories clustered and summarised by topic. Updated every 5 minutes across technology, politics, business, sports, and more.",
+  "Your personalised AI-powered news feed. Multi-source stories clustered and summarised by topic. New coverage checked every 15 minutes across technology, politics, business, sports, and more.",
   "/home",
   {
     keywords: [

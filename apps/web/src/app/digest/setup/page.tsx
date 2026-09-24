@@ -375,11 +375,10 @@ export default function DigestSetupPage() {
                     </div>
                   </div>
 
+                  {/* This showed five stars and "Loved by 14,000+ readers · 4.8
+                      rating" — a rating that never existed. */}
                   <div style={{ textAlign: "center", paddingBottom: 20 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginBottom: 6 }}>
-                      {[1, 2, 3, 4, 5].map((i) => <span key={i} style={{ color: "#F59E0B", fontSize: 14 }}>★</span>)}
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--ink3)" }}>Loved by <strong style={{ color: "var(--ink)" }}>14,000+ readers</strong> · 4.8 rating</div>
+                    <div style={{ fontSize: 13, color: "var(--ink3)" }}>Free during early access · unsubscribe any time</div>
                   </div>
 
                   <button className="btnp-onb btn-full" style={{ fontSize: 16, padding: 14 }} onClick={() => go("topics")}>
