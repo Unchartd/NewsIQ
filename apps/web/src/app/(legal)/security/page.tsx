@@ -6,11 +6,11 @@ import { buildPageMetadata } from "@/lib/metadata";
 import { normalizedPolicies } from "../normalized-content";
 
 export const metadata: Metadata = buildPageMetadata(
-  "Privacy Policy",
-  "What personal data NewsIQ collects, why, who processes it, and your rights under India's DPDP Act and the GDPR.",
-  "/privacy"
+  "Security",
+  "How NewsIQ protects its service and your data, what it does not have yet, and how to report a vulnerability.",
+  "/security"
 );
 
-export default function PrivacyPage() {
-  return <PolicyView doc={normalizedPolicies.privacy} current="/privacy" />;
+export default function SecurityPage() {
+  return <PolicyView doc={normalizedPolicies.security} current="/security" />;
 }

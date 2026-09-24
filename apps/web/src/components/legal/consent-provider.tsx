@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "@/lib/api-client";
+import { analytics } from "@/lib/analytics/service";
 import { useAuthStore } from "@/stores/auth-store";
 
 // Global Consent Version to force re-consent upon policy updates
@@ -144,9 +145,10 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
         analytics_storage: prefs.analytics ? "granted" : "denied",
         functionality_storage: prefs.functional ? "granted" : "denied",
         personalization_storage: prefs.functional ? "granted" : "denied",
-        ad_storage: prefs.marketing ? "granted" : "denied",
-        ad_user_data: prefs.marketing ? "granted" : "denied",
-        ad_personalization: prefs.marketing ? "granted" : "denied",
+        // No advertising use, so ad signals stay denied whatever was chosen.
+        ad_storage: "denied",
+        ad_user_data: "denied",
+        ad_personalization: "denied",
       });
     }
   };
@@ -160,75 +162,20 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
     if (state.analytics) {
       initializeAnalytics();
     }
-    if (state.marketing) {
-      initializeMarketing();
-    }
   }, [state, loading]);
 
   const initializeAnalytics = () => {
     if (typeof window === "undefined") return;
-    
-    if (document.getElementById("posthog-script")) {
-      return;
-    }
-
-    logConsent("Analytics", "Initializing PostHog Client.");
-
-    // Inject PostHog (using environment token)
-    const phScript = document.createElement("script");
-    phScript.id = "posthog-script";
-    phScript.innerHTML = `
-      !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset get_distinct_id".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-      posthog.init('${process.env.NEXT_PUBLIC_POSTHOG_TOKEN || "phc_mock_token_newsiq"}', {api_host:'https://app.posthog.com'});
-    `;
-    document.head.appendChild(phScript);
+    // The analytics service owns PostHog (real token, consent-gated, PII
+    // scrubbing). This used to inject a second copy of PostHog with a
+    // placeholder-token fallback, which could run alongside it.
+    logConsent("Analytics", "Analytics consent granted; enabling analytics providers.");
+    analytics.applyConsent();
   };
 
-  const initializeMarketing = () => {
-    if (typeof window === "undefined") return;
-
-    if (document.getElementById("meta-pixel-script")) {
-      logConsent("Marketing", "Meta Pixel & LinkedIn Insight already initialized.");
-      return;
-    }
-
-    logConsent("Marketing", "Initializing Meta Pixel & LinkedIn Insight Tag.");
-
-    // Inject Meta Pixel
-    const fbScript = document.createElement("script");
-    fbScript.id = "meta-pixel-script";
-    fbScript.innerHTML = `
-      !function(f,b,e,v,n,t,s)
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)}(window, document,'script',
-      'https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', '1234567890');
-      fbq('track', 'PageView');
-    `;
-    document.head.appendChild(fbScript);
-
-    // Inject LinkedIn Insight
-    const liScript = document.createElement("script");
-    liScript.id = "linkedin-insight-script";
-    liScript.innerHTML = `
-      _linkedin_data_partner_id = "mock_li_partner_id";
-      window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
-      window._linkedin_data_partner_ids.push(_linkedin_data_partner_id);
-      (function(l) {
-      if (!l){window.lintrk = function(a,b){window.lintrk.q.push([a,b])};
-      window.lintrk.q=[]}
-      var s = document.getElementsByTagName("script")[0];
-      var b = document.createElement("script");
-      b.type = "text/javascript";b.async = true;
-      b.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
-      s.parentNode.insertBefore(b, s);})(window.lintrk);
-    `;
-    document.head.appendChild(liScript);
-  };
+  // No marketing trackers. This used to inject a Meta Pixel with the
+  // placeholder ID 1234567890 and a LinkedIn Insight tag whenever "marketing"
+  // was accepted, while the Cookie Policy promised no advertising trackers.
 
   const updateConsent = async (newPrefs: Partial<ConsentState>) => {
     const updatedState = { ...state, ...newPrefs };

@@ -583,6 +583,18 @@ jobs:
             echo "=== Restarting services ==="
             NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" docker compose --env-file .env.production --profile prod up -d --no-build
 
+            # Caddy reads the Caddyfile only at start, and a single-file bind
+            # mount may not even show a replaced file to the running
+            # container, so `up -d` never applied Caddyfile edits. Recreate
+            # Caddy when the file changed since the last applied version.
+            CADDY_SUM=$(sha256sum Caddyfile | cut -d' ' -f1)
+            if [ "$(cat .caddyfile.applied 2>/dev/null)" != "$CADDY_SUM" ]; then
+              echo "=== Caddyfile changed: recreating Caddy ==="
+              NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" \
+                docker compose --env-file .env.production --profile prod up -d --no-deps --force-recreate caddy \
+                && echo "$CADDY_SUM" > .caddyfile.applied
+            fi
+
             sleep 5
             echo "=== Container Status ==="
             docker compose --env-file .env.production --profile prod ps

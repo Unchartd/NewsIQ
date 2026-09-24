@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = buildPageMetadata(
   "Trending Stories",
-  "Top trending news stories ranked by source count, recency, and engagement. AI-clustered from dozens of publishers. Updated every 5 minutes on NewsIQ.",
+  "Top trending news stories ranked by source count, recency, and engagement. AI-clustered from dozens of publishers. Updated throughout the day on NewsIQ.",
   "/trending",
   {
     keywords: [

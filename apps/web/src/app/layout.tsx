@@ -210,9 +210,10 @@ export default function RootLayout({
               } catch(e) {}
               
               gtag('consent', 'default', {
-                'ad_storage': storedConsent && storedConsent.marketing ? 'granted' : 'denied',
-                'ad_user_data': storedConsent && storedConsent.marketing ? 'granted' : 'denied',
-                'ad_personalization': storedConsent && storedConsent.marketing ? 'granted' : 'denied',
+                // NewsIQ does no advertising: ad signals are always denied.
+                'ad_storage': 'denied',
+                'ad_user_data': 'denied',
+                'ad_personalization': 'denied',
                 'analytics_storage': storedConsent && storedConsent.analytics ? 'granted' : 'denied',
                 'functionality_storage': storedConsent && storedConsent.functional ? 'granted' : 'denied',
                 'personalization_storage': storedConsent && storedConsent.functional ? 'granted' : 'denied',

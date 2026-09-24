@@ -2,9 +2,14 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { Honeypot } from "@/components/legal/honeypot";
+import { legalRequestErrorMessage, submitLegalRequest } from "@/lib/legal-requests";
+
 
 export default function DmcaForm() {
   const [formType, setFormType] = useState<"takedown" | "counter">("takedown");
+  const [website, setWebsite] = useState(""); // honeypot
+  const [sending, setSending] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [targetUrl, setTargetUrl] = useState("");
@@ -12,20 +17,40 @@ export default function DmcaForm() {
   const [signature, setSignature] = useState("");
   const [declaration, setDeclaration] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !targetUrl || !signature || !declaration) {
       toast.error("Please fill in all required fields and accept the legal declaration.");
       return;
     }
-    toast.success("Request submitted successfully. Our legal department will review within 72 hours.");
-    // Clear form
-    setName("");
-    setEmail("");
-    setTargetUrl("");
-    setDescription("");
-    setSignature("");
-    setDeclaration(false);
+    // This used to say "submitted successfully" and send nothing.
+    setSending(true);
+    try {
+      const reference = await submitLegalRequest({
+        kind: "copyright",
+        request_type: formType,
+        name,
+        email,
+        subject: formType === "counter" ? "Copyright counter-notice" : "Copyright notice",
+        reference_url: targetUrl,
+        details: `${description.trim() || "(no description)"}
+
+Electronic signature: ${signature}
+Accuracy and authority declaration: accepted`,
+        website,
+      });
+      toast.success(`Notice sent (reference ${reference}). We will acknowledge it within 24 hours.`);
+      setName("");
+      setEmail("");
+      setTargetUrl("");
+      setDescription("");
+      setSignature("");
+      setDeclaration(false);
+    } catch (err) {
+      toast.error(legalRequestErrorMessage(err));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -126,7 +151,7 @@ export default function DmcaForm() {
               color: "var(--ink)",
               fontSize: "13px"
             }}
-            placeholder="https://newsiq.ai/story/..."
+            placeholder="https://newsiq.online/story/..."
           />
         </div>
 
@@ -200,11 +225,13 @@ export default function DmcaForm() {
 
         <button
           type="submit"
+          disabled={sending}
           className="btnp"
           style={{ width: "100%", justifyContent: "center", padding: "10px 18px", marginTop: "8px" }}
         >
           {formType === "takedown" ? "Submit Takedown notice" : "Submit Counter-Notice"}
         </button>
+      <Honeypot value={website} onChange={setWebsite} />
       </form>
     </div>
   );

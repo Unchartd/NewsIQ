@@ -1,18 +1,16 @@
-"use client";
+import type { Metadata } from "next";
 
-import React, { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { PolicyView } from "@/components/legal/policy-view";
+import { buildPageMetadata } from "@/lib/metadata";
 
-export default function TosPage() {
-  const router = useRouter();
+import { normalizedPolicies } from "../normalized-content";
 
-  useEffect(() => {
-    router.replace("/legal?policy=tos");
-  }, [router]);
+export const metadata: Metadata = buildPageMetadata(
+  "Terms of Service",
+  "The terms for using NewsIQ, the AI news platform that turns coverage from many outlets into one clear story.",
+  "/tos"
+);
 
-  return (
-    <div style={{ padding: "80px", textAlign: "center", color: "var(--ink3)" }}>
-      Redirecting to Legal Center...
-    </div>
-  );
+export default function TermsPage() {
+  return <PolicyView doc={normalizedPolicies.tos} current="/tos" />;
 }

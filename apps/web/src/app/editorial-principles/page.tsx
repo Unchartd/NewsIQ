@@ -29,12 +29,12 @@ const FAQ_ITEMS = [
   {
     question: "How does NewsIQ ensure headline neutrality?",
     answer:
-      "NewsIQ uses a large language model fine-tuned to rewrite headlines by removing evaluative language, emotional framing, and partisan terminology. Headlines are reviewed against factual accuracy and compared against source article content.",
+      "NewsIQ uses general-purpose large language models, instructed to rewrite headlines without evaluative language, emotional framing or partisan terms. Generated text is checked against the source articles before a story is published.",
   },
   {
     question: "How does NewsIQ select which news sources to index?",
     answer:
-      "NewsIQ indexes articles from publishers that meet our source quality criteria: established editorial teams, transparent ownership, correction policies, and verifiable journalistic track records. Tabloids, satire sites, and hyperpartisan outlets are excluded by default.",
+      "The feeds NewsIQ reads directly come from established news organisations with editorial teams and correction policies. To show how a story is covered elsewhere, NewsIQ also finds articles through news search, which can include a wider range of publishers.",
   },
   {
     question: "What happens when sources contradict each other?",
@@ -44,7 +44,7 @@ const FAQ_ITEMS = [
   {
     question: "How does NewsIQ handle corrections?",
     answer:
-      "If a source article is corrected, our system re-fetches and re-summarizes the story within the next update cycle (every 5 minutes for trending stories). Significant corrections to NewsIQ's own summaries are noted with a visible correction label.",
+      "Story summaries are regenerated automatically as new coverage of a story arrives, so they can change over time. If you find an error in a NewsIQ summary, email hello.newsiq@gmail.com and we will correct it.",
   },
 ];
 
@@ -139,10 +139,9 @@ export default function EditorialPrinciplesPage() {
           <section>
             <h2 className="text-2xl font-bold mb-4">Corrections Policy</h2>
             <p className="text-muted-foreground leading-relaxed">
-              We re-fetch and re-summarize stories every 5 minutes for trending
-              content. When a significant factual error is found in a NewsIQ
-              summary, we update it with a visible correction note and timestamp.
-              We never silently edit published summaries.
+              Summaries are regenerated automatically when new coverage of a story
+              arrives, so they can change over time. If you spot a factual error
+              in a NewsIQ summary, email hello.newsiq@gmail.com and we will fix it.
             </p>
           </section>
 

@@ -2,23 +2,44 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { Honeypot } from "@/components/legal/honeypot";
+import { legalRequestErrorMessage, submitLegalRequest } from "@/lib/legal-requests";
+
 
 export default function ContactForms() {
   const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot
+  const [sending, setSending] = useState(false);
   const [inquiryType, setInquiryType] = useState("general");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !subject || !message) {
       toast.error("Please fill in all required fields.");
       return;
     }
-    toast.success("Message sent successfully. We will respond within 5 business days.");
-    setEmail("");
-    setSubject("");
-    setMessage("");
+    // This used to say "Message sent" and send nothing.
+    setSending(true);
+    try {
+      const reference = await submitLegalRequest({
+        kind: "contact",
+        request_type: inquiryType,
+        email,
+        subject,
+        details: message,
+        website,
+      });
+      toast.success(`Message sent (reference ${reference}). We will reply to ${email}.`);
+      setEmail("");
+      setSubject("");
+      setMessage("");
+    } catch (err) {
+      toast.error(legalRequestErrorMessage(err));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -77,8 +98,8 @@ export default function ContactForms() {
               cursor: "pointer"
             }}
           >
-            <option value="general">General Legal Inquiries (legal@newsiq.ai)</option>
-            <option value="privacy">Privacy / Data Requests (privacy@newsiq.ai)</option>
+            <option value="general">General or legal enquiry</option>
+            <option value="privacy">Privacy or data request</option>
             <option value="publisher">Publisher Concerns & Opt-Outs</option>
           </select>
         </div>
@@ -127,11 +148,13 @@ export default function ContactForms() {
 
         <button
           type="submit"
+          disabled={sending}
           className="btnp"
           style={{ width: "100%", justifyContent: "center", padding: "10px 18px", marginTop: "8px" }}
         >
           Send Message
         </button>
+      <Honeypot value={website} onChange={setWebsite} />
       </form>
     </div>
   );

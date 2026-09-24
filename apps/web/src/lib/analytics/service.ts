@@ -21,6 +21,17 @@ class AnalyticsService {
     }
   }
 
+  /**
+   * Called when analytics consent is granted. Providers that must not load
+   * before consent (PostHog sets a cookie on init) skip initialization until
+   * then, so they are started here.
+   */
+  applyConsent(): void {
+    if (typeof window === "undefined") return;
+    this.dispatcher.initializeProviders();
+    this.isInitialized = true;
+  }
+
   identify(userId: string, traits?: UserTraits): void {
     if (typeof window === "undefined") return;
     this.ensureInitialized();
