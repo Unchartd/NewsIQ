@@ -191,3 +191,43 @@ async def test_a_billed_cost_reported_by_the_provider_wins():
     route = MODEL_FALLBACKS[DEEPSEEK][0]
     _, record = await _run_extraction_through(route, billed_cost=0.00047)
     assert record["cost"] == pytest.approx(0.00047)
+
+
+# ── Total deadline ───────────────────────────────────────────────────────────
+
+
+async def test_a_call_that_never_finishes_hits_the_route_deadline():
+    """OpenRouter trickles bytes to keep a slow request alive, so the SDK's
+    per-read timeout never fires. Measured after the v1.49.0 rollout: two
+    extraction calls sent 8 and 10 minutes earlier were still open, receiving
+    a few bytes every ~2.4s, against a 45s route timeout."""
+    import asyncio
+    import time
+
+    from app.ai.errors import TimeoutError as GatewayTimeoutError
+    from app.ai.interfaces import APIKey
+    from app.ai.providers import openrouter as provider_module
+
+    async def trickling_forever(**_kwargs):
+        await asyncio.sleep(3600)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create = trickling_forever
+    with patch.object(provider_module, "AsyncOpenAI", return_value=fake_client) as sdk:
+        started = time.perf_counter()
+        with pytest.raises(GatewayTimeoutError):
+            # The outer guard only stops a regression from hanging the suite;
+            # it raises asyncio's TimeoutError, which this does not accept.
+            await asyncio.wait_for(
+                OpenRouterProvider().generate(
+                    _request(response_format=_Answer, timeout=0.2),
+                    APIKey(key="k", provider="openrouter"),
+                ),
+                timeout=5,
+            )
+        elapsed = time.perf_counter() - started
+
+    assert elapsed < 2, f"the call ran {elapsed:.1f}s past a 0.2s deadline"
+    assert sdk.call_args.kwargs["max_retries"] == 0, (
+        "the gateway retries each route; SDK retries only multiply a failing route's time"
+    )

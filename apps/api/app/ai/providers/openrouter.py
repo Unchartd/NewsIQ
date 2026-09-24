@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -109,6 +110,8 @@ class OpenRouterProvider(AIProvider):
             return 0.0
 
     def _handle_exception(self, e: Exception) -> Exception:
+        if isinstance(e, asyncio.TimeoutError):
+            return TimeoutError("OpenRouter request exceeded its total deadline")
         if isinstance(e, APITimeoutError):
             return TimeoutError(f"OpenRouter request timed out: {e}")
         elif isinstance(e, APIError):
@@ -124,10 +127,22 @@ class OpenRouterProvider(AIProvider):
     async def generate(self, request: GatewayRequest, api_key: APIKey) -> GatewayResponse:
         t0 = time.perf_counter()
         try:
-            client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url)
+            # No SDK retries: the gateway already retries each route, so the
+            # SDK's two extra attempts only multiplied the time a failing
+            # route could hold a worker.
+            client = AsyncOpenAI(api_key=api_key.key, base_url=self.base_url, max_retries=0)
             params = self._prepare_params(request)
 
-            response = await client.chat.completions.create(**params, timeout=request.timeout)
+            # A real deadline for the whole call. The SDK timeout only bounds
+            # the gap between bytes, and OpenRouter keeps a slow non-streaming
+            # request alive by trickling whitespace — so after the v1.49.0
+            # rollout both extraction runs sat on OpenRouter sockets for over
+            # four minutes against a 45s route timeout, and the pipeline
+            # stopped moving.
+            response = await asyncio.wait_for(
+                client.chat.completions.create(**params, timeout=request.timeout),
+                timeout=request.timeout,
+            )
             latency_ms = (time.perf_counter() - t0) * 1000
 
             choice = response.choices[0]
