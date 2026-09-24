@@ -332,6 +332,18 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
         except Exception as e:
             logger.debug("Failed to release per-loop clients: %s", e)
 
+        # 2b. Close the database pool the same way, for the same reason. The
+        #     dispose(close=False) at the start of the next task only forgets
+        #     the pool: its asyncpg connections belong to this loop and cannot
+        #     be closed from another, so each one stayed open on the server.
+        #     Neon's idle timeout used to hide that; on self-hosted Postgres
+        #     the worker held 137 of 150 connections after ~18h, and every
+        #     new connection — API included — was refused.
+        try:
+            loop.run_until_complete(engine.dispose())
+        except Exception as e:
+            logger.warning("Failed to close the database pool after a task: %s", e)
+
         # Measure and record task worker execution latency
         try:
             if current_task and current_task.name:

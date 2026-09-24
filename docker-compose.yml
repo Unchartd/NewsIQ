@@ -143,6 +143,13 @@ services:
       - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}
       - -c
       - max_connections=150
+      # Close sessions left idle this long. Neon did this for us (1min); a
+      # self-hosted Postgres keeps an abandoned connection forever, and the
+      # Celery worker leaked 137 of the 150 slots in ~18h before run_async
+      # closed its pool. Pooled app connections reconnect via pool_pre_ping;
+      # the clustering lock connection opts out (SET idle_session_timeout = 0).
+      - -c
+      - idle_session_timeout=${PG_IDLE_SESSION_TIMEOUT:-10min}
     # Loopback only: reachable by the app containers over the compose
     # network and by the host for backups, never from outside the VM.
     ports:

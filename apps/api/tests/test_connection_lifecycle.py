@@ -110,3 +110,74 @@ async def test_redis_client_helper_closes_on_exception(monkeypatch):
 
     assert raised, "the simulated failure should propagate to the caller"
     client.aclose.assert_awaited_once()
+
+
+# ── Database pool (the same bug class, in Postgres) ──────────────────────────
+#
+# run_async released Redis and Qdrant clients per loop but not the SQLAlchemy
+# pool. The next task's dispose(close=False) only forgot it, and asyncpg
+# connections bound to a closed loop are never closed, so each stayed open on
+# the server. On self-hosted Postgres (Neon's idle timeout had hidden it) the
+# worker held 137 of 150 connections after ~18h and new connections — the
+# API's included — were refused.
+
+
+def test_run_async_closes_the_db_pool_inside_the_task_loop(monkeypatch):
+    from app.workers import tasks
+
+    task_loops: list[int] = []
+    dispose_loops: list[int] = []
+
+    async def fake_dispose():
+        dispose_loops.append(id(asyncio.get_running_loop()))
+
+    fake_engine = MagicMock()
+    fake_engine.dispose = fake_dispose
+    monkeypatch.setattr(tasks, "engine", fake_engine)
+
+    async def fake_task():
+        task_loops.append(id(asyncio.get_running_loop()))
+
+    for _ in range(3):
+        run_async(fake_task())
+
+    assert dispose_loops == task_loops, (
+        "the pool must be closed once per task, inside the loop its connections belong to"
+    )
+
+
+async def test_repeated_tasks_leave_no_server_connections_open():
+    """Behavioural proof against a real Postgres (runs in CI)."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.config import settings
+    from app.core.database import async_session_factory
+
+    url = settings.DATABASE_URL.split("?")[0].replace("postgresql://", "postgresql+asyncpg://", 1)
+    observer = create_async_engine(url)
+    count_sql = text(
+        "SELECT count(*) FROM pg_stat_activity "
+        "WHERE datname = current_database() AND backend_type = 'client backend' "
+        "AND pid <> pg_backend_pid()"
+    )
+    try:
+        async with observer.connect() as conn:
+            before = (await conn.execute(count_sql)).scalar_one()
+    except Exception:
+        await observer.dispose()
+        pytest.skip("live Postgres not reachable — behavioural proof runs in CI")
+
+    async def uses_the_database():
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+
+    try:
+        # Each call runs on its own loop, exactly like a Celery task.
+        await asyncio.to_thread(lambda: [run_async(uses_the_database()) for _ in range(20)])
+        async with observer.connect() as conn:
+            after = (await conn.execute(count_sql)).scalar_one()
+    finally:
+        await observer.dispose()
+
+    assert after <= before, f"{after - before} connections left open by 20 task runs"
