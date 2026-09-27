@@ -123,8 +123,8 @@ export default function AboutPage() {
             <p className="text-muted-foreground leading-relaxed">
               NewsIQ reads the public feeds of about 30 publishers, finds further
               coverage of the same events through news search, and turns it into
-              one clear story. It is an early-stage, independent product of{" "}
-              {SITE.legalName}. You can reach us at{" "}
+              one clear story. It is an early-stage, independent project. You can
+              reach us at{" "}
               <a className="underline" href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
             </p>
           </div>

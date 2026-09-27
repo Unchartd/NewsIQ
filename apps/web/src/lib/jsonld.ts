@@ -24,7 +24,6 @@ export function buildOrganizationSchema() {
     "@type": "Organization",
     "@id": `${SITE_URL}/#organization`,
     name: SITE_NAME,
-    legalName: SITE.legalName,
     url: SITE_URL,
     logo: {
       "@type": "ImageObject",

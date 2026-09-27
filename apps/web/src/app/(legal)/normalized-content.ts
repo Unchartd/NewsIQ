@@ -57,7 +57,7 @@ export const normalizedPolicies: Record<string, PolicyDocument> = {
       {
         id: "tos-1",
         title: "Who we are and these terms",
-        content: `These Terms are an agreement between you and ${SITE.legalName} ("NewsIQ", "we", "us"), which provides NewsIQ at ${SITE.url}. By using NewsIQ or creating an account, you agree to these Terms and to our Privacy Policy. If you do not agree, please do not use the service.`,
+        content: `These Terms are an agreement between you and ${SITE.legalName} ("we", "us"), which provides the service at ${SITE.url}. By using NewsIQ or creating an account, you agree to these Terms and to our Privacy Policy. If you do not agree, please do not use the service.`,
       },
       {
         id: "tos-2",
@@ -142,7 +142,7 @@ export const normalizedPolicies: Record<string, PolicyDocument> = {
       {
         id: "priv-1",
         title: "Who we are",
-        content: `For the personal data described here, ${SITE.legalName} ("NewsIQ", ${SITE.url}) is the Data Fiduciary under India's Digital Personal Data Protection Act, 2023, and the controller under the GDPR for users in the EU and UK. Contact: ${EMAIL}.`,
+        content: `For the personal data described here, ${SITE.legalName} (${SITE.url}) is the Data Fiduciary under India's Digital Personal Data Protection Act, 2023, and the controller under the GDPR for users in the EU and UK. Contact: ${EMAIL}.`,
       },
       {
         id: "priv-2",

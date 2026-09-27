@@ -11,8 +11,13 @@
 export const SITE = {
   name: "NewsIQ",
   url: "https://newsiq.online",
-  /** The legal entity: data fiduciary / controller, party to the Terms, copyright holder. */
-  legalName: "NewsIQ Pvt. Ltd.",
+  /**
+   * Named as data fiduciary / controller, party to the Terms and copyright
+   * holder. Not incorporated yet: change this to the registered name (e.g.
+   * "NewsIQ Pvt. Ltd.") only once it has a CIN. Trading under "Private
+   * Limited" before incorporation is an offence (Companies Act 2013, s. 453).
+   */
+  legalName: "NewsIQ",
   /** Law governing the Terms. */
   jurisdiction: "India",
   /** The one monitored inbox for support, privacy, legal and security. */

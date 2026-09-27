@@ -23,7 +23,7 @@ export const brand = {
   url: "https://newsiq.online",
 
   /** Legal entity name */
-  legalName: "NewsIQ Pvt. Ltd.",
+  legalName: "NewsIQ",
 
   /** Founding year */
   foundingYear: "2026",
