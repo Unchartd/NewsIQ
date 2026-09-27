@@ -1,6 +1,7 @@
 """Admin-only API endpoints for user and content management."""
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -859,7 +860,7 @@ async def get_stage_run_logs(
     if logs:
         return [line.decode("utf-8") if isinstance(line, bytes) else line for line in logs]
 
-    persisted = (
+    persisted: Sequence[dict[str, Any] | None] = (
         (
             await db.execute(
                 select(StageRunModel.metadata_payload).where(

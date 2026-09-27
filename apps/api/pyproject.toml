@@ -9,7 +9,10 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
 
     # Database
-    "sqlalchemy[asyncio]>=2.0.0",
+    # Capped until 2.1 is upgraded to on purpose: the image installs from these
+    # ranges, so 2.1.1's release would otherwise reach production unreviewed
+    # inside whatever change deploys next. Production runs 2.0.54.
+    "sqlalchemy[asyncio]>=2.0.0,<2.1",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
 
