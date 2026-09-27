@@ -101,7 +101,7 @@ export default function LegalLayout({
 
       <div className="scr on" style={{ minHeight: "100vh" }}>
         {/* Navbar */}
-        <nav className="nav">
+        <nav className="nav legal-nav">
           <div className="nav-inner">
             <Link href={isAuthenticated ? "/home" : "/"} style={{ textDecoration: "none" }}>
               <div className="logo"><b>News</b><i>IQ</i></div>

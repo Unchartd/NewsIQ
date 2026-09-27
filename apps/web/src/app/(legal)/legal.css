@@ -49,15 +49,27 @@
   color: #fff;
 }
 
-/* ── LEGAL LAYOUT: 3 columns ── */
+/* ── LEGAL LAYOUT: nav | document | on this page ──
+   The shell was 1180px with 220px rails on both sides, so the document got
+   ~600px on any screen and a six-column storage table was squeezed into it.
+   The shell is now 1440px. Prose keeps a readable measure (--measure, ~90
+   characters); tables and forms use the column's full width. */
 .legal-layout {
-  max-width: 1180px;
+  --measure: 760px;
+  max-width: 1440px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 220px 1fr 220px;
+  grid-template-columns: 240px minmax(0, 1fr) 216px;
   gap: 0;
-  padding: 0 32px;
+  padding: 0 40px;
   align-items: start;
+}
+
+/* The top bar spans the same width as the layout below it. Scoped to
+   .legal-nav because this stylesheet stays loaded after leaving /legal. */
+.legal-nav .nav-inner {
+  max-width: 1440px;
+  padding: 0 40px;
 }
 
 /* ── LEFT SIDEBAR (TOC) ── */
@@ -65,6 +77,9 @@
   padding: 40px 24px 80px 0;
   position: sticky;
   top: calc(var(--nav) + var(--sig) + 24px);
+  max-height: calc(100vh - var(--nav) - var(--sig) - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .toc-header {
   font-size: 11px;
@@ -120,27 +135,29 @@
   margin: 10px 0;
 }
 
-/* ── RIGHT SIDEBAR (meta / quick links) ── */
+/* ── RIGHT SIDEBAR (on this page / actions) ──
+   Plain lists rather than boxed cards: the boxes read as a third competing
+   column, and truncated section titles ("Essential and functio...") to fit. */
 .meta-col {
   padding: 40px 0 80px 32px;
   position: sticky;
   top: calc(var(--nav) + var(--sig) + 24px);
+  max-height: calc(100vh - var(--nav) - var(--sig) - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .meta-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--r10);
-  padding: 18px;
-  box-shadow: var(--sh1);
-  margin-bottom: 16px;
+  padding: 0 0 0 14px;
+  border-left: 1px solid var(--border);
+  margin-bottom: 28px;
 }
 .meta-card-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink3);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 .meta-row {
   display: flex;
@@ -169,12 +186,8 @@
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border);
-}
-.meta-link:last-child {
-  border-bottom: none;
+  gap: 6px;
+  padding: 5px 0;
 }
 .meta-link:hover {
   color: var(--primary);
@@ -212,10 +225,16 @@
 
 /* ── MAIN CONTENT (prose) ── */
 .doc-col {
-  padding: 40px 32px 80px;
+  padding: 40px 56px 96px;
   border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
   min-height: calc(100vh - var(--nav));
+}
+/* Text keeps a readable line length; tables, grids and forms do not. */
+.doc-col .prose,
+.doc-col .sec-num,
+.doc-col .callout,
+.legal-search-container {
+  max-width: var(--measure);
 }
 
 /* Document header */
@@ -248,7 +267,7 @@
   color: var(--ink3);
   line-height: 1.7;
   margin-bottom: 16px;
-  max-width: 520px;
+  max-width: 640px;
 }
 .doc-meta-pills {
   display: flex;
@@ -457,6 +476,72 @@
   font-size: 12px;
 }
 
+/* Table inside a rounded frame (border-radius has no effect on a table with
+   collapsed borders, so the frame carries it). */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r10);
+  background: var(--card);
+  box-shadow: var(--sh1);
+}
+.table-wrap .data-table {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* Cookie & browser-storage inventory */
+.storage-table th:nth-child(1) { width: 24%; }
+.storage-table th:nth-child(2) { width: 32%; }
+.storage-table th:nth-child(3) { width: 20%; }
+.storage-table th:nth-child(4) { width: 14%; }
+.storage-table th:nth-child(5) { width: 10%; }
+.storage-table td {
+  font-size: 13.5px;
+}
+.st-name {
+  font-family: var(--fm, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--blue);
+}
+.st-kind,
+.st-consent {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ink3);
+}
+.st-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+}
+.st-essential {
+  color: var(--green, #16a34a);
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.2);
+}
+.st-functional {
+  color: var(--blue);
+  background: rgba(26, 86, 219, 0.07);
+  border-color: rgba(26, 86, 219, 0.2);
+}
+.st-analytics {
+  color: var(--amber, #d97706);
+  background: rgba(217, 119, 6, 0.08);
+  border-color: rgba(217, 119, 6, 0.22);
+}
+.st-needs-consent {
+  color: var(--amber, #d97706);
+  font-weight: 600;
+}
+
 /* Rights grid */
 .rights-grid {
   display: grid;
@@ -624,21 +709,28 @@
 }
 
 /* Responsive */
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
+  .legal-layout,
+  .legal-nav .nav-inner {
+    padding: 0 32px;
+  }
   .legal-layout {
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: 220px minmax(0, 1fr);
   }
   .meta-col {
     display: none;
   }
   .doc-col {
-    border-right: none;
+    padding: 40px 0 80px 40px;
   }
 }
 @media (max-width: 720px) {
+  .legal-layout,
+  .legal-nav .nav-inner {
+    padding: 0 16px;
+  }
   .legal-layout {
     grid-template-columns: 1fr;
-    padding: 0 16px;
   }
   .toc-col {
     display: none;
@@ -646,6 +738,42 @@
   .doc-col {
     border: none;
     padding: 24px 0 48px;
+  }
+  /* The inventory becomes one card per item instead of a table to scroll
+     sideways: each cell is labelled from its data-label. */
+  .storage-table thead {
+    display: none;
+  }
+  .storage-table,
+  .storage-table tbody,
+  .storage-table tr,
+  .storage-table td {
+    display: block;
+    width: 100%;
+  }
+  .storage-table tr {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .storage-table tr:last-child {
+    border-bottom: none;
+  }
+  .storage-table td,
+  .storage-table tr:last-child td {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 10px;
+    padding: 4px 0;
+    border-bottom: none;
+  }
+  .storage-table td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    padding-top: 2px;
   }
   .rights-grid {
     grid-template-columns: 1fr;
@@ -711,6 +839,7 @@
   }
   .toc-col.mobile-open {
     display: block !important;
+    max-height: none;
     position: fixed;
     top: 80px;
     left: 0;
