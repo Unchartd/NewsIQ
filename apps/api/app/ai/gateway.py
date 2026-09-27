@@ -18,6 +18,7 @@ from app.ai.errors import (
     ValidationError,
 )
 from app.ai.interfaces import GatewayRequest, GatewayResponse
+from app.ai.json_payload import extract_json_text
 from app.ai.metrics.telemetry import (
     newsiq_ai_gateway_cache_total,
     newsiq_ai_gateway_calls_total,
@@ -45,6 +46,20 @@ logger = logging.getLogger(__name__)
 # previously kept separate tables that disagreed about which models exist, and
 # the tracer's copy — holding only models this deployment has never run — won.
 from app.core.llm_pricing import PRICING_TABLE  # noqa: E402
+
+
+def _moves_to_next_route(err: Exception) -> bool:
+    """Whether a failed attempt should skip the route's remaining attempts.
+
+    A timeout is not transient in the way retrying assumes. The call that hit
+    the deadline is still billed — OpenRouter finishes the generation after the
+    client gives up — and the next attempt at the same route mostly fails too:
+    of 305 second attempts at entity linking on DeepSeek in one day, 165 failed
+    again. The next route (a different model) answers in about two seconds.
+    A rejected key does not start working after a backoff sleep either; it only
+    cost 7s per dead route per call.
+    """
+    return isinstance(err, TimeoutError | AuthenticationError)
 
 
 def clean_json_for_schema(data: Any, schema: type[BaseModel]) -> Any:
@@ -222,6 +237,54 @@ class AIGateway:
                 await session.commit()
         except Exception as persist_exc:
             logger.warning("Failed to persist AI execution record to DB: %s", persist_exc)
+
+    async def _record_direct_call(
+        self,
+        *,
+        stage: str,
+        model: str,
+        prompt_text: str,
+        temperature: float,
+        story_id: str,
+        article_id: str,
+        response: GatewayResponse | None,
+        provider: str | None = None,
+        route_model: str | None = None,
+        retry_count: int = 0,
+        fallback_count: int = 0,
+    ) -> None:
+        """Record an execute_request call in ai_execution_records.
+
+        Agent calls go through execute_request, which never recorded them: on
+        one day 656 agent calls appeared on the OpenRouter bill and nowhere in
+        this table. A failed call is recorded too, as generate_stage does.
+        """
+        import hashlib
+        import uuid
+
+        await self._persist_execution_record(
+            execution_id=uuid.uuid4(),
+            stage=stage,
+            provider=provider,
+            model=route_model,
+            capability=model,
+            prompt_name=stage,
+            prompt_version="v_direct",
+            temperature=temperature,
+            input_tokens=response.input_tokens if response else 0,
+            output_tokens=response.output_tokens if response else 0,
+            latency_ms=response.latency_ms if response else 0.0,
+            cost=(response.cost_usd or 0.0) if response else 0.0,
+            cache_hit=False,
+            retry_count=retry_count,
+            fallback_count=fallback_count,
+            schema_repaired=False,
+            decision=None if response else "failed",
+            confidence=None,
+            input_hash=hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+            story_id=story_id or None,
+            article_id=article_id or None,
+        )
 
     async def generate_stage(
         self,
@@ -472,7 +535,7 @@ class AIGateway:
 
                             if resolved_schema and response.parsed is None:
                                 try:
-                                    data = json.loads(response.content)
+                                    data = json.loads(extract_json_text(response.content or ""))
                                     cleaned = clean_json_for_schema(data, resolved_schema)
                                     response.parsed = resolved_schema.model_validate(cleaned)
                                     schema_repaired = True
@@ -691,6 +754,9 @@ class AIGateway:
                             # manifest's preferred one — with heterogeneous
                             # chains they are frequently different.
                             await mark_exhausted(route_model, str(err))
+                            break
+
+                        if _moves_to_next_route(err):
                             break
 
                         await asyncio.sleep(backoff)
@@ -1521,7 +1587,7 @@ class AIGateway:
 
                         if schema and response.parsed is None:
                             try:
-                                data = json.loads(response.content)
+                                data = json.loads(extract_json_text(response.content or ""))
                                 cleaned_data = clean_json_for_schema(data, schema)
                                 response.parsed = schema.model_validate(cleaned_data)
                             except (ValueError, PydanticValidationError) as val_err:
@@ -1570,6 +1636,20 @@ class AIGateway:
                         temperature=temperature,
                     )
 
+                    await self._record_direct_call(
+                        stage=stage,
+                        model=model,
+                        prompt_text=prompt_text,
+                        temperature=temperature,
+                        story_id=s_id,
+                        article_id=a_id,
+                        response=response,
+                        provider=provider_name,
+                        route_model=model_name,
+                        retry_count=attempt,
+                        fallback_count=idx,
+                    )
+
                     return response
 
                 except ValidationError as ve:
@@ -1589,8 +1669,21 @@ class AIGateway:
                     )
                     capability_router.health_trackers[provider_name].report_failure(str(err))
                     last_error = err
+                    if isinstance(err, RateLimitError) or _moves_to_next_route(err):
+                        break
                     await asyncio.sleep(backoff)
                     backoff *= 2.0
+
+        await self._record_direct_call(
+            stage=stage,
+            model=model,
+            prompt_text=prompt_text,
+            temperature=temperature,
+            story_id=s_id,
+            article_id=a_id,
+            response=None,
+            fallback_count=len(chain),
+        )
 
         raise AIGatewayError(
             f"All AI Gateway providers failed in execute_request fallback. Last error: {last_error}"

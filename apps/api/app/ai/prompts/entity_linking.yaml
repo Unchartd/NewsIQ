@@ -24,7 +24,10 @@ routing:
     - "deepseek.v3.2"
   temperature: 0.1
   max_tokens: 1024
-  timeout_seconds: 30.0
+  # A reply is ~50 tokens: DeepSeek p99 is 13.4s, Mercury's max 3.9s. A call
+  # still waiting at 15s has hung at its host, and the gateway moves on to the
+  # next model instead of waiting another 15s for nothing.
+  timeout_seconds: 15.0
 
 cache:
   cacheable: true

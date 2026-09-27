@@ -27,6 +27,17 @@ logger = logging.getLogger(__name__)
 REDIS_TTL_ENTITY = 7 * 24 * 60 * 60  # 7 days
 
 
+def _wikidata_gave_up(retry_state: Any) -> list[dict[str, Any]]:
+    """Give up on a Wikidata search once its retries are spent, and say so.
+
+    This used to return [] silently, which made a failing lookup look exactly
+    like an entity Wikidata does not have.
+    """
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    logger.warning("Wikidata search failed after %d attempts: %s", retry_state.attempt_number, exc)
+    return []
+
+
 # ── Pydantic Schema for LLM Disambiguation ─────────────────────────────────────
 
 
@@ -220,33 +231,16 @@ class EntityLinker:
     # ── Deterministic search query generation ──────────────────────────────────
 
     def _build_deterministic_search_query(self, name: str, entity_type: str) -> str:
-        """Build a Wikidata search query without LLM.
+        """Build a Wikidata search query without LLM: the name itself.
 
-        Uses entity type to add disambiguation context:
-        - PERSON → "name politician/athlete/etc" (use just the name, it's usually enough)
-        - ORG/COMPANY → "name organization"
-        - COUNTRY/CITY/STATE → name as-is (locations are unambiguous in Wikidata)
+        wbsearchentities matches labels and aliases, not free text, so any
+        extra word makes the search fail. This used to append a type word —
+        "Indus Waters Treaty agreement", "tramadol product" — and those
+        searches returned nothing, scored 0.00 confidence and went to the LLM
+        (373 entities in one day). The type is checked afterwards instead,
+        against the result's description, in _assess_confidence.
         """
-        clean_name = name.strip()
-
-        # Type-based disambiguation suffix
-        type_suffixes: dict[str, str] = {
-            "POLITICAL_PARTY": "political party",
-            "MILITARY_UNIT": "military",
-            "GOVERNMENT_BODY": "government",
-            "SPORTS_TEAM": "sports team",
-            "WEAPON": "weapon",
-            "TECHNOLOGY": "technology",
-            "PRODUCT": "product",
-            "LAW": "law",
-            "AGREEMENT": "agreement",
-            "DISEASE": "disease",
-        }
-
-        suffix = type_suffixes.get(entity_type, "")
-        if suffix:
-            return f"{clean_name} {suffix}"
-        return clean_name
+        return name.strip()
 
     # ── LLM search query generation (opt-in fallback) ──────────────────────────
 
@@ -314,7 +308,7 @@ class EntityLinker:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=5),
         reraise=False,
-        retry_error_callback=lambda retry_state: [],
+        retry_error_callback=_wikidata_gave_up,
     )
     async def _query_wikidata_multi(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
         """Search Wikidata using wbsearchentities API and return multiple results."""
@@ -326,7 +320,10 @@ class EntityLinker:
             "format": "json",
             "limit": limit,
         }
-        headers = {"User-Agent": "NewsIQ/1.0 (admin@newsiq.com)"}
+        # Wikimedia's User-Agent policy asks for a working contact.
+        headers = {
+            "User-Agent": f"NewsIQ/1.0 (https://newsiq.online; {settings.LEGAL_CONTACT_EMAIL})"
+        }
 
         from app.core.http_client import http_client_pool
 
@@ -354,6 +351,33 @@ class EntityLinker:
                 "description": top_result.get("description"),
                 "label": top_result.get("label"),
             }
+        return None
+
+    async def _find_resolution_on_wikidata(
+        self, resolution: EntityResolution, already_searched: str | None = None
+    ) -> dict[str, str | None] | None:
+        """Look the LLM's resolution up on Wikidata: by name first, then by query.
+
+        This searched only resolution.wikidata_search_query, which the prompt
+        asks to be descriptive ("M25 motorway London orbital road England").
+        wbsearchentities matches labels and aliases, so those searches came
+        back empty even for entities Wikidata has — "M25 motorway" alone finds
+        Q19872. The canonical name is the label-shaped string, so it goes first.
+
+        ``already_searched`` is the query the deterministic pass ran and did
+        not accept. Searching it again would either find nothing again or
+        accept the very result it judged ambiguous ("Parliament" -> the
+        Parliament of the United Kingdom).
+        """
+        tried = {already_searched.strip().lower()} if already_searched else set()
+        for query in (resolution.canonical_name, resolution.wikidata_search_query):
+            q = (query or "").strip()
+            if not q or q.lower() in tried:
+                continue
+            tried.add(q.lower())
+            found = await self._query_wikidata(q)
+            if found:
+                return found
         return None
 
     # ── Ambiguity & Confidence Gating ──────────────────────────────────────────
@@ -561,6 +585,7 @@ class EntityLinker:
         resolution = None
         wikidata_id: str | None = None
         wikidata_desc: str | None = None
+        searched_query: str | None = None
 
         if linking_mode == "deterministic":
             # Pure deterministic path (no LLM falls back)
@@ -603,13 +628,14 @@ class EntityLinker:
                     confidence,
                     clean_name,
                 )
+                searched_query = search_query
                 resolution = await self._disambiguate_with_llm(clean_name, entity_type, context)
 
         # Query Wikidata if not resolved yet (e.g. from LLM fallback or deterministic fallback)
         if not wikidata_id and resolution:
             wikidata_desc = resolution.description
             try:
-                wiki_res = await self._query_wikidata(resolution.wikidata_search_query)
+                wiki_res = await self._find_resolution_on_wikidata(resolution, searched_query)
                 if wiki_res:
                     wikidata_id = wiki_res["wikidata_id"]
                     wikidata_desc = wiki_res["description"] or resolution.description
@@ -618,25 +644,16 @@ class EntityLinker:
             except Exception as e:
                 logger.warning("Wikidata lookup failed for %s: %s", clean_name, e)
 
-        # Agentic fallback if Wikidata did not resolve QID
+        # No Wikidata match: the entity is saved without a QID. This used to
+        # ask EntityDisambiguationAgent — a second LLM call for an entity the
+        # linking call had just resolved — for the QID Wikidata could not
+        # find. The agent invents one: of 11 QIDs it stored on one day, 10
+        # named something else ("Red Bull" -> Morocco's national football
+        # team, "Martin Bashir" -> an archaeologist) or did not exist, and the
+        # QID lookup below then merges the mention into whatever entity
+        # already holds that QID. It was also a quarter of all LLM requests.
         if not wikidata_id:
-            logger.info(
-                "Wikidata lookup failed to find QID for %s. Invoking EntityDisambiguationAgent.",
-                clean_name,
-            )
-            try:
-                from app.agents.entity_disambiguation_agent import disambiguate_entity
-
-                agent_res = await disambiguate_entity(
-                    entity_value=clean_name, entity_type=entity_type, context=context
-                )
-                if agent_res:
-                    resolution.canonical_name = agent_res.canonical_name
-                    entity_type = agent_res.entity_type
-                    wikidata_id = agent_res.wikidata_id
-                    wikidata_desc = agent_res.explanation
-            except Exception as e:
-                logger.error("EntityDisambiguationAgent failed for %s: %s", clean_name, e)
+            logger.info("No Wikidata match for %s; saving it without a QID.", clean_name)
 
         # Check DB by wikidata_id if found
         if wikidata_id:
