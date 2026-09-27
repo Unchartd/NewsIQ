@@ -35,7 +35,6 @@ export function buildOrganizationSchema() {
       "NewsIQ is an AI-powered news intelligence platform that clusters stories from dozens of sources, providing neutral headlines, AI summaries, source comparisons, and timelines.",
     foundingDate: "2026",
     // Add sameAs profile URLs only for accounts that exist and belong to NewsIQ.
-    founder: { "@type": "Person", name: SITE.operator },
     contactPoint: {
       "@type": "ContactPoint",
       contactType: "customer support",

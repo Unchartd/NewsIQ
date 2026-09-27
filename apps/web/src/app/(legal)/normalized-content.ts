@@ -57,7 +57,7 @@ export const normalizedPolicies: Record<string, PolicyDocument> = {
       {
         id: "tos-1",
         title: "Who we are and these terms",
-        content: `NewsIQ (${SITE.url}) is operated by ${SITE.operator}, ${SITE.operatorDescription} ("NewsIQ", "we", "us"). These Terms are an agreement between you and us. By using NewsIQ or creating an account, you agree to these Terms and to our Privacy Policy. If you do not agree, please do not use the service.`,
+        content: `These Terms are an agreement between you and ${SITE.legalName} ("we", "us"), which provides the service at ${SITE.url}. By using NewsIQ or creating an account, you agree to these Terms and to our Privacy Policy. If you do not agree, please do not use the service.`,
       },
       {
         id: "tos-2",
@@ -122,7 +122,7 @@ export const normalizedPolicies: Record<string, PolicyDocument> = {
       {
         id: "tos-14",
         title: "Governing law",
-        content: `These Terms are governed by the laws of ${SITE.country}. We will first try to resolve any dispute informally; please contact us at ${EMAIL}. Otherwise, disputes are subject to the courts of competent jurisdiction in ${SITE.country}.`,
+        content: `These Terms are governed by the laws of ${SITE.jurisdiction}. We will first try to resolve any dispute informally; please contact us at ${EMAIL}. Otherwise, disputes are subject to the courts of competent jurisdiction in ${SITE.jurisdiction}.`,
       },
       {
         id: "tos-15",
@@ -142,7 +142,7 @@ export const normalizedPolicies: Record<string, PolicyDocument> = {
       {
         id: "priv-1",
         title: "Who we are",
-        content: `NewsIQ (${SITE.url}) is operated by ${SITE.operator}, ${SITE.operatorDescription}. For the personal data described here, ${SITE.operator} is the Data Fiduciary under India's Digital Personal Data Protection Act, 2023, and the controller under the GDPR for users in the EU and UK. Contact: ${EMAIL}.`,
+        content: `For the personal data described here, ${SITE.legalName} (${SITE.url}) is the Data Fiduciary under India's Digital Personal Data Protection Act, 2023, and the controller under the GDPR for users in the EU and UK. Contact: ${EMAIL}.`,
       },
       {
         id: "priv-2",
@@ -275,7 +275,7 @@ export const normalizedPolicies: Record<string, PolicyDocument> = {
       {
         id: "sec-5",
         title: "What we don't have yet",
-        content: "NewsIQ is operated by one person. There is not yet two-factor authentication for user accounts, no formal certification such as ISO 27001 or SOC 2, and no bug bounty. We would rather say so than overstate it.",
+        content: "NewsIQ is an early-stage service. There is not yet two-factor authentication for user accounts, no formal certification such as ISO 27001 or SOC 2, and no bug bounty. We would rather say so than overstate it.",
       },
       {
         id: "sec-6",
