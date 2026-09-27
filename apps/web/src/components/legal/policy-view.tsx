@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 
 import type { PolicyDocument, StorageItem } from "@/app/(legal)/normalized-content";
 import { SITE } from "@/lib/site-identity";
@@ -43,16 +44,43 @@ export function LegalNav({ current }: { current: string }) {
   );
 }
 
-export function StorageTable({ items }: { items: StorageItem[] }) {
+/** A storage key that wraps after "_" and "," instead of mid-word. */
+function BreakableKey({ name }: { name: string }) {
+  const parts = name.replace(/([_,])/g, "$1\u0000").split("\u0000");
   return (
-    <div className="sec" id="storage-inventory">
-      <h2 className="sec-title">Everything we store in your browser</h2>
-      <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: "var(--r8)" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
+    <>
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {part}
+          {i < parts.length - 1 && <wbr />}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The cookie and browser-storage inventory, shared by /cookies and the Legal
+ * Center. Seven columns became five: the storage type sits under the name,
+ * the consent rule under the category, and "Third party: No" reads as the
+ * provider. On a phone each row becomes a labelled card.
+ */
+export function StorageTable({
+  items,
+  title = "Everything we store in your browser",
+}: {
+  items: StorageItem[];
+  title?: string;
+}) {
+  return (
+    <section className="sec" id="storage-inventory">
+      <h2 className="sec-title">{title}</h2>
+      <div className="table-wrap">
+        <table className="data-table storage-table">
           <thead>
-            <tr style={{ borderBottom: "2px solid var(--border)" }}>
-              {["Name", "Type", "Purpose", "Category", "Kept for", "Third party", "Consent"].map((h) => (
-                <th key={h} scope="col" style={{ padding: "10px 12px", fontWeight: 600 }}>
+            <tr>
+              {["Name", "Purpose", "Category", "Kept for", "Provider"].map((h) => (
+                <th key={h} scope="col">
                   {h}
                 </th>
               ))}
@@ -60,20 +88,38 @@ export function StorageTable({ items }: { items: StorageItem[] }) {
           </thead>
           <tbody>
             {items.map((row) => (
-              <tr key={row.name} style={{ borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontWeight: 600 }}>{row.name}</td>
-                <td style={{ padding: "10px 12px" }}>{row.kind}</td>
-                <td style={{ padding: "10px 12px" }}>{row.purpose}</td>
-                <td style={{ padding: "10px 12px" }}>{row.category}</td>
-                <td style={{ padding: "10px 12px" }}>{row.retention}</td>
-                <td style={{ padding: "10px 12px" }}>{row.thirdParty}</td>
-                <td style={{ padding: "10px 12px" }}>{row.needsConsent ? "Required" : "Not needed"}</td>
+              <tr key={row.name}>
+                <td data-label="Name">
+                  <div>
+                    <code className="st-name">
+                      <BreakableKey name={row.name} />
+                    </code>
+                    <span className="st-kind">{row.kind}</span>
+                  </div>
+                </td>
+                <td data-label="Purpose">
+                  <div>{row.purpose}</div>
+                </td>
+                <td data-label="Category">
+                  <div>
+                    <span className={`st-badge st-${row.category.toLowerCase()}`}>{row.category}</span>
+                    <span className={`st-consent ${row.needsConsent ? "st-needs-consent" : ""}`}>
+                      {row.needsConsent ? "Only with your consent" : "No consent needed"}
+                    </span>
+                  </div>
+                </td>
+                <td data-label="Kept for">
+                  <div>{row.retention}</div>
+                </td>
+                <td data-label="Provider">
+                  <div>{row.thirdParty === "No" ? "NewsIQ" : row.thirdParty}</div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   );
 }
 
