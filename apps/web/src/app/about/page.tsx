@@ -121,11 +121,10 @@ export default function AboutPage() {
           <div>
             <h2 className="text-2xl font-bold mb-4">Who We Are</h2>
             <p className="text-muted-foreground leading-relaxed">
-              NewsIQ is built and run by {SITE.operator}, {SITE.operatorDescription}.
-              It reads the public feeds of about 30 publishers, finds further
+              NewsIQ reads the public feeds of about 30 publishers, finds further
               coverage of the same events through news search, and turns it into
-              one clear story. It is an early-stage, independent project. You can
-              reach us at{" "}
+              one clear story. It is an early-stage, independent product of{" "}
+              {SITE.legalName}. You can reach us at{" "}
               <a className="underline" href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
             </p>
           </div>

@@ -2420,7 +2420,7 @@ export function LandingClientPage() {
           </div>
           <div className="footer-bottom">
             <span>
-              © {new Date().getFullYear()} {SITE.name} · operated by {SITE.operator}, {SITE.country}
+              © {new Date().getFullYear()} {SITE.legalName}
             </span>
             <div className="footer-bottom-links">
               <Link

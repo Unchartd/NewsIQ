@@ -23,7 +23,7 @@ export const brand = {
   url: "https://newsiq.online",
 
   /** Legal entity name */
-  legalName: "NewsIQ (operated by Zakaur Rahman)",
+  legalName: "NewsIQ Pvt. Ltd.",
 
   /** Founding year */
   foundingYear: "2026",

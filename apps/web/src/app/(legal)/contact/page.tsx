@@ -54,8 +54,7 @@ export default function ContactPage() {
           <div className="doc-eyebrow">NewsIQ Legal</div>
           <h1 className="doc-title">Contact &amp; Grievances</h1>
           <p className="doc-subtitle">
-            NewsIQ is operated by {SITE.operator}, {SITE.operatorDescription}. Every request reaches the same
-            monitored inbox.
+            Every request reaches the same monitored inbox.
           </p>
         </div>
 
@@ -72,7 +71,7 @@ export default function ContactPage() {
           <h2 className="sec-title">Grievance Officer</h2>
           <div className="prose">
             <p>
-              {SITE.grievanceOfficer}, {SITE.country}. Email{" "}
+              {SITE.grievanceOfficer}. Email{" "}
               <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a> with &quot;Grievance&quot; in the
               subject. Grievances are acknowledged within 24 hours and resolved within 15 days.
             </p>
@@ -105,7 +104,7 @@ export default function ContactPage() {
 
         <div className="doc-footer">
           <div style={{ fontSize: "13px", color: "var(--ink3)" }}>
-            © {new Date().getFullYear()} {SITE.name} · operated by {SITE.operator}, {SITE.country}
+            © {new Date().getFullYear()} {SITE.legalName}
           </div>
         </div>
       </main>

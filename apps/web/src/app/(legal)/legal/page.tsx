@@ -300,7 +300,7 @@ function LegalPageContent() {
         {/* Footer */}
         <div className="doc-footer">
           <div style={{ fontSize: "13px", color: "var(--ink3)" }}>
-            © {new Date().getFullYear()} {SITE.name} · operated by {SITE.operator}, {SITE.country}
+            © {new Date().getFullYear()} {SITE.legalName}
           </div>
           <div className="doc-footer-nav">
             <button

@@ -7,20 +7,19 @@
  * invented "NewsIQ Technologies Private Limited", an invented grievance
  * officer, and inboxes on newsiq.ai and newsiq.in — domains this project
  * does not own, so privacy requests and copyright notices went to strangers.
- *
- * If the operator incorporates, or a domain inbox is set up, change it here.
  */
 export const SITE = {
   name: "NewsIQ",
   url: "https://newsiq.online",
-  /** The legal operator (data fiduciary / controller). */
-  operator: "Zakaur Rahman",
-  operatorDescription: "an independent founder based in India",
-  country: "India",
+  /** The legal entity: data fiduciary / controller, party to the Terms, copyright holder. */
+  legalName: "NewsIQ Pvt. Ltd.",
+  /** Law governing the Terms. */
+  jurisdiction: "India",
   /** The one monitored inbox for support, privacy, legal and security. */
   contactEmail: "hello.newsiq@gmail.com",
+  /** Named on the contact page as the IT Rules, 2021 require. */
   grievanceOfficer: "Zakaur Rahman",
   /** Last material revision of the policies. */
-  policiesUpdated: "September 24, 2026",
-  policiesVersion: "4.0",
+  policiesUpdated: "September 27, 2026",
+  policiesVersion: "4.1",
 } as const;

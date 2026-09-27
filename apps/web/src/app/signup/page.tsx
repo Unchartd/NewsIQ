@@ -15,6 +15,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import apiClient from "@/lib/api-client";
 import { setAccessToken } from "@/lib/token-store";
 import { analytics } from "@/lib/analytics/service";
+import { SITE } from "@/lib/site-identity";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -134,7 +135,7 @@ export default function SignupPage() {
 
         {/* Footer — bottom of left panel */}
         <div className="relative z-10 p-12 pt-0 flex items-center gap-4 text-xs text-muted-foreground">
-          <span>&copy; {new Date().getFullYear()} NewsIQ.</span>
+          <span>&copy; {new Date().getFullYear()} {SITE.legalName}</span>
           <Link href="/tos" className="hover:text-foreground transition-colors">Terms of Service</Link>
           <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
         </div>
@@ -309,7 +310,7 @@ export default function SignupPage() {
 
         {/* Footer — pinned to bottom, mobile only */}
         <div className="flex-none px-6 sm:px-12 lg:px-16 pb-8 flex items-center justify-center gap-4 text-xs text-muted-foreground lg:hidden">
-          <span>&copy; {new Date().getFullYear()} NewsIQ.</span>
+          <span>&copy; {new Date().getFullYear()} {SITE.legalName}</span>
           <Link href="/tos" className="hover:text-foreground transition-colors">Terms of Service</Link>
           <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
         </div>

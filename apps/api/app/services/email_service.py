@@ -175,7 +175,7 @@ class EmailService:
 
         <div class="footer">
           <p class="security-notice"><strong>Security Notice:</strong> If you did not sign up for a NewsIQ account, you can safely ignore this email. Someone may have entered your email address by mistake.</p>
-          <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
+          <p>&copy; {current_year} NewsIQ Pvt. Ltd. All rights reserved.</p>
         </div>
       </div>
     </div>
@@ -343,7 +343,7 @@ class EmailService:
         </div>
 
         <div class="footer">
-          <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
+          <p>&copy; {current_year} NewsIQ Pvt. Ltd. All rights reserved.</p>
         </div>
       </div>
     </div>
@@ -566,7 +566,7 @@ class EmailService:
       <div class="footer">
         <p>You received this email because you are subscribed to the {title}.</p>
         <p><a href="{settings.FRONTEND_URL}/settings?tab=notif">Manage Subscription Settings</a> | <a href="{settings.FRONTEND_URL}/settings?tab=notif">Unsubscribe</a></p>
-        <p>&copy; {current_year} NewsIQ. All rights reserved.</p>
+        <p>&copy; {current_year} NewsIQ Pvt. Ltd. All rights reserved.</p>
       </div>
     </div>
   </div>
