@@ -288,6 +288,26 @@ class CacheService:
         "return redis.call('del', KEYS[1]) else return 0 end"
     )
 
+    _EXPIRE_IF_EQUALS_SCRIPT = (
+        "if redis.call('get', KEYS[1]) == ARGV[1] then "
+        "return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
+    )
+
+    async def expire_if_equals(self, key: str, value: str, ttl: int) -> bool:
+        """Reset ``key``'s TTL only if it still holds ``value`` (lock heartbeat).
+
+        Returns False when the key is gone or held by someone else — the
+        caller no longer owns it and must not extend another holder's lock.
+        """
+        if not self._redis:
+            return False
+        try:
+            res = await self._redis.eval(self._EXPIRE_IF_EQUALS_SCRIPT, 1, key, value, str(ttl))  # type: ignore[misc]
+            return bool(res)
+        except Exception as e:
+            logger.warning("Cache EXPIRE_IF_EQUALS failed for %s: %s", key, e)
+            return False
+
     async def delete_if_equals(self, key: str, value: str) -> bool:
         """Delete ``key`` only if it still holds ``value`` (safe lock release).
 

@@ -108,11 +108,18 @@ _EXTRACTION_BATCH_SIZE = 20
 # Consecutive provider-outage failures that confirm an outage (rather than one
 # article whose request happens to fail) and pause the pipeline.
 _OUTAGE_CONFIRM_STREAK = 2
-# Slot lock TTL. Comfortably above the ~6 minutes a batch takes while fighting
-# a failing provider, so a live run never loses its slot; a crashed run's slot
-# frees itself.
-_EXTRACTION_SLOT_TTL = 1800
-_EXTRACTION_SLOT_KEY = "newsiq:lock:extract_events:slot:{}"
+# Slot lock: short-lived, renewed by a heartbeat while its run is alive.
+#
+# It used to be a 30-minute lock released in `finally`. A deploy or restart
+# kills the process, `finally` never runs, and the slot stays taken for the
+# rest of its TTL: after the v1.49.1 deploy both slots were held by dead runs
+# and every extraction trigger for 28 minutes was turned away as "already in
+# progress". With a heartbeat, a dead run's slot frees itself within the TTL.
+_EXTRACTION_SLOT_TTL = 120
+_EXTRACTION_SLOT_RENEW_EVERY = 30
+# v2: the 30-minute keys a pre-heartbeat worker may still hold are ignored, so
+# upgrading does not inherit them.
+_EXTRACTION_SLOT_KEY = "newsiq:lock:extract_events:v2:slot:{}"
 
 
 async def _acquire_extraction_slot() -> tuple[str, str] | None:
@@ -131,6 +138,23 @@ async def _acquire_extraction_slot() -> tuple[str, str] | None:
         if await cache_service.set_nx(key, token, ttl=_EXTRACTION_SLOT_TTL):
             return key, token
     return None
+
+
+async def _keep_extraction_slot(slot: tuple[str, str]) -> None:
+    """Heartbeat: renew the slot while this run is alive; stop if it is lost."""
+    from app.services.cache_service import cache_service
+
+    key, token = slot
+    while True:
+        await asyncio.sleep(_EXTRACTION_SLOT_RENEW_EVERY)
+        try:
+            if not await cache_service.expire_if_equals(key, token, _EXTRACTION_SLOT_TTL):
+                # Expired and possibly re-taken: nothing of ours left to renew.
+                logger.warning("Extraction slot %s was lost before its run finished.", key)
+                return
+        except Exception as err:
+            # A missed renewal only risks one extra concurrent run.
+            logger.warning("Failed to renew extraction slot %s: %s", key, err)
 
 
 async def _release_extraction_slot(slot: tuple[str, str]) -> None:
@@ -759,9 +783,11 @@ def extract_events_task(run_id: str | None = None, trace_id: str | None = None) 
                 settings.EVENT_EXTRACTION_MAX_CONCURRENT_RUNS,
             )
             return 0
+        heartbeat = asyncio.create_task(_keep_extraction_slot(slot))
         try:
             return await _extract_batch()
         finally:
+            heartbeat.cancel()
             await _release_extraction_slot(slot)
 
     async def _extract_batch():

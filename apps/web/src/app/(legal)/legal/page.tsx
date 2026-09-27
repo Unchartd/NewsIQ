@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { normalizedPolicies, PolicyDocument, PolicySection, storageInventory } from "../normalized-content";
 import { SITE } from "@/lib/site-identity";
+import { StorageTable } from "@/components/legal/policy-view";
 
 // Import compliance forms
 import PrivacyForms from "@/components/legal/privacy-forms";
@@ -246,39 +247,8 @@ function LegalPageContent() {
               </div>
             )}
 
-            {/* Dynamic Cookie Inventory Table for Phase 11 */}
             {activePolicyKey === "cookies" && (
-              <div className="sec" id="cookie-table" style={{ marginTop: "40px" }}>
-                <h2 className="sec-title" style={{ marginBottom: "16px" }}>Cookie & Browser Storage Inventory</h2>
-                <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: "var(--r8)", background: "var(--surface)", boxShadow: "var(--sh1)" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
-                    <thead>
-                      <tr style={{ borderBottom: "2px solid var(--border)", background: "var(--surface)", opacity: 0.85 }}>
-                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Cookie Name / Key</th>
-                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Purpose</th>
-                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Category</th>
-                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Retention</th>
-                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Third Party</th>
-                        <th style={{ padding: "12px 14px", fontWeight: 600 }}>Consent</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {storageInventory.map((item) => ({ name: item.name, purpose: item.purpose, cat: item.category, ret: item.retention, tp: item.thirdParty, consent: item.needsConsent ? "Yes" : "No" })).map((row, index) => (
-                        <tr key={index} style={{ borderBottom: "1px solid var(--border)", transition: "background .15s" }}>
-                          <td style={{ padding: "12px 14px", fontFamily: "monospace", color: "var(--blue)", fontWeight: 600 }}>{row.name}</td>
-                          <td style={{ padding: "12px 14px", color: "var(--ink)" }}>{row.purpose}</td>
-                          <td style={{ padding: "12px 14px", color: "var(--ink2)" }}>{row.cat}</td>
-                          <td style={{ padding: "12px 14px", color: "var(--ink3)" }}>{row.ret}</td>
-                          <td style={{ padding: "12px 14px", color: "var(--ink3)" }}>{row.tp}</td>
-                          <td style={{ padding: "12px 14px", fontWeight: row.consent === "Yes" ? 600 : 400, color: row.consent === "Yes" ? "var(--amber)" : "var(--ink3)" }}>
-                            {row.consent === "Yes" ? "Consent Required" : "Strictly Necessary"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <StorageTable items={storageInventory} title="Cookie & browser storage inventory" />
             )}
           </>
         ) : (
@@ -326,7 +296,7 @@ function LegalPageContent() {
           <>
             <div className="meta-card">
               <div className="meta-card-title">Sections</div>
-              <div className="toc-sublist" style={{ maxHeight: "300px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div className="toc-sublist" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                 {filteredSections.map((sec, idx) => (
                   <a
                     href={`#${sec.id}`}
@@ -337,12 +307,9 @@ function LegalPageContent() {
                       textDecoration: "none",
                       color: activeAnchor === sec.id ? "var(--primary)" : "var(--ink3)",
                       fontWeight: activeAnchor === sec.id ? 600 : 400,
+                      lineHeight: 1.45,
                       padding: "4px 0",
                       display: "block",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      flexShrink: 0
                     }}
                   >
                     <span style={{ marginRight: "6px", fontSize: "10px", opacity: 0.7 }}>

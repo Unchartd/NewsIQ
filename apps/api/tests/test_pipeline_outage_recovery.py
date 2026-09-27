@@ -225,6 +225,55 @@ async def test_extraction_runs_are_capped_and_release_only_their_own_slot():
         await cache_service.delete(*keys)
 
 
+async def test_a_live_run_renews_its_slot_and_stops_once_it_is_lost():
+    """A killed run must not hold its slot for long: the lock is short-lived
+    and only a live run's heartbeat keeps it. After the v1.49.1 deploy, dead
+    runs held both 30-minute slots and extraction stalled for 28 minutes."""
+    assert tasks._EXTRACTION_SLOT_TTL <= 300, "a dead run's slot must free itself quickly"
+    assert tasks._EXTRACTION_SLOT_RENEW_EVERY * 3 <= tasks._EXTRACTION_SLOT_TTL, (
+        "renewals must be frequent enough that one missed beat does not lose the slot"
+    )
+
+    key = tasks._EXTRACTION_SLOT_KEY.format(0)
+    await cache_service.delete(key)
+    slot = await tasks._acquire_extraction_slot()
+    assert slot is not None and slot[0] == key
+    try:
+        renewals: list[str] = []
+        real_expire = cache_service.expire_if_equals
+
+        async def counting_expire(k, token, ttl):
+            renewals.append(k)
+            return await real_expire(k, token, ttl)
+
+        with (
+            patch.object(tasks, "_EXTRACTION_SLOT_RENEW_EVERY", 0.01),
+            patch.object(cache_service, "expire_if_equals", counting_expire),
+        ):
+            heartbeat = asyncio.create_task(tasks._keep_extraction_slot(slot))
+            await asyncio.sleep(0.05)
+            assert renewals and not heartbeat.done(), "a live run keeps renewing its slot"
+
+            # Another run took the slot after ours expired: stop, never extend it.
+            await cache_service.set_nx(key, "someone-else", ttl=120)
+            await cache_service.delete(key)
+            await cache_service.set_nx(key, "someone-else", ttl=120)
+            await asyncio.wait_for(heartbeat, timeout=1)
+        assert await cache_service.get_raw(key) == "someone-else"
+    finally:
+        await cache_service.delete(key)
+
+
+def test_the_extraction_task_runs_the_heartbeat_for_its_whole_batch():
+    import inspect
+
+    src = inspect.getsource(tasks.extract_events_task)
+    started = src.index("asyncio.create_task(_keep_extraction_slot(slot))")
+    batch = src.index("return await _extract_batch()")
+    stopped = src.index("heartbeat.cancel()")
+    assert started < batch < stopped, "the heartbeat must cover the batch and stop after it"
+
+
 # ── Database behaviour (real Postgres) ───────────────────────────────────────
 
 
