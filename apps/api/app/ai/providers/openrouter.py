@@ -16,6 +16,7 @@ from app.ai.errors import (
     TimeoutError,
 )
 from app.ai.interfaces import AIProvider, APIKey, GatewayRequest, GatewayResponse, HealthStatus
+from app.ai.json_payload import extract_json_text
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -88,11 +89,16 @@ class OpenRouterProvider(AIProvider):
         }
         if request.reasoning is not None:
             extra_body["reasoning"] = request.reasoning
+        provider_prefs: dict[str, Any] = {}
         if request.response_format or request.reasoning is not None:
             # Only route to hosts that honour every parameter sent. A host that
             # silently ignores response_format returns unparseable output, and
             # one that ignores the reasoning setting turns a 6s call into 100s.
-            extra_body["provider"] = {"require_parameters": True}
+            provider_prefs["require_parameters"] = True
+        if settings.OPENROUTER_IGNORED_PROVIDERS:
+            provider_prefs["ignore"] = list(settings.OPENROUTER_IGNORED_PROVIDERS)
+        if provider_prefs:
+            extra_body["provider"] = provider_prefs
         params["extra_body"] = extra_body
 
         return params
@@ -108,6 +114,14 @@ class OpenRouterProvider(AIProvider):
             return float(cost) if cost is not None else 0.0
         except (TypeError, ValueError):
             return 0.0
+
+    @staticmethod
+    def _served_by(response: Any) -> str:
+        """The host OpenRouter routed this call to, e.g. "DeepInfra"."""
+        host = getattr(response, "provider", None)
+        if host is None:
+            host = (getattr(response, "model_extra", None) or {}).get("provider")
+        return str(host) if host else "unknown"
 
     def _handle_exception(self, e: Exception) -> Exception:
         if isinstance(e, asyncio.TimeoutError):
@@ -145,6 +159,15 @@ class OpenRouterProvider(AIProvider):
             )
             latency_ms = (time.perf_counter() - t0) * 1000
 
+            # OpenRouter picks the host per call and hosts differ: one hung
+            # DeepSeek calls past the deadline, one leaked end-of-sequence
+            # tokens into its JSON. Naming the host is what makes either one
+            # something OPENROUTER_IGNORED_PROVIDERS can act on.
+            served_by = self._served_by(response)
+            logger.info(
+                "OpenRouter %s served by %s in %.1fs", request.model, served_by, latency_ms / 1000
+            )
+
             choice = response.choices[0]
             content = choice.message.content or ""
             parsed = None
@@ -153,6 +176,7 @@ class OpenRouterProvider(AIProvider):
             output_tokens = response.usage.completion_tokens if response.usage else 0
 
             if request.response_format and content:
+                content = extract_json_text(content)
                 try:
                     data = json.loads(content)
                     if isinstance(request.response_format, type) and issubclass(
@@ -162,7 +186,13 @@ class OpenRouterProvider(AIProvider):
                     else:
                         parsed = data
                 except Exception as parse_err:
-                    logger.warning("OpenRouter parsing failed: %s, content: %s", parse_err, content)
+                    logger.warning(
+                        "OpenRouter parsing failed (%s served by %s): %s, content: %s",
+                        request.model,
+                        served_by,
+                        parse_err,
+                        content,
+                    )
 
             return GatewayResponse(
                 content=content,

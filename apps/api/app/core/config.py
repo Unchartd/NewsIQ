@@ -152,6 +152,11 @@ class Settings(BaseSettings):
     CEREBRAS_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    # OpenRouter hosts never to route to, by the name OpenRouter reports for
+    # them (logged per call as "served by"). JSON list in the env, e.g.
+    # OPENROUTER_IGNORED_PROVIDERS='["SomeHost"]'. For a host that hangs or
+    # returns malformed output: every such call is still billed.
+    OPENROUTER_IGNORED_PROVIDERS: list[str] = []
     AWS_BEDROCK_BASE_URL: str = "https://bedrock-mantle.us-east-1.api.aws/v1"
     AWS_BEDROCK_API_KEY: str = ""
     # Chat model used when Bedrock serves as the last-fallback tier. Verified
