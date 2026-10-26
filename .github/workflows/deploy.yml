@@ -489,9 +489,19 @@ jobs:
             # which reached Neon over the internet. The database is now the
             # self-hosted `postgres` service: its hostname only resolves on the
             # compose network, and on a first deploy it is not running yet.
+            # Compose profiles to run. "prod" is the site, its API and the data
+            # stores. The pipeline (Celery worker + beat) and the admin panel
+            # (admin UI + processing API) are opt-in: list them in
+            # NEWSIQ_EXTRA_PROFILES in .env.production, e.g.
+            # NEWSIQ_EXTRA_PROFILES=pipeline,admin-panel
+            PROFILES="--profile prod"
+            EXTRA_PROFILES=$(grep -E '^NEWSIQ_EXTRA_PROFILES=' .env.production | cut -d= -f2- | tr -d '"[:space:]' || true)
+            for p in $(echo "$EXTRA_PROFILES" | tr ',' ' '); do PROFILES="$PROFILES --profile $p"; done
+            echo "Compose profiles: $PROFILES"
+
             echo "=== Starting stateful services ==="
             NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" \
-              docker compose --env-file .env.production --profile prod up -d postgres redis
+              docker compose --env-file .env.production $PROFILES up -d postgres redis
             PG_HEALTH="missing"
             for i in $(seq 1 30); do
               PG_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' newsiq-postgres 2>/dev/null || echo "missing")
@@ -501,13 +511,13 @@ jobs:
             done
             if [ "$PG_HEALTH" != "healthy" ]; then
               echo "FATAL: postgres never became healthy"
-              docker compose --env-file .env.production --profile prod logs postgres --no-color --tail=100 || true
+              docker compose --env-file .env.production $PROFILES logs postgres --no-color --tail=100 || true
               exit 1
             fi
 
             echo "=== Running Alembic migrations ==="
             NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" \
-              docker compose --env-file .env.production --profile prod run --rm --no-deps user-api alembic upgrade head
+              docker compose --env-file .env.production $PROFILES run --rm --no-deps user-api alembic upgrade head
 
             # Capture what is currently serving, so a failed deploy can be undone.
             #
@@ -550,7 +560,7 @@ jobs:
               NEWSIQ_IMAGE="$PREV_IMAGE" \
               NEWSIQ_WEB_IMAGE="${PREV_WEB_IMAGE:-$WEB_IMAGE}" \
               NEWSIQ_ADMIN_IMAGE="${PREV_ADMIN_IMAGE:-$ADMIN_IMAGE}" \
-                docker compose --env-file .env.production --profile prod up -d --no-build || {
+                docker compose --env-file .env.production $PROFILES up -d --no-build || {
                   echo "FATAL: rollback command itself failed — manual intervention required."
                   return 1
                 }
@@ -564,14 +574,14 @@ jobs:
                 RB_STATUS=$(curl -sf http://localhost:8000/ready 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','error'))" 2>/dev/null || echo "error")
                 if [ "$RB_STATUS" = "ready" ]; then
                   echo "Rollback verified — serving $PREV_IMAGE again."
-                  docker compose --env-file .env.production --profile prod ps
+                  docker compose --env-file .env.production $PROFILES ps
                   return 0
                 fi
                 echo "Rollback health attempt $i/24: $RB_STATUS"
                 sleep 5
               done
               echo "FATAL: rollback did not become healthy — manual intervention required."
-              docker compose --env-file .env.production --profile prod ps
+              docker compose --env-file .env.production $PROFILES ps
               return 1
             }
 
@@ -581,7 +591,7 @@ jobs:
             # Restart services with new image (prod profile)
             # Docker pull already fetched the correct arch — compose up --no-build uses it
             echo "=== Restarting services ==="
-            NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" docker compose --env-file .env.production --profile prod up -d --no-build
+            NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" docker compose --env-file .env.production $PROFILES up -d --no-build
 
             # Caddy reads the Caddyfile only at start, and a single-file bind
             # mount may not even show a replaced file to the running
@@ -591,15 +601,15 @@ jobs:
             if [ "$(cat .caddyfile.applied 2>/dev/null)" != "$CADDY_SUM" ]; then
               echo "=== Caddyfile changed: recreating Caddy ==="
               NEWSIQ_IMAGE="$IMAGE" NEWSIQ_WEB_IMAGE="$WEB_IMAGE" NEWSIQ_ADMIN_IMAGE="$ADMIN_IMAGE" \
-                docker compose --env-file .env.production --profile prod up -d --no-deps --force-recreate caddy \
+                docker compose --env-file .env.production $PROFILES up -d --no-deps --force-recreate caddy \
                 && echo "$CADDY_SUM" > .caddyfile.applied
             fi
 
             sleep 5
             echo "=== Container Status ==="
-            docker compose --env-file .env.production --profile prod ps
+            docker compose --env-file .env.production $PROFILES ps
             echo "=== Celery Worker Logs ==="
-            docker compose --env-file .env.production --profile prod logs celery-worker --no-color --tail=100
+            docker compose --env-file .env.production $PROFILES logs celery-worker --no-color --tail=100 || true
 
             # Wait for Meilisearch to be healthy
             echo "=== Waiting for Meilisearch (http://localhost:7700/health) ==="
@@ -612,8 +622,8 @@ jobs:
               sleep 5
               if [ $i -eq 24 ]; then
                 echo "FATAL: Meilisearch did not become available"
-                docker compose --env-file .env.production --profile prod ps
-                docker compose --env-file .env.production --profile prod logs meilisearch --no-color --tail=200
+                docker compose --env-file .env.production $PROFILES ps
+                docker compose --env-file .env.production $PROFILES logs meilisearch --no-color --tail=200
                 rollback "Meilisearch never became available" || true
                 exit 1
               fi
@@ -631,13 +641,13 @@ jobs:
               if [ $i -eq 30 ]; then
                 echo "=== Health check failed ==="
                 echo "=== Container Status ==="
-                docker compose --env-file .env.production --profile prod ps
+                docker compose --env-file .env.production $PROFILES ps
                 echo "=== App logs (last 500 lines) ==="
-                docker compose --env-file .env.production --profile prod logs user-api --no-color --tail=500 || true
+                docker compose --env-file .env.production $PROFILES logs user-api --no-color --tail=500 || true
                 echo "=== Celery worker logs (last 200 lines) ==="
-                docker compose --env-file .env.production --profile prod logs celery-worker --no-color --tail=200 || true
+                docker compose --env-file .env.production $PROFILES logs celery-worker --no-color --tail=200 || true
                 echo "=== Meilisearch logs (last 500 lines) ==="
-                docker compose --env-file .env.production --profile prod logs meilisearch --no-color --tail=500 || true
+                docker compose --env-file .env.production $PROFILES logs meilisearch --no-color --tail=500 || true
                 # Diagnostics are captured above, so the rollback cannot destroy
                 # the evidence of why the deploy failed.
                 rollback "app never became ready" || true
